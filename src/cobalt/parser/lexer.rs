@@ -22,7 +22,10 @@ use TokenData::*;
 fn step(up: bool, loc: &mut Location, c: &char) {
     if up {
         loc.offset += 1;
-        if *c == '\n' {loc.line += 1}
+        if *c == '\n' {
+            loc.line += 1;
+            loc.col = 1
+        }
         else {loc.col += 1}
     }
 }
@@ -34,8 +37,8 @@ pub fn lex<'a>(data: &str, mut loc: Location<'a>, flags: Flags) -> (Vec<Token<'a
     let mut errs = vec![];
     let mut it = data.chars().peekable(); 
     while let Some(c) = it.next() {
-        step(flags.update_location, &mut loc, &c);
         match c {
+            ' ' | '\r' | '\n' | '\t' => {},
             '_' |
             'a'..='z' |
             'A'..='Z' | 
@@ -46,7 +49,6 @@ pub fn lex<'a>(data: &str, mut loc: Location<'a>, flags: Flags) -> (Vec<Token<'a
             'Ḁ'..='ἕ' => {
                 let mut s = String::from(c);
                 while let Some(c) = it.peek() {
-                    step(flags.update_location, &mut loc, &c);
                     match c {
                         '_' |
                         '0'..='9' |
@@ -59,6 +61,7 @@ pub fn lex<'a>(data: &str, mut loc: Location<'a>, flags: Flags) -> (Vec<Token<'a
                         'Ḁ'..='ἕ' => s.push(*c),
                         _ => break
                     };
+                    step(flags.update_location, &mut loc, &c);
                     it.next();
                 }
                 outs.push(Token::new(loc.clone(), match s.as_str() {
@@ -81,6 +84,7 @@ pub fn lex<'a>(data: &str, mut loc: Location<'a>, flags: Flags) -> (Vec<Token<'a
             },
             _ => errs.push(Error::new(loc.clone(), 101, format!("U+{:04X} is not a valid character", c as i32)))
         }
+        step(flags.update_location, &mut loc, &c);
     }
     (outs, errs)
 }
