@@ -6,7 +6,8 @@ pub struct Location<'a> {
     pub offset: u64
 }
 impl<'a> Location<'a> {
-    fn new(file: &'a str, line: u64, col: u64, offset: u64)->Self {Location{file, line, col, offset}}
+    pub fn new(file: &'a str, line: u64, col: u64, offset: u64) -> Self {Location{file, line, col, offset}}
+    pub fn from_name(file: &'a str) -> Self {Location{file, line: 1, col: 1, offset: 0}}
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
