@@ -11,12 +11,12 @@ impl<'a> Location<'a> {
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
-    pub(crate) update_location: bool
+    pub(crate) up: bool
 }
 impl Default for Flags {
     fn default()->Self {
         Flags {
-            update_location: true
+            up: true
         }
     }
 }
