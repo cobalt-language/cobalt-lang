@@ -4,7 +4,10 @@ pub mod misc;
 pub mod error;
 pub mod types;
 pub mod context;
+pub mod dottedname;
 
+pub use parser::lexer::{lex, Token, TokenData, TokenData::*};
+pub use dottedname::DottedName;
 pub use error::*;
 pub use misc::*;
 pub use context::*;
