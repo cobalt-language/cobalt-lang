@@ -22,3 +22,14 @@ impl Display for DottedName {
         Ok(())
     }
 }
+#[derive(Clone, Debug)]
+pub enum CompoundDottedNameSegment {
+    Identifier(String),
+    Glob(String),
+    Group(Vec<Vec<CompoundDottedNameSegment>>)
+}
+#[derive(Clone, Debug)]
+pub struct CompoundDottedName {
+    pub ids: Vec<CompoundDottedNameSegment>,
+    pub global: bool
+}
