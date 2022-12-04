@@ -7,9 +7,10 @@ pub mod context;
 pub mod dottedname;
 
 pub use parser::lexer::{lex, Token, TokenData, TokenData::*};
-pub use dottedname::{DottedName, CompoundDottedName};
+pub use dottedname::*;
 pub use error::*;
 pub use misc::*;
 pub use context::*;
 pub use ast::AST;
 pub use types::TypeRef;
+pub(crate) use ast::*;

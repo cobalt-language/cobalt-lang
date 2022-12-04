@@ -10,3 +10,9 @@ pub trait AST {
 pub mod vars;
 pub mod flow;
 pub mod literals;
+pub mod scope;
+
+pub use vars::*;
+pub use flow::*;
+pub use literals::*;
+pub use scope::*;
