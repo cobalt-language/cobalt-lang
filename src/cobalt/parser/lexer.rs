@@ -11,12 +11,12 @@ pub enum TokenData {
     Keyword(String)
 }
 #[derive(Clone, PartialEq, Debug)]
-pub struct Token<'a> {
-    pub loc: Location<'a>,
+pub struct Token {
+    pub loc: Location,
     pub data: TokenData
 }
-impl<'a> Token<'a> {
-    pub fn new(loc: Location<'a>, data: TokenData) -> Self {Token{loc, data}}
+impl Token {
+    pub fn new(loc: Location, data: TokenData) -> Self {Token{loc, data}}
 }
 use TokenData::*;
 fn step(up: bool, loc: &mut Location, c: &char) {
@@ -30,7 +30,7 @@ fn step(up: bool, loc: &mut Location, c: &char) {
     }
 }
 #[allow(unreachable_code)]
-fn parse_num<'a>(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut Location<'a>, up: bool) -> Result<Token<'a>, Error<'a>> {
+fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut Location, up: bool) -> Result<Token, Error> {
     let start = loc.clone();
     match c {
         '+' => {
@@ -95,7 +95,7 @@ fn parse_num<'a>(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &m
         _ => unreachable!("invalid first character to parse_num")
     }
 }
-pub fn lex<'a>(data: &str, mut loc: Location<'a>, flags: Flags) -> (Vec<Token<'a>>, Vec<Error<'a>>) {
+pub fn lex(data: &str, mut loc: Location, flags: Flags) -> (Vec<Token>, Vec<Error>) {
     let mut outs = vec![];
     let mut errs = vec![];
     let mut it = data.chars().peekable(); 
