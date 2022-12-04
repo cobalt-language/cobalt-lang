@@ -1,6 +1,52 @@
-use crate::{*, ast::scope::ImportAST};
-fn parse_paths(toks: &[Token], flags: Flags) -> (CompoundDottedName, Vec<Error>) {
-    (CompoundDottedName{ids: vec![], global: false}, vec![])
+use crate::*;
+#[allow(unreachable_code)]
+fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, Vec<Error>) {
+    let mut idx = 1;
+    let mut errs = vec![];
+    let (mut name, mut lwp) = match &toks[0].data {
+        Special('.') => (CompoundDottedName::new(vec![], true), true),
+        Identifier(str) => (CompoundDottedName::new(vec![CompoundDottedNameSegment::Identifier(str.clone())], false), false),
+        x => return (CompoundDottedName::local(CompoundDottedNameSegment::Identifier(String::from(""))), 1, vec![Error::new(toks[0].loc, 210, format!("unexpected token {:?} in identifier", x))])
+    };
+    while idx < toks.len() {
+        match &toks[idx].data {
+            Special(';') => break,
+            Special(',') | Special('}') if is_nested => break,
+            Special('.') => {
+                if lwp {
+                    errs.push(Error::new(toks[idx].loc, 211, String::from("identifier cannot contain consecutive periods")).note(Note{loc: toks[idx].loc, message: String::from("Did you accidentally type two?")}))
+                }
+                lwp = true;
+                idx += 1;
+            }
+            Identifier(str) => {
+                if !lwp {
+                    errs.push(Error::new(toks[idx].loc, 212, String::from("identifier cannot contain consecutive identifiers")).note(Note{loc: toks[idx].loc, message: String::from("Did you forget a period?")}))
+                }
+                name.ids.push(CompoundDottedNameSegment::Identifier(str.clone()));
+                idx += 1;
+            }
+            Operator(ref x) if x == "*" => {
+                if lwp {
+                    name.ids.push(CompoundDottedNameSegment::Glob(String::from("*")));
+                }
+                else {
+                    if let Some(CompoundDottedNameSegment::Identifier(x)) = name.ids.pop() {
+                        name.ids.push(CompoundDottedNameSegment::Glob(x + "*"));
+                    }
+                    else {
+                        unreachable!("if the last element was not a period, then there is at least one element in name.ids");
+                    }
+                }
+                idx += 1;
+            },
+            x => {
+                errs.push(Error::new(toks[idx].loc, 210, format!("unexpected token {:?} in identifier", x)));
+                break;
+            }
+        }
+    }
+    (name, idx, errs)
 }
 fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Error>) {
     let mut idx = 1;
@@ -64,11 +110,11 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                                     errs.push(Error::new(toks[0].loc, 220, String::from("unmatched opening brace of module body")))
                                 }
                                 else {
-                                    outs.push(Box::new(ast::scope::ModuleAST::new(toks[0].loc, name, vals)));
+                                    outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
                                 }
                                 break;
                             }
-                            outs.push(Box::new(ast::scope::ModuleAST::new(toks[0].loc, name, vals)));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
                             errs.append(&mut e);
                             toks = &toks[idx..];
                             i += idx;
@@ -87,12 +133,18 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                             outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vec![Box::new(ImportAST::new(toks[0].loc, cname))])));
                         },
                         Special(';') => {
-                            outs.push(Box::new(ast::scope::ModuleAST::new(toks[0].loc, name, vec![])));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vec![])));
                         },
                         _ => unreachable!("")
                     }
                 },
-                "import" => {},
+                "import" => {
+                    let (name, idx, mut es) = parse_paths(toks, false);
+                    outs.push(Box::new(ImportAST::new(toks[0].loc, name)));
+                    errs.append(&mut es);
+                    i += idx;
+                    toks = &toks[idx..];
+                },
                 "fn" => {},
                 "cr" => {},
                 "let" => {},
