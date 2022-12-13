@@ -1,5 +1,6 @@
 use crate::{Location, Flags, Error};
 use std::fmt::{self, Display, Formatter};
+use unicode_ident::*;
 #[derive(Clone, PartialEq, Debug)]
 pub enum TokenData {
     Int(i128),
@@ -109,29 +110,12 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
     while let Some(c) = it.next() {
         match c {
             ' ' | '\r' | '\n' | '\t' => {},
-            '_' |
-            'a'..='z' |
-            'A'..='Z' | 
-            'À'..='Ö' |
-            'Ø'..='ö' |
-            'ø'..='ʯ' |
-             '̀'..='ӿ' |
-            'Ḁ'..='ἕ' => {
+            _ if is_xid_start(c) => {
                 let mut s = c.to_string();
                 let start = loc.clone();
                 while let Some(c) = it.peek() {
-                    match c {
-                        '_' |
-                        '0'..='9' |
-                        'a'..='z' |
-                        'A'..='Z' | 
-                        'À'..='Ö' |
-                        'Ø'..='ö' |
-                        'ø'..='ʯ' |
-                         '̀'..='ӿ' |
-                        'Ḁ'..='ἕ' => s.push(*c),
-                        _ => break
-                    };
+                    if is_xid_continue(*c) {s.push(*c);}
+                    else {break;}
                     step(flags.up, &mut loc, &c);
                     it.next();
                 }
