@@ -107,8 +107,74 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
     let mut outs = vec![];
     let mut errs = vec![];
     let mut it = data.chars().peekable(); 
-    while let Some(c) = it.next() {
+    'main: while let Some(c) = it.next() {
         match c {
+            '#' => {
+                let start = loc.clone();
+                match it.next() {
+                    None => break, // single-line, followed by EOF
+                    Some('\n') => { // single-line, empty
+                        if flags.up {
+                            loc.line += 1;
+                            loc.col = 1;
+                            loc.offset += 2;
+                        }
+                        continue;
+                    },
+                    Some('=') => { // multiline
+                        let mut count = 1;
+                        loop { // count '='s
+                            match it.next() {
+                                None => {
+                                    errs.push(Error::new(start, 102, "unterminated multiline comment".to_string()));
+                                    break 'main;
+                                },
+                                Some('=') => {count += 1;},
+                                _ => break
+                            }
+                        }
+                        loop {
+                            while let Some(c) = it.next_if(|&x| x != '=') { // skip characters that aren't '='
+                                step(flags.up, &mut loc, &c);
+                            }
+                            if it.peek() == None {
+                                errs.push(Error::new(start, 102, "unterminated multiline comment".to_string()));
+                                break 'main;
+                            }
+                            let mut rem = count;
+                            while rem > 0 && it.peek() == Some(&'=') { // the number of consecutive '='s
+                                if flags.up {
+                                    loc.line += 1;
+                                    loc.offset += 1;
+                                }
+                                if rem > 0 { // it's ok if there's extra '='s
+                                    rem -= 1;
+                                }
+                                it.next();
+                            }
+                            if it.peek() == Some(&'#') { // check to make sure that it's actually ended
+                                if flags.up {
+                                    loc.line += 1;
+                                    loc.offset += 1;
+                                }
+                                break;
+                            }
+                        }
+                        continue;
+                    },
+                    Some(c) => { // single-line, non-empty
+                        if let Some(pos) = it.position(|x| x == '\n') {
+                            if flags.up {
+                                loc.line += 1;
+                                loc.col = 1;
+                                loc.offset += pos as u64 + 1;
+                            }
+                            continue;
+                        }
+                        else {break}
+                    }
+                }
+            },
             ' ' | '\r' | '\n' | '\t' => {},
             _ if is_xid_start(c) => {
                 let mut s = c.to_string();
