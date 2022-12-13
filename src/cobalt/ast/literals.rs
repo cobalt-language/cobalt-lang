@@ -14,6 +14,11 @@ impl AST for IntLiteralAST {
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "int: {}", self.val)?;
+        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
+        Ok(())
+    }
 }
 struct FloatLiteralAST {
     loc: Location,
@@ -28,6 +33,11 @@ impl AST for FloatLiteralAST {
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "float: {}", self.val)?;
+        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
+        Ok(())
+    }
 }
 struct CharLiteralAST {
     loc: Location,
@@ -42,6 +52,11 @@ impl AST for CharLiteralAST {
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "char: {:?}", self.val)?;
+        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
+        Ok(())
+    }
 }
 struct StringLiteralAST {
     loc: Location,
@@ -56,4 +71,9 @@ impl AST for StringLiteralAST {
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "string: {:?}", self.val)?;
+        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
+        Ok(())
+    }
 }

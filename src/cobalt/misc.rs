@@ -1,3 +1,4 @@
+use std::fmt::*;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Location {
     pub file: &'static str,
@@ -8,6 +9,11 @@ pub struct Location {
 impl Location {
     pub fn new(file: &'static str, line: u64, col: u64, offset: u64) -> Self {Location{file, line, col, offset}}
     pub fn from_name(file: &'static str) -> Self {Location{file, line: 1, col: 1, offset: 0}}
+}
+impl Display for Location {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}:{}:{}", self.file, self.line, self.col)
+    }
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
