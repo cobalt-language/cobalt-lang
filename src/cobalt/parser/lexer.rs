@@ -1,4 +1,5 @@
 use crate::{Location, Flags, Error};
+use std::fmt::{self, Display, Formatter};
 #[derive(Clone, PartialEq, Debug)]
 pub enum TokenData {
     Int(i128),
@@ -17,6 +18,12 @@ pub struct Token {
 }
 impl Token {
     pub fn new(loc: Location, data: TokenData) -> Self {Token{loc, data}}
+}
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if f.alternate() {write!(f, "{}: {:?}", self.loc, self.data)}
+        else {write!(f, "{:?}", self.data)}
+    }
 }
 use TokenData::*;
 fn step(up: bool, loc: &mut Location, c: &char) {
@@ -95,7 +102,7 @@ fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut L
         _ => unreachable!("invalid first character to parse_num")
     }
 }
-pub fn lex(data: &str, mut loc: Location, flags: Flags) -> (Vec<Token>, Vec<Error>) {
+pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Error>) {
     let mut outs = vec![];
     let mut errs = vec![];
     let mut it = data.chars().peekable(); 
@@ -110,7 +117,7 @@ pub fn lex(data: &str, mut loc: Location, flags: Flags) -> (Vec<Token>, Vec<Erro
             'ø'..='ʯ' |
              '̀'..='ӿ' |
             'Ḁ'..='ἕ' => {
-                let mut s = String::from(c);
+                let mut s = c.to_string();
                 let start = loc.clone();
                 while let Some(c) = it.peek() {
                     match c {
@@ -145,6 +152,41 @@ pub fn lex(data: &str, mut loc: Location, flags: Flags) -> (Vec<Token>, Vec<Erro
                     Err(val) => errs.push(val)
                 },
                 _ => outs.push(Token::new(loc.clone(), Special('.')))
+            },
+            '?' => { // operator of the from @
+                outs.push(Token::new(loc.clone(), Operator("?".to_string())));
+            },
+            '=' | '!' | '%' | '*' => { // operator of the form @, @=
+                if it.peek() == Some(&'=') {
+                    it.next();
+                    outs.push(Token::new(loc.clone(), Operator([c, '='].iter().collect())));
+                }
+                else {
+                    outs.push(Token::new(loc.clone(), Operator(c.to_string())));
+                }
+            },
+            '+' | '-' | '&' | '|' | '^' => { // operator of the form @, @@, @=
+                if let Some(c2) = it.peek() {
+                    let c3 = *c2;
+                    drop(c2);
+                    if c3 == '=' || c3 == c {
+                        it.next();
+                        outs.push(Token::new(loc.clone(), Operator([c, c3].iter().collect())));
+                    }
+                }
+                else {
+                    outs.push(Token::new(loc.clone(), Operator(c.to_string())));
+                }
+            },
+            '<' | '>' => { // operator of the form @, @@, @=, @@=
+                let mut s = c.to_string();
+                if it.peek() == Some(&c) {
+                    s.push(c);
+                }
+                if it.peek() == Some(&'=') {
+                    s.push('=');
+                }
+                outs.push(Token::new(loc.clone(), Operator(s)));
             },
             _ => errs.push(Error::new(loc.clone(), 101, format!("U+{:04X} is not a valid character", c as i32)))
         }
