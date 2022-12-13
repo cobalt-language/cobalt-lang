@@ -37,7 +37,6 @@ pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, l
     write!(f, "{}{}", pre, if last {"└── "} else {"├── "})?;
     pre.push(last);
     let mut res = ast.print_impl(f, pre);
-    if res.is_ok() {res = writeln!(f, "");}
     pre.pop();
     res
 }

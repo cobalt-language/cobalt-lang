@@ -71,7 +71,7 @@ impl Display for CompoundDottedName {
         for val in self.ids.iter() {
             write!(f, "{}", val)?;
             count += 1;
-            if count == self.ids.len() {write!(f, ".")?;}
+            if count != self.ids.len() {write!(f, ".")?;}
         }
         Ok(())
     }
