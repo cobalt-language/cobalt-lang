@@ -1,4 +1,115 @@
 use crate::*;
+fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Option<ParsedType>, usize, Vec<Error>) {
+    let mut idx = 1;
+    if toks.len() == 0 {
+        return (None, 0, vec![Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 240, "expected a type".to_string())]); // parse_type always has code before it
+    }
+    let (mut name, mut lwp) = match &toks[0].data {
+        Special('.') => (DottedName::new(vec![], true), true),
+        Identifier(s) => (DottedName::new(vec![s.clone()], false), false),
+        x => return (None, 2, vec![Error::new(toks[0].loc.clone(), 240, "expected a type".to_string()).note(Note::new(toks[0].loc.clone(), format!("got {:?}", x)))])
+    };
+    let mut errs = vec![];
+    while idx < toks.len() {
+        match &toks[idx].data {
+            Special(c) if terminators.contains(*c) => break,
+            Keyword(s) if s.len() == 1 && terminators.contains(unsafe {s.get_unchecked(0..1)}) => break,
+            Special('.') => {
+                if lwp {
+                    errs.push(Error::new(toks[idx].loc, 211, "identifier cannot contain consecutive periods".to_string()).note(Note::new(toks[idx].loc, "Did you accidentally type two?".to_string())))
+                }
+                lwp = true;
+                idx += 1;
+            }
+            Identifier(str) => {
+                if !lwp {
+                    errs.push(Error::new(toks[idx].loc, 212, "identifier cannot contain consecutive identifiers".to_string()).note(Note::new(toks[idx].loc, "Did you forget a period?".to_string())))
+                }
+                name.ids.push(str.clone());
+                idx += 1;
+            }
+            Special('&') | Special('*') | Special('^') | Special('[') => break,
+            x => {
+                errs.push(Error::new(toks[idx].loc.clone(), 210, format!("unexpected token {:?} in type", x)));
+                if !name.global && name.ids.len() == 1 {
+                    match name.ids[0].as_str() {
+                        "isize" => return (Some(ParsedType::ISize), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::Int), idx + 1, errs),
+                        "usize" => return (Some(ParsedType::USize), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::UInt), idx + 1, errs),
+                        "f16" => return (Some(ParsedType::F16), idx + 1, errs),
+                        "f32" => return (Some(ParsedType::F32), idx + 1, errs),
+                        "f64" => return (Some(ParsedType::F64), idx + 1, errs),
+                        "f128" => return (Some(ParsedType::F128), idx + 1, errs),
+                        "null" => return (Some(ParsedType::Null), idx + 1, errs),
+                        _ => {}
+                    }
+                }
+                return (Some(ParsedType::Other(name)), idx + 1, errs);
+            }
+        }
+    } 
+    let mut out = if !name.global && name.ids.len() == 1 {
+        match name.ids[0].as_str() {
+            "isize" => ParsedType::ISize,
+            x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => ParsedType::Int(x[1..].parse().unwrap()),
+            "usize" => ParsedType::USize,
+            x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => {
+                let val = x[1..].parse();
+                match val {
+                    Ok(x) => ParsedType::Int(x),
+                    Err(x) => {
+                        errs.push(Error::new(toks[0].loc.clone(), 290, format!("error when parsing integral type: {}", x)));
+                        return (None, idx + 1, errs)
+                    }
+                }
+            },
+            "f16" => ParsedType::F16,
+            "f32" => ParsedType::F32,
+            "f64" => ParsedType::F64,
+            "f128" => ParsedType::F128,
+            "null" => ParsedType::Null,
+            _ => ParsedType::Other(name)
+        }
+    }
+    else {ParsedType::Other(name)};
+    while idx < toks.len() {
+        match &toks[idx].data {
+            Operator(x) => match x.as_str() {
+                "&" => {out = ParsedType::Reference(Box::new(out)); idx += 1;},
+                "*" => {out = ParsedType::Pointer(Box::new(out)); idx += 1;},
+                "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 1;},
+                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out)))); idx += 1;},
+                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out)))); idx += 1;},
+                "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 1;},
+                _ => {
+                    errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type name", toks[idx].data)));
+                    break;
+                }
+            },
+            Special('[') => {
+                if idx + 1 == toks.len() {errs.push(Error::new(toks[idx].loc.clone(), 242, "unmatched '['".to_string()));}
+                else {
+                    if toks[idx + 1].data == Special(']') {
+                        out = ParsedType::UnsizedArray(Box::new(out))
+                    }
+                    else {
+                        let (ast, i, mut es) = parse_expr(&toks[(idx + 1)..], "]", flags);
+                        idx += i;
+                        errs.append(&mut es);
+                        out = ParsedType::SizedArray(Box::new(out), ast)
+                    }
+                }
+                idx += 1;
+            },
+            _ => {
+                errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type name", toks[idx].data)));
+                break;
+            }
+        }
+    }
+    (Some(out), idx + 1, errs)
+}
 #[allow(unreachable_code)]
 fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, Vec<Error>) {
     let mut idx = 1;
