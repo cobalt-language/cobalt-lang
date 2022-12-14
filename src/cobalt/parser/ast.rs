@@ -191,12 +191,75 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
                 idx += 1;
             }
             x => {
-                errs.push(Error::new(toks[idx].loc, 210, format!("unexpected token {:?} in identifier", x)));
+                errs.push(Error::new(toks[idx].loc.clone(), 210, format!("unexpected token {:?} in identifier", x)));
                 break;
             }
         }
     }
     (name, idx + 1, errs)
+}
+#[allow(unused_variables)]
+fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Error>) {
+    let mut i = 0;
+    let mut errs = vec![];
+    while i < toks.len() {
+        match &toks[i].data {
+            Special(c) if terminators.contains(*c) => break,
+            Special('(') => {
+                let start = toks[i].loc.clone();
+                let mut depth = 1;
+                i += 1;
+                while i < toks.len() && depth > 0 {
+                    match &toks[i].data {
+                        Special('(') => depth += 1,
+                        Special(')') => depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if i == toks.len() && depth > 0 {
+                    errs.push(Error::new(start, 240, "unmatched '('".to_string()));
+                }
+            },
+            Special('[') => {
+                let start = toks[i].loc.clone();
+                let mut depth = 1;
+                i += 1;
+                while i < toks.len() && depth > 0 {
+                    match &toks[i].data {
+                        Special('[') => depth += 1,
+                        Special(']') => depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if i == toks.len() && depth > 0 {
+                    errs.push(Error::new(start, 242, "unmatched '['".to_string()));
+                }
+            },
+            Special('{') => {
+                let start = toks[i].loc.clone();
+                let mut depth = 1;
+                i += 1;
+                while i < toks.len() && depth > 0 {
+                    match &toks[i].data {
+                        Special('{') => depth += 1,
+                        Special('}') => depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if i == toks.len() && depth > 0 {
+                    errs.push(Error::new(start, 244, "unmatched '{'".to_string()));
+                }
+            }
+            Special(')') => {errs.push(Error::new(toks[i].loc.clone(), 241, "unmatched ')'".to_string())); break;},
+            Special(']') => {errs.push(Error::new(toks[i].loc.clone(), 243, "unmatched ']'".to_string())); break;},
+            Special('}') => {errs.push(Error::new(toks[i].loc.clone(), 245, "unmatched '}'".to_string())); break;},
+            _ => i += 1
+        }
+    }
+    (Box::new(NullAST::new(toks[0].loc.clone())), i + 1, errs)
 }
 fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec<Error>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
@@ -262,8 +325,106 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                 },
                 "fn" => {},
                 "cr" => {},
-                "let" => {},
-                "mut" => {},
+                "let" => {
+                    let start = toks[0].loc.clone();
+                    let (name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let cast_loc = toks[0].loc.clone();
+                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            toks = &toks[(idx + 1)..];
+                            i += idx + 1;
+                            errs.append(&mut es);
+                            if toks.len() == 0 {
+                                errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, "expected value after typed variable definition".to_string()));
+                                break;
+                            }
+                            let ast = if toks[0].data == Special(':') {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[(idx + 1)..];
+                                i += idx + 1;
+                                errs.append(&mut es);
+                                if toks.len() == 0 {
+                                    errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
+                                    break;
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            outs.push(Box::new(VarDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)))));
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.len() == 0 {
+                                errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
+                                break;
+                            }
+                            outs.push(Box::new(VarDefAST::new(start, name, ast)));
+                        },
+                        Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
+                        _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
+                    }
+                },
+                "mut" => {
+                    let start = toks[0].loc.clone();
+                    let (name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let cast_loc = toks[0].loc.clone();
+                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            toks = &toks[(idx + 1)..];
+                            i += idx + 1;
+                            errs.append(&mut es);
+                            if toks.len() == 0 {
+                                errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, "expected value after typed variable definition".to_string()));
+                                break;
+                            }
+                            let ast = if toks[0].data == Special(':') {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[(idx + 1)..];
+                                i += idx + 1;
+                                errs.append(&mut es);
+                                if toks.len() == 0 {
+                                    errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
+                                    break;
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            outs.push(Box::new(MutDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)))));
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.len() == 0 {
+                                errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
+                                break;
+                            }
+                            outs.push(Box::new(MutDefAST::new(start, name, ast)));
+                        },
+                        Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
+                        _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
+                    }
+                },
                 _ => {
                     errs.push(Error::new(val.loc.clone(), 201, format!("unexpected top-level token: {:?}", val.data)));
                     i += 1;
