@@ -22,6 +22,7 @@ pub trait AST {
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef;
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef);
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef);
+    fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
 }
 impl Display for dyn AST {
