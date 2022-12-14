@@ -117,7 +117,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (CompoundDottedName::new(vec![], true), true),
         Identifier(str) => (CompoundDottedName::new(vec![CompoundDottedNameSegment::Identifier(str.clone())], false), false),
-        x => return (CompoundDottedName::local(CompoundDottedNameSegment::Identifier(String::new())), 2, vec![Error::new(toks[0].loc, 210, format!("unexpected token {:?} in identifier", x))])
+        x => return (CompoundDottedName::local(CompoundDottedNameSegment::Identifier(String::new())), 2, vec![Error::new(toks[0].loc.clone(), 210, format!("unexpected token {:?} in identifier", x))])
     };
     while idx < toks.len() {
         match &toks[idx].data {
@@ -169,8 +169,8 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     let mut errs = vec![];
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (DottedName::new(vec![], true), true),
-        Identifier(str) => (DottedName::new(vec![str.clone()], false), false),
-        x => return (DottedName::local(String::new()), 2, vec![Error::new(toks[0].loc, 210, format!("unexpected token {:?} in identifier", x))])
+        Identifier(s) => (DottedName::new(vec![s.clone()], false), false),
+        x => return (DottedName::local(String::new()), 2, vec![Error::new(toks[0].loc.clone(), 210, format!("unexpected token {:?} in identifier", x))])
     };
     while idx < toks.len() {
         match &toks[idx].data {
@@ -285,7 +285,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                             let (vals, idx, mut e) = parse_tl(&toks[1..], flags);
                             if idx == toks.len() {
                                 if toks[idx - 1].data != Special('}') {
-                                    errs.push(Error::new(toks[0].loc, 220, "unmatched opening brace of module body".to_string()))
+                                    errs.push(Error::new(toks[0].loc, 244, "unmatched '{' of module body".to_string()))
                                 }
                                 else {
                                     outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
@@ -447,7 +447,7 @@ pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     let start = unsafe {toks.get_unchecked(0)}.loc; // already bounds checked
     let (mut out, mut len, mut errs) = parse_tl(toks, flags);
     while len < toks.len() {
-        errs.push(Error::new(toks[len - 1].loc, 220, "unmatched closing brace".to_string()));
+        errs.push(Error::new(toks[len - 1].loc, 245, "unmatched '}'".to_string()));
         toks = &toks[len..];
         let (mut o, l, mut e) = parse_tl(toks, flags);
         out.append(&mut o);

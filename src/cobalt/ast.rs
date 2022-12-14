@@ -37,7 +37,7 @@ impl Display for dyn AST {
 pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, last: bool) -> Result {
     write!(f, "{}{}", pre, if last {"└── "} else {"├── "})?;
     pre.push(last);
-    let mut res = ast.print_impl(f, pre);
+    let res = ast.print_impl(f, pre);
     pre.pop();
     res
 }
