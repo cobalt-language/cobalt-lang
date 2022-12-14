@@ -1,7 +1,8 @@
 use crate::{DottedName, AST};
 use std::fmt::*;
-pub use ParsedType::*;
+use ParsedType::{*, Error};
 pub enum ParsedType {
+    Error,
     Null, Bool,
     Int(u64),
     UInt(u64),
@@ -18,6 +19,7 @@ pub enum ParsedType {
 impl Debug for ParsedType { // Debug isn't implemented for Box
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            Error => write!(f, "Error"),
             Null => write!(f, "Null"),
             Bool => write!(f, "Bool"),
             Int(size) => write!(f, "Int{size}"),
@@ -41,6 +43,7 @@ impl Debug for ParsedType { // Debug isn't implemented for Box
 impl Display for ParsedType {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            Error => write!(f, "<error-type>"),
             Null => write!(f, "null"),
             Bool => write!(f, "bool"),
             Int(size) => write!(f, "i{size}"),

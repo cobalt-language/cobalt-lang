@@ -4,10 +4,10 @@ use inkwell::values::AnyValueEnum;
 pub struct CastAST {
     loc: Location,
     pub val: Box<dyn AST>,
-    pub target: Option<ParsedType>
+    pub target: ParsedType
 }
 impl CastAST {
-    pub fn new(loc: Location, val: Box<dyn AST>, target: Option<ParsedType>) -> Self {
+    pub fn new(loc: Location, val: Box<dyn AST>, target: ParsedType) -> Self {
         CastAST {loc, val, target}
     }
 }
@@ -17,16 +17,10 @@ impl AST for CastAST {
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
     fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
-        match &self.target {
-            Some(x) => format!("{}: {}", self.val.to_code(), x),
-            None => format!("{}: <error-type>", self.val.to_code())
-        }
+        format!("{}: {}", self.val.to_code(), self.target)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        match &self.target {
-            Some(x) => writeln!(f, "cast: {}", x),
-            None => writeln!(f, "cast: <error-type>")
-        }?;
+        writeln!(f, "cast: {}", self.target)?;
         print_ast_child(f, pre, &*self.val, true)
     }
 }
