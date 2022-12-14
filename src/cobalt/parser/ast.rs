@@ -454,5 +454,5 @@ pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
         len = l;
         errs.append(&mut e);
     }
-    return (Box::new(TopLevelAST::new(start, out)), vec![]);
+    return (Box::new(TopLevelAST::new(start, out)), errs);
 }
