@@ -162,7 +162,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                         }
                         continue;
                     },
-                    Some(c) => { // single-line, non-empty
+                    Some(_) => { // single-line, non-empty
                         if let Some(pos) = it.position(|x| x == '\n') {
                             if flags.up {
                                 loc.line += 1;

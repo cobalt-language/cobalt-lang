@@ -179,6 +179,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
 fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Error>) {
     let mut idx = 1;
     let mut errs = vec![];
+    if toks.len() == 0 {return (DottedName::local(String::new()), 0, vec![])}
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (DottedName::new(vec![], true), true),
         Identifier(s) => (DottedName::new(vec![s.clone()], false), false),
@@ -210,8 +211,60 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     }
     (name, idx + 1, errs)
 }
-fn parse_placeholder(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
-    (Box::new(NullAST::new(toks.get(0).map(|x| x.loc.clone()).unwrap_or(Location::new("<anonymous>", 0, 0, 0)))), vec![])
+fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+    if toks.len() == 0 {return (Box::new(NullAST::new(Location::new("<anonymous>", 0, 0, 0))), vec![])}
+    match &toks[0].data {
+        Int(x) => {
+            if toks.len() == 1 {return (Box::new(IntLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
+            let mut errs = vec![];
+            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+                errs.push(Error::new(toks[1].loc.clone(), 270, format!("unexpected token {:?} after integer literal", toks[1].data)));
+                None
+            };
+            errs.extend(toks.iter().skip(2).map(|tok| Error::new(tok.loc.clone(), 270, format!("unexpected token {:?} after integer literal", tok.data))));
+            (Box::new(IntLiteralAST::new(toks[0].loc.clone(), *x, suf.cloned())), errs)
+        },
+        Float(x) => {
+            if toks.len() == 1 {return (Box::new(FloatLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
+            let mut errs = vec![];
+            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+                errs.push(Error::new(toks[1].loc.clone(), 270, format!("unexpected token {:?} after floating-point literal", toks[1].data)));
+                None
+            };
+            errs.extend(toks.iter().skip(2).map(|tok| Error::new(tok.loc.clone(), 270, format!("unexpected token {:?} after floating-point literal", tok.data))));
+            (Box::new(FloatLiteralAST::new(toks[0].loc.clone(), *x, suf.cloned())), errs)
+        },
+        Char(x) => {
+            if toks.len() == 1 {return (Box::new(CharLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
+            let mut errs = vec![];
+            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+                errs.push(Error::new(toks[1].loc.clone(), 270, format!("unexpected token {:?} after integer literal", toks[1].data)));
+                None
+            };
+            errs.extend(toks.iter().skip(2).map(|tok| Error::new(tok.loc.clone(), 270, format!("unexpected token {:?} after character literal", tok.data))));
+            (Box::new(CharLiteralAST::new(toks[0].loc.clone(), *x, suf.cloned())), errs)
+        },
+        Str(x) => {
+            if toks.len() == 1 {return (Box::new(StringLiteralAST::new(toks[0].loc.clone(), x.clone(), None)), vec![])}
+            let mut errs = vec![];
+            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+                errs.push(Error::new(toks[1].loc.clone(), 270, format!("unexpected token {:?} after integer literal", toks[1].data)));
+                None
+            };
+            errs.extend(toks.iter().skip(2).map(|tok| Error::new(tok.loc.clone(), 270, format!("unexpected token {:?} after string literal", tok.data))));
+            (Box::new(StringLiteralAST::new(toks[0].loc.clone(), x.clone(), suf.cloned())), errs)
+        },
+        Identifier(x) if x == "null" => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().skip(1).map(|tok| Error::new(tok.loc.clone(), 273, format!("unexpected token {:?} after null", tok.data))).collect()),
+        Identifier(_) | Special('.') => {
+            let (name, mut idx, mut errs) = parse_path(toks, "");
+            while idx < toks.len() {
+                errs.push(Error::new(toks[idx].loc.clone(), 271, format!("unexpected token {:?} after variable name", toks[idx].data)));
+                idx += 1;
+            }
+            (Box::new(VarGetAST::new(toks[0].loc.clone(), name)), errs)
+        },
+        _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Error::new(tok.loc.clone(), 272, format!("expected identifier or literal, got {:?}", tok.data))).collect())
+    }
 }
 fn parse_postfix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_last() {
@@ -227,7 +280,7 @@ fn parse_postfix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
             };
         }
     }
-    parse_placeholder(toks)
+    parse_literals(toks)
 }
 fn parse_prefix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_first() {
@@ -642,7 +695,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                                     errs.append(&mut es);
                                     outs.push(Box::new(FnDefAST::new(start, name, ParsedType::Error, params, ast)));
                                 },
-                                x => {}
+                                x => errs.push(Error::new(toks[0].loc.clone(), 244, format!("expected function return type or body, got {x:?}")))
                             }
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 235, "function declaration must have parameters and return type".to_string())),

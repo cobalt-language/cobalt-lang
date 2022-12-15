@@ -47,6 +47,9 @@ pub struct VarGetAST {
     loc: Location,
     pub name: DottedName
 }
+impl VarGetAST {
+    pub fn new(loc: Location, name: DottedName) -> Self {VarGetAST {loc, name}}
+}
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}

@@ -1,7 +1,7 @@
 use crate::*;
 use std::any::Any;
 use inkwell::values::AnyValueEnum;
-struct IntLiteralAST {
+pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
     pub suffix: Option<String>
@@ -28,7 +28,7 @@ impl AST for IntLiteralAST {
         Ok(())
     }
 }
-struct FloatLiteralAST {
+pub struct FloatLiteralAST {
     loc: Location,
     pub val: f64,
     pub suffix: Option<String>
@@ -55,7 +55,7 @@ impl AST for FloatLiteralAST {
         Ok(())
     }
 }
-struct CharLiteralAST {
+pub struct CharLiteralAST {
     loc: Location,
     pub val: char,
     pub suffix: Option<String>
@@ -82,7 +82,7 @@ impl AST for CharLiteralAST {
         Ok(())
     }
 }
-struct StringLiteralAST {
+pub struct StringLiteralAST {
     loc: Location,
     pub val: String,
     pub suffix: Option<String>

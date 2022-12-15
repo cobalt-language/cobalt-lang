@@ -1,4 +1,5 @@
 pub mod parser;
+#[allow(unused_variables)]
 pub mod ast;
 pub mod misc;
 pub mod error;
