@@ -24,3 +24,45 @@ impl AST for BinOpAST {
         print_ast_child(f, pre, &*self.rhs, true)
     }
 }
+pub struct PostfixAST {
+    loc: Location,
+    pub op: String,
+    pub val: Box<dyn AST>,
+}
+impl PostfixAST {
+    pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PostfixAST {loc, op, val}}
+}
+impl AST for PostfixAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
+    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn to_code(&self) -> String {
+        format!("{}{}", self.val.to_code(), self.op)
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "postfix op: {}", self.op)?;
+        print_ast_child(f, pre, &*self.val, true)
+    }
+}
+pub struct PrefixAST {
+    loc: Location,
+    pub op: String,
+    pub val: Box<dyn AST>,
+}
+impl PrefixAST {
+    pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PrefixAST {loc, op, val}}
+}
+impl AST for PrefixAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
+    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn to_code(&self) -> String {
+        format!("{}{}", self.op, self.val.to_code())
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "prefix op: {}", self.op)?;
+        print_ast_child(f, pre, &*self.val, true)
+    }
+}

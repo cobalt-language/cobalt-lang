@@ -210,6 +210,41 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     }
     (name, idx + 1, errs)
 }
+fn parse_placeholder(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+    (Box::new(NullAST::new(toks.get(0).map(|x| x.loc.clone()).unwrap_or(Location::new("<anonymous>", 0, 0, 0)))), vec![])
+}
+fn parse_postfix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+    if let Some((tok, toks)) = toks.split_last() {
+        if let Operator(op) = &tok.data {
+            return if COBALT_POST_OPS.contains(&op.as_str()) {
+                let (ast, errs) = parse_postfix(toks);
+                (Box::new(PostfixAST::new(tok.loc.clone(), op.clone(), ast)), errs)
+            }
+            else {
+                let (ast, mut errs) = parse_postfix(toks);
+                errs.insert(0, Error::new(tok.loc.clone(), 260, format!("{} is not a postfix operator", op)));
+                (ast, errs)
+            };
+        }
+    }
+    parse_placeholder(toks)
+}
+fn parse_prefix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+    if let Some((tok, toks)) = toks.split_first() {
+        if let Operator(op) = &tok.data {
+            return if COBALT_PRE_OPS.contains(&op.as_str()) {
+                let (ast, errs) = parse_prefix(toks);
+                (Box::new(PrefixAST::new(tok.loc.clone(), op.clone(), ast)), errs)
+            }
+            else {
+                let (ast, mut errs) = parse_prefix(toks);
+                errs.insert(0, Error::new(tok.loc.clone(), 261, format!("{} is not a prefix operator", op)));
+                (ast, errs)
+            }
+        };
+    }
+    parse_postfix(toks)
+}
 fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>) -> (Box<dyn AST>, Vec<Error>) {
     if ops_arg.len() == 0 {return (Box::new(NullAST::new(toks[0].loc.clone())), vec![])}
     let (op_ty, ops) = ops_arg.split_last().unwrap();
@@ -266,7 +301,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (rhs, mut es) = parse_binary(&toks[idx..], ops_arg, ops_it.clone());
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it)}
-                        else {(Box::new(NullAST::new(tok.loc.clone())) as Box<dyn AST>, vec![])};
+                        else {parse_prefix(toks)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -325,7 +360,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone());
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[idx..], op, ops_it)}
-                        else {(Box::new(NullAST::new(tok.loc.clone())) as Box<dyn AST>, vec![])};
+                        else {parse_prefix(toks)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -338,9 +373,13 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
     if let Some(op) = ops_it.next() {
         let (ast, mut es) = parse_binary(toks, op, ops_it);
         errs.append(&mut es);
-        (ast, es)
+        (ast, errs)
     }
-    else {(Box::new(NullAST::new(toks[0].loc.clone())), errs)}
+    else {
+        let (ast, mut es) = parse_prefix(toks);
+        errs.append(&mut es);
+        (ast, errs)
+    }
 }
 #[allow(unused_variables)]
 fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Error>) {
