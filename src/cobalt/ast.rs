@@ -46,9 +46,11 @@ pub mod flow;
 pub mod literals;
 pub mod scope;
 pub mod misc;
+pub mod funcs;
 
 pub use vars::*;
 pub use flow::*;
 pub use literals::*;
 pub use scope::*;
 pub use misc::*;
+pub use funcs::*;
