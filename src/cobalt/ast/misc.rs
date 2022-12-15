@@ -7,9 +7,7 @@ pub struct CastAST {
     pub target: ParsedType
 }
 impl CastAST {
-    pub fn new(loc: Location, val: Box<dyn AST>, target: ParsedType) -> Self {
-        CastAST {loc, val, target}
-    }
+    pub fn new(loc: Location, val: Box<dyn AST>, target: ParsedType) -> Self {CastAST {loc, val, target}}
 }
 impl AST for CastAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -28,9 +26,7 @@ pub struct NullAST {
     loc: Location
 }
 impl NullAST {
-    pub fn new(loc: Location) -> Self {
-        NullAST {loc}
-    }
+    pub fn new(loc: Location) -> Self {NullAST {loc}}
 }
 impl AST for NullAST {
     fn loc(&self) -> Location {self.loc.clone()}

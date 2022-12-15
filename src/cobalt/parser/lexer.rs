@@ -223,6 +223,9 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                         it.next();
                         outs.push(Token::new(loc.clone(), Operator([c, c3].iter().collect())));
                     }
+                    else {
+                        outs.push(Token::new(loc.clone(), Operator(c.to_string())));
+                    }
                 }
                 else {
                     outs.push(Token::new(loc.clone(), Operator(c.to_string())));
