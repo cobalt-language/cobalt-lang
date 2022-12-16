@@ -151,6 +151,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
                         errs.push(Error::new(toks[idx].loc, 212, "identifier cannot contain consecutive identifiers".to_string()).note(Note::new(toks[idx].loc, "Did you forget a period?".to_string())))
                     }
                 }
+                lwp = false;
                 name.ids.push(CompoundDottedNameSegment::Identifier(s.clone()));
                 idx += 1;
             }
@@ -166,6 +167,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
                         None => unreachable!("if the last element was not a period, then there is at least one element in name.ids")
                     }
                 }
+                lwp = false;
                 idx += 1;
             },
             x => {
@@ -200,6 +202,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
                 if !lwp {
                     errs.push(Error::new(toks[idx].loc, 212, "identifier cannot contain consecutive identifiers".to_string()).note(Note::new(toks[idx].loc, "Did you forget a period?".to_string())))
                 }
+                lwp = false;
                 name.ids.push(str.clone());
                 idx += 1;
             }
@@ -500,7 +503,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
-fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec<Error>) {
+fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Error>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
     let mut errs = vec![];
     let mut i = 0;
@@ -522,19 +525,17 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                     match &toks[0].data {
                         Special('{') => {
                             let (vals, idx, mut e) = parse_tl(&toks[1..], flags);
-                            if idx == toks.len() {
-                                if toks[idx - 1].data != Special('}') {
-                                    errs.push(Error::new(toks[0].loc, 244, "unmatched '{' of module body".to_string()))
-                                }
-                                else {
-                                    outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
-                                }
+                            if let Some(idx) = idx {
+                                outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
+                                errs.append(&mut e);
+                                toks = &toks[(idx + 1)..];
+                                i += idx + 1;
+                            }
+                            else {
+                                errs.push(Error::new(toks[0].loc, 254, "unmatched '{' of module body".to_string()));
+                                toks = &[];
                                 break;
                             }
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc, name, vals)));
-                            errs.append(&mut e);
-                            toks = &toks[idx..];
-                            i += idx;
                         },
                         Operator(s) if s == "=" => {
                             let (oname, idx, mut es) = parse_path(toks, ";");
@@ -655,7 +656,6 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                                     outs.push(Box::new(FnDefAST::new(start, name, ParsedType::Error, params, Box::new(NullAST::new(toks[0].loc.clone())))));
                                     toks = &toks[1..];
                                     i += 1;
-                                    continue;
                                 },
                                 Special(':') => {
                                     let (ty, idx, mut es) = parse_type(&toks[1..], "=;", flags);
@@ -718,17 +718,17 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                         Special(':') => {
                             let cast_loc = toks[0].loc.clone();
                             let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
-                            toks = &toks[(idx + 1)..];
-                            i += idx + 1;
+                            toks = &toks[idx..];
+                            i += idx;
                             errs.append(&mut es);
                             if toks.len() == 0 {
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, "expected value after typed variable definition".to_string()));
                                 break;
                             }
-                            let ast = if toks[0].data == Special(':') {
+                            let ast = if toks[0].data == Operator("=".to_string()) {
                                 let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
-                                toks = &toks[(idx + 1)..];
-                                i += idx + 1;
+                                toks = &toks[idx..];
+                                i += idx;
                                 errs.append(&mut es);
                                 if toks.len() == 0 {
                                     errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
@@ -768,17 +768,17 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
                         Special(':') => {
                             let cast_loc = toks[0].loc.clone();
                             let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
-                            toks = &toks[(idx + 1)..];
-                            i += idx + 1;
+                            toks = &toks[idx..];
+                            i += idx;
                             errs.append(&mut es);
                             if toks.len() == 0 {
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, "expected value after typed variable definition".to_string()));
                                 break;
                             }
-                            let ast = if toks[0].data == Special(':') {
+                            let ast = if toks[0].data == Operator("=".to_string()) {
                                 let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
-                                toks = &toks[(idx + 1)..];
-                                i += idx + 1;
+                                toks = &toks[idx..];
+                                i += idx;
                                 errs.append(&mut es);
                                 if toks.len() == 0 {
                                     errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
@@ -817,17 +817,17 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, usize, Vec
             }
         }
     };
-    (outs, i + 1, errs)
+    (outs, if toks.len() == 0 {None} else {Some(i + 1)}, errs)
 }
 pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if toks.len() == 0 {
         return (Box::new(TopLevelAST::new(Location::new("<empty>", 0, 0, 0), vec![])), vec![])
     }
-    let start = unsafe {toks.get_unchecked(0)}.loc; // already bounds checked
+    let start = toks[0].loc; // already bounds checked
     let (mut out, mut len, mut errs) = parse_tl(toks, flags);
-    while len < toks.len() {
-        errs.push(Error::new(toks[len - 1].loc, 255, "unmatched '}'".to_string()));
-        toks = &toks[len..];
+    while let Some(l) = len {
+        errs.push(Error::new(toks[l - 1].loc, 255, "unmatched '}'".to_string()));
+        toks = &toks[l..];
         let (mut o, l, mut e) = parse_tl(toks, flags);
         out.append(&mut o);
         len = l;
