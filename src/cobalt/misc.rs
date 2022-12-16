@@ -1,4 +1,5 @@
 use std::fmt::*;
+use colored::Colorize;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Location {
     pub file: &'static str,
@@ -12,7 +13,8 @@ impl Location {
 }
 impl Display for Location {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{}:{}:{}", self.file, self.line, self.col)
+        if f.alternate() {write!(f, "{}", format!("{}", self).blue().bold())}
+        else {write!(f, "{}:{}:{}", self.file, self.line, self.col)}
     }
 }
 #[derive(Clone, PartialEq, Eq, Debug)]

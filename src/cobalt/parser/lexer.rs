@@ -22,7 +22,7 @@ impl Token {
 }
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        if f.alternate() {write!(f, "{}: {:?}", self.loc, self.data)}
+        if f.alternate() {write!(f, "{:#}: {:?}", self.loc, self.data)}
         else {write!(f, "{:?}", self.data)}
     }
 }

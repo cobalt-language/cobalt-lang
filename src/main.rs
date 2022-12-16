@@ -25,13 +25,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match c {
                             'c' => {
                                 if nfcl {
-                                    println!("{}: reuse of -c flag", "warning".yellow().bold())
+                                    eprintln!("{}: reuse of -c flag", "warning".yellow().bold())
                                 }
                                 nfcl = true;
                             }
                             'l' => {
                                 if loc {
-                                    println!("{}: reuse of -l flag", "warning".yellow().bold())
+                                    eprintln!("{}: reuse of -l flag", "warning".yellow().bold())
                                 }
                                 loc = true;
                             },
@@ -44,17 +44,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     nfcl = false;
                     let (toks, errs) = cobalt::parser::lex(arg.as_str(), cobalt::Location::from_name("<command line>"), &flags);
                     for err in errs {
-                        println!("{}: {}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
+                        eprintln!("{}: {:#}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
                         for note in err.notes {
-                            println!("{}: {}: {}", "note".bold(), note.loc, note.message);
+                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                         }
                     }
                     for tok in toks {
                         if loc {
-                            println!("{:#}", tok)
+                            eprintln!("{:#}", tok)
                         }
                         else {
-                            println!("{}", tok)
+                            eprintln!("{}", tok)
                         }
                     }
                 }
@@ -64,9 +64,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     *fname = arg;
                     let (toks, errs) = cobalt::parser::lex(std::fs::read_to_string(fname.clone())?.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
                     for err in errs {
-                        println!("{}: {}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
+                        eprintln!("{}: {:#}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
                         for note in err.notes {
-                            println!("{}: {}: {}", "note".bold(), note.loc, note.message);
+                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                         }
                     }
                     for tok in toks {
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if nfcl {
-                println!("{}: -c switch must be followed by code", "error".red().bold());
+                eprintln!("{}: -c switch must be followed by code", "error".red().bold());
             }
         },
         "parse" if cfg!(debug_assertions) => {
@@ -93,13 +93,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match c {
                             'c' => {
                                 if nfcl {
-                                    println!("{}: reuse of -c flag", "warning".yellow().bold())
+                                    eprintln!("{}: reuse of -c flag", "warning".yellow().bold())
                                 }
                                 nfcl = true;
                             }
                             'l' => {
                                 if loc {
-                                    println!("{}: reuse of -l flag", "warning".yellow().bold())
+                                    eprintln!("{}: reuse of -l flag", "warning".yellow().bold())
                                 }
                                 loc = true;
                             },
@@ -114,16 +114,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
                     for err in errs {
-                        println!("{}: {}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
+                        eprintln!("{}: {:#}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
                         for note in err.notes {
-                            println!("{}: {}: {}", "note".bold(), note.loc, note.message);
+                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                         }
                     }
                     if loc {
-                        println!("{:#}", ast)
+                        print!("{:#}", ast)
                     }
                     else {
-                        println!("{}", ast)
+                        print!("{}", ast)
                     }
                 }
                 else {
@@ -134,25 +134,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
                     for err in errs {
-                        println!("{}: {}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
+                        eprintln!("{}: {:#}: {}", if err.code < 100 {"warning".yellow().bold()} else {"error".red().bold()}, err.loc, err.message);
                         for note in err.notes {
-                            println!("{}: {}: {}", "note".bold(), note.loc, note.message);
+                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                         }
                     }
                     if loc {
-                        println!("{:#}", ast)
+                        print!("{:#}", ast)
                     }
                     else {
-                        println!("{}", ast)
+                        print!("{}", ast)
                     }
                 }
             }
             if nfcl {
-                println!("{}: -c switch must be followed by code", "error".red().bold());
+                eprintln!("{}: -c switch must be followed by code", "error".red().bold());
             }
         }
-        x @ _ => {
-            println!("unknown subcommand '{}'", x);
+        x => {
+            eprintln!("unknown subcommand '{}'", x);
         }
     };
     Ok(())

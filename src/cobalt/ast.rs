@@ -28,7 +28,7 @@ pub trait AST {
 impl Display for dyn AST {
     fn fmt(&self, f: &mut Formatter) -> Result {
         if f.alternate() {
-            write!(f, "{}", self.loc())?;
+            write!(f, "({:#}) ", self.loc())?;
         }
         let mut pre = TreePrefix::new();
         self.print_impl(f, &mut pre)
@@ -36,6 +36,7 @@ impl Display for dyn AST {
 }
 pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, last: bool) -> Result {
     write!(f, "{}{}", pre, if last {"└── "} else {"├── "})?;
+    if f.alternate() {write!(f, "({:#}) ", ast.loc())?;}
     pre.push(last);
     let res = ast.print_impl(f, pre);
     pre.pop();
