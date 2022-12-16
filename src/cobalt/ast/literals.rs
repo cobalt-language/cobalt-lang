@@ -23,9 +23,9 @@ impl AST for IntLiteralAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "int: {}", self.val)?;
-        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
-        Ok(())
+        write!(f, "int: {}", self.val)?;
+        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        else {writeln!(f)}
     }
 }
 pub struct FloatLiteralAST {
@@ -50,9 +50,9 @@ impl AST for FloatLiteralAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "float: {}", self.val)?;
-        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
-        Ok(())
+        write!(f, "float: {}", self.val)?;
+        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        else {writeln!(f)}
     }
 }
 pub struct CharLiteralAST {
@@ -77,9 +77,9 @@ impl AST for CharLiteralAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "char: {:?}", self.val)?;
-        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
-        Ok(())
+        write!(f, "char: {:?}", self.val)?;
+        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        else {writeln!(f)}
     }
 }
 pub struct StringLiteralAST {
@@ -104,8 +104,8 @@ impl AST for StringLiteralAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "string: {:?}", self.val)?;
-        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)?;}
-        Ok(())
+        write!(f, "string: {:?}", self.val)?;
+        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)}
+        else {writeln!(f)}
     }
 }
