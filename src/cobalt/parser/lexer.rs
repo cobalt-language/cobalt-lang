@@ -144,7 +144,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                             let mut rem = count;
                             while rem > 0 && it.peek() == Some(&'=') { // the number of consecutive '='s
                                 if flags.up {
-                                    loc.line += 1;
+                                    loc.col += 1;
                                     loc.offset += 1;
                                 }
                                 if rem > 0 { // it's ok if there's extra '='s
@@ -154,7 +154,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                             }
                             if it.peek() == Some(&'#') { // check to make sure that it's actually ended
                                 if flags.up {
-                                    loc.line += 1;
+                                    loc.col += 1;
                                     loc.offset += 1;
                                 }
                                 break;
