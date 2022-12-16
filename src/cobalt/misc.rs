@@ -1,21 +1,30 @@
+use std::fmt::*;
+use colored::Colorize;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Location<'a> {
-    pub file: &'a str,
+pub struct Location {
+    pub file: &'static str,
     pub line: u64,
     pub col: u64,
     pub offset: u64
 }
-impl<'a> Location<'a> {
-    fn new(file: &'a str, line: u64, col: u64, offset: u64)->Self {Location{file, line, col, offset}}
+impl Location {
+    pub fn new(file: &'static str, line: u64, col: u64, offset: u64) -> Self {Location{file, line, col, offset}}
+    pub fn from_name(file: &'static str) -> Self {Location{file, line: 1, col: 1, offset: 0}}
+}
+impl Display for Location {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        if f.alternate() {write!(f, "{}", format!("{}", self).blue().bold())}
+        else {write!(f, "{}:{}:{}", self.file, self.line, self.col)}
+    }
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
-    pub(crate) update_location: bool
+    pub(crate) up: bool
 }
 impl Default for Flags {
     fn default()->Self {
         Flags {
-            update_location: true
+            up: true
         }
     }
 }
