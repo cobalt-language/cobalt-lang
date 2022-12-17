@@ -7,6 +7,7 @@ pub mod types;
 pub mod context;
 pub mod dottedname;
 pub mod parsed_type;
+pub mod varmap;
 
 pub use parser::lexer::{lex, Token, TokenData, TokenData::*};
 pub use dottedname::*;
@@ -15,5 +16,6 @@ pub use misc::*;
 pub use context::*;
 pub use ast::AST;
 pub use types::TypeRef;
+pub use varmap::*;
 pub(crate) use ast::*;
 pub(crate) use parsed_type::ParsedType;

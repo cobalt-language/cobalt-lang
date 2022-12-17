@@ -1,5 +1,5 @@
 use std::fmt::*;
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DottedName {
     pub ids: Vec<String>,
     pub global: bool
