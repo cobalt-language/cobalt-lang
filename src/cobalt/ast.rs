@@ -1,7 +1,5 @@
-use std::any::Any;
-use inkwell::values::AnyValueEnum;
-use std::fmt::*;
 use crate::*;
+use std::fmt::{Display, Formatter, Result};
 #[derive(Default, Clone)]
 pub struct TreePrefix(bitvec::vec::BitVec);
 impl TreePrefix {
@@ -20,8 +18,7 @@ impl Display for TreePrefix {
 pub trait AST {
     fn loc(&self) -> Location;
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef;
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef);
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef);
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>);
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
 }

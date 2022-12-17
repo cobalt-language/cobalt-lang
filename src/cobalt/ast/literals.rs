@@ -1,6 +1,4 @@
 use crate::*;
-use std::any::Any;
-use inkwell::values::AnyValueEnum;
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -12,8 +10,7 @@ impl IntLiteralAST {
 impl AST for IntLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
             format!("{}{}", self.val, suf)
@@ -39,8 +36,7 @@ impl FloatLiteralAST {
 impl AST for FloatLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
             format!("{}{}", self.val, suf)
@@ -66,8 +62,7 @@ impl CharLiteralAST {
 impl AST for CharLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
             format!("{:?}{}", self.val, suf)
@@ -93,8 +88,7 @@ impl StringLiteralAST {
 impl AST for StringLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
             format!("{:?}{}", self.val, suf)
