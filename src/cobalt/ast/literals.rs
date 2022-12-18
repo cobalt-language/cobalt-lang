@@ -9,7 +9,7 @@ impl IntLiteralAST {
 }
 impl AST for IntLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
@@ -35,7 +35,7 @@ impl FloatLiteralAST {
 }
 impl AST for FloatLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
@@ -61,7 +61,7 @@ impl CharLiteralAST {
 }
 impl AST for CharLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {
@@ -87,7 +87,7 @@ impl StringLiteralAST {
 }
 impl AST for StringLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         if let Some(ref suf) = self.suffix {

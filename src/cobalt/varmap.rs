@@ -14,13 +14,13 @@ pub enum RedefVariable<'ctx> {
 pub struct Variable<'ctx> {
     pub comp_val: Option<AnyValueEnum<'ctx>>,
     pub inter_val: Option<Box<dyn Any>>,
-    pub data_type: TypeRef,
+    pub data_type: Type,
     pub good: bool
 }
 impl<'ctx> Variable<'ctx> {
-    pub fn compiled(comp_val: AnyValueEnum<'ctx>, data_type: TypeRef) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: true}}
-    pub fn interpreted(comp_val: AnyValueEnum<'ctx>, inter_val: Box<dyn Any>, data_type: TypeRef) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: true}}
-    pub fn metaval(inter_val: Box<dyn Any>, data_type: TypeRef) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: true}}
+    pub fn compiled(comp_val: AnyValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: true}}
+    pub fn interpreted(comp_val: AnyValueEnum<'ctx>, inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: true}}
+    pub fn metaval(inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: true}}
 }
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),

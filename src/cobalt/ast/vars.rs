@@ -6,7 +6,7 @@ pub struct VarDefAST {
 }
 impl AST for VarDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         format!("let {} = {}", self.name, self.val.to_code())
@@ -26,7 +26,7 @@ pub struct MutDefAST {
 }
 impl AST for MutDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         format!("mut {} = {}", self.name, self.val.to_code())
@@ -48,7 +48,7 @@ impl VarGetAST {
 }
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         format!("{}", self.name)

@@ -1,30 +1,29 @@
-use std::ops::{Deref, DerefMut};
 use inkwell::{context::Context, module::Module, builder::Builder};
 use crate::*;
-#[derive(Default)]
-pub struct BaseCtx {
-    pub flags: Flags
-}
 pub struct CompCtx<'ctx> {
-    pub base: BaseCtx,
+    pub flags: Flags,
+    pub vars: Box<VarMap<'ctx>>,
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>
 }
 impl<'ctx> CompCtx<'ctx> {
-    pub fn new<'a>(ctx: &'ctx Context, name: &'a str) -> Self {
+    pub fn new(ctx: &'ctx Context, name: &str) -> Self {
         CompCtx {
-            base: BaseCtx::default(),
+            flags: Flags::default(),
+            vars: Box::default(),
             context: ctx,
             module: ctx.create_module(name),
             builder: ctx.create_builder()
         }
     }
-}
-impl Deref for CompCtx<'_> {
-    type Target = BaseCtx;
-    fn deref(&self) -> &Self::Target {&self.base}
-}
-impl DerefMut for CompCtx<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {&mut self.base}
+    pub fn with_flags(ctx: &'ctx Context, name: &str, flags: Flags) -> Self {
+        CompCtx {
+            flags,
+            vars: Box::default(),
+            context: ctx,
+            module: ctx.create_module(name),
+            builder: ctx.create_builder()
+        }
+    }
 }

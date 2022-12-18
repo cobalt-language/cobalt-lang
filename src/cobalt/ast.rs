@@ -17,7 +17,7 @@ impl Display for TreePrefix {
 }
 pub trait AST {
     fn loc(&self) -> Location;
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef;
+    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type;
     fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>);
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
