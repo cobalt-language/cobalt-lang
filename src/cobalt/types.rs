@@ -16,9 +16,10 @@ impl SizeType {
     pub fn map_static<F: FnOnce(u64) -> u64>(self, f: F) -> SizeType {if let Static(x) = self {Static(f(x))} else {self}}
 }
 pub enum Type {
-    IntLiteral,
+    IntLiteral, Char,
     Int(u64, bool),
     Float16, Float32, Float64, Float128,
+    Pointer(Box<Type>), Reference(Box<Type>), Borrow(Box<Type>),
     Null, Module, TypeData, Array(Box<Type>, Option<u64>),
     Function(Box<Type>, Vec<Type>)
 }
@@ -27,6 +28,7 @@ impl Type {
         match self {
             IntLiteral => Static(8),
             Int(size, _) => Static((size + 7) / 8),
+            Char => Static(4),
             Float16 => Static(2),
             Float32 => Static(4),
             Float64 => Static(8),
@@ -34,7 +36,9 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(_, _) | Module | TypeData => Meta
+            Function(_, _) | Module | TypeData => Meta,
+            Pointer(_) | Reference(_) => Static(8),
+            Borrow(b) => b.size()
         }
     }
     pub fn align(&self) -> u64 {
@@ -45,13 +49,16 @@ impl Type {
                 9..=16 => 2,
                 17..=32 => 4,
                 33.. => 8
-            }
+            },
+            Char => 4,
             Float16 => 2,
             Float32 => 4,
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(),
-            Function(_, _) | Module | TypeData => 0
+            Function(_, _) | Module | TypeData => 0,
+            Pointer(_) | Reference(_) => 8,
+            Borrow(b) => b.align()
         }
     }
     pub fn llvm_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Option<AnyTypeEnum> {

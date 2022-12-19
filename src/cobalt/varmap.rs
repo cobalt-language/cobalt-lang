@@ -18,6 +18,7 @@ pub struct Variable<'ctx> {
     pub good: bool
 }
 impl<'ctx> Variable<'ctx> {
+    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: false}}
     pub fn compiled(comp_val: AnyValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: true}}
     pub fn interpreted(comp_val: AnyValueEnum<'ctx>, inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: true}}
     pub fn metaval(inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: true}}
