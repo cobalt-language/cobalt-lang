@@ -63,6 +63,9 @@ impl<'ctx> VarMap<'ctx> {
     pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
         mod_insert(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
     }
+    pub fn insert_mod(&mut self, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
+         mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)       
+    }
 }
 pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {
     let mut idx = 0;
@@ -98,6 +101,26 @@ pub fn mod_insert<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, nam
             }
         },
         Entry::Vacant(x) => Ok(&*x.insert(sym))
+    }
+}
+pub fn mod_insert_mod<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&'a HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
+    let mut idx = 0;
+    if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
+    while idx + 1 < name.ids.len() {
+        if let Some(x) = this.entry(name.ids[idx].clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
+        else {return Err(RedefVariable::NotAModule(idx, Symbol::Module(sym)))}
+        idx += 1;
+    }
+    match this.entry(name.ids[idx].clone()) {
+        Entry::Occupied(mut x) => match x.get_mut() {
+            Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym))),
+            Symbol::Module(ref mut m) => {
+                    let errs = mod_merge(m, sym);
+                    if errs.len() == 0 {Ok(&x.into_mut().as_mod().unwrap())}
+                    else {Err(RedefVariable::MergeConflict(idx, errs))}
+            }
+        },
+        Entry::Vacant(x) => Ok(&x.insert(Symbol::Module(sym)).as_mod().unwrap())
     }
 }
 pub fn mod_merge<'ctx>(this: &mut HashMap<String, Symbol<'ctx>>, other: HashMap<String, Symbol<'ctx>>) -> HashMap<DottedName, Symbol<'ctx>> {
