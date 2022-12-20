@@ -93,4 +93,10 @@ impl Type {
             _ => false
         }
     }
+    pub fn copyable(&self) -> bool {
+        match self {
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(_, _) | Pointer(_) | Reference(_) | Borrow(_) => true,
+            _ => false
+        }
+    }
 }

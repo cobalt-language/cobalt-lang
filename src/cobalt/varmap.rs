@@ -1,7 +1,8 @@
 use crate::*;
 use std::any::Any;
-use inkwell::values::AnyValueEnum;
+use inkwell::values::BasicValue;
 use std::collections::hash_map::{HashMap, Entry};
+use std::cell::Cell;
 pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
@@ -12,16 +13,16 @@ pub enum RedefVariable<'ctx> {
     MergeConflict(usize, HashMap<DottedName, Symbol<'ctx>>)
 }
 pub struct Variable<'ctx> {
-    pub comp_val: Option<AnyValueEnum<'ctx>>,
+    pub comp_val: Option<Box<dyn BasicValue<'ctx> + 'ctx>>,
     pub inter_val: Option<Box<dyn Any>>,
     pub data_type: Type,
-    pub good: bool
+    pub good: Cell<bool>
 }
 impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: false}}
-    pub fn compiled(comp_val: AnyValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: true}}
-    pub fn interpreted(comp_val: AnyValueEnum<'ctx>, inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: true}}
-    pub fn metaval(inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: true}}
+    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: Cell::new(false)}}
+    pub fn compiled(comp_val: Box<dyn BasicValue<'ctx> + 'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Cell::new(true)}}
+    pub fn interpreted(comp_val: Box<dyn BasicValue<'ctx> + 'ctx>, inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
+    pub fn metaval(inter_val: Box<dyn Any>, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
 }
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),
@@ -54,7 +55,7 @@ impl<'ctx> VarMap<'ctx> {
     pub fn merge(&mut self, other: HashMap<String, Symbol<'ctx>>) -> HashMap<DottedName, Symbol<'ctx>> {
         mod_merge(&mut self.symbols, other)
     }
-    pub fn lookup(&self, name: &DottedName) -> Result<&Symbol, UndefVariable> {
+    pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
         match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, name) {
             Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| mod_lookup(&p.symbols, name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
             x => x

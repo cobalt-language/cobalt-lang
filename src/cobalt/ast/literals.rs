@@ -1,5 +1,4 @@
 use crate::*;
-use inkwell::values::{AnyValue, AnyValueEnum::*};
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -10,6 +9,7 @@ impl IntLiteralAST {
 }
 impl AST for IntLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
+    fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
             None | Some("") => Type::IntLiteral,
@@ -20,18 +20,18 @@ impl AST for IntLiteralAST {
             _ => Type::Null
         }
     }
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::IntLiteral), vec![]),
-            Some("isize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, false)), vec![]),
+            None | Some("") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::IntLiteral), vec![]),
+            Some("isize") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, false)), vec![]),
             Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
-                (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, false)), vec![])
+                (Variable::interpreted(Box::new(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, false)), vec![])
             },
-            Some("usize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, true)), vec![]),
+            Some("usize") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, true)), vec![]),
             Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
-                (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, true)), vec![])
+                (Variable::interpreted(Box::new(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, true)), vec![])
             },
             Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for integer literal"))])
         }
@@ -60,6 +60,7 @@ impl FloatLiteralAST {
 }
 impl AST for FloatLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
+    fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
             None | Some("f64") => Type::Float64,
@@ -69,12 +70,12 @@ impl AST for FloatLiteralAST {
             _ => Type::Null
         }
     }
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("f64") => (Variable::interpreted(FloatValue(ctx.context.f64_type().const_float(self.val)), Box::new(self.val), Type::Float64), vec![]),
-            Some("f16") => (Variable::interpreted(FloatValue(ctx.context.f16_type().const_float(self.val)), Box::new(self.val), Type::Float16), vec![]),
-            Some("f32") => (Variable::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), Box::new(self.val), Type::Float32), vec![]),
-            Some("f128") => (Variable::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), Box::new(self.val), Type::Float128), vec![]),
+            None | Some("f64") => (Variable::interpreted(Box::new(ctx.context.f64_type().const_float(self.val)), Box::new(self.val), Type::Float64), vec![]),
+            Some("f16") => (Variable::interpreted(Box::new(ctx.context.f16_type().const_float(self.val)), Box::new(self.val), Type::Float16), vec![]),
+            Some("f32") => (Variable::interpreted(Box::new(ctx.context.f32_type().const_float(self.val)), Box::new(self.val), Type::Float32), vec![]),
+            Some("f128") => (Variable::interpreted(Box::new(ctx.context.f128_type().const_float(self.val)), Box::new(self.val), Type::Float128), vec![]),
             Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for floating-point literal"))])
         }
     }
@@ -102,6 +103,7 @@ impl CharLiteralAST {
 }
 impl AST for CharLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
+    fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
             None | Some("") => Type::Char,
@@ -112,18 +114,18 @@ impl AST for CharLiteralAST {
             _ => Type::Null
         }
     }
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Char), vec![]),
-            Some("isize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, false)), vec![]),
+            None | Some("") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Char), vec![]),
+            Some("isize") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, false)), vec![]),
             Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
-                (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, false)), vec![])
+                (Variable::interpreted(Box::new(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, false)), vec![])
             },
-            Some("usize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, true)), vec![]),
+            Some("usize") => (Variable::interpreted(Box::new(ctx.context.i64_type().const_int(self.val as u64, false)), Box::new(self.val), Type::Int(64, true)), vec![]),
             Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
-                (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, true)), vec![])
+                (Variable::interpreted(Box::new(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), Box::new(self.val), Type::Int(size, true)), vec![])
             },
             Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for character literal"))])
         }
@@ -152,15 +154,16 @@ impl StringLiteralAST {
 }
 impl AST for StringLiteralAST {
     fn loc(&self) -> Location {self.loc.clone()}
+    fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {
         match self.suffix {
             None => Type::Pointer(Box::new(Type::Char)),
             Some(_) => Type::Null
         }
     }
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         match self.suffix {
-            None => (Variable::interpreted(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str").as_any_value_enum(), Box::new(self.val.clone()), Type::Pointer(Box::new(Type::Char))), vec![]),
+            None => (Variable::interpreted(Box::new(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str")), Box::new(self.val.clone()), Type::Pointer(Box::new(Type::Char))), vec![]),
             Some(ref x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for string literal"))])
         }
     }

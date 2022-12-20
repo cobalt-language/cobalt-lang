@@ -737,7 +737,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
-                            outs.push(Box::new(VarDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)))));
+                            outs.push(Box::new(VarDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)), true)));
                         },
                         Operator(x) if x == "=" => {
                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
@@ -748,7 +748,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
                                 break;
                             }
-                            outs.push(Box::new(VarDefAST::new(start, name, ast)));
+                            outs.push(Box::new(VarDefAST::new(start, name, ast, true)));
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
                         _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
@@ -787,7 +787,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
-                            outs.push(Box::new(MutDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)))));
+                            outs.push(Box::new(MutDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)), true)));
                         },
                         Operator(x) if x == "=" => {
                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
@@ -798,7 +798,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
                                 break;
                             }
-                            outs.push(Box::new(MutDefAST::new(start, name, ast)));
+                            outs.push(Box::new(MutDefAST::new(start, name, ast, true)));
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
                         _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
