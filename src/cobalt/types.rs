@@ -1,4 +1,4 @@
-use inkwell::types::*;
+use inkwell::types::AnyTypeEnum::{self, *};
 use crate::CompCtx;
 use Type::*;
 use SizeType::*;
@@ -61,7 +61,36 @@ impl Type {
             Borrow(b) => b.align()
         }
     }
-    pub fn llvm_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Option<AnyTypeEnum> {
-        panic!("LLVM code generation isn't implemented here")
+    pub fn llvm_type<'ctx>(&'ctx self, ctx: &'ctx mut CompCtx<'ctx>) -> AnyTypeEnum {
+        let opaque = ctx.context.opaque_struct_type("unknown"); // only used for unknown pointers, but Rust gets mad about multiple aliases if defined inline
+        match self {
+            IntLiteral => IntType(ctx.context.i64_type()),
+            Int(size, _) => IntType(ctx.context.custom_width_int_type(*size as u32)),
+            Char => IntType(ctx.context.i32_type()),
+            Float16 => FloatType(ctx.context.f16_type()),
+            Float32 => FloatType(ctx.context.f32_type()),
+            Float64 => FloatType(ctx.context.f64_type()),
+            Float128 => FloatType(ctx.context.f128_type()),
+            Null | Function(_, _) | Module | TypeData => VoidType(ctx.context.void_type()),
+            Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
+            Array(_, None) => todo!("arrays aren't implemented yet"),
+            Pointer(b) | Reference(b) => PointerType(match {b.llvm_type(ctx)} {
+                ArrayType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                FloatType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                IntType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                PointerType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                StructType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                VectorType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
+                _ => opaque.ptr_type(inkwell::AddressSpace::Generic)
+            }),
+            Borrow(b) => b.llvm_type(ctx)
+        }
+    }
+    pub fn register(&self) -> bool {
+        match self {
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(_, _) | Pointer(_) | Reference(_) => true,
+            Borrow(b) => b.register(),
+            _ => false
+        }
     }
 }
