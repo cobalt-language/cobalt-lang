@@ -1,7 +1,5 @@
-use std::any::Any;
-use inkwell::values::AnyValueEnum;
-use std::fmt::*;
 use crate::*;
+use std::fmt::{Display, Formatter, Result};
 #[derive(Default, Clone)]
 pub struct TreePrefix(bitvec::vec::BitVec);
 impl TreePrefix {
@@ -19,9 +17,9 @@ impl Display for TreePrefix {
 }
 pub trait AST {
     fn loc(&self) -> Location;
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef;
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef);
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef);
+    fn is_const(&self) -> bool {false}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>);
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
 }
@@ -43,7 +41,7 @@ pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, l
     res
 }
 pub mod vars;
-pub mod flow;
+pub mod groups;
 pub mod literals;
 pub mod scope;
 pub mod misc;
@@ -51,7 +49,7 @@ pub mod funcs;
 pub mod ops;
 
 pub use vars::*;
-pub use flow::*;
+pub use groups::*;
 pub use literals::*;
 pub use scope::*;
 pub use misc::*;
