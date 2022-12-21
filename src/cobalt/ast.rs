@@ -19,7 +19,7 @@ pub trait AST {
     fn loc(&self) -> Location;
     fn is_const(&self) -> bool {false}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
-    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>);
+    fn codegen<'ctx>(& self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>);
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
 }
