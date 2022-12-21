@@ -354,8 +354,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (ast, mut es) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             errs.append(&mut es);
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            let (_, _) = ast.codegen(&mut ctx);
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, mut es) = ast.codegen(&ctx);
+            errs.append(&mut es);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.print_to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
