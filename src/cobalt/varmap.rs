@@ -1,8 +1,7 @@
 use crate::*;
-use inkwell::values::BasicValue;
+use inkwell::values::BasicValueEnum;
 use std::collections::hash_map::{HashMap, Entry};
-use std::cell::Cell;
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
@@ -22,16 +21,16 @@ pub enum InterData {
 }
 #[derive(Clone)]
 pub struct Variable<'ctx> {
-    pub comp_val: Option<Rc<dyn BasicValue<'ctx> + 'ctx>>,
+    pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData>,
     pub data_type: Type,
-    pub good: Cell<bool>
+    pub good: Rc<Cell<bool>>
 }
 impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: Cell::new(false)}}
-    pub fn compiled(comp_val: Rc<dyn BasicValue<'ctx> + 'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Cell::new(true)}}
-    pub fn interpreted(comp_val: Rc<dyn BasicValue<'ctx> + 'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
-    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
+    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: Rc::new(Cell::new(false))}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Rc::new(Cell::new(true))}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Rc::new(Cell::new(true))}}
+    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Rc::new(Cell::new(true))}}
 }
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),
