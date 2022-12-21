@@ -1,4 +1,4 @@
-use inkwell::types::AnyTypeEnum::{self, *};
+use inkwell::types::{BasicType, BasicTypeEnum::{self, *}};
 use crate::CompCtx;
 use Type::*;
 use SizeType::*;
@@ -15,6 +15,7 @@ impl SizeType {
     pub fn as_static(self) -> Option<u64> {if let Static(x) = self {Some(x)} else {None}}
     pub fn map_static<F: FnOnce(u64) -> u64>(self, f: F) -> SizeType {if let Static(x) = self {Static(f(x))} else {self}}
 }
+#[derive(PartialEq, Eq, Clone)]
 pub enum Type {
     IntLiteral, Char,
     Int(u64, bool),
@@ -61,28 +62,19 @@ impl Type {
             Borrow(b) => b.align()
         }
     }
-    pub fn llvm_type<'ctx>(&'ctx self, ctx: &'ctx mut CompCtx<'ctx>) -> AnyTypeEnum {
-        let opaque = ctx.context.opaque_struct_type("unknown"); // only used for unknown pointers, but Rust gets mad about multiple aliases if defined inline
+    pub fn llvm_type<'ctx>(&self, ctx: &'ctx CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         match self {
-            IntLiteral => IntType(ctx.context.i64_type()),
-            Int(size, _) => IntType(ctx.context.custom_width_int_type(*size as u32)),
-            Char => IntType(ctx.context.i32_type()),
-            Float16 => FloatType(ctx.context.f16_type()),
-            Float32 => FloatType(ctx.context.f32_type()),
-            Float64 => FloatType(ctx.context.f64_type()),
-            Float128 => FloatType(ctx.context.f128_type()),
-            Null | Function(_, _) | Module | TypeData => VoidType(ctx.context.void_type()),
+            IntLiteral => Some(IntType(ctx.context.i64_type())),
+            Int(size, _) => Some(IntType(ctx.context.custom_width_int_type(*size as u32))),
+            Char => Some(IntType(ctx.context.i32_type())),
+            Float16 => Some(FloatType(ctx.context.f16_type())),
+            Float32 => Some(FloatType(ctx.context.f32_type())),
+            Float64 => Some(FloatType(ctx.context.f64_type())),
+            Float128 => Some(FloatType(ctx.context.f128_type())),
+            Null | Function(_, _) | Module | TypeData => None,
             Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
             Array(_, None) => todo!("arrays aren't implemented yet"),
-            Pointer(b) | Reference(b) => PointerType(match {b.llvm_type(ctx)} {
-                ArrayType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                FloatType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                IntType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                PointerType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                StructType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                VectorType(x) => x.ptr_type(inkwell::AddressSpace::Generic),
-                _ => opaque.ptr_type(inkwell::AddressSpace::Generic)
-            }),
+            Pointer(b) | Reference(b) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::Generic))),
             Borrow(b) => b.llvm_type(ctx)
         }
     }

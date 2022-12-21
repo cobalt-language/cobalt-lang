@@ -1,26 +1,21 @@
 use crate::*;
-use std::mem::MaybeUninit;
 pub struct BlockAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>
 }
 impl AST for BlockAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
-        let mut v = MaybeUninit::uninit();
-        std::mem::swap(&mut v, &mut ctx.vars);
-        unsafe {ctx.vars = MaybeUninit::new(Box::new(VarMap::new(Some(v.assume_init()))));}
-        let mut out = Variable::metaval(Box::new(()), Type::Null);
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        let mut out = Variable::metaval(InterData::Null, Type::Null);
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (ast, mut es) = val.codegen(ctx);
             out = ast;
             errs.append(&mut es);
         }
-        v = MaybeUninit::uninit();
-        std::mem::swap(&mut v, &mut ctx.vars);
-        unsafe {ctx.vars = MaybeUninit::new(v.assume_init().parent.unwrap());}
+        ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }
     fn to_code(&self) -> String {
@@ -52,9 +47,9 @@ pub struct GroupAST {
 }
 impl AST for GroupAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
-        let mut out = Variable::metaval(Box::new(()), Type::Null);
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        let mut out = Variable::metaval(InterData::Null, Type::Null);
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (ast, mut es) = val.codegen(ctx);
@@ -92,11 +87,14 @@ pub struct TopLevelAST {
 }
 impl AST for TopLevelAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &mut CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&'ctx self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         let mut errs = vec![];
-        for val in self.vals.iter() {errs.append(&mut val.codegen(ctx).1);}
-        (Variable::metaval(Box::new(()), Type::Null), errs)
+        for val in self.vals.iter() {
+            let mut es = val.codegen(ctx).1;
+            errs.append(&mut es);
+        }
+        (Variable::metaval(InterData::Null, Type::Null), errs)
     }
     fn to_code(&self) -> String {
         let mut out = String::new();

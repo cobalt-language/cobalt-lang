@@ -11,8 +11,8 @@ impl FnDefAST {
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
     fn to_code(&self) -> String {
         let mut out = format!("fn {}(", self.name);
         let mut len = self.params.len();
