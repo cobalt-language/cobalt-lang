@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::cell::Cell;
 pub struct CompCtx<'ctx> {
     pub flags: Flags,
-    pub vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
+    vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>

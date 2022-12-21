@@ -212,8 +212,20 @@ impl VarGetAST {
 }
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        if let Ok(Symbol::Variable(x)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
+        else {Type::Null}
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        match ctx.with_vars(|v| v.lookup(&self.name)) {
+            Ok(Symbol::Variable(x)) =>
+                (x.clone(), if x.good.get() {if !x.data_type.copyable() {x.good.set(false);} vec![]}
+                else {vec![Error::new(self.loc.clone(), 90, format!("{} has been moved from and is now in an undefined state", self.name))]}),
+            Ok(Symbol::Module(_)) => (Variable::error(), vec![Error::new(self.loc.clone(), 322, format!("{} is not a variable", self.name))]),
+            Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(idx)))]),
+            Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Error::new(self.loc.clone(), 323, format!("{} does not exist", self.name.start(idx)))])
+        }
+    }
     fn to_code(&self) -> String {
         format!("{}", self.name)
     }
