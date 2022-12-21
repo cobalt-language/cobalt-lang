@@ -62,7 +62,7 @@ impl Type {
             Borrow(b) => b.align()
         }
     }
-    pub fn llvm_type<'ctx>(&self, ctx: &'ctx CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         match self {
             IntLiteral => Some(IntType(ctx.context.i64_type())),
             Int(size, _) => Some(IntType(ctx.context.custom_width_int_type(*size as u32))),
