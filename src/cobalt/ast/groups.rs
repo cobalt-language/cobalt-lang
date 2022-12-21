@@ -1,15 +1,23 @@
 use crate::*;
-use std::any::Any;
-use inkwell::values::AnyValueEnum;
 pub struct BlockAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>
 }
 impl AST for BlockAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        let mut out = Variable::metaval(InterData::Null, Type::Null);
+        let mut errs = vec![];
+        for val in self.vals.iter() {
+            let (ast, mut es) = val.codegen(ctx);
+            out = ast;
+            errs.append(&mut es);
+        }
+        ctx.map_vars(|v| v.parent.unwrap());
+        (out, errs)
+    }
     fn to_code(&self) -> String {
         let mut out = '{'.to_string();
         let mut count = self.vals.len();
@@ -39,9 +47,17 @@ pub struct GroupAST {
 }
 impl AST for GroupAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        let mut out = Variable::metaval(InterData::Null, Type::Null);
+        let mut errs = vec![];
+        for val in self.vals.iter() {
+            let (ast, mut es) = val.codegen(ctx);
+            out = ast;
+            errs.append(&mut es);
+        }
+        (out, errs)
+    }
     fn to_code(&self) -> String {
         let mut out = '('.to_string();
         let mut count = self.vals.len();
@@ -71,9 +87,15 @@ pub struct TopLevelAST {
 }
 impl AST for TopLevelAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type(&self, ctx: &mut BaseCtx) -> TypeRef {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &mut CompCtx<'ctx>) -> (AnyValueEnum<'ctx>, TypeRef) {panic!("code generation has not been implemented")}
-    fn eval(&self, ctx: &mut BaseCtx) -> (Box<dyn Any>, TypeRef) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&'ctx self, ctx: &'ctx CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        let mut errs = vec![];
+        for val in self.vals.iter() {
+            let mut es = val.codegen(ctx).1;
+            errs.append(&mut es);
+        }
+        (Variable::metaval(InterData::Null, Type::Null), errs)
+    }
     fn to_code(&self) -> String {
         let mut out = String::new();
         let mut count = self.vals.len();

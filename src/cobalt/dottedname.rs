@@ -1,14 +1,15 @@
 use std::fmt::*;
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DottedName {
     pub ids: Vec<String>,
     pub global: bool
 }
 impl DottedName {
-    pub fn new(ids: Vec<String>, global: bool) -> Self {Self {ids, global}}
+    pub fn new(ids: Vec<String>, global: bool) -> Self {DottedName {ids, global}}
     pub fn absolute(ids: Vec<String>) -> Self {Self::new(ids, true)}
     pub fn relative(ids: Vec<String>) -> Self {Self::new(ids, false)}
     pub fn local(id: String) -> Self {Self::new(vec![id], false)}
+    pub fn start(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[..(len + 1)].to_vec()}}
 }
 impl Display for DottedName {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
