@@ -7,7 +7,8 @@ edition = "2021"
 toml = "0.5.9"
 colored = "2.0.0"
 bitvec = "1.0.1"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0", "internal-getters"] }
+llvm-sys = "140"
 unicode-ident = "1.0.5"
 walkdir = "2"
 

@@ -1,9 +1,11 @@
 use colored::Colorize;
 use inkwell::targets::*;
 use std::process::{Command, exit};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::ffi::OsString;
-use std::path::PathBuf;
+mod libs;
+#[allow(dead_code)]
+mod jit;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
@@ -24,26 +26,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
-fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<PathBuf>, Vec<&'a str>) {
-    let mut outs = vec![];
-    let it = dirs.into_iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file());
-    it.for_each(|x| {
-        let path = x.into_path();
-        match path.extension().and_then(std::ffi::OsStr::to_str) {
-            Some("a") | Some("so") | Some("dylib") | Some("colib") | Some("dll") | Some("lib") => {},
-            _ => return
-        }
-        if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
-            for lib in libs.iter_mut().filter(|x| x.len() > 0) {
-                if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
-                    outs.push(path.clone());
-                    *lib = "";
-                }
-            }
-        }
-    });
-    (outs, libs.into_iter().filter(|x| x.len() > 0).collect())
-}
+type MainFn = unsafe extern "C" fn(i32, *const *const i8, *const *const i8) -> i32;
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ERROR = &"error".bright_red().bold();
@@ -214,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
                                 "emit-asm" => {
                                     if output_type.is_some() {
@@ -384,7 +367,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OutputType::Executable => {
                             out.write_all(mb.as_slice())?;
                             let mut args = vec![OsString::from("-o"), OsString::from(out_file)];
-                            let (libs, notfound) = find_libs(linked, link_dirs);
+                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
                             for nf in notfound.iter() {
                                 eprintln!("couldn't find library {nf}");
                             }
@@ -405,7 +388,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             out.write(mb.as_slice())?;
                             writeln!(out)?;
                             let mut buff = format!("{in_file}\00.1.0\0");
-                            let (libs, notfound) = find_libs(linked, link_dirs);
+                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
                             for nf in notfound.iter() {
                                 eprintln!("couldn't find library {nf}");
                             }
@@ -423,7 +406,109 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
+        "jit" => {
+            let mut in_file: Option<&str> = None;
+            let mut linked: Vec<&str> = vec![];
+            let mut link_dirs: Vec<&str> = vec![];
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if in_file.is_some() {
+                                eprintln!("{ERROR}: respecification of input file");
+                                return Ok(())
+                            }
+                            in_file = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    return Ok(())
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    'l' => {
+                                        if let Some(x) = it.next() {
+                                            linked.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            return Ok(())
+                                        }
+                                    },
+                                    'L' => {
+                                        if let Some(x) = it.next() {
+                                            link_dirs.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            return Ok(())
+                                        }
+                                    },
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        return Ok(())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if in_file.is_some() {
+                            eprintln!("{ERROR}: respecification of input file");
+                            return Ok(())
+                        }
+                        in_file = Some(arg.as_str());
+                    }
+                }
+            }
+            let (in_file, code) = if in_file.is_none() {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                ("<stdin>", s)
+            }
+            else {
+                let f = in_file.unwrap();
+                (f, std::fs::read_to_string(f)?)
+            };
+            let flags = cobalt::Flags::default();
+            let fname = unsafe {&mut FILENAME};
+            *fname = in_file.to_string();
+            let (toks, mut errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
+            let (ast, mut es) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            errs.append(&mut es);
+            let ink_ctx = inkwell::context::Context::create();
+            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, mut es) = ast.codegen(&ctx);
+            errs.append(&mut es);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            let (libs, notfound) = libs::find_libs(linked, link_dirs);
+            for nf in notfound.iter() {
+                eprintln!("couldn't find library {nf}");
+            }
+            if notfound.len() > 0 {return Ok(())}
+            let jit = jit::LLJIT::new();
+            {
+                let mut m = ink_ctx.create_module("");
+                std::mem::swap(&mut m, &mut ctx.module);
+                jit.add_module(jit.main(), m);
+            }
+            std::mem::drop(libs);
+            unsafe {
+                exit(jit.lookup_main::<MainFn>(&std::ffi::CString::new("_start").unwrap()).expect("couldn't find 'main'")(1, [format!("co jit {}", if in_file == "<stdin>" {"-"} else {in_file}).as_ptr() as *const i8].as_ptr(), [0 as *const i8].as_ptr()));
+            }
+        },
         x => {
             eprintln!("unknown subcommand '{}'", x);
         }
