@@ -1,13 +1,19 @@
 use crate::*;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ParamType {
+    Normal,
+    Mutable,
+    Constant
+}
 pub struct FnDefAST {
     loc: Location,
     pub name: DottedName,
     pub ret: ParsedType,
-    pub params: Vec<(String, bool, ParsedType, Option<Box<dyn AST>>)>, // parameter, mutable, type, default
+    pub params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, // parameter, mutable, type, default
     pub body: Box<dyn AST>
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, bool, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>) -> Self {FnDefAST {loc, name, ret, params, body}}
+    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>) -> Self {FnDefAST {loc, name, ret, params, body}}
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -16,8 +22,12 @@ impl AST for FnDefAST {
     fn to_code(&self) -> String {
         let mut out = format!("fn {}(", self.name);
         let mut len = self.params.len();
-        for (param, is_mut, ty, default) in self.params.iter() {
-            if *is_mut {out += "mut "}
+        for (param, param_ty, ty, default) in self.params.iter() {
+            out += match param_ty {
+                ParamType::Normal => "",
+                ParamType::Mutable => "mut ",
+                ParamType::Constant => "const "
+            };
             out += format!("{}: {}", param, ty).as_str();
             if let Some(val) = default {
                 out += format!(" = {}", val.to_code()).as_str();
@@ -32,8 +42,12 @@ impl AST for FnDefAST {
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         write!(f, "function: {}(", self.name)?;
         let mut len = self.params.len(); 
-        for (param, is_mut, ty, default) in self.params.iter() {
-            if *is_mut {write!(f, "mut ")?;}
+        for (param, param_ty, ty, default) in self.params.iter() {
+            write!(f, "{}", match param_ty {
+                ParamType::Normal => "",
+                ParamType::Mutable => "mut ",
+                ParamType::Constant => "const "
+            })?;
             write!(f, "{}: {}", param, ty)?;
             if let Some(val) = default {
                 write!(f, " = {}", val.to_code())?;
