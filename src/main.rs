@@ -46,8 +46,8 @@ fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<PathBuf>, Vec<
 }
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ERROR = &"error".bright_red();
-    let WARNING = &"warning".bright_yellow();
+    let ERROR = &"error".bright_red().bold();
+    let WARNING = &"warning".bright_yellow().bold();
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         println!("{}", HELP);
