@@ -176,11 +176,11 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
             },
             ' ' | '\r' | '\n' | '\t' => {},
-            _ if is_xid_start(c) => {
+            '_' | '$' | _ if is_xid_start(c) => {
                 let mut s = c.to_string();
                 let start = loc.clone();
                 while let Some(c) = it.peek() {
-                    if is_xid_continue(*c) {s.push(*c);}
+                    if *c == '_' || *c == '$' || is_xid_continue(*c) {s.push(*c);}
                     else {break;}
                     step(flags.up, &mut loc, &c);
                     it.next();
