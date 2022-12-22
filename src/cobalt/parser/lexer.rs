@@ -176,6 +176,292 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
             },
             ' ' | '\r' | '\n' | '\t' => {},
+            '\'' => {
+                if let Some(c) = it.next() {
+                    let start = loc.clone();
+                    step(flags.up, &mut loc, &c);
+                    if match c {
+                        '\\' => 'early_exit: {
+                            if let Some(c) = it.next() {
+                                step(flags.up, &mut loc, &c);
+                                outs.push(Token::new(start.clone(), Char(match c {
+                                    'x' => {
+                                        let mut x = 0u32;
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char('\0')));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {x |= v;}
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        char::from_u32(x).unwrap()
+                                    },
+                                    'u' => {
+                                        let mut x = 0u32;
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char('\0')));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {x |= v;}
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        char::from_u32(x).unwrap()
+                                    },
+                                    'U' => {
+                                        let mut x = 0u32;
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char('\0')));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {x |= v;}
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        if let Some(c) = it.next() {
+                                            step(flags.up, &mut loc, &c);
+                                            if c == '\'' {
+                                                outs.push(Token::new(start, Char(char::from_u32(x).unwrap())));
+                                                break 'early_exit false;
+                                            }
+                                            if let Some(v) = c.to_digit(16) {
+                                                x <<= 4;
+                                                x |= v;
+                                            }
+                                            else {errs.push(Error::new(loc.clone(), 111, format!("unexpected character '{c}' in hex escape sequence")));}
+                                        }
+                                        else {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                        char::from_u32(x).unwrap()
+                                    },
+                                    'n' => '\n',
+                                    'r' => '\r',
+                                    't' => '\t',
+                                    'f' => '\x0c',
+                                    'v' => '\x0b',
+                                    'e' => '\x1b',
+                                    'a' => '\x0a',
+                                    x => x
+                                })));
+                                true
+                            }
+                            else {
+                                errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                false
+                            }
+                        },
+                        '\'' => {
+                            outs.push(Token::new(start.clone(), Char('\0')));
+                            errs.push(Error::new(start.clone(), 20, "empty character literal".to_string()));
+                            false
+                        },
+                        x => {
+                            outs.push(Token::new(start.clone(), Char(x)));
+                            true
+                        },
+                    } {
+                        match it.next() {
+                            Some('\'') => if flags.up {loc.col += 1;},
+                            Some(x) => {
+                                step(flags.up, &mut loc, &x);
+                                errs.push(Error::new(loc.clone(), 112, format!("expected end of character literal, got '{x}'")));
+                                loop {
+                                    match it.next() {
+                                        Some('\'') => break,
+                                        Some(_) => {},
+                                        None => {
+                                            errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()));
+                                            break 'main;
+                                        }
+                                    }
+                                }
+                            },
+                            None => errs.push(Error::new(start.clone(), 110, "unterminated character literal".to_string()))
+                        }
+                    }
+                }
+                else {
+                    errs.push(Error::new(loc.clone(), 110, "unterminated character literal".to_string()));
+                }
+            },
             '_' | '$' | _ if is_xid_start(c) => {
                 let mut s = c.to_string();
                 let start = loc.clone();
