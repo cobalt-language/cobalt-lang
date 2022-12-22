@@ -364,7 +364,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             match output_type {
-                OutputType::LLVM => write!(out, "{}", ctx.module.print_to_string())?,
+                OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
                 _ => {
                     let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
