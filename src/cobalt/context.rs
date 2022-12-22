@@ -7,7 +7,8 @@ pub struct CompCtx<'ctx> {
     vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
-    pub builder: Builder<'ctx>
+    pub builder: Builder<'ctx>,
+    pub is_const: Cell<bool>
 }
 impl<'ctx> CompCtx<'ctx> {
     pub fn new(ctx: &'ctx Context, name: &str) -> Self {
@@ -16,7 +17,8 @@ impl<'ctx> CompCtx<'ctx> {
             vars: Cell::new(MaybeUninit::new(Box::default())),
             context: ctx,
             module: ctx.create_module(name),
-            builder: ctx.create_builder()
+            builder: ctx.create_builder(),
+            is_const: Cell::new(false)
         }
     }
     pub fn with_flags(ctx: &'ctx Context, name: &str, flags: Flags) -> Self {
@@ -25,7 +27,8 @@ impl<'ctx> CompCtx<'ctx> {
             vars: Cell::new(MaybeUninit::new(Box::default())),
             context: ctx,
             module: ctx.create_module(name),
-            builder: ctx.create_builder()
+            builder: ctx.create_builder(),
+            is_const: Cell::new(false)
         }
     }
     pub fn with_vars<R, F: FnOnce(&'ctx mut VarMap<'ctx>) -> R>(&self, f: F) -> R {

@@ -707,7 +707,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                     it.next();
                 }
                 outs.push(Token::new(start, match s.as_str() {
-                    "let" | "mut" | "fn" | "cr" | "module" | "import" | "if" | "else" | "while" => Keyword(s),
+                    "let" | "mut" | "const" | "fn" | "cr" | "module" | "import" | "if" | "else" | "while" => Keyword(s),
                     _ if s.starts_with("__builtin_") => Keyword(s),
                     _ => Identifier(s)
                 }));
