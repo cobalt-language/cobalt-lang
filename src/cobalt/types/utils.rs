@@ -114,7 +114,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         (Type::Reference(l, false), r) => {
             lhs.data_type = *l;
             rhs.data_type = r;
-            if lhs.data_type.register() {
+            if !ctx.is_const.get() && lhs.data_type.register() {
                 if let Some(v) = lhs.comp_val {
                     lhs.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                 }
@@ -124,7 +124,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         (l, Type::Reference(r, _)) => {
             lhs.data_type = l;
             rhs.data_type = *r;
-            if rhs.data_type.register() {
+            if !ctx.is_const.get() && rhs.data_type.register() {
                 if let Some(v) = rhs.comp_val {
                     rhs.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                 }
@@ -137,8 +137,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {ctx.builder.build_store(l, r);}
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {ctx.builder.build_store(l, r);}
                         _ => {}
                     }
                     if let Some(v) = lhs.inter_val {
@@ -149,8 +149,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "+=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_int_add(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -165,8 +165,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "-=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_int_sub(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -181,8 +181,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "*=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_int_mul(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -198,8 +198,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     let unsigned = if let Type::Int(s, true) = r {rhs.data_type = Type::Int(s, true); true}
                     else {rhs.data_type = r; false};
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = if unsigned {ctx.builder.build_int_unsigned_div(v1, r.into_int_value(), "")} else {ctx.builder.build_int_signed_div(v1, r.into_int_value(), "")};
                             ctx.builder.build_store(l, v2);
@@ -215,8 +215,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     let unsigned = if let Type::Int(s, true) = r {rhs.data_type = Type::Int(s, true); true}
                     else {rhs.data_type = r; false};
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = if unsigned {ctx.builder.build_int_unsigned_rem(v1, r.into_int_value(), "")} else {ctx.builder.build_int_signed_rem(v1, r.into_int_value(), "")};
                             ctx.builder.build_store(l, v2);
@@ -231,8 +231,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "&=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_and(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -247,8 +247,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "|=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_or(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -263,8 +263,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "^=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_xor(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -279,8 +279,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "<<=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_left_shift(v1, r.into_int_value(), "");
                             ctx.builder.build_store(l, v2);
@@ -295,8 +295,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 ">>=" => {
                     lhs.data_type = Type::Reference(Box::new(l), true);
                     rhs.data_type = r;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             let v1 = ctx.builder.build_load(l, "").into_int_value();
                             let v2 = ctx.builder.build_right_shift(v1, r.into_int_value(), false, "");
                             ctx.builder.build_store(l, v2);
@@ -315,7 +315,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 _ => {
                     lhs.data_type = l;
                     rhs.data_type = r;
-                    if lhs.data_type.register() {
+                    if !ctx.is_const.get() && lhs.data_type.register() {
                         if let Some(v) = lhs.comp_val {
                             lhs.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                         }
@@ -325,8 +325,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             },
             (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..))) => match op {
                 "=" => {
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(IntValue(rv))) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(rv)), false) => {
                             let v1 = match r {
                                 Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), ""),
                                 _ => ctx.builder.build_unsigned_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -342,8 +342,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     Some(lhs)
                 },
                 "+=" => {
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(IntValue(rv))) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(rv)), false) => {
                             let v1 = match r {
                                 Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), ""),
                                 _ => ctx.builder.build_unsigned_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -361,8 +361,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     Some(lhs)
                 },
                 "-=" => {
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(IntValue(rv))) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(rv)), false) => {
                             let v1 = match r {
                                 Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), ""),
                                 _ => ctx.builder.build_unsigned_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -380,8 +380,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     Some(lhs)
                 },
                 "*=" => {
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(IntValue(rv))) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(rv)), false) => {
                             let v1 = match r {
                                 Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), ""),
                                 _ => ctx.builder.build_unsigned_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -399,8 +399,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     Some(lhs)
                 },
                 "/=" => {
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(IntValue(rv))) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(rv)), false) => {
                             let v1 = match r {
                                 Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), ""),
                                 _ => ctx.builder.build_unsigned_int_to_float(rv, x.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -425,8 +425,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 "=" => {
                     lhs.data_type = x;
                     rhs.data_type = y;
-                    match (lhs.comp_val, rhs.comp_val) {
-                        (Some(PointerValue(l)), Some(r)) => {
+                    match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(r), false) => {
                             ctx.builder.build_store(l, r);
                         }
                         _ => {},
@@ -449,8 +449,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }
             (Type::Pointer(b, m), r @ (Type::IntLiteral | Type::Int(..))) => match op {
                 "+=" => {
-                    match (lhs.comp_val, rhs.comp_val, b.size()) {
-                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x)) => {
+                    match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => {
                             let pt = ctx.context.i64_type();
                             let v1 = ctx.builder.build_load(l, "").into_pointer_value();
                             let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
@@ -468,8 +468,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     Some(lhs)
                 },
                 "-=" => {
-                    match (lhs.comp_val, rhs.comp_val, b.size()) {
-                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x)) => {
+                    match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => {
                             let pt = ctx.context.i64_type();
                             let v1 = ctx.builder.build_load(l, "").into_pointer_value();
                             let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
@@ -489,7 +489,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 _ => {
                     lhs.data_type = Type::Pointer(b, m);
                     rhs.data_type = r;
-                    if lhs.data_type.register() {
+                    if !ctx.is_const.get() && lhs.data_type.register() {
                         if let Some(v) = lhs.comp_val {
                             lhs.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                         }
@@ -500,7 +500,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             (l, r) => {
                 lhs.data_type = l;
                 rhs.data_type = r;
-                if lhs.data_type.register() {
+                if !ctx.is_const.get() && lhs.data_type.register() {
                     if let Some(v) = lhs.comp_val {
                         lhs.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                     }
@@ -510,8 +510,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (Type::Int(ls, lu), Type::Int(rs, ru)) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -522,8 +522,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -534,8 +534,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -546,8 +546,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_div(l, r, "")} else {ctx.builder.build_int_signed_div(l, r, "")})),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_div(l, r, "")} else {ctx.builder.build_int_signed_div(l, r, "")})),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -558,8 +558,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_rem(l, r, "")} else {ctx.builder.build_int_signed_rem(l, r, "")})),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_rem(l, r, "")} else {ctx.builder.build_int_signed_rem(l, r, "")})),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -570,8 +570,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "&" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -582,8 +582,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "|" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -594,8 +594,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -606,8 +606,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             ">>" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -618,8 +618,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "<<" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -634,8 +634,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (Type::Int(s, u), Type::IntLiteral) | (Type::IntLiteral, Type::Int(s, u)) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -646,8 +646,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -658,8 +658,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -670,8 +670,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(if u {ctx.builder.build_int_unsigned_div(l, r, "")} else {ctx.builder.build_int_signed_div(l, r, "")})),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if u {ctx.builder.build_int_unsigned_div(l, r, "")} else {ctx.builder.build_int_signed_div(l, r, "")})),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -682,8 +682,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(if u {ctx.builder.build_int_unsigned_rem(l, r, "")} else {ctx.builder.build_int_signed_rem(l, r, "")})),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if u {ctx.builder.build_int_unsigned_rem(l, r, "")} else {ctx.builder.build_int_signed_rem(l, r, "")})),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -694,8 +694,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "&" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -706,8 +706,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "|" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -718,8 +718,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -730,8 +730,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             ">>" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -742,8 +742,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "<<" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -758,8 +758,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -770,8 +770,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -782,8 +782,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -794,8 +794,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_signed_div(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_signed_div(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -806,8 +806,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_int_signed_rem(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_signed_rem(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -818,8 +818,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "&" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -830,8 +830,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "|" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -842,8 +842,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -854,8 +854,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             ">>" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -866,8 +866,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "<<" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(l)), Some(IntValue(r))) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -882,8 +882,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (Type::Pointer(b, s), Type::Int(..) | Type::IntLiteral) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val, b.size()) {
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x)) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
                         let pt = ctx.context.i64_type();
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
@@ -897,8 +897,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val, b.size()) {
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x)) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
                         let pt = ctx.context.i64_type();
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
@@ -915,8 +915,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (Type::Int(..) | Type::IntLiteral, Type::Pointer(b, s)) => match op {
             "+" => Some(Variable {
-                comp_val: match (rhs.comp_val, lhs.comp_val, b.size()) { // I just swapped the sides here
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x)) => Some({
+                comp_val: match (rhs.comp_val, lhs.comp_val, b.size(), ctx.is_const.get()) { // I just swapped the sides here
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
                         let pt = ctx.context.i64_type();
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
@@ -933,8 +933,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => Some(FloatValue(ctx.builder.build_float_add(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_add(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -945,8 +945,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => Some(FloatValue(ctx.builder.build_float_sub(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_sub(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -957,8 +957,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => Some(FloatValue(ctx.builder.build_float_mul(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_mul(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -969,8 +969,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => Some(FloatValue(ctx.builder.build_float_div(l, r, ""))),
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_div(l, r, ""))),
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -981,8 +981,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => None, // TODO: implement fmod
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => None, // TODO: implement fmod
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -993,8 +993,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(l)), Some(FloatValue(r))) => None, // TODO: implement powf
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => None, // TODO: implement powf
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1008,8 +1008,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..))) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => Some({
                         let v1 = match &r {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1026,8 +1026,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => Some({
                         let v1 = match &r {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1044,8 +1044,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => Some({
                         let v1 = match &r {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1062,8 +1062,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => Some({
                         let v1 = match &r {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(rv, l.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1080,8 +1080,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => None, // TODO: implement fmod
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => None, // TODO: implement fmod
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1092,8 +1092,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(FloatValue(lv)), Some(IntValue(rv))) => None, // TODO: implement powf
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(FloatValue(lv)), Some(IntValue(rv)), false) => None, // TODO: implement powf
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1107,8 +1107,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         },
         (l @ (Type::IntLiteral | Type::Int(..)), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => match op {
             "+" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => Some({
                         let v1 = match &l {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1125,8 +1125,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "-" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => Some({
                         let v1 = match &l {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1143,8 +1143,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "*" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => Some({
                         let v1 = match &l {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1161,8 +1161,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "/" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => Some({
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => Some({
                         let v1 = match &l {
                             Type::IntLiteral | Type::Int(_, false) => ctx.builder.build_signed_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), ""),
                             _ => ctx.builder.build_unsigned_int_to_float(lv, r.llvm_type(ctx).unwrap().into_float_type(), "")
@@ -1179,8 +1179,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "%" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => None, // TODO: implement fmod
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => None, // TODO: implement fmod
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1191,8 +1191,8 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 good: Cell::new(true)
             }),
             "^^" => Some(Variable {
-                comp_val: match (lhs.comp_val, rhs.comp_val) {
-                    (Some(IntValue(lv)), Some(FloatValue(rv))) => None, // TODO: implement powf
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(IntValue(lv)), Some(FloatValue(rv)), false) => None, // TODO: implement powf
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1223,7 +1223,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
         }
         else {
             val.data_type = *x;
-            if val.data_type.register() {
+            if !ctx.is_const.get() && val.data_type.register() {
                 if let Some(v) = val.comp_val {
                     val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                 }
@@ -1243,7 +1243,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 Type::IntLiteral => panic!("There shouldn't be a reference to an integer literal"),
                 x @ Type::Int(..) => match op {
                     "++" => {
-                        if let Some(PointerValue(v)) = val.comp_val {
+                        if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_int_value();
                             let v2 = ctx.builder.build_int_add(v1, ctx.context.i8_type().const_int(1, false), "");
                             ctx.builder.build_store(v, v2);
@@ -1255,7 +1255,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                         Some(val)
                     },
                     "--" => {
-                        if let Some(PointerValue(v)) = val.comp_val {
+                        if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_int_value();
                             let v2 = ctx.builder.build_int_sub(v1, ctx.context.i8_type().const_int(1, false), "");
                             ctx.builder.build_store(v, v2);
@@ -1268,7 +1268,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                     },
                     _ => {
                         val.data_type = x;
-                        if val.data_type.register() {
+                        if !ctx.is_const.get() && val.data_type.register() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
@@ -1279,7 +1279,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
                     "++" => {
                         val.data_type = x;
-                        if let Some(PointerValue(v)) = val.comp_val {
+                        if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_float_value();
                             let v2 = ctx.builder.build_float_add(v1, ctx.context.f64_type().const_float(1.0), "");
                             ctx.builder.build_store(v, v2);
@@ -1291,7 +1291,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                     },
                     "--" => {
                         val.data_type = x;
-                        if let Some(PointerValue(v)) = val.comp_val {
+                        if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_float_value();
                             let v2 = ctx.builder.build_float_sub(v1, ctx.context.f64_type().const_float(1.0), "");
                             ctx.builder.build_store(v, v2);
@@ -1303,7 +1303,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                     },
                     _ => {
                         val.data_type = x;
-                        if val.data_type.register() {
+                        if !ctx.is_const.get() && val.data_type.register() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
@@ -1313,12 +1313,11 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 },
                 Type::Pointer(b, m) => match op {
                     "++" => {
-                        if let (Some(PointerValue(v)), SizeType::Static(x)) = (val.comp_val, b.size()) {
-                            let x = if let SizeType::Static(x) = b.size() {x} else {return None};
+                        if let (Some(PointerValue(v)), SizeType::Static(x), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
                             let pt = ctx.context.i64_type();
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
                             let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
-                            let v3 = ctx.builder.build_int_sub(v2, pt.const_int(x, false), "");
+                            let v3 = ctx.builder.build_int_add(v2, pt.const_int(x, false), "");
                             let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), "");
                             ctx.builder.build_store(v, v4);
                         }
@@ -1329,8 +1328,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                         Some(val)
                     },
                     "--" => {
-                        if let Some(PointerValue(v)) = val.comp_val {
-                            let x = if let SizeType::Static(x) = b.size() {x} else {return None};
+                        if let (Some(PointerValue(v)), SizeType::Static(x), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
                             let pt = ctx.context.i64_type();
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
                             let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
@@ -1346,7 +1344,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                     },
                     _ => {
                         val.data_type = Type::Pointer(b, m);
-                        if val.data_type.register() {
+                        if !ctx.is_const.get() && val.data_type.register() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
@@ -1356,7 +1354,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 },
                 x => {
                     val.data_type = x;
-                    if val.data_type.register() {
+                    if !ctx.is_const.get() && val.data_type.register() {
                         if let Some(v) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                         }
@@ -1371,13 +1369,13 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 Some(val)
             },
             "-" => Some(Variable {
-                comp_val: if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
+                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::IntLiteral,
                 good: Cell::new(true)
             }),
             "~" => Some(Variable {
-                comp_val: if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
+                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::IntLiteral,
                 good: Cell::new(true)
@@ -1390,13 +1388,13 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 Some(val)
             },
             "-" => Some(Variable {
-                comp_val: if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
+                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::Int(s, u),
                 good: Cell::new(true)
             }),
             "~" => Some(Variable {
-                comp_val: if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
+                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::Int(s, u),
                 good: Cell::new(true)
@@ -1409,7 +1407,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 Some(val)
             },
             "-" => Some(Variable {
-                comp_val: if let Some(FloatValue(v)) = val.comp_val {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
+                comp_val: if let (Some(FloatValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Float(-v))} else {None},
                 data_type: x,
                 good: Cell::new(true)
