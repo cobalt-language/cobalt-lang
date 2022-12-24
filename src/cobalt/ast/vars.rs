@@ -48,12 +48,16 @@ impl AST for VarDefAST {
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
                     gv.set_constant(true);
                     let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    ctx.context.append_basic_block(f, "entry");
+                    let entry = ctx.context.append_basic_block(f, "entry");
+                    let old_ip = ctx.builder.get_insert_block();
+                    ctx.builder.position_at_end(entry);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     if let Some(v) = val.comp_val {
                         ctx.builder.build_store(gv.as_pointer_value(), v);
                         ctx.builder.build_return(None);
+                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                        else {ctx.builder.clear_insertion_position();}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
@@ -149,12 +153,16 @@ impl AST for MutDefAST {
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
                     gv.set_constant(false);
                     let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    ctx.context.append_basic_block(f, "entry");
+                    let entry = ctx.context.append_basic_block(f, "entry");
+                    let old_ip = ctx.builder.get_insert_block();
+                    ctx.builder.position_at_end(entry);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     if let Some(v) = val.comp_val {
                         ctx.builder.build_store(gv.as_pointer_value(), v);
                         ctx.builder.build_return(None);
+                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                        else {ctx.builder.clear_insertion_position();}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
