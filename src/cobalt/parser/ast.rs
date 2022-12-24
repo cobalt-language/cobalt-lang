@@ -354,7 +354,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
                     Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 => {
-                        let (rhs, mut es) = parse_binary(&toks[idx..], ops_arg, ops_it.clone());
+                        let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone());
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it)}
                         else {parse_prefix(toks)};
@@ -415,7 +415,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != toks.len() - 1 => {
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone());
                         errs.append(&mut es);
-                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[idx..], op, ops_it)}
+                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it)}
                         else {parse_prefix(toks)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
