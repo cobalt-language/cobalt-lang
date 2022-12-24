@@ -15,7 +15,7 @@ pub use error::*;
 pub use misc::*;
 pub use context::*;
 pub use ast::AST;
-pub use types::Type;
+pub use types::{Type, SizeType};
 pub use varmap::*;
 pub(crate) use ast::*;
 pub(crate) use parsed_type::ParsedType;

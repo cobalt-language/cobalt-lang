@@ -1,7 +1,8 @@
 use inkwell::types::{BasicType, BasicTypeEnum::{self, *}};
-use crate::CompCtx;
-use Type::*;
+use crate::*;
+use Type::{*, Char, Int};
 use SizeType::*;
+use std::fmt::*;
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
@@ -20,9 +21,45 @@ pub enum Type {
     IntLiteral, Char,
     Int(u64, bool),
     Float16, Float32, Float64, Float128,
-    Pointer(Box<Type>), Reference(Box<Type>), Borrow(Box<Type>),
+    Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
     Null, Module, TypeData, Array(Box<Type>, Option<u64>),
-    Function(Box<Type>, Vec<Type>)
+    Function(Box<Type>, Vec<(Type, bool)>)
+}
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            IntLiteral => write!(f, "<int literal>"),
+            Int(size, false) => write!(f, "i{size}"),
+            Int(size, true) => write!(f, "u{size}"),
+            Char => write!(f, "char"),
+            Float16 => write!(f, "f16"),
+            Float32 => write!(f, "f32"),
+            Float64 => write!(f, "f64"),
+            Float128 => write!(f, "f128"),
+            Pointer(x, false) => write!(f, "*const {}", *x),
+            Pointer(x, true) => write!(f, "*mut {}", *x),
+            Reference(x, false) => write!(f, "&const {}", *x),
+            Reference(x, true) => write!(f, "&mut {}", *x),
+            Borrow(x) => write!(f, "^{}", *x),
+            Null => write!(f, "null"),
+            Module => write!(f, "module"),
+            TypeData => write!(f, "type"),
+            Array(x, None) => write!(f, "{}[]", *x),
+            Array(x, Some(s)) => write!(f, "{}[{s}]", *x),
+            Function(ret, args) => {
+                write!(f, "fn (")?;
+                let len = args.len();
+                for (arg, ty) in args.iter() {
+                    write!(f, "{}{}", match ty {
+                        true => "mut ",
+                        false => ""
+                    }, arg)?;
+                    if len > 1 {write!(f, ", ")?}
+                }
+                write!(f, "): {}", *ret)
+            }
+        }
+    }
 }
 impl Type {
     pub fn size(&self) -> SizeType {
@@ -37,8 +74,8 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(_, _) | Module | TypeData => Meta,
-            Pointer(_) | Reference(_) => Static(8),
+            Function(..) | Module | TypeData => Meta,
+            Pointer(..) | Reference(..) => Static(8),
             Borrow(b) => b.size()
         }
     }
@@ -57,8 +94,8 @@ impl Type {
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(),
-            Function(_, _) | Module | TypeData => 0,
-            Pointer(_) | Reference(_) => 8,
+            Function(..) | Module | TypeData => 0,
+            Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align()
         }
     }
@@ -71,24 +108,26 @@ impl Type {
             Float32 => Some(FloatType(ctx.context.f32_type())),
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(_, _) | Module | TypeData => None,
+            Null | Function(..) | Module | TypeData => None,
             Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
             Array(_, None) => todo!("arrays aren't implemented yet"),
-            Pointer(b) | Reference(b) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::Generic))),
+            Pointer(b, _) | Reference(b, _) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::Generic))),
             Borrow(b) => b.llvm_type(ctx)
         }
     }
     pub fn register(&self) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(_, _) | Pointer(_) | Reference(_) => true,
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
             Borrow(b) => b.register(),
             _ => false
         }
     }
     pub fn copyable(&self) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(_, _) | Pointer(_) | Reference(_) | Borrow(_) => true,
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
             _ => false
         }
     }
 }
+#[allow(unused_variables)]
+pub mod utils;

@@ -1,6 +1,6 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
-use std::{cell::Cell, rc::Rc};
+use std::cell::Cell;
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -23,7 +23,7 @@ impl AST for VarDefAST {
                         comp_val: Some(PointerValue(gv.as_pointer_value())),
                         inter_val: val.inter_val,
                         data_type: val.data_type,
-                        good: Rc::new(Cell::new(true))
+                        good: Cell::new(true)
                     })))
                 }
                 else {
@@ -58,7 +58,7 @@ impl AST for VarDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: val.data_type,
-                            good: Rc::new(Cell::new(true))
+                            good: Cell::new(true)
                         })))
                     }
                     else {
@@ -124,7 +124,7 @@ impl AST for MutDefAST {
                         comp_val: Some(PointerValue(gv.as_pointer_value())),
                         inter_val: val.inter_val,
                         data_type: val.data_type,
-                        good: Rc::new(Cell::new(true))
+                        good: Cell::new(true)
                     })))
                 }
                 else {
@@ -159,7 +159,7 @@ impl AST for MutDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: val.data_type,
-                            good: Rc::new(Cell::new(true))
+                            good: Cell::new(true)
                         })))
                     }
                     else {
