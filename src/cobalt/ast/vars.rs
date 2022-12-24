@@ -233,3 +233,39 @@ impl AST for VarGetAST {
         writeln!(f, "varget: {}", self.name)
     }
 }
+pub struct ConstDefAST {
+    loc: Location,
+    pub name: DottedName,
+    pub val: Box<dyn AST>,
+}
+impl AST for ConstDefAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        let old_is_const = ctx.is_const.replace(true);
+        let (val, mut errs) = self.val.codegen(ctx);
+        ctx.is_const.set(old_is_const);
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val))) {
+            Ok(x) => (x.as_var().unwrap().clone(), errs),
+            Err(RedefVariable::NotAModule(x, _)) => {
+                errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                (Variable::error(), errs)
+            },
+            Err(RedefVariable::AlreadyExists(x, _)) => {
+                errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                (Variable::error(), errs)
+            },
+            Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+        }
+    }
+    fn to_code(&self) -> String {
+        format!("const {} = {}", self.name, self.val.to_code())
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "constdef: {}", self.name)?;
+        print_ast_child(f, pre, &*self.val, true)
+    }
+}
+impl ConstDefAST {
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>) -> Self {ConstDefAST {loc, name, val}}
+}
