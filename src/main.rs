@@ -333,19 +333,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let flags = cobalt::Flags::default();
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
-            let (toks, mut errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
-            let (ast, mut es) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
-            errs.append(&mut es);
-            let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            let (_, mut es) = ast.codegen(&ctx);
-            errs.append(&mut es);
+            let mut fail = false;
+            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
+            if fail {return Ok(())}
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if fail {return Ok(())}
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if fail {return Ok(())}
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
@@ -480,19 +494,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let flags = cobalt::Flags::default();
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
-            let (toks, mut errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
-            let (ast, mut es) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
-            errs.append(&mut es);
-            let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            let (_, mut es) = ast.codegen(&ctx);
-            errs.append(&mut es);
+            let mut fail = false;
+            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
+            if fail {return Ok(())}
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if fail {return Ok(())}
+            let ink_ctx = inkwell::context::Context::create();
+            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if fail {return Ok(())}
             let (libs, notfound) = libs::find_libs(linked, link_dirs);
             for nf in notfound.iter() {
                 eprintln!("couldn't find library {nf}");
