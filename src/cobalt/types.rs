@@ -51,7 +51,7 @@ impl Display for Type {
                 let len = args.len();
                 for (arg, ty) in args.iter() {
                     write!(f, "{}{}", match ty {
-                        true => "mut ",
+                        true => "const ",
                         false => ""
                     }, arg)?;
                     if len > 1 {write!(f, ", ")?}
