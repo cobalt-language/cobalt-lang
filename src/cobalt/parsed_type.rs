@@ -1,6 +1,12 @@
-use crate::{DottedName, AST};
-use std::fmt::*;
+use crate::*;
 use ParsedType::{*, Error};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntoTypeError {
+    NotAnInt(String),
+    NotCompileTime,
+    NotAModule(String),
+    DoesNotExist(String)
+}
 pub enum ParsedType {
     Error,
     Null, Bool,
@@ -8,16 +14,73 @@ pub enum ParsedType {
     UInt(u64),
     ISize, USize,
     F16, F32, F64, F128,
-    Pointer(Box<ParsedType>),
-    Reference(Box<ParsedType>),
+    Pointer(Box<ParsedType>, bool),
+    Reference(Box<ParsedType>, bool),
     Borrow(Box<ParsedType>),
     UnsizedArray(Box<ParsedType>),
     SizedArray(Box<ParsedType>, Box<dyn AST>),
     TypeOf(Box<dyn AST>),
     Other(DottedName),
 }
-impl Debug for ParsedType { // Debug isn't implemented for Box
-    fn fmt(&self, f: &mut Formatter) -> Result {
+impl ParsedType {
+    pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<super::Error>) {
+        (match self {
+            Error | Null => Ok(Type::Null),
+            Bool => Ok(Type::Int(1, false)),
+            Int(size) => Ok(Type::Int(*size, false)),
+            UInt(size) => Ok(Type::Int(*size, true)),
+            ISize => Ok(Type::Int(64, false)),
+            USize => Ok(Type::Int(64, true)),
+            F16 => Ok(Type::Float16),
+            F32 => Ok(Type::Float32),
+            F64 => Ok(Type::Float64),
+            F128 => Ok(Type::Float128),
+            Borrow(base) => {
+                let (base, errs) = base.into_type(ctx);
+                return (base.map(Box::new).map(Type::Borrow), errs)
+            },
+            Pointer(base, m) => {
+                let (base, errs) = base.into_type(ctx);
+                return (base.map(|b| Type::Pointer(Box::new(b), *m)), errs)
+            },
+            Reference(base, m) => {
+                let (base, errs) = base.into_type(ctx);
+                return (base.map(|b| Type::Reference(Box::new(b), *m)), errs)
+            },
+            UnsizedArray(base) => {
+                let (base, errs) = match base.into_type(ctx) {
+                    (Ok(base), errs) => (base, errs),
+                    (Err(err), errs) => return (Err(err), errs)
+                };
+                return (Ok(Type::Array(Box::new(base), None)), errs);
+            },
+            SizedArray(base, size) => {
+                let (base, mut errs) = match base.into_type(ctx) {
+                    (Ok(base), errs) => (base, errs),
+                    (Err(err), errs) => return (Err(err), errs)
+                };
+                let old_const = ctx.is_const.replace(true);
+                let (var, mut es) = size.codegen(ctx);
+                errs.append(&mut es);
+                let err = format!("{}", var.data_type);
+                let var = types::utils::impl_convert(var, Type::Int(64, false), ctx);
+                ctx.is_const.set(old_const);
+                return (if var.is_none() {Err(IntoTypeError::NotAnInt(err))}
+                else if let Some(InterData::Int(val)) = var.unwrap().inter_val {Ok(Type::Array(Box::new(base), Some(val as u64)))}
+                else {Err(IntoTypeError::NotCompileTime)}, errs);
+            },
+            TypeOf(expr) => {
+                let old_const = ctx.is_const.replace(true);
+                let (var, errs) = expr.codegen(ctx);
+                ctx.is_const.set(old_const);
+                return (Ok(var.data_type), errs);
+            },
+            Other(name) => Err(IntoTypeError::DoesNotExist(format!("{}", name)))
+        }, vec![])
+    }
+}
+impl std::fmt::Debug for ParsedType { // Debug isn't implemented for Box
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error => write!(f, "Error"),
             Null => write!(f, "Null"),
@@ -30,8 +93,8 @@ impl Debug for ParsedType { // Debug isn't implemented for Box
             F32 => write!(f, "F32"),
             F64 => write!(f, "F64"),
             F128 => write!(f, "F128"),
-            Pointer(base) => write!(f, "Pointer({})", *base),
-            Reference(base) => write!(f, "Reference({})", *base),
+            Pointer(base, m) => write!(f, "Pointer({}, {m})", *base),
+            Reference(base, m) => write!(f, "Reference({}, {m})", *base),
             Borrow(base) => write!(f, "Borrow({})", *base),
             UnsizedArray(base) => write!(f, "UnsizedArray({})", *base),
             SizedArray(base, ast) => write!(f, "SizedArray({base}, {})", ast.to_code()),
@@ -40,8 +103,8 @@ impl Debug for ParsedType { // Debug isn't implemented for Box
         }
     }
 }
-impl Display for ParsedType {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+impl std::fmt::Display for ParsedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error => write!(f, "<error-type>"),
             Null => write!(f, "null"),
@@ -54,8 +117,8 @@ impl Display for ParsedType {
             F32 => write!(f, "f32"),
             F64 => write!(f, "f64"),
             F128 => write!(f, "f128"),
-            Pointer(base) => write!(f, "{}*", *base),
-            Reference(base) => write!(f, "{}&", *base),
+            Pointer(base, m) => write!(f, "{} {}*", *base, if *m {"mut"} else {"const"}),
+            Reference(base, m) => write!(f, "{} {}&", *base, if *m {"mut"} else {"const"}),
             Borrow(base) => write!(f, "{}^", *base),
             UnsizedArray(base) => write!(f, "{}[]", *base),
             SizedArray(base, ast) => write!(f, "{base}[{}]", ast.to_code()),

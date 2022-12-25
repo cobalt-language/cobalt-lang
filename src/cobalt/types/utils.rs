@@ -1429,5 +1429,26 @@ pub fn post_op<'ctx>(val: Variable<'ctx>, _op: &str, _ctx: &CompCtx<'ctx>) -> Op
         _ => None
     }
 }
-pub fn impl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {todo!("variable conversions aren't implemented")}
+pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {
+    if val.data_type == target {Some(val)}
+    else {
+        match val.data_type {
+            Type::Borrow(b) => {
+                val.data_type = *b;
+                impl_convert(val, target, ctx)
+            },
+            Type::Reference(b, _) => {
+                if !ctx.is_const.get() && b.register() {
+                    if let Some(PointerValue(v)) = val.comp_val {
+                        eprintln!("loading from a reference, this may lead to a segfault");
+                        val.comp_val = Some(ctx.builder.build_load(v, ""));
+                    }
+                }
+                val.data_type = *b;
+                impl_convert(val, target, ctx)
+            },
+            _ => None
+        }
+    }
+}
 pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {todo!("variable conversions aren't implemented")}

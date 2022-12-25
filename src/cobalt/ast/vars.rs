@@ -5,6 +5,7 @@ pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
+    pub type_: Option<ParsedType>,
     pub global: bool
 }
 impl AST for VarDefAST {
@@ -14,15 +15,40 @@ impl AST for VarDefAST {
         if self.global {
             if self.val.is_const() {
                 let (val, mut errs) = self.val.codegen(ctx);
+                let t2 = val.data_type.clone();
+                let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                    let (t, mut es) = t.into_type(ctx);
+                    errs.append(&mut es);
+                    let t = match t {
+                        Ok(t) => Some(t),
+                        Err(IntoTypeError::NotAnInt(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                            None
+                        },
+                        Err(IntoTypeError::NotCompileTime) => {
+                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                            None
+                        },
+                        Err(IntoTypeError::NotAModule(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                            None
+                        },
+                        Err(IntoTypeError::DoesNotExist(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                            None
+                        }
+                    };
+                    t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
-                    let t = val.data_type.llvm_type(ctx).unwrap();
+                    let t = dt.llvm_type(ctx).unwrap();
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
                     gv.set_constant(true);
                     gv.set_initializer(&v);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(gv.as_pointer_value())),
                         inter_val: val.inter_val,
-                        data_type: val.data_type,
+                        data_type: Type::Reference(Box::new(dt), false),
                         good: Cell::new(true)
                     })))
                 }
@@ -46,18 +72,51 @@ impl AST for VarDefAST {
                 let mut errs;
                 match if let Some(t) = t.llvm_type(ctx) {
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
-                    gv.set_constant(true);
+                    gv.set_constant(false);
                     let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    ctx.context.append_basic_block(f, "entry");
+                    let entry = ctx.context.append_basic_block(f, "entry");
+                    let old_ip = ctx.builder.get_insert_block();
+                    ctx.builder.position_at_end(entry);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
+                    let t2 = val.data_type.clone();
+                    let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                        let (t, mut es) = t.into_type(ctx);
+                        errs.append(&mut es);
+                        let t = match t {
+                            Ok(t) => Some(t),
+                            Err(IntoTypeError::NotAnInt(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                None
+                            },
+                            Err(IntoTypeError::NotCompileTime) => {
+                                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                None
+                            },
+                            Err(IntoTypeError::NotAModule(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                None
+                            },
+                            Err(IntoTypeError::DoesNotExist(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                None
+                            }
+                        };
+                        t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                    }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                        errs.push(Error::new(self.loc.clone(), 311, err));
+                        Variable::error()
+                    });
                     if let Some(v) = val.comp_val {
                         ctx.builder.build_store(gv.as_pointer_value(), v);
                         ctx.builder.build_return(None);
+                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                        else {ctx.builder.clear_insertion_position();}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
-                            data_type: val.data_type,
+                            data_type: Type::Reference(Box::new(dt), false),
                             good: Cell::new(true)
                         })))
                     }
@@ -92,7 +151,7 @@ impl AST for VarDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("let {} = {}", self.name, self.val.to_code())
+        format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "vardef: {}", self.name)?;
@@ -100,12 +159,13 @@ impl AST for VarDefAST {
     }
 }
 impl VarDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, global: bool) -> Self {VarDefAST {loc, name, val, global}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, global: bool) -> Self {VarDefAST {loc, name, val, type_, global}}
 }
 pub struct MutDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
+    pub type_: Option<ParsedType>,
     pub global: bool
 }
 impl AST for MutDefAST {
@@ -115,15 +175,40 @@ impl AST for MutDefAST {
         if self.global {
             if self.val.is_const() {
                 let (val, mut errs) = self.val.codegen(ctx);
+                let t2 = val.data_type.clone();
+                let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                    let (t, mut es) = t.into_type(ctx);
+                    errs.append(&mut es);
+                    let t = match t {
+                        Ok(t) => Some(t),
+                        Err(IntoTypeError::NotAnInt(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                            None
+                        },
+                        Err(IntoTypeError::NotCompileTime) => {
+                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                            None
+                        },
+                        Err(IntoTypeError::NotAModule(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                            None
+                        },
+                        Err(IntoTypeError::DoesNotExist(name)) => {
+                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                            None
+                        }
+                    };
+                    t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
-                    let t = val.data_type.llvm_type(ctx).unwrap();
+                    let t = dt.llvm_type(ctx).unwrap();
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
                     gv.set_constant(false);
                     gv.set_initializer(&v);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(gv.as_pointer_value())),
                         inter_val: val.inter_val,
-                        data_type: val.data_type,
+                        data_type: Type::Reference(Box::new(dt), true),
                         good: Cell::new(true)
                     })))
                 }
@@ -149,16 +234,49 @@ impl AST for MutDefAST {
                     let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
                     gv.set_constant(false);
                     let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    ctx.context.append_basic_block(f, "entry");
+                    let entry = ctx.context.append_basic_block(f, "entry");
+                    let old_ip = ctx.builder.get_insert_block();
+                    ctx.builder.position_at_end(entry);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
+                    let t2 = val.data_type.clone();
+                    let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                        let (t, mut es) = t.into_type(ctx);
+                        errs.append(&mut es);
+                        let t = match t {
+                            Ok(t) => Some(t),
+                            Err(IntoTypeError::NotAnInt(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                None
+                            },
+                            Err(IntoTypeError::NotCompileTime) => {
+                                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                None
+                            },
+                            Err(IntoTypeError::NotAModule(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                None
+                            },
+                            Err(IntoTypeError::DoesNotExist(name)) => {
+                                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                None
+                            }
+                        };
+                        t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                    }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                        errs.push(Error::new(self.loc.clone(), 311, err));
+                        Variable::error()
+                    });
                     if let Some(v) = val.comp_val {
                         ctx.builder.build_store(gv.as_pointer_value(), v);
                         ctx.builder.build_return(None);
+                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                        else {ctx.builder.clear_insertion_position();}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
-                            data_type: val.data_type,
+                            data_type: Type::Reference(Box::new(dt), true),
                             good: Cell::new(true)
                         })))
                     }
@@ -193,7 +311,7 @@ impl AST for MutDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("mut {} = {}", self.name, self.val.to_code())
+        format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "mutdef: {}", self.name)?;
@@ -201,7 +319,7 @@ impl AST for MutDefAST {
     }
 }
 impl MutDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, global: bool) -> Self {MutDefAST {loc, name, val, global}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, global: bool) -> Self {MutDefAST {loc, name, val, type_, global}}
 }
 pub struct VarGetAST {
     loc: Location,
@@ -237,6 +355,7 @@ pub struct ConstDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
+    pub type_: Option<ParsedType>
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -244,6 +363,35 @@ impl AST for ConstDefAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         let old_is_const = ctx.is_const.replace(true);
         let (val, mut errs) = self.val.codegen(ctx);
+        let t2 = val.data_type.clone();
+        let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+            let (t, mut es) = t.into_type(ctx);
+            errs.append(&mut es);
+            let t = match t {
+                Ok(t) => Some(t),
+                Err(IntoTypeError::NotAnInt(name)) => {
+                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                    None
+                },
+                Err(IntoTypeError::NotCompileTime) => {
+                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                    None
+                },
+                Err(IntoTypeError::NotAModule(name)) => {
+                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                    None
+                },
+                Err(IntoTypeError::DoesNotExist(name)) => {
+                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                    None
+                }
+            };
+            t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+            errs.push(Error::new(self.loc.clone(), 311, err));
+            Variable::error()
+        });
         ctx.is_const.set(old_is_const);
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -259,7 +407,7 @@ impl AST for ConstDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("const {} = {}", self.name, self.val.to_code())
+        format!("const {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "constdef: {}", self.name)?;
@@ -267,5 +415,5 @@ impl AST for ConstDefAST {
     }
 }
 impl ConstDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>) -> Self {ConstDefAST {loc, name, val}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>) -> Self {ConstDefAST {loc, name, val, type_}}
 }

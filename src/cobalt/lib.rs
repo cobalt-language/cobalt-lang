@@ -9,7 +9,7 @@ pub mod dottedname;
 pub mod parsed_type;
 pub mod varmap;
 
-pub use parser::lexer::{lex, Token, TokenData, TokenData::*};
+pub use parser::lexer::{lex, Token, TokenData};
 pub use dottedname::*;
 pub use error::*;
 pub use misc::*;
@@ -18,4 +18,4 @@ pub use ast::AST;
 pub use types::{Type, SizeType};
 pub use varmap::*;
 pub(crate) use ast::*;
-pub(crate) use parsed_type::ParsedType;
+pub(crate) use parsed_type::*;
