@@ -1,6 +1,7 @@
 use crate::*;
 use crate::parser::ops::*;
 use TokenData::*;
+fn null() -> Box<dyn AST> {Box::new(NullAST::new(Location::null()))}
 fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (ParsedType, usize, Vec<Error>) {
     let mut idx = 1;
     if toks.len() == 0 {
@@ -270,39 +271,491 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Error::new(tok.loc.clone(), 272, format!("expected identifier or literal, got {:?}", tok.data))).collect())
     }
 }
-fn parse_postfix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    match toks.get(0).map(|x| &x.data) {
+        Some(Special('(')) => {
+            let err = if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)]; None}
+            else {Some(toks[0].loc.clone())};
+            toks = &toks[1..];
+            let (ast, _, mut errs) = parse_expr(toks, "", flags);
+            if let Some(loc) = err {
+                errs.insert(0, Error::new(loc, 250, "unmatched '('".to_string()));
+            }
+            (ast, errs)
+        },
+        Some(Special('{')) => {
+            let start = toks[0].loc.clone();
+            let mut errs = if toks.last().unwrap().data == Special('}') {toks = &toks[..(toks.len() - 1)]; vec![]}
+            else {vec![Error::new(toks[0].loc.clone(), 254, "unmatched '{'".to_string())]};
+            toks = &toks[1..];
+            let mut slices = vec![];
+            let mut it = toks.iter();
+            let mut idx = 0;
+            'main: while let Some(tok) = it.next() {
+                match &tok.data {
+                    Special('(') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('(')) => depth += 1,
+                                Some(Special(')')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 250, "unmatched '('".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special('[') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('[')) => depth += 1,
+                                Some(Special(']')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 252, "unmatched '['".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special('{') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('{')) => depth += 1,
+                                Some(Special('}')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 254, "unmatched '{'".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
+                    Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
+                    Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
+                    Special(';') => {
+                        let (s1, s2) = toks.split_at(idx);
+                        idx = 0;
+                        slices.push(s1);
+                        toks = &s2[1..];
+                    },
+                    _ => idx += 1
+                }
+            }
+            slices.push(toks);
+            (Box::new(BlockAST::new(start, slices.into_iter().map(|x| {
+                let (ast, mut es) = parse_statement(x, flags);
+                errs.append(&mut es);
+                ast
+            }).collect())), errs)
+        },
+        Some(_) => {
+            let start = toks[0].loc.clone();
+            let mut errs = vec![];
+            let mut slices = vec![];
+            let mut it = toks.iter();
+            let mut idx = 0;
+            'main: while let Some(tok) = it.next() {
+                match &tok.data {
+                    Special('(') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('(')) => depth += 1,
+                                Some(Special(')')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 250, "unmatched '('".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special('[') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('[')) => depth += 1,
+                                Some(Special(']')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 252, "unmatched '['".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special('{') => {
+                        let start = tok.loc.clone();
+                        let mut depth = 1;
+                        while depth > 0 {
+                            match it.next().map(|x| &x.data) {
+                                Some(Special('{')) => depth += 1,
+                                Some(Special('}')) => depth -= 1,
+                                None => {errs.push(Error::new(start, 254, "unmatched '{'".to_string())); break 'main;}
+                                _ => {}
+                            }
+                            idx += 1;
+                        }
+                    },
+                    Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
+                    Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
+                    Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
+                    Special(';') => {
+                        let (s1, s2) = toks.split_at(idx);
+                        idx = 0;
+                        slices.push(s1);
+                        toks = &s2[1..];
+                    },
+                    _ => idx += 1
+                }
+            }
+            slices.push(toks);
+            match slices.len() {
+                0 => (null(), errs),
+                1 => {
+                    let (ast, mut es) = parse_literals(slices[0]);
+                    errs.append(&mut es);
+                    (ast, errs)
+                },
+                _ => (Box::new(GroupAST::new(start, slices.into_iter().map(|x| {
+                    let (ast, mut es) = parse_groups(x, flags);
+                    errs.append(&mut es);
+                    ast
+                }).collect())), errs)
+            }
+        }
+        None => (null(), vec![])
+    }
+}
+fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    let mut errs = vec![];
+    let val = toks.get(0);
+    if val.is_none() {return (null(), vec![]);}
+    let val = val.unwrap();
+    let ast = 'main: {
+        match val.data {
+            Keyword(ref x) => match x.as_str() {
+                "module" => {errs.push(Error::new(toks[0].loc.clone(), 275, "local modules definitions are not allowed".to_string())); null()},
+                "import" => {
+                    let (name, idx, mut es) = parse_paths(&toks[1..], false);
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    Box::new(ImportAST::new(toks[0].loc, name))
+                },
+                "fn" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], "(=;");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Error::new(toks[0].loc.clone(), 276, "local function definitions cannot have global names".to_string()));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 234, "expected parameters or assignment after function definition".to_string()));
+                        break 'main null() as Box<dyn AST>;
+                    }
+                    match &toks[0].data {
+                        Special('(') => {
+                            let mut params = vec![];
+                            let mut defaults = None;
+                            loop {
+                                if toks.len() < 2 {
+                                    errs.push(Error::new(toks[0].loc.clone(), 238, "unexpected end of parameter list".to_string()));
+                                    break 'main null() as Box<dyn AST>;
+                                }
+                                if toks[1].data == Special(')') {
+                                    toks = &toks[2..];
+                                    break;
+                                }
+                                let param_type = if let Keyword(ref x) = toks[1].data {
+                                    match x.as_str() {
+                                        "mut" => {
+                                            toks = &toks[2..];
+                                            ParamType::Mutable
+                                        },
+                                        "const" => {
+                                            toks = &toks[2..];
+                                            ParamType::Constant
+                                        },
+                                        _ => {
+                                            toks = &toks[1..];
+                                            ParamType::Normal
+                                        }
+                                    }
+                                }
+                                else {
+                                    toks = &toks[1..];
+                                    ParamType::Normal
+                                };
+                                let id_start = toks[0].loc.clone();
+                                let (mut name, idx, mut es) = parse_path(toks, ":,)");
+                                toks = &toks[(idx - 1)..];
+                                errs.append(&mut es);
+                                if name.global || name.ids.len() > 1 {
+                                    errs.push(Error::new(id_start, 239, "function parameters cannot be global variables".to_string()));
+                                }
+                                let name = name.ids.pop().unwrap_or_else(String::new);
+                                let ty = if toks.len() > 0 && toks[0].data == Special(':') {
+                                    let (ty, idx, mut es) = parse_type(&toks[1..], ",)=", flags);
+                                    toks = &toks[idx..];
+                                    errs.append(&mut es);
+                                    ty
+                                }
+                                else {
+                                    errs.push(Error::new(toks[0].loc.clone(), 240, "function parameters must have explicit types".to_string()));
+                                    ParsedType::Error
+                                };
+                                let default = if toks.len() > 0 && toks[0].data == Operator("=".to_string()) {
+                                    if defaults == None {defaults = Some(toks[0].loc.clone());}
+                                    let (val, idx, mut es) = parse_expr(&toks[1..], ",)", flags);
+                                    toks = &toks[idx..];
+                                    errs.append(&mut es);
+                                    Some(val)
+                                }
+                                else {
+                                    if defaults.is_some() {
+                                        errs.push(Error::new(toks[0].loc.clone(), 241, "all parameters after the first default parameter must be defaults".to_string()).note(Note::new(defaults.unwrap(), "first default defined here".to_string())));
+                                    }
+                                    None
+                                };
+                                params.push((name, param_type, ty, default));
+                                if toks.len() == 0 {
+                                    errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 238, "unexpected end of parameter list".to_string()));
+                                    break 'main null();
+                                }
+                                match &toks[0].data {
+                                    Special(')') => {
+                                        toks = &toks[1..];
+                                        break;
+                                    },
+                                    Special(',') => {},
+                                    x => errs.push(Error::new(toks[0].loc.clone(), 242, format!("expected ',' or ')' after parameter, got {x:?}")))
+                                }
+                            }
+                            if toks.len() == 0 {
+                                errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 238, "expected function return type".to_string()));
+                                break 'main null();
+                            }
+                            match &toks[0].data {
+                                Special(';') => {
+                                    errs.push(Error::new(toks[0].loc.clone(), 243, "function declaration requires an explicit return type".to_string()));
+                                    toks = &toks[1..];
+                                    Box::new(FnDefAST::new(start, name, ParsedType::Error, params, Box::new(NullAST::new(toks[0].loc.clone()))))
+                                },
+                                Special(':') => {
+                                    let (ty, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                                    toks = &toks[idx..];
+                                    errs.append(&mut es);
+                                    if toks.len() == 0 {
+                                        let last = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
+                                        errs.push(Error::new(last.clone(), 244, "expected function body or semicolon".to_string()));
+                                        break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last))));
+                                    }
+                                    match &toks[0].data {
+                                        Special(';') => break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())))),
+                                        Special('{') => {
+                                            errs.push(Error::new(toks[0].loc.clone(), 245, "functions are defined with an '='".to_string()).note(Note::new(toks[0].loc.clone(), "try inserting an '='".to_string())));
+                                            let (ast, idx, mut es) = parse_expr(toks, ";", flags);
+                                            toks = &toks[idx..];
+                                            errs.append(&mut es);
+                                            Box::new(FnDefAST::new(start, name, ty, params, ast)) as Box<dyn AST>
+                                        },
+                                        Operator(x) if x == "=" => {
+                                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                            toks = &toks[(idx + 1)..];
+                                            errs.append(&mut es);
+                                            Box::new(FnDefAST::new(start, name, ty, params, ast)) as Box<dyn AST>
+                                        },
+                                        x => {errs.push(Error::new(toks[0].loc.clone(), 244, format!("expected function body or semicolon, got {x:?}"))); null() as Box<dyn AST>}
+                                    }
+                                },
+                                Operator(x) if x == "=" => {
+                                    let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                    toks = &toks[(idx + 1)..];
+                                    errs.append(&mut es);
+                                    Box::new(FnDefAST::new(start, name, ParsedType::Error, params, ast))
+                                },
+                                x => {errs.push(Error::new(toks[0].loc.clone(), 244, format!("expected function return type or body, got {x:?}"))); null()}
+                            }
+                        },
+                        Special(';') => {errs.push(Error::new(toks[0].loc.clone(), 235, "function declaration must have parameters and return type".to_string())); null()},
+                        Operator(x) if x == "=" => {errs.push(Error::new(toks[0].loc.clone(), 237, "functions cannot be assigned".to_string())); null()},
+                        _ => {errs.push(Error::new(toks[0].loc.clone(), 236, format!("expected function parameters, got {:?}", toks[0].data))); null()}
+                    }
+                },
+                "cr" => null(),
+                "let" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Error::new(toks[0].loc.clone(), 276, "local variable definitions cannot have global names".to_string()));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()));
+                        break 'main null();
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                errs.append(&mut es);
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            Box::new(VarDefAST::new(start, name, ast, Some(t), false)) as Box<dyn AST>
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            Box::new(VarDefAST::new(start, name, ast, None, false)) as Box<dyn AST>
+                        },
+                        Special(';') => {errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())); null() as Box<dyn AST>},
+                        _ => {errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data)))); null() as Box<dyn AST>}
+                    }
+                },
+                "mut" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Error::new(toks[0].loc.clone(), 276, "local variable definitions cannot have global names".to_string()));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()));
+                        break 'main null();
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                errs.append(&mut es);
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            Box::new(MutDefAST::new(start, name, ast, Some(t), false)) as Box<dyn AST>
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            Box::new(MutDefAST::new(start, name, ast, None, false)) as Box<dyn AST>
+                        },
+                        Special(';') => {errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())); null() as Box<dyn AST>},
+                        _ => {errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data)))); null() as Box<dyn AST>}
+                    }
+                },
+                "const" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Error::new(toks[0].loc.clone(), 276, "local variable definitions cannot have global names".to_string()));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    if toks.len() == 0 {
+                        errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()));
+                        break 'main null();
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                errs.append(&mut es);
+                                if toks.len() == 0 {
+                                    errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
+                                    break 'main null();
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            Box::new(ConstDefAST::new(start, name, ast, Some(t))) as Box<dyn AST>
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            errs.append(&mut es);
+                            Box::new(ConstDefAST::new(start, name, ast, None)) as Box<dyn AST>
+                        },
+                        Special(';') => {errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())); null() as Box<dyn AST>},
+                        _ => {errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data)))); null() as Box<dyn AST>}
+                    }
+                },
+                _ => {
+                    let (ast, idx, mut es) = parse_expr(toks, ";", flags);
+                    errs.append(&mut es);
+                    toks = &toks[(idx - 1)..];
+                    ast
+                }
+            },
+            _ => {
+                let (ast, idx, mut es) = parse_expr(toks, ";", flags);
+                errs.append(&mut es);
+                toks = &toks[(idx - 1)..];
+                ast
+            }
+        }
+    };
+    errs.extend(toks.iter().map(|x| Error::new(x.loc.clone(), 203, format!("expected ';', got {:?}", x.data))));
+    (ast, errs)
+}
+fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_last() {
         if let Operator(op) = &tok.data {
             return if COBALT_POST_OPS.contains(&op.as_str()) {
-                let (ast, errs) = parse_postfix(toks);
+                let (ast, errs) = parse_postfix(toks, flags);
                 (Box::new(PostfixAST::new(tok.loc.clone(), op.clone(), ast)), errs)
             }
             else {
-                let (ast, mut errs) = parse_postfix(toks);
+                let (ast, mut errs) = parse_postfix(toks, flags);
                 errs.insert(0, Error::new(tok.loc.clone(), 260, format!("{} is not a postfix operator", op)));
                 (ast, errs)
             };
         }
     }
-    parse_literals(toks)
+    parse_groups(toks, flags)
 }
-fn parse_prefix(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_first() {
         if let Operator(op) = &tok.data {
             return if COBALT_PRE_OPS.contains(&op.as_str()) {
-                let (ast, errs) = parse_prefix(toks);
+                let (ast, errs) = parse_prefix(toks, flags);
                 (Box::new(PrefixAST::new(tok.loc.clone(), op.clone(), ast)), errs)
             }
             else {
-                let (ast, mut errs) = parse_prefix(toks);
+                let (ast, mut errs) = parse_prefix(toks, flags);
                 errs.insert(0, Error::new(tok.loc.clone(), 261, format!("{} is not a prefix operator", op)));
                 (ast, errs)
             }
         };
     }
-    parse_postfix(toks)
+    parse_postfix(toks, flags)
 }
-fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if ops_arg.len() == 0 {return (Box::new(NullAST::new(toks[0].loc.clone())), vec![])}
     let (op_ty, ops) = ops_arg.split_last().unwrap();
     let mut errs = vec![];
@@ -355,10 +808,10 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
                     Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 => {
-                        let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone());
+                        let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
-                        let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it)}
-                        else {parse_prefix(toks)};
+                        let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
+                        else {parse_prefix(toks, flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -414,10 +867,10 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special('[') => {errs.push(Error::new(tok.loc.clone(), 252, "unmatched '['".to_string())); break 'main;},
                     Special('{') => {errs.push(Error::new(tok.loc.clone(), 254, "unmatched '{'".to_string())); break 'main;},
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != toks.len() - 1 => {
-                        let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone());
+                        let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
-                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it)}
-                        else {parse_prefix(toks)};
+                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
+                        else {parse_prefix(toks, flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -428,23 +881,23 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
         Op(_) => panic!("ops.split_inclusive should end in Ltr or Rtl")
     }
     if let Some(op) = ops_it.next() {
-        let (ast, mut es) = parse_binary(toks, op, ops_it);
+        let (ast, mut es) = parse_binary(toks, op, ops_it, flags);
         errs.append(&mut es);
         (ast, errs)
     }
     else {
-        let (ast, mut es) = parse_prefix(toks);
+        let (ast, mut es) = parse_prefix(toks, flags);
         errs.append(&mut es);
         (ast, errs)
     }
 }
-#[allow(unused_variables)]
 fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Error>) {
     let mut i = 0;
     let mut errs = vec![];
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Keyword(_) => {errs.push(Error::new(toks[i].loc.clone(), 280, "expected a ';' before the next expression".to_string())); break},
             Special('(') => {
                 let start = toks[i].loc.clone();
                 let mut depth = 1;
@@ -500,7 +953,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
         }
     }
     let mut it = COBALT_BIN_OPS.split_inclusive(|&x| x == Ltr || x == Rtl);
-    let (ast, mut es) = parse_binary(&toks[..i], it.next().unwrap(), it);
+    let (ast, mut es) = parse_binary(&toks[..i], it.next().unwrap(), it, flags);
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
