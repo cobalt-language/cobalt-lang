@@ -456,7 +456,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                             let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
                             let v3 = ctx.builder.build_ptr_to_int(v1, pt, "");
                             let v4 = ctx.builder.build_int_add(v3, v2, "");
-                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), "");
+                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(l, v5);
                         }
                         _ => {},
@@ -475,7 +475,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                             let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
                             let v3 = ctx.builder.build_ptr_to_int(v1, pt, "");
                             let v4 = ctx.builder.build_int_sub(v3, v2, "");
-                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), "");
+                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(l, v5);
                         }
                         _ => {},
@@ -888,7 +888,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
                         let v3 = ctx.builder.build_int_add(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), ""))
+                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
                     }),
                     _ => None
                 },
@@ -903,7 +903,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
                         let v3 = ctx.builder.build_int_sub(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), ""))
+                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
                     }),
                     _ => None
                 },
@@ -921,7 +921,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_int_mul(r, pt.const_int(x, false), "");
                         let v3 = ctx.builder.build_int_add(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), ""))
+                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
                     }),
                     _ => None
                 },
@@ -1318,7 +1318,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
                             let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
                             let v3 = ctx.builder.build_int_add(v2, pt.const_int(x, false), "");
-                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), "");
+                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(v, v4);
                         }
                         if let Some(v) = val.inter_val {
@@ -1333,7 +1333,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
                             let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
                             let v3 = ctx.builder.build_int_sub(v2, pt.const_int(x, false), "");
-                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::Generic), "");
+                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(v, v4);
                         }
                         if let Some(v) = val.inter_val {
