@@ -42,7 +42,7 @@ impl AST for VarDefAST {
                 }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -58,7 +58,7 @@ impl AST for VarDefAST {
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -108,7 +108,7 @@ impl AST for VarDefAST {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
@@ -165,7 +165,7 @@ impl AST for VarDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                         }
                     }
                 }
@@ -201,7 +201,7 @@ impl AST for VarDefAST {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
                     });
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -217,7 +217,63 @@ impl AST for VarDefAST {
             }
         }
         else {
-            todo!("local variables aren't implemented yet")
+            let (val, mut errs) = self.val.codegen(ctx);
+            let t2 = val.data_type.clone();
+            let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                let (t, mut es) = t.into_type(ctx);
+                errs.append(&mut es);
+                let t = match t {
+                    Ok(t) => Some(t),
+                    Err(IntoTypeError::NotAnInt(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        None
+                    },
+                    Err(IntoTypeError::NotCompileTime) => {
+                        errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        None
+                    },
+                    Err(IntoTypeError::NotAModule(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        None
+                    },
+                    Err(IntoTypeError::DoesNotExist(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        None
+                    }
+                };
+                t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+            }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+            let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                errs.push(Error::new(self.loc.clone(), 311, err));
+                Variable::error()
+            });
+            match if ctx.is_const.get() || val.data_type.register() {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+            } 
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
+                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |x| x.as_str()));
+                ctx.builder.build_store(a, v);
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    comp_val: Some(PointerValue(a)),
+                    inter_val: val.inter_val,
+                    data_type: Type::Reference(Box::new(val.data_type), false),
+                    good: Cell::new(true)
+                })))
+            }
+            else {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+            } {
+                Ok(x) => (x.as_var().unwrap().clone(), errs),
+                Err(RedefVariable::NotAModule(x, _)) => {
+                    errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                    (Variable::error(), errs)
+                },
+                Err(RedefVariable::AlreadyExists(x, _)) => {
+                    errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                    (Variable::error(), errs)
+                },
+                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+            }
         }
     }
     fn to_code(&self) -> String {
@@ -272,7 +328,7 @@ impl AST for MutDefAST {
                 }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -288,7 +344,7 @@ impl AST for MutDefAST {
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -338,7 +394,7 @@ impl AST for MutDefAST {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
@@ -395,7 +451,7 @@ impl AST for MutDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                         }
                     }
                 }
@@ -432,7 +488,7 @@ impl AST for MutDefAST {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
                     });
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -448,7 +504,63 @@ impl AST for MutDefAST {
             }
         }
         else {
-            todo!("local variables aren't implemented yet")
+            let (val, mut errs) = self.val.codegen(ctx);
+            let t2 = val.data_type.clone();
+            let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                let (t, mut es) = t.into_type(ctx);
+                errs.append(&mut es);
+                let t = match t {
+                    Ok(t) => Some(t),
+                    Err(IntoTypeError::NotAnInt(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        None
+                    },
+                    Err(IntoTypeError::NotCompileTime) => {
+                        errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        None
+                    },
+                    Err(IntoTypeError::NotAModule(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        None
+                    },
+                    Err(IntoTypeError::DoesNotExist(name)) => {
+                        errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        None
+                    }
+                };
+                t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+            }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+            let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                errs.push(Error::new(self.loc.clone(), 311, err));
+                Variable::error()
+            });
+            match if ctx.is_const.get() {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+            } 
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
+                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |x| x.as_str()));
+                ctx.builder.build_store(a, v);
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    comp_val: Some(PointerValue(a)),
+                    inter_val: val.inter_val,
+                    data_type: Type::Reference(Box::new(val.data_type), true),
+                    good: Cell::new(true)
+                })))
+            }
+            else {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+            } {
+                Ok(x) => (x.as_var().unwrap().clone(), errs),
+                Err(RedefVariable::NotAModule(x, _)) => {
+                    errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                    (Variable::error(), errs)
+                },
+                Err(RedefVariable::AlreadyExists(x, _)) => {
+                    errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                    (Variable::error(), errs)
+                },
+                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+            }
         }
     }
     fn to_code(&self) -> String {
@@ -534,7 +646,7 @@ impl AST for ConstDefAST {
             Variable::error()
         });
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val}))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
