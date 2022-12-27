@@ -32,6 +32,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 idx += 1;
             }
             Special('&') | Special('*') | Special('^') | Special('[') => break,
+            Keyword(x) if x == "const" || x == "mut" => break,
             x => {
                 errs.push(Error::new(toks[idx].loc.clone(), 210, format!("unexpected token {:?} in type", x)));
                 if !name.global && name.ids.len() == 1 {
@@ -89,12 +90,48 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
         match &toks[idx].data {
             Special(c) if terminators.contains(*c) => break,
             Operator(s) if s.len() == 1 && terminators.contains(unsafe {s.get_unchecked(0..1)}) => break,
+            Keyword(k) if k == "mut" => match &toks.get(idx + 1).map(|x| &x.data) {
+                Some(Operator(x)) => match x.as_str() {
+                    "&" => {out = ParsedType::Reference(Box::new(out), true); idx += 2;},
+                    "*" => {out = ParsedType::Pointer(Box::new(out), true); idx += 2;},
+                    "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 2;},
+                    "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), true)), true); idx += 2;},
+                    "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), true)), true); idx += 2;},
+                    "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 2;},
+                    _ => {
+                        errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
+                        break;
+                    }
+                },
+                _ => {
+                    errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
+                    break;
+                }
+            },
+            Keyword(k) if k == "const" => match &toks.get(idx + 1).map(|x| &x.data) {
+                Some(Operator(x)) => match x.as_str() {
+                    "&" => {out = ParsedType::Reference(Box::new(out), false); idx += 2;},
+                    "*" => {out = ParsedType::Pointer(Box::new(out), false); idx += 2;},
+                    "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 2;},
+                    "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), false)), false); idx += 2;},
+                    "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), false)), false); idx += 2;},
+                    "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 2;},
+                    _ => {
+                        errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
+                        break;
+                    }
+                },
+                _ => {
+                    errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
+                    break;
+                }
+            },
             Operator(x) => match x.as_str() {
-                "&" => {out = ParsedType::Reference(Box::new(out), true); idx += 1;},
-                "*" => {out = ParsedType::Pointer(Box::new(out), true); idx += 1;},
+                "&" => {out = ParsedType::Reference(Box::new(out), false); idx += 1;},
+                "*" => {out = ParsedType::Pointer(Box::new(out), false); idx += 1;},
                 "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 1;},
-                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), true)), true); idx += 1;},
-                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), true)), true); idx += 1;},
+                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), false)), false); idx += 1;},
+                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), false)), false); idx += 1;},
                 "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 1;},
                 _ => {
                     errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
@@ -897,7 +934,10 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
-            Keyword(_) => {errs.push(Error::new(toks[i].loc.clone(), 280, "expected a ';' before the next expression".to_string())); break},
+            Keyword(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
+                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                _ => true
+            } => {errs.push(Error::new(toks[i].loc.clone(), 280, "expected a ';' before the next expression".to_string())); break},
             Special('(') => {
                 let start = toks[i].loc.clone();
                 let mut depth = 1;
