@@ -13,7 +13,7 @@ impl AST for VarDefAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         if self.global {
-            if self.val.is_const() {
+            if self.val.is_const() && self.type_.is_none() {
                 let (val, mut errs) = self.val.codegen(ctx);
                 let t2 = val.data_type.clone();
                 let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
@@ -41,16 +41,21 @@ impl AST for VarDefAST {
                     t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                 }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
-                    let t = dt.llvm_type(ctx).unwrap();
-                    let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
-                    gv.set_constant(true);
-                    gv.set_initializer(&v);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
-                        comp_val: Some(PointerValue(gv.as_pointer_value())),
-                        inter_val: val.inter_val,
-                        data_type: Type::Reference(Box::new(dt), false),
-                        good: Cell::new(true)
-                    })))
+                    if ctx.is_const.get() {
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    }
+                    else {
+                        let t = dt.llvm_type(ctx).unwrap();
+                        let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
+                        gv.set_constant(true);
+                        gv.set_initializer(&v);
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                            comp_val: Some(PointerValue(gv.as_pointer_value())),
+                            inter_val: val.inter_val,
+                            data_type: Type::Reference(Box::new(dt), false),
+                            good: Cell::new(true)
+                        })))
+                    }
                 }
                 else {
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
@@ -71,12 +76,100 @@ impl AST for VarDefAST {
                 let t = self.val.res_type(ctx);
                 let mut errs;
                 match if let Some(t) = t.llvm_type(ctx) {
-                    let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
-                    gv.set_constant(false);
-                    let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    let entry = ctx.context.append_basic_block(f, "entry");
-                    let old_ip = ctx.builder.get_insert_block();
-                    ctx.builder.position_at_end(entry);
+                    if ctx.is_const.get() {
+                        let (val, es) = self.val.codegen(ctx);
+                        errs = es;
+                        let t2 = val.data_type.clone();
+                        let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                            let (t, mut es) = t.into_type(ctx);
+                            errs.append(&mut es);
+                            let t = match t {
+                                Ok(t) => Some(t),
+                                Err(IntoTypeError::NotAnInt(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotCompileTime) => {
+                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotAModule(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                    None
+                                },
+                                Err(IntoTypeError::DoesNotExist(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                    None
+                                }
+                            };
+                            t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            Variable::error()
+                        });
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    }
+                    else {
+                        let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
+                        gv.set_constant(false);
+                        let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        let old_ip = ctx.builder.get_insert_block();
+                        ctx.builder.position_at_end(entry);
+                        let (val, es) = self.val.codegen(ctx);
+                        errs = es;
+                        let t2 = val.data_type.clone();
+                        let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                            let (t, mut es) = t.into_type(ctx);
+                            errs.append(&mut es);
+                            let t = match t {
+                                Ok(t) => Some(t),
+                                Err(IntoTypeError::NotAnInt(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotCompileTime) => {
+                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotAModule(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                    None
+                                },
+                                Err(IntoTypeError::DoesNotExist(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                    None
+                                }
+                            };
+                            t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            Variable::error()
+                        });
+                        if let Some(v) = val.comp_val {
+                            ctx.builder.build_store(gv.as_pointer_value(), v);
+                            ctx.builder.build_return(None);
+                            if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                            else {ctx.builder.clear_insertion_position();}
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                                comp_val: Some(PointerValue(gv.as_pointer_value())),
+                                inter_val: val.inter_val,
+                                data_type: Type::Reference(Box::new(dt), false),
+                                good: Cell::new(true)
+                            })))
+                        }
+                        else {
+                            unsafe {
+                                gv.delete();
+                                f.as_global_value().delete();
+                            }
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        }
+                    }
+                }
+                else {
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
@@ -108,29 +201,6 @@ impl AST for VarDefAST {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
                     });
-                    if let Some(v) = val.comp_val {
-                        ctx.builder.build_store(gv.as_pointer_value(), v);
-                        ctx.builder.build_return(None);
-                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
-                        else {ctx.builder.clear_insertion_position();}
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
-                            comp_val: Some(PointerValue(gv.as_pointer_value())),
-                            inter_val: val.inter_val,
-                            data_type: Type::Reference(Box::new(dt), false),
-                            good: Cell::new(true)
-                        })))
-                    }
-                    else {
-                        unsafe {
-                            gv.delete();
-                            f.as_global_value().delete();
-                        }
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
-                    }
-                }
-                else {
-                    let (val, es) = self.val.codegen(ctx);
-                    errs = es;
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -173,7 +243,7 @@ impl AST for MutDefAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         if self.global {
-            if self.val.is_const() {
+            if self.val.is_const() && self.type_.is_none() {
                 let (val, mut errs) = self.val.codegen(ctx);
                 let t2 = val.data_type.clone();
                 let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
@@ -201,16 +271,21 @@ impl AST for MutDefAST {
                     t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                 }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
-                    let t = dt.llvm_type(ctx).unwrap();
-                    let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
-                    gv.set_constant(false);
-                    gv.set_initializer(&v);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
-                        comp_val: Some(PointerValue(gv.as_pointer_value())),
-                        inter_val: val.inter_val,
-                        data_type: Type::Reference(Box::new(dt), true),
-                        good: Cell::new(true)
-                    })))
+                    if ctx.is_const.get() {
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    }
+                    else {
+                        let t = dt.llvm_type(ctx).unwrap();
+                        let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
+                        gv.set_constant(false);
+                        gv.set_initializer(&v);
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                            comp_val: Some(PointerValue(gv.as_pointer_value())),
+                            inter_val: val.inter_val,
+                            data_type: Type::Reference(Box::new(dt), false),
+                            good: Cell::new(true)
+                        })))
+                    }
                 }
                 else {
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
@@ -231,18 +306,107 @@ impl AST for MutDefAST {
                 let t = self.val.res_type(ctx);
                 let mut errs;
                 match if let Some(t) = t.llvm_type(ctx) {
-                    let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
-                    gv.set_constant(false);
-                    let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                    let entry = ctx.context.append_basic_block(f, "entry");
-                    let old_ip = ctx.builder.get_insert_block();
-                    ctx.builder.position_at_end(entry);
+                    if ctx.is_const.get() {
+                        let (val, es) = self.val.codegen(ctx);
+                        errs = es;
+                        let t2 = val.data_type.clone();
+                        let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                            let (t, mut es) = t.into_type(ctx);
+                            errs.append(&mut es);
+                            let t = match t {
+                                Ok(t) => Some(t),
+                                Err(IntoTypeError::NotAnInt(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotCompileTime) => {
+                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotAModule(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                    None
+                                },
+                                Err(IntoTypeError::DoesNotExist(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                    None
+                                }
+                            };
+                            t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            Variable::error()
+                        });
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                    }
+                    else {
+                        let gv = ctx.module.add_global(t, None, format!("{}", self.name).as_str());
+                        gv.set_constant(false);
+                        let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        let old_ip = ctx.builder.get_insert_block();
+                        ctx.builder.position_at_end(entry);
+                        let (val, es) = self.val.codegen(ctx);
+                        errs = es;
+                        let t2 = val.data_type.clone();
+                        let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                            let (t, mut es) = t.into_type(ctx);
+                            errs.append(&mut es);
+                            let t = match t {
+                                Ok(t) => Some(t),
+                                Err(IntoTypeError::NotAnInt(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotCompileTime) => {
+                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                    None
+                                },
+                                Err(IntoTypeError::NotAModule(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                    None
+                                },
+                                Err(IntoTypeError::DoesNotExist(name)) => {
+                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                    None
+                                }
+                            };
+                            t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
+                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            Variable::error()
+                        });
+                        if let Some(v) = val.comp_val {
+                            ctx.builder.build_store(gv.as_pointer_value(), v);
+                            ctx.builder.build_return(None);
+                            if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+                            else {ctx.builder.clear_insertion_position();}
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                                comp_val: Some(PointerValue(gv.as_pointer_value())),
+                                inter_val: val.inter_val,
+                                data_type: Type::Reference(Box::new(dt), false),
+                                good: Cell::new(true)
+                            })))
+                        }
+                        else {
+                            unsafe {
+                                gv.delete();
+                                f.as_global_value().delete();
+                            }
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
+                        }
+                    }
+                }
+                else {
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
                     let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
                         let (t, mut es) = t.into_type(ctx);
                         errs.append(&mut es);
+                        let t2 = val.data_type.clone();
                         let t = match t {
                             Ok(t) => Some(t),
                             Err(IntoTypeError::NotAnInt(name)) => {
@@ -268,29 +432,6 @@ impl AST for MutDefAST {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
                     });
-                    if let Some(v) = val.comp_val {
-                        ctx.builder.build_store(gv.as_pointer_value(), v);
-                        ctx.builder.build_return(None);
-                        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
-                        else {ctx.builder.clear_insertion_position();}
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
-                            comp_val: Some(PointerValue(gv.as_pointer_value())),
-                            inter_val: val.inter_val,
-                            data_type: Type::Reference(Box::new(dt), true),
-                            good: Cell::new(true)
-                        })))
-                    }
-                    else {
-                        unsafe {
-                            gv.delete();
-                            f.as_global_value().delete();
-                        }
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
-                    }
-                }
-                else {
-                    let (val, es) = self.val.codegen(ctx);
-                    errs = es;
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val)))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
