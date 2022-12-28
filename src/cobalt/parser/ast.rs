@@ -36,13 +36,14 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 if !name.global && name.ids.len() == 1 {
                     match name.ids[0].as_str() {
                         "isize" => return (ParsedType::ISize, idx + 1, errs),
-                        x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::Int).or(Some(ParsedType::Error)).unwrap(), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::Int).unwrap_or(ParsedType::Error), idx + 1, errs),
                         "usize" => return (ParsedType::USize, idx + 1, errs),
-                        x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::UInt).or(Some(ParsedType::Error)).unwrap(), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::UInt).unwrap_or(ParsedType::Error), idx + 1, errs),
                         "f16" => return (ParsedType::F16, idx + 1, errs),
                         "f32" => return (ParsedType::F32, idx + 1, errs),
                         "f64" => return (ParsedType::F64, idx + 1, errs),
                         "f128" => return (ParsedType::F128, idx + 1, errs),
+                        "bool" => return (ParsedType::Bool, idx + 1, errs),
                         "null" => return (ParsedType::Null, idx + 1, errs),
                         _ => {}
                     }
@@ -54,10 +55,10 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
     let mut out = if !name.global && name.ids.len() == 1 {
         match name.ids[0].as_str() {
             "isize" => ParsedType::ISize,
-            x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => {
+            x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => {
                 let val = x[1..].parse();
                 match val {
-                    Ok(x) => ParsedType::UInt(x),
+                    Ok(x) => ParsedType::Int(x),
                     Err(x) => {
                         errs.push(Error::new(toks[0].loc.clone(), 290, format!("error when parsing integral type: {}", x)));
                         return (ParsedType::Error, idx + 1, errs)
@@ -65,10 +66,10 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 }
             },
             "usize" => ParsedType::USize,
-            x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => {
+            x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => {
                 let val = x[1..].parse();
                 match val {
-                    Ok(x) => ParsedType::Int(x),
+                    Ok(x) => ParsedType::UInt(x),
                     Err(x) => {
                         errs.push(Error::new(toks[0].loc.clone(), 290, format!("error when parsing integral type: {}", x)));
                         return (ParsedType::Error, idx + 1, errs)
@@ -80,6 +81,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
             "f64" => ParsedType::F64,
             "f128" => ParsedType::F128,
             "null" => ParsedType::Null,
+            "bool" => ParsedType::Bool,
             _ => ParsedType::Other(name)
         }
     }

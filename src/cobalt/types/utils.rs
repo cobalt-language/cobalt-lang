@@ -1437,7 +1437,20 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 val.data_type = *b;
                 impl_convert(val, target, ctx)
             },
-            Type::Reference(b, _) => {
+            Type::Reference(b, true) => {
+                if &target == &Type::Reference(b.clone(), false) {Some(Variable {data_type: Type::Reference(b, false), ..val})}
+                else {
+                    if !ctx.is_const.get() && b.register() {
+                        if let Some(PointerValue(v)) = val.comp_val {
+                            eprintln!("loading from a reference, this may lead to a segfault");
+                            val.comp_val = Some(ctx.builder.build_load(v, ""));
+                        }
+                    }
+                    val.data_type = *b;
+                    impl_convert(val, target, ctx)
+                }
+            },
+            Type::Reference(b, false) => {
                 if !ctx.is_const.get() && b.register() {
                     if let Some(PointerValue(v)) = val.comp_val {
                         eprintln!("loading from a reference, this may lead to a segfault");
@@ -1447,8 +1460,26 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 val.data_type = *b;
                 impl_convert(val, target, ctx)
             },
+            Type::IntLiteral => match target {
+                x @ Type::Int(..) => Some(Variable {
+                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
+                              else if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_z_extend(v, x.llvm_type(ctx).unwrap().into_int_type(), "")))}
+                              else {None},
+                    data_type: x,
+                    ..val
+                }),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
+                              else if let Some(IntValue(v)) = val.comp_val {Some(FloatValue(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "")))}
+                              else {None},
+                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    data_type: x,
+                    good: Cell::new(true)
+                }),
+                _ => None
+            },
             _ => None
         }
     }
 }
-pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {todo!("variable conversions aren't implemented")}
+pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {impl_convert(val, target, ctx)}
