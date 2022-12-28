@@ -31,6 +31,7 @@ type MainFn = unsafe extern "C" fn(i32, *const *const i8, *const *const i8) -> i
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ERROR = &"error".bright_red().bold();
     let WARNING = &"warning".bright_yellow().bold();
+    let MODULE = &"module".blue().bold();
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         println!("{}", HELP);
@@ -378,7 +379,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{msg}");
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
             if overall_fail {exit(101)}
@@ -561,7 +562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{msg}");
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
             if overall_fail {
@@ -667,7 +668,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if fail {eprintln!("code generation failed, the following errors might be incorrect")}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{msg}");
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
             }
             exit(if overall_fail {101} else {0})
         },
