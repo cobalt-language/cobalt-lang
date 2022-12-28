@@ -117,10 +117,42 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+                    {
+                        let mut param_count = 0;
+                        for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
+                            if name.len() == 0 {
+                                if !is_const {
+                                    param_count += 1;
+                                }
+                                continue;
+                            }
+                            if !is_const {
+                                let param = f.get_nth_param(param_count).unwrap();
+                                param.set_name(name.as_str());
+                                ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    comp_val: Some(param),
+                                    inter_val: None,
+                                    data_type: ty.clone(),
+                                    good: Cell::new(true)
+                                }))).map_or((), |x| ());
+                                param_count += 1;
+                            }
+                            else {
+                                ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    comp_val: None,
+                                    inter_val: None,
+                                    data_type: ty.clone(),
+                                    good: Cell::new(true)
+                                }))).map_or((), |x| ());
+                            }
+                        }
+                    }
                     let entry = ctx.context.append_basic_block(f, "entry");
                     ctx.builder.position_at_end(entry);
                     let (body, mut es) = self.body.codegen(ctx);
                     errs.append(&mut es);
+                    ctx.map_vars(|v| v.parent.unwrap());
                     let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
                     ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
                         errs.push(Error::new(self.loc.clone(), 311, err));
