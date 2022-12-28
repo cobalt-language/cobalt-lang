@@ -697,7 +697,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
                 errs.push(Error::new(start, 113, "unterminated string literal".to_string()));
             }
-            '_' | '$' | _ if is_xid_start(c) => {
+            _ if is_xid_start(c) || c == '$' || c == '_'  => {
                 let mut s = c.to_string();
                 let start = loc.clone();
                 while let Some(c) = it.peek() {
