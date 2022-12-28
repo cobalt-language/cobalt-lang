@@ -1,5 +1,6 @@
 use crate::*;
 use crate::parser::ops::*;
+use TokenData::*;
 fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (ParsedType, usize, Vec<Error>) {
     let mut idx = 1;
     if toks.len() == 0 {
@@ -35,13 +36,14 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 if !name.global && name.ids.len() == 1 {
                     match name.ids[0].as_str() {
                         "isize" => return (ParsedType::ISize, idx + 1, errs),
-                        x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::Int).or(Some(ParsedType::Error)).unwrap(), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::Int).unwrap_or(ParsedType::Error), idx + 1, errs),
                         "usize" => return (ParsedType::USize, idx + 1, errs),
-                        x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::UInt).or(Some(ParsedType::Error)).unwrap(), idx + 1, errs),
+                        x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => return (x[1..].parse().ok().map(ParsedType::UInt).unwrap_or(ParsedType::Error), idx + 1, errs),
                         "f16" => return (ParsedType::F16, idx + 1, errs),
                         "f32" => return (ParsedType::F32, idx + 1, errs),
                         "f64" => return (ParsedType::F64, idx + 1, errs),
                         "f128" => return (ParsedType::F128, idx + 1, errs),
+                        "bool" => return (ParsedType::Bool, idx + 1, errs),
                         "null" => return (ParsedType::Null, idx + 1, errs),
                         _ => {}
                     }
@@ -53,10 +55,10 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
     let mut out = if !name.global && name.ids.len() == 1 {
         match name.ids[0].as_str() {
             "isize" => ParsedType::ISize,
-            x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => {
+            x if x.as_bytes()[0] == 0x69 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => {
                 let val = x[1..].parse();
                 match val {
-                    Ok(x) => ParsedType::UInt(x),
+                    Ok(x) => ParsedType::Int(x),
                     Err(x) => {
                         errs.push(Error::new(toks[0].loc.clone(), 290, format!("error when parsing integral type: {}", x)));
                         return (ParsedType::Error, idx + 1, errs)
@@ -64,10 +66,10 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 }
             },
             "usize" => ParsedType::USize,
-            x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().all(|&x| x >= 0x30 && x <= 0x39) => {
+            x if x.as_bytes()[0] == 0x75 && x.as_bytes().iter().skip(1).all(|&x| x >= 0x30 && x <= 0x39) => {
                 let val = x[1..].parse();
                 match val {
-                    Ok(x) => ParsedType::Int(x),
+                    Ok(x) => ParsedType::UInt(x),
                     Err(x) => {
                         errs.push(Error::new(toks[0].loc.clone(), 290, format!("error when parsing integral type: {}", x)));
                         return (ParsedType::Error, idx + 1, errs)
@@ -79,6 +81,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
             "f64" => ParsedType::F64,
             "f128" => ParsedType::F128,
             "null" => ParsedType::Null,
+            "bool" => ParsedType::Bool,
             _ => ParsedType::Other(name)
         }
     }
@@ -88,11 +91,11 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
             Special(c) if terminators.contains(*c) => break,
             Operator(s) if s.len() == 1 && terminators.contains(unsafe {s.get_unchecked(0..1)}) => break,
             Operator(x) => match x.as_str() {
-                "&" => {out = ParsedType::Reference(Box::new(out)); idx += 1;},
-                "*" => {out = ParsedType::Pointer(Box::new(out)); idx += 1;},
+                "&" => {out = ParsedType::Reference(Box::new(out), true); idx += 1;},
+                "*" => {out = ParsedType::Pointer(Box::new(out), true); idx += 1;},
                 "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 1;},
-                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out)))); idx += 1;},
-                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out)))); idx += 1;},
+                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), true)), true); idx += 1;},
+                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), true)), true); idx += 1;},
                 "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 1;},
                 _ => {
                     errs.push(Error::new(toks[idx].loc, 220, format!("unexpected token {:?} in type", toks[idx].data)));
@@ -730,7 +733,6 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let cast_loc = toks[0].loc.clone();
                             let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
@@ -751,7 +753,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
-                            outs.push(Box::new(VarDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)), true)));
+                            outs.push(Box::new(VarDefAST::new(start, name, ast, Some(t), true)));
                         },
                         Operator(x) if x == "=" => {
                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
@@ -762,7 +764,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
                                 break;
                             }
-                            outs.push(Box::new(VarDefAST::new(start, name, ast, true)));
+                            outs.push(Box::new(VarDefAST::new(start, name, ast, None, true)));
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
                         _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
@@ -780,7 +782,6 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let cast_loc = toks[0].loc.clone();
                             let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
@@ -801,7 +802,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
-                            outs.push(Box::new(MutDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)), true)));
+                            outs.push(Box::new(MutDefAST::new(start, name, ast, Some(t), true)));
                         },
                         Operator(x) if x == "=" => {
                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
@@ -812,7 +813,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
                                 break;
                             }
-                            outs.push(Box::new(MutDefAST::new(start, name, ast, true)));
+                            outs.push(Box::new(MutDefAST::new(start, name, ast, None, true)));
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
                         _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))
@@ -830,7 +831,6 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let cast_loc = toks[0].loc.clone();
                             let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
@@ -851,7 +851,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
-                            outs.push(Box::new(ConstDefAST::new(start, name, Box::new(CastAST::new(cast_loc, ast, t)))));
+                            outs.push(Box::new(ConstDefAST::new(start, name, ast, Some(t))));
                         },
                         Operator(x) if x == "=" => {
                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
@@ -862,7 +862,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, "expected semicolon after variable definition".to_string()));
                                 break;
                             }
-                            outs.push(Box::new(ConstDefAST::new(start, name, ast)));
+                            outs.push(Box::new(ConstDefAST::new(start, name, ast, None)));
                         },
                         Special(';') => errs.push(Error::new(toks[0].loc.clone(), 233, "variable definition must have a type specification and/or value".to_string())),
                         _ => errs.push(Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, "expected type specification or value after variable definition".to_string()).note(Note::new(toks[0].loc, format!("got {:?}", toks[0].data))))

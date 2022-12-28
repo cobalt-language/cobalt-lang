@@ -6,8 +6,8 @@ pub struct ModuleAST {
 }
 impl AST for ModuleAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for module definitions")}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {todo!("code generation has not been implemented for module definitions")}
     fn to_code(&self) -> String {
         let mut out = format!("module {} {{", self.name);
         let mut count = self.vals.len();
@@ -38,8 +38,8 @@ pub struct ImportAST {
 }
 impl AST for ImportAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {panic!("code generation has not been implemented")}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {panic!("code generation has not been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for imports")}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {todo!("code generation has not been implemented for imports")}
     fn to_code(&self) -> String {
         format!("import {}", self.name)
     }
