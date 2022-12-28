@@ -195,7 +195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
-                                return Ok(())
+                                exit(1)
                             }
                             in_file = Some("-");
                         }
@@ -210,48 +210,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "emit-asm" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::Assembly);
                                 },
                                 "emit-obj" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::Object);
                                 },
                                 "emit-llvm" | "emit-ir" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::LLVM);
                                 },
                                 "emit-bc" | "emit-bitcode" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::Bitcode);
                                 },
                                 "lib" | "emit-lib" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::Library);
                                 },
                                 "exe" | "executable" | "emit-exe" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
-                                    return Ok(())
+                                    exit(1)
                                 }
                             }
                         }
@@ -267,14 +267,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     'o' => {
                                         if out_file.is_some() {
                                             eprintln!("{ERROR}: respecification of input file");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                         if let Some(x) = it.next() {
                                             out_file = Some(x.as_str());
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected file after -o flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     'l' => {
@@ -283,7 +283,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected library after -l flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     'L' => {
@@ -292,25 +292,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected directory after -L flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     't' => {
                                         if triple.is_some() {
                                             eprintln!("{ERROR}: respecification of target triple");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                         if let Some(x) = it.next().map(|x| TargetTriple::create(x)) {
                                             triple = Some(x);
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected target triple after -t flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                 }
                             }
@@ -319,7 +319,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     else {
                         if in_file.is_some() {
                             eprintln!("{ERROR}: respecification of input file");
-                            return Ok(())
+                            exit(1)
                         }
                         in_file = Some(arg.as_str());
                     }
@@ -327,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if in_file.is_none() {
                 eprintln!("{ERROR}: no input file given");
-                return Ok(())
+                exit(1)
             }
             let in_file = in_file.unwrap();
             let code = std::fs::read_to_string(in_file)?;
@@ -356,7 +356,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             fail = false;
             for err in errs {
@@ -365,7 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
@@ -376,12 +376,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{msg}");
-                return Ok(())
+                exit(101)
             }
-            if overall_fail {return Ok(())}
+            if overall_fail {exit(101)}
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
@@ -407,7 +407,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             for nf in notfound.iter() {
                                 eprintln!("couldn't find library {nf}");
                             }
-                            if notfound.len() > 0 {return Ok(())}
+                            if notfound.len() > 0 {exit(102)}
                             for lib in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
@@ -428,7 +428,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             for nf in notfound.iter() {
                                 eprintln!("couldn't find library {nf}");
                             }
-                            if notfound.len() > 0 {return Ok(())}
+                            if notfound.len() > 0 {exit(102)}
                             for lib in libs {
                                 buff += lib.to_str().expect("library path must be valid UTF-8");
                                 buff.push('\0');
@@ -456,7 +456,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
-                                return Ok(())
+                                exit(1)
                             }
                             in_file = Some("-");
                         }
@@ -470,7 +470,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
-                                    return Ok(())
+                                    exit(1)
                                 }
                             }
                         }
@@ -489,7 +489,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected library after -l flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     'L' => {
@@ -498,12 +498,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected directory after -L flag");
-                                            return Ok(())
+                                            exit(1)
                                         }
                                     },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                 }
                             }
@@ -512,7 +512,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     else {
                         if in_file.is_some() {
                             eprintln!("{ERROR}: respecification of input file");
-                            return Ok(())
+                            exit(1)
                         }
                         in_file = Some(arg.as_str());
                     }
@@ -539,7 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             fail = false;
             for err in errs {
@@ -548,7 +548,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
@@ -559,18 +559,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail && !continue_if_err {return Ok(())}
+            if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{msg}");
+                exit(101)
             }
             if overall_fail {
-                return Ok(());
+                exit(101)
             }
             let (libs, notfound) = libs::find_libs(linked, link_dirs);
             for nf in notfound.iter() {
                 eprintln!("couldn't find library {nf}");
             }
-            if notfound.len() > 0 {return Ok(())}
+            if notfound.len() > 0 {exit(102)}
             let jit = jit::LLJIT::new();
             {
                 let mut m = ink_ctx.create_module("");
@@ -591,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
-                                return Ok(())
+                                exit(1)
                             }
                             in_file = Some("-");
                         }
@@ -599,7 +600,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match &arg[2..] {
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
-                                    return Ok(())
+                                    exit(1)
                                 }
                             }
                         }
@@ -608,7 +609,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 match c {
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
-                                        return Ok(())
+                                        exit(1)
                                     }
                                 }
                             }
@@ -617,7 +618,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     else {
                         if in_file.is_some() {
                             eprintln!("{ERROR}: respecification of input file");
-                            return Ok(())
+                            exit(1)
                         }
                         in_file = Some(arg.as_str());
                     }
@@ -636,17 +637,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
             let mut fail = false;
+            let mut overall_fail = false;
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
             if fail {eprintln!("lexing failed, the following errors might be incorrect")}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
@@ -655,8 +658,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
@@ -665,6 +669,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{msg}");
             }
+            exit(if overall_fail {101} else {0})
         },
         x => {
             eprintln!("unknown subcommand '{}'", x);
