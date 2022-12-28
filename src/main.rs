@@ -186,9 +186,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut linked: Vec<&str> = vec![];
             let mut link_dirs: Vec<&str> = vec![];
             let mut triple: Option<TargetTriple> = None;
+            let mut continue_if_err = false;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
                     if arg.as_bytes()[0] == ('-' as u8) {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
@@ -199,6 +201,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
+                                "continue" => {
+                                    if continue_if_err {
+                                        eprintln!("{WARNING}: reuse of --continue flag");
+                                    }
+                                    continue_if_err = true;
+                                },
                                 "emit-asm" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
@@ -250,6 +258,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'c' => {
+                                        if continue_if_err {
+                                            eprintln!("{WARNING}: reuse of -c flag");
+                                        }
+                                        continue_if_err = true;
+                                    },
                                     'o' => {
                                         if out_file.is_some() {
                                             eprintln!("{ERROR}: respecification of input file");
@@ -334,32 +348,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
             let mut fail = false;
+            let mut overall_fail = false;
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{msg}");
+                return Ok(())
+            }
+            if overall_fail {return Ok(())}
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
@@ -425,9 +447,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut in_file: Option<&str> = None;
             let mut linked: Vec<&str> = vec![];
             let mut link_dirs: Vec<&str> = vec![];
+            let mut continue_if_err = false;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
                     if arg.as_bytes()[0] == ('-' as u8) {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
@@ -438,6 +462,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
+                                "continue" => {
+                                    if continue_if_err {
+                                        eprintln!("{WARNING}: reuse of --continue flag");
+                                    }
+                                    continue_if_err = true;
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     return Ok(())
@@ -447,6 +477,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'c' => {
+                                        if continue_if_err {
+                                            eprintln!("{WARNING}: reuse of -c flag");
+                                        }
+                                        continue_if_err = true;
+                                    },
                                     'l' => {
                                         if let Some(x) = it.next() {
                                             linked.push(x.as_str());
@@ -495,32 +531,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
             let mut fail = false;
+            let mut overall_fail = false;
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
+            fail = false;
             for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
                 for note in err.notes {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail && !continue_if_err {return Ok(())}
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{msg}");
+            }
+            if overall_fail {
+                return Ok(());
+            }
             let (libs, notfound) = libs::find_libs(linked, link_dirs);
             for nf in notfound.iter() {
                 eprintln!("couldn't find library {nf}");
@@ -598,7 +643,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail {eprintln!("lexing failed, the following errors might be incorrect")}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             for err in errs {
                 eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
@@ -606,7 +651,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail {eprintln!("parsing failed, the following errors might be incorrect")}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
             let (_, errs) = ast.codegen(&ctx);
@@ -616,7 +661,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
                 }
             }
-            if fail {return Ok(())}
+            if fail {eprintln!("code generation failed, the following errors might be incorrect")}
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{msg}");
+            }
         },
         x => {
             eprintln!("unknown subcommand '{}'", x);
