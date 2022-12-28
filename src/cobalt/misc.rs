@@ -8,6 +8,7 @@ pub struct Location {
     pub offset: u64
 }
 impl Location {
+    pub fn null() -> Self {Location::new("<anonymous>", 0, 0, 0)}
     pub fn new(file: &'static str, line: u64, col: u64, offset: u64) -> Self {Location{file, line, col, offset}}
     pub fn from_name(file: &'static str) -> Self {Location{file, line: 1, col: 1, offset: 0}}
 }
