@@ -761,7 +761,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
                 outs.push(Token::new(loc.clone(), Operator(s)));
             },
-            _ => errs.push(Error::new(loc.clone(), 101, format!("{:?} character is not allowed in a Cobalt program", c)))
+            _ => errs.push(Error::new(loc.clone(), 101, format!("source file cannot contain {:?} outside of a string", c)))
         }
         step(flags.up, &mut loc, &c);
     }
