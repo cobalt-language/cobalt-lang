@@ -697,7 +697,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
                 errs.push(Error::new(start, 113, "unterminated string literal".to_string()));
             }
-            '_' | '$' | _ if is_xid_start(c) => {
+            _ if is_xid_start(c) || c == '$' || c == '_'  => {
                 let mut s = c.to_string();
                 let start = loc.clone();
                 while let Some(c) = it.peek() {
@@ -761,7 +761,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 }
                 outs.push(Token::new(loc.clone(), Operator(s)));
             },
-            _ => errs.push(Error::new(loc.clone(), 101, format!("U+{:04X} is not a valid character", c as i32)))
+            _ => errs.push(Error::new(loc.clone(), 101, format!("{:?} character is not allowed in a Cobalt program", c)))
         }
         step(flags.up, &mut loc, &c);
     }
