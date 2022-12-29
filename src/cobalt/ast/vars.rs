@@ -39,7 +39,7 @@ impl AST for VarDefAST {
                         }
                     };
                     t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -103,7 +103,7 @@ impl AST for VarDefAST {
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
@@ -143,7 +143,7 @@ impl AST for VarDefAST {
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
@@ -196,7 +196,7 @@ impl AST for VarDefAST {
                             }
                         };
                         t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                    }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                     let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
@@ -242,7 +242,7 @@ impl AST for VarDefAST {
                     }
                 };
                 t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-            }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+            }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
             let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                 errs.push(Error::new(self.loc.clone(), 311, err));
                 Variable::error()
@@ -325,7 +325,7 @@ impl AST for MutDefAST {
                         }
                     };
                     t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -389,7 +389,7 @@ impl AST for MutDefAST {
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
@@ -429,7 +429,7 @@ impl AST for MutDefAST {
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                        }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                             errs.push(Error::new(self.loc.clone(), 311, err));
                             Variable::error()
@@ -483,7 +483,7 @@ impl AST for MutDefAST {
                             }
                         };
                         t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                    }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                     let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         Variable::error()
@@ -529,7 +529,7 @@ impl AST for MutDefAST {
                     }
                 };
                 t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-            }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+            }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
             let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
                 errs.push(Error::new(self.loc.clone(), 311, err));
                 Variable::error()
@@ -640,7 +640,7 @@ impl AST for ConstDefAST {
                 }
             };
             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-        }) {t} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+        }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
             errs.push(Error::new(self.loc.clone(), 311, err));
             Variable::error()
