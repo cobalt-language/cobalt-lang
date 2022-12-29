@@ -724,7 +724,7 @@ pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Err
                 _ => outs.push(Token::new(loc.clone(), Special('.')))
             },
             '?' | '~' => { // operator of the from @
-                outs.push(Token::new(loc.clone(), Operator("?".to_string())));
+                outs.push(Token::new(loc.clone(), Operator(c.to_string())));
             },
             '=' | '!' | '%' | '*' => { // operator of the form @, @=
                 if it.peek() == Some(&'=') {
