@@ -467,6 +467,40 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
         None => (null(), vec![])
     }
 }
+fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    match toks.last().map(|x| &x.data) {
+        Some(Special(')')) => {
+            let mut depth = 1;
+            let mut idx = toks.len() - 1;
+            while idx > 0 && depth > 0 {
+                idx -= 1;
+                match &toks[idx].data {
+                    Special(')') => depth += 1,
+                    Special('(') => depth -= 1,
+                    _ => {}
+                }
+            }
+            if idx == 0 || depth > 0{parse_groups(toks, flags)}
+            else {
+                let (target, ts) = toks.split_at(idx);
+                toks = &ts[1..];
+                let mut args = vec![];
+                let mut errs = vec![];
+                while toks.len() > 0 && toks[0].data != Special(')') {
+                    let (ast, idx, mut es) = parse_expr(toks, ",)", flags);
+                    errs.append(&mut es);
+                    args.push(ast);
+                    toks = &toks[idx..];
+                }
+                let (target, _, mut es) = parse_expr(target, "", flags);
+                errs.append(&mut es);
+                (Box::new(CallAST::new(target.loc().clone(), target, args)), errs)
+            }
+        },
+        Some(_) => parse_groups(toks, flags),
+        None => (null(), vec![]) // technically unreachable
+    }
+}
 fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     let mut errs = vec![];
     let val = toks.get(0);
@@ -776,7 +810,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
             };
         }
     }
-    parse_groups(toks, flags)
+    parse_calls(toks, flags)
 }
 fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_first() {
