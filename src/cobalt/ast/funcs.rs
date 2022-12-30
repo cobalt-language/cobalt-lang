@@ -267,3 +267,38 @@ impl AST for FnDefAST {
         print_ast_child(f, pre, &*self.body, true)
     }
 }
+pub struct CallAST {
+    loc: Location,
+    pub target: Box<dyn AST>,
+    pub args: Vec<Box<dyn AST>>
+}
+impl CallAST {
+    pub fn new(loc: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, target, args}}
+}
+impl AST for CallAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("function calls haven't been implemented")}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {todo!("function calls haven't been implemented")}
+    fn to_code(&self) -> String {
+        let mut out = format!("{}(", self.target.to_code());
+        let mut count = self.args.len();
+        for arg in self.args.iter() {
+            out += arg.to_code().as_str();
+            if count > 1 {
+                out += ", ";
+            }
+            count -= 1;
+        }
+        out + ")"
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "call")?;
+        let mut count = self.args.len();
+        print_ast_child(f, pre, &*self.target, count == 0)?;
+        for arg in self.args.iter() {
+            print_ast_child(f, pre, &**arg, count <= 1)?;
+            count -= 1;
+        }
+        Ok(())
+    }
+}
