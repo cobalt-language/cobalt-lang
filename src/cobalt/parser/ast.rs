@@ -480,7 +480,7 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) 
                     _ => {}
                 }
             }
-            if idx == 0 || depth > 0{parse_groups(toks, flags)}
+            if idx == 0 || depth > 0 {parse_groups(toks, flags)}
             else {
                 let (target, ts) = toks.split_at(idx);
                 toks = &ts[1..];

@@ -382,8 +382,18 @@ impl CallAST {
 }
 impl AST for CallAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("function calls haven't been implemented")}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {todo!("function calls haven't been implemented")}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
+        else {Type::Null}
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        let (val, mut errs) = self.target.codegen(ctx);
+        (types::utils::call(val, self.loc.clone(), self.args.iter().map(|a| {
+            let (arg, mut es) = a.codegen(ctx);
+            errs.append(&mut es);
+            (arg, a.loc())
+        }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Variable::error()}), errs)
+    }
     fn to_code(&self) -> String {
         let mut out = format!("{}(", self.target.to_code());
         let mut count = self.args.len();
