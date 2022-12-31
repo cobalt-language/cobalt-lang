@@ -344,6 +344,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special('[') => {
                         let start = tok.loc.clone();
@@ -357,6 +358,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special('{') => {
                         let start = tok.loc.clone();
@@ -370,6 +372,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
                     Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
@@ -390,80 +393,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
                 ast
             }).collect())), errs)
         },
-        Some(_) => {
-            let start = toks[0].loc.clone();
-            let mut errs = vec![];
-            let mut slices = vec![];
-            let mut it = toks.iter();
-            let mut idx = 0;
-            'main: while let Some(tok) = it.next() {
-                match &tok.data {
-                    Special('(') => {
-                        let start = tok.loc.clone();
-                        let mut depth = 1;
-                        while depth > 0 {
-                            match it.next().map(|x| &x.data) {
-                                Some(Special('(')) => depth += 1,
-                                Some(Special(')')) => depth -= 1,
-                                None => {errs.push(Error::new(start, 250, "unmatched '('".to_string())); break 'main;}
-                                _ => {}
-                            }
-                            idx += 1;
-                        }
-                    },
-                    Special('[') => {
-                        let start = tok.loc.clone();
-                        let mut depth = 1;
-                        while depth > 0 {
-                            match it.next().map(|x| &x.data) {
-                                Some(Special('[')) => depth += 1,
-                                Some(Special(']')) => depth -= 1,
-                                None => {errs.push(Error::new(start, 252, "unmatched '['".to_string())); break 'main;}
-                                _ => {}
-                            }
-                            idx += 1;
-                        }
-                    },
-                    Special('{') => {
-                        let start = tok.loc.clone();
-                        let mut depth = 1;
-                        while depth > 0 {
-                            match it.next().map(|x| &x.data) {
-                                Some(Special('{')) => depth += 1,
-                                Some(Special('}')) => depth -= 1,
-                                None => {errs.push(Error::new(start, 254, "unmatched '{'".to_string())); break 'main;}
-                                _ => {}
-                            }
-                            idx += 1;
-                        }
-                    },
-                    Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
-                    Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
-                    Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
-                    Special(';') => {
-                        let (s1, s2) = toks.split_at(idx);
-                        idx = 0;
-                        slices.push(s1);
-                        toks = &s2[1..];
-                    },
-                    _ => idx += 1
-                }
-            }
-            slices.push(toks);
-            match slices.len() {
-                0 => (null(), errs),
-                1 => {
-                    let (ast, mut es) = parse_literals(slices[0]);
-                    errs.append(&mut es);
-                    (ast, errs)
-                },
-                _ => (Box::new(GroupAST::new(start, slices.into_iter().map(|x| {
-                    let (ast, mut es) = parse_groups(x, flags);
-                    errs.append(&mut es);
-                    ast
-                }).collect())), errs)
-            }
-        }
+        Some(_) => parse_literals(toks),
         None => (null(), vec![])
     }
 }
@@ -850,6 +780,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special('[') => {
                         let start = tok.loc.clone();
@@ -863,6 +794,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special('{') => {
                         let start = tok.loc.clone();
@@ -876,6 +808,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx += 1;
                         }
+                        idx += 1;
                     },
                     Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
                     Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
@@ -884,7 +817,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
-                        else {parse_prefix(toks, flags)};
+                        else {parse_prefix(&toks[..idx], flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -943,7 +876,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
-                        else {parse_prefix(toks, flags)};
+                        else {parse_prefix(&toks[(idx + 1)..], flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -962,6 +895,84 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
         let (ast, mut es) = parse_prefix(toks, flags);
         errs.append(&mut es);
         (ast, errs)
+    }
+}
+fn parse_splits(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    let start = toks[0].loc.clone();
+    let mut errs = vec![];
+    let mut slices = vec![];
+    let mut it = toks.iter();
+    let mut idx = 0;
+    'main: while let Some(tok) = it.next() {
+        match &tok.data {
+            Special('(') => {
+                let start = tok.loc.clone();
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('(')) => depth += 1,
+                        Some(Special(')')) => depth -= 1,
+                        None => {errs.push(Error::new(start, 250, "unmatched '('".to_string())); break 'main;}
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special('[') => {
+                let start = tok.loc.clone();
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('[')) => depth += 1,
+                        Some(Special(']')) => depth -= 1,
+                        None => {errs.push(Error::new(start, 252, "unmatched '['".to_string())); break 'main;}
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special('{') => {
+                let start = tok.loc.clone();
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('{')) => depth += 1,
+                        Some(Special('}')) => depth -= 1,
+                        None => {errs.push(Error::new(start, 254, "unmatched '{'".to_string())); break 'main;}
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special(')') => {errs.push(Error::new(tok.loc.clone(), 251, "unmatched ')'".to_string())); break 'main;},
+            Special(']') => {errs.push(Error::new(tok.loc.clone(), 253, "unmatched ']'".to_string())); break 'main;},
+            Special('}') => {errs.push(Error::new(tok.loc.clone(), 255, "unmatched '}'".to_string())); break 'main;},
+            Special(';') => {
+                let (s1, s2) = toks.split_at(idx);
+                idx = 0;
+                slices.push(s1);
+                toks = &s2[1..];
+            },
+            _ => idx += 1
+        }
+    }
+    slices.push(toks);
+    match slices.len() {
+        0 => (null(), errs),
+        1 => {
+            let mut it = COBALT_BIN_OPS.split_inclusive(|&x| x == Ltr || x == Rtl);
+            let (ast, mut es) = parse_binary(slices[0], it.next().unwrap(), it, flags);
+            errs.append(&mut es);
+            (ast, errs)
+        },
+        _ => (Box::new(GroupAST::new(start, slices.into_iter().map(|x| {
+            let (ast, mut es) = parse_splits(x, flags);
+            errs.append(&mut es);
+            ast
+        }).collect())), errs)
     }
 }
 fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Error>) {
@@ -1028,8 +1039,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
             _ => i += 1
         }
     }
-    let mut it = COBALT_BIN_OPS.split_inclusive(|&x| x == Ltr || x == Rtl);
-    let (ast, mut es) = parse_binary(&toks[..i], it.next().unwrap(), it, flags);
+    let (ast, mut es) = parse_splits(&toks[..i], flags);
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
