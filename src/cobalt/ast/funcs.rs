@@ -158,17 +158,59 @@ impl AST for FnDefAST {
                         errs.push(Error::new(self.loc.clone(), 311, err));
                         llt.const_zero()
                     })));
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        inter_val: None, // TODO: constant functions
+                        inter_val: Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let (val, mut es) = a.codegen(ctx);
+                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
+                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                ctx.is_const.set(old_const);
+                                errs.append(&mut es);
+                                if let Some(val) = val {
+                                    if let Some(val) = val.inter_val {val}
+                                    else {
+                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        InterData::Null
+                                    }
+                                }
+                                else {
+                                    errs.push(Error::new(a.loc(), 311, err));
+                                    InterData::Null
+                                }
+                            })).collect()
+                        })),
                         data_type: fty,
                         good: Cell::new(true)
                     })))
                 }
                 else {
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: None,
-                        inter_val: None, // TODO: constant functions
+                        inter_val: Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let (val, mut es) = a.codegen(ctx);
+                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
+                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                ctx.is_const.set(old_const);
+                                errs.append(&mut es);
+                                if let Some(val) = val {
+                                    if let Some(val) = val.inter_val {val}
+                                    else {
+                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        InterData::Null
+                                    }
+                                }
+                                else {
+                                    errs.push(Error::new(a.loc(), 311, err));
+                                    InterData::Null
+                                }
+                            })).collect()
+                        })),
                         data_type: fty,
                         good: Cell::new(true)
                     })))
@@ -185,26 +227,89 @@ impl AST for FnDefAST {
                     let (body, mut es) = self.body.codegen(ctx);
                     errs.append(&mut es);
                     ctx.builder.build_return(None);
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        inter_val: None, // TODO: constant functions
+                        inter_val: Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let (val, mut es) = a.codegen(ctx);
+                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
+                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                ctx.is_const.set(old_const);
+                                errs.append(&mut es);
+                                if let Some(val) = val {
+                                    if let Some(val) = val.inter_val {val}
+                                    else {
+                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        InterData::Null
+                                    }
+                                }
+                                else {
+                                    errs.push(Error::new(a.loc(), 311, err));
+                                    InterData::Null
+                                }
+                            })).collect()
+                        })),
                         data_type: fty,
                         good: Cell::new(true)
                     })))
                 }
                 else {
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: None,
-                        inter_val: None, // TODO: constant functions
+                        inter_val: Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let (val, mut es) = a.codegen(ctx);
+                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
+                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                ctx.is_const.set(old_const);
+                                errs.append(&mut es);
+                                if let Some(val) = val {
+                                    if let Some(val) = val.inter_val {val}
+                                    else {
+                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        InterData::Null
+                                    }
+                                }
+                                else {
+                                    errs.push(Error::new(a.loc(), 311, err));
+                                    InterData::Null
+                                }
+                            })).collect()
+                        })),
                         data_type: fty,
                         good: Cell::new(true)
                     })))
                 }
             }
             else {
+                let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: None,
-                    inter_val: None, // TODO: constant functions
+                    inter_val: Some(InterData::Function(FnData {
+                        defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                            let old_const = ctx.is_const.replace(true);
+                            let (val, mut es) = a.codegen(ctx);
+                            let err = format!("cannot convert value of type {} to {t}", val.data_type);
+                            let val = types::utils::impl_convert(val, t.clone(), ctx);
+                            ctx.is_const.set(old_const);
+                            errs.append(&mut es);
+                            if let Some(val) = val {
+                                if let Some(val) = val.inter_val {val}
+                                else {
+                                    errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                    InterData::Null
+                                }
+                            }
+                            else {
+                                errs.push(Error::new(a.loc(), 311, err));
+                                InterData::Null
+                            }
+                        })).collect()
+                    })),
                     data_type: fty,
                     good: Cell::new(true)
                 })))
