@@ -180,7 +180,93 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if nfcl {
                 eprintln!("{ERROR}: -c switch must be followed by code");
             }
-        }
+        },
+        "llvm" if cfg!(debug_assertions) => {
+            let mut in_file: Option<&str> = None;
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if in_file.is_some() {
+                                eprintln!("{ERROR}: respecification of input file");
+                                exit(1)
+                            }
+                            in_file = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if in_file.is_some() {
+                            eprintln!("{ERROR}: respecification of input file");
+                            exit(1)
+                        }
+                        in_file = Some(arg.as_str());
+                    }
+                }
+            }
+            if in_file.is_none() {
+                eprintln!("{ERROR}: no input file given");
+                exit(1)
+            }
+            let in_file = in_file.unwrap();
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
+            let fname = unsafe {&mut FILENAME};
+            *fname = in_file.to_string();
+            let flags = cobalt::Flags::default();
+            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname), &flags);
+            let mut fail = false;
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                fail = true;
+            }
+            print!("{}", ctx.module.to_string());
+            exit(if fail {101} else {0})
+        },
         "aot" => {
             let mut output_type: Option<OutputType> = None;
             let mut in_file: Option<&str> = None;
@@ -345,7 +431,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exit(1)
             }
             let in_file = in_file.unwrap();
-            let code = std::fs::read_to_string(in_file)?;
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable => "a.out".to_string(),
