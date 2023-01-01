@@ -417,3 +417,33 @@ impl AST for CallAST {
         Ok(())
     }
 }
+pub struct IntrinsicAST {
+    loc: Location,
+    pub name: String,
+    pub args: Option<String>
+}
+impl IntrinsicAST {
+    pub fn new(loc: Location, name: String, args: Option<String>) -> Self {IntrinsicAST {loc, name, args}}
+}
+impl AST for IntrinsicAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        match self.name.as_str() {
+            "asm" => todo!("inline assembly isn't yet implemented"),
+            x => (Variable::error(), vec![Error::new(self.loc.clone(), 391, format!("unknown intrinsic {x:?}"))])
+        }
+    }
+    fn to_code(&self) -> String {self.name.clone() + self.args.as_ref().map(|x| x.as_str()).unwrap_or("")}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "intrinsic: {}", self.name)?;
+        let mut is_first = true;
+        if let Some(params) = self.args.as_ref() {
+            for line in params.split('\n') {
+                writeln!(f, "{pre}{}{line}", if is_first {"└── "} else {"    "})?;
+                is_first = false;
+            }
+        }
+        Ok(())
+    }
+}
