@@ -6,6 +6,7 @@ use std::ffi::OsString;
 mod libs;
 #[allow(dead_code)]
 mod jit;
+mod opt;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
@@ -179,7 +180,93 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if nfcl {
                 eprintln!("{ERROR}: -c switch must be followed by code");
             }
-        }
+        },
+        "llvm" if cfg!(debug_assertions) => {
+            let mut in_file: Option<&str> = None;
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if in_file.is_some() {
+                                eprintln!("{ERROR}: respecification of input file");
+                                exit(1)
+                            }
+                            in_file = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if in_file.is_some() {
+                            eprintln!("{ERROR}: respecification of input file");
+                            exit(1)
+                        }
+                        in_file = Some(arg.as_str());
+                    }
+                }
+            }
+            if in_file.is_none() {
+                eprintln!("{ERROR}: no input file given");
+                exit(1)
+            }
+            let in_file = in_file.unwrap();
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
+            let fname = unsafe {&mut FILENAME};
+            *fname = in_file.to_string();
+            let flags = cobalt::Flags::default();
+            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname), &flags);
+            let mut fail = false;
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {
+                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
+                for note in err.notes {
+                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
+                }
+            }
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                fail = true;
+            }
+            print!("{}", ctx.module.to_string());
+            exit(if fail {101} else {0})
+        },
         "aot" => {
             let mut output_type: Option<OutputType> = None;
             let mut in_file: Option<&str> = None;
@@ -188,6 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut link_dirs: Vec<&str> = vec![];
             let mut triple: Option<TargetTriple> = None;
             let mut continue_if_err = false;
+            let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -259,6 +347,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
                                     'c' => {
                                         if continue_if_err {
                                             eprintln!("{WARNING}: reuse of -c flag");
@@ -331,7 +431,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exit(1)
             }
             let in_file = in_file.unwrap();
-            let code = std::fs::read_to_string(in_file)?;
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable => "a.out".to_string(),
@@ -383,6 +487,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exit(101)
             }
             if overall_fail {exit(101)}
+            let pm = inkwell::passes::PassManager::create(());
+            opt::load_profile(profile, &pm);
+            pm.run_on(&ctx.module);
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
@@ -449,6 +556,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut linked: Vec<&str> = vec![];
             let mut link_dirs: Vec<&str> = vec![];
             let mut continue_if_err = false;
+            let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -478,6 +586,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
                                     'c' => {
                                         if continue_if_err {
                                             eprintln!("{WARNING}: reuse of -c flag");
@@ -565,9 +685,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
-            if overall_fail {
-                exit(101)
-            }
+            if overall_fail {exit(101)}
+            let pm = inkwell::passes::PassManager::create(());
+            opt::load_profile(profile, &pm);
+            pm.run_on(&ctx.module);
             let (libs, notfound) = libs::find_libs(linked, link_dirs);
             for nf in notfound.iter() {
                 eprintln!("couldn't find library {nf}");
