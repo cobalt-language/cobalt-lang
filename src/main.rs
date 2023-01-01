@@ -403,7 +403,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match output_type {
                         OutputType::Executable => {
                             out.write_all(mb.as_slice())?;
-                            let mut args = vec![OsString::from("-o"), OsString::from(out_file)];
+                            let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
                             let (libs, notfound) = libs::find_libs(linked, link_dirs);
                             for nf in notfound.iter() {
                                 eprintln!("couldn't find library {nf}");
