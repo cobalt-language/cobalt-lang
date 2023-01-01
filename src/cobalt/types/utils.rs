@@ -979,6 +979,107 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }),
             _ => None
         },
+        (l @ Type::Pointer(..), r @ Type::Pointer(..)) => match op {
+            "-" if l == r => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_sub(v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(64, false),
+                good: Cell::new(true)
+            }),
+            "<" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(ULT, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            ">" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(UGT, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            "<=" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(ULE, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            ">=" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(UGE, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            "==" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(EQ, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            "!=" => Some(Variable {
+                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                    (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
+                        let pt = ctx.context.i64_type();
+                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
+                        let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
+                        Some(IntValue(ctx.builder.build_int_compare(NE, v1, v2, "")))
+                    },
+                    _ => None
+                },
+                inter_val: None,
+                data_type: Type::Int(1, false),
+                good: Cell::new(true)
+            }),
+            _ => None
+        },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l.size() < r.size() => {
             lhs.comp_val = match (lhs.comp_val, ctx.is_const.get()) {
                 (Some(FloatValue(l)), false) => Some(FloatValue(ctx.builder.build_float_cast(l, r.llvm_type(ctx).unwrap().into_float_type(), ""))),
