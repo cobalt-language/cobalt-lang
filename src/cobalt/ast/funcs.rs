@@ -13,10 +13,11 @@ pub struct FnDefAST {
     pub name: DottedName,
     pub ret: ParsedType,
     pub params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, // parameter, mutable, type, default
-    pub body: Box<dyn AST>
+    pub body: Box<dyn AST>,
+    pub annotations: Vec<(String, Option<String>)>
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>) -> Self {FnDefAST {loc, name, ret, params, body}}
+    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -331,7 +332,9 @@ impl AST for FnDefAST {
         val
     }
     fn to_code(&self) -> String {
-        let mut out = format!("fn {}(", self.name);
+        let mut out = "".to_string();
+        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        out += format!("fn {}(", self.name).as_str();
         let mut len = self.params.len();
         for (param, param_ty, ty, default) in self.params.iter() {
             out += match param_ty {
@@ -369,6 +372,9 @@ impl AST for FnDefAST {
             len -= 1;
         }
         writeln!(f, "): {}", self.ret)?;
+        for (name, arg) in self.annotations.iter() {
+            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        }
         print_ast_child(f, pre, &*self.body, true)
     }
 }

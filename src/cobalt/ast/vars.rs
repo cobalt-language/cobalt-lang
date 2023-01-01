@@ -6,6 +6,7 @@ pub struct VarDefAST {
     pub name: DottedName,
     pub val: Box<dyn AST>,
     pub type_: Option<ParsedType>,
+    pub annotations: Vec<(String, Option<String>)>,
     pub global: bool
 }
 impl AST for VarDefAST {
@@ -277,21 +278,27 @@ impl AST for VarDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
+        let mut out = "".to_string();
+        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "vardef: {}", self.name)?;
+        for (name, arg) in self.annotations.iter() {
+            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        }
         print_ast_child(f, pre, &*self.val, true)
     }
 }
 impl VarDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, global: bool) -> Self {VarDefAST {loc, name, val, type_, global}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>)>, global: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global}}
 }
 pub struct MutDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
     pub type_: Option<ParsedType>,
+    pub annotations: Vec<(String, Option<String>)>,
     pub global: bool
 }
 impl AST for MutDefAST {
@@ -564,15 +571,20 @@ impl AST for MutDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
+        let mut out = "".to_string();
+        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        out + format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "mutdef: {}", self.name)?;
+        for (name, arg) in self.annotations.iter() {
+            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        }
         print_ast_child(f, pre, &*self.val, true)
     }
 }
 impl MutDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, global: bool) -> Self {MutDefAST {loc, name, val, type_, global}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>)>, global: bool) -> Self {MutDefAST {loc, name, val, type_, annotations, global}}
 }
 pub struct VarGetAST {
     loc: Location,
@@ -608,7 +620,8 @@ pub struct ConstDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub type_: Option<ParsedType>
+    pub type_: Option<ParsedType>,
+    pub annotations: Vec<(String, Option<String>)>
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -660,13 +673,18 @@ impl AST for ConstDefAST {
         }
     }
     fn to_code(&self) -> String {
-        format!("const {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code())
+        let mut out = "".to_string();
+        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        out + format!("const {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "constdef: {}", self.name)?;
+        writeln!(f, "const: {}", self.name)?;
+        for (name, arg) in self.annotations.iter() {
+            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        }
         print_ast_child(f, pre, &*self.val, true)
     }
 }
 impl ConstDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>) -> Self {ConstDefAST {loc, name, val, type_}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>)>) -> Self {ConstDefAST {loc, name, val, type_, annotations}}
 }
