@@ -6,6 +6,7 @@ use std::ffi::OsString;
 mod libs;
 #[allow(dead_code)]
 mod jit;
+mod opt;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
@@ -188,6 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut link_dirs: Vec<&str> = vec![];
             let mut triple: Option<TargetTriple> = None;
             let mut continue_if_err = false;
+            let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -259,6 +261,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
                                     'c' => {
                                         if continue_if_err {
                                             eprintln!("{WARNING}: reuse of -c flag");
@@ -383,6 +397,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exit(101)
             }
             if overall_fail {exit(101)}
+            let pm = inkwell::passes::PassManager::create(());
+            opt::load_profile(profile, &pm);
+            pm.run_on(&ctx.module);
             match output_type {
                 OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
                 OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
@@ -449,6 +466,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut linked: Vec<&str> = vec![];
             let mut link_dirs: Vec<&str> = vec![];
             let mut continue_if_err = false;
+            let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -478,6 +496,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
                                     'c' => {
                                         if continue_if_err {
                                             eprintln!("{WARNING}: reuse of -c flag");
@@ -565,9 +595,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
-            if overall_fail {
-                exit(101)
-            }
+            if overall_fail {exit(101)}
+            let pm = inkwell::passes::PassManager::create(());
+            opt::load_profile(profile, &pm);
+            pm.run_on(&ctx.module);
             let (libs, notfound) = libs::find_libs(linked, link_dirs);
             for nf in notfound.iter() {
                 eprintln!("couldn't find library {nf}");
