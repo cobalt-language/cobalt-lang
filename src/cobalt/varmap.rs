@@ -11,13 +11,28 @@ pub enum RedefVariable<'ctx> {
     AlreadyExists(usize, Symbol<'ctx>),
     MergeConflict(usize, HashMap<DottedName, Symbol<'ctx>>)
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+pub struct FnData {
+    pub defaults: Vec<InterData>
+}
+#[derive(Clone)]
 pub enum InterData {
     Null,
     Int(i128),
     Float(f64),
     Str(String),
     Array(Vec<InterData>),
+    Function(FnData)
+}
+impl InterData {
+    pub fn into_compiled<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
+        match self {
+            InterData::Int(val) => Some(BasicValueEnum::IntValue(ctx.context.i64_type().const_int(*val as u64, true))),
+            InterData::Float(val) => Some(BasicValueEnum::FloatValue(ctx.context.f64_type().const_float(*val))),
+            InterData::Str(val) => Some(BasicValueEnum::PointerValue(ctx.builder.build_global_string_ptr(val.as_str(), "__internals.str").as_pointer_value())),
+            _ => None
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Variable<'ctx> {
@@ -31,6 +46,7 @@ impl<'ctx> Variable<'ctx> {
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Cell::new(true)}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
+    pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),
@@ -65,7 +81,7 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
         match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, name) {
-            Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| mod_lookup(&p.symbols, name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
+            Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
             x => x
         }
     }

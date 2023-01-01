@@ -1342,7 +1342,6 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 else {
                     if !ctx.is_const.get() && b.register() {
                         if let Some(PointerValue(v)) = val.comp_val {
-                            eprintln!("loading from a reference, this may lead to a segfault");
                             val.comp_val = Some(ctx.builder.build_load(v, ""));
                         }
                     }
@@ -1353,7 +1352,6 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
             Type::Reference(b, false) => {
                 if !ctx.is_const.get() && b.register() {
                     if let Some(PointerValue(v)) = val.comp_val {
-                        eprintln!("loading from a reference, this may lead to a segfault");
                         val.comp_val = Some(ctx.builder.build_load(v, ""));
                     }
                 }
@@ -1383,3 +1381,79 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
     }
 }
 pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {impl_convert(val, target, ctx)}
+pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Error> {
+    match target.data_type {
+        Type::Borrow(b) => {
+            target.data_type = *b;
+            call(target, loc, args, ctx)
+        },
+        Type::Reference(b, _) => {
+            if !ctx.is_const.get() && b.register() {
+                if let Some(PointerValue(v)) = target.comp_val {
+                    target.comp_val = Some(ctx.builder.build_load(v, ""));
+                }
+            }
+            target.data_type = *b;
+            call(target, loc, args, ctx)
+        },
+        Type::Function(ret, params) => {
+            let mut err = Error::new(loc.clone(), 313, format!("invalid arguments to call of value of type {}", Type::Function(ret.clone(), params.clone()))).note(Note::new(args.get(0).map(|(_, l)| l.clone()).unwrap_or(loc), {
+                let mut out = format!("argument types are (");
+                args.iter().for_each(|(Variable {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
+                out.truncate(out.len() - 2);
+                out.push(')');
+                out
+            }));
+            let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
+            let mut good = true;
+            let p = params.len();
+            let mut a = args.len();
+            if a > p {
+                err.add_note(Note::new(loc, format!("expected {p} parameters, got {a}")));
+                args.truncate(p);
+                a = p;
+            }
+            let (c, r) = args.into_iter().chain(if let Some(InterData::Function(FnData {defaults, ..})) = target.inter_val {
+                let d = defaults.len();
+                defaults.iter().zip(params.iter().skip(p - d)).skip(a + d - p).map(|(v, (t, c))| (Variable {
+                    comp_val: if *c {None} else {v.into_compiled(ctx)},
+                    inter_val: Some(v.clone()),
+                    data_type: t.clone(),
+                    good: Cell::new(true)
+                }, Location::null())).collect()
+            } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
+                let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, suffixes[n % 10], v.data_type);
+                (if let Some(val) = impl_convert(v.clone(), t.clone(), ctx) {
+                    if *c && val.inter_val.is_none() {
+                        good = false;
+                        err.add_note(Note::new(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, suffixes[n % 10])));
+                    }
+                    val
+                }
+                else {
+                    good = false;
+                    err.add_note(Note::new(l.clone(), e));
+                    Variable::error()
+                }, c)
+            }).partition::<Vec<_>, _>(|(_, c)| **c);
+            if !good {return Err(err)}
+            if c.len() > 0 {return Err(Error::new(loc.clone(), 900, "constant function parameters aren't yet supported".to_string()))}
+            good = true;
+            let val: Option<inkwell::values::CallableValue> = if let Some(PointerValue(v)) = target.comp_val {v.try_into().ok()} else {None};
+            let args: Vec<inkwell::values::BasicMetadataValueEnum> = r.into_iter().filter_map(|(Variable {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
+            Ok(Variable { // maybe there should be an error if val or args fails
+                comp_val: if good {val.and_then(|v| ctx.builder.build_call(v, args.as_slice(), "").try_as_basic_value().left())} else {None},
+                inter_val: None,
+                data_type: *ret,
+                good: Cell::new(true)
+            })
+        },
+        t => Err(Error::new(loc.clone(), 313, format!("invalid arguments to call of value of type {t}")).note(Note::new(args.get(0).map(|(_, l)| l.clone()).unwrap_or(loc), {
+            let mut out = format!("argument types are (");
+            args.iter().for_each(|(Variable {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
+            out.truncate(out.len() - 2);
+            out.push(')');
+            out
+        })))
+    }
+}
