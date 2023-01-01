@@ -81,7 +81,7 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
         match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, name) {
-            Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| mod_lookup(&p.symbols, name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
+            Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
             x => x
         }
     }
