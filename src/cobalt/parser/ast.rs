@@ -307,6 +307,7 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
             }
             (Box::new(VarGetAST::new(toks[0].loc.clone(), name)), errs)
         },
+        Macro(name, args) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), args.clone())), toks.iter().skip(1).map(|tok| Error::new(tok.loc.clone(), 272, format!("unexpected token {:?} after intrinsic", tok.data))).collect()),
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Error::new(tok.loc.clone(), 272, format!("expected identifier or literal, got {:?}", tok.data))).collect())
     }
 }
