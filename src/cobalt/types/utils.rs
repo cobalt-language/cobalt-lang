@@ -976,7 +976,25 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }),
             _ => None
         },
-        (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => match op {
+        (l @ (Type::Float16 | Type::Float32 | Type::Float64), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l.size() < r.size() => {
+            lhs.comp_val = match (lhs.comp_val, ctx.is_const.get()) {
+                (Some(FloatValue(l)), false) => Some(FloatValue(ctx.builder.build_float_cast(l, r.llvm_type(ctx).unwrap().into_float_type(), ""))),
+                _ => None
+            };
+            lhs.data_type = r.clone();
+            rhs.data_type = r;
+            bin_op(lhs, rhs, op, ctx)
+        },
+        (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64)) if l.size() > r.size() => {
+            rhs.comp_val = match (rhs.comp_val, ctx.is_const.get()) {
+                (Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_cast(r, l.llvm_type(ctx).unwrap().into_float_type(), ""))),
+                _ => None
+            };
+            lhs.data_type = l.clone();
+            rhs.data_type = l;
+            bin_op(lhs, rhs, op, ctx)
+        },
+        (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l == r => match op {
             "+" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_add(l, r, ""))),

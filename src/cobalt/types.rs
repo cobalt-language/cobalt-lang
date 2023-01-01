@@ -3,7 +3,7 @@ use crate::*;
 use Type::{*, Char, Int};
 use SizeType::*;
 use std::fmt::*;
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
     Dynamic,
