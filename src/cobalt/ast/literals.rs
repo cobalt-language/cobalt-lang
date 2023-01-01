@@ -158,13 +158,13 @@ impl AST for StringLiteralAST {
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix {
-            None => Type::Pointer(Box::new(Type::Char), false),
+            None => Type::Pointer(Box::new(Type::Int(8, false)), false),
             Some(_) => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
         match self.suffix {
-            None => (Variable::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Char), false)), vec![]),
+            None => (Variable::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Int(8, false)), false)), vec![]),
             Some(ref x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for string literal"))])
         }
     }
