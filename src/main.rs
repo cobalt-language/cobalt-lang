@@ -277,6 +277,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut triple: Option<TargetTriple> = None;
             let mut continue_if_err = false;
             let mut profile: Option<&str> = None;
+            let mut linker_args: Vec<&str> = vec![];
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -410,6 +411,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             exit(1)
                                         }
                                     },
+                                    'X' => {
+                                        linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(","));
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -524,8 +528,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 args.push(parent.clone());
                                 args.push(OsString::from("-rpath"));
                                 args.push(parent);
-                                args.push(lib.file_name().unwrap().to_os_string());
+                                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
                             }
+                            args.extend(linker_args.into_iter().map(OsString::from));
                             exit(Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::Library => {

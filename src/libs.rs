@@ -5,7 +5,7 @@ pub fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<PathBuf>, 
     it.for_each(|x| {
         let path = x.into_path();
         match path.extension().and_then(std::ffi::OsStr::to_str) {
-            Some("a") | Some("so") | Some("dylib") | Some("colib") | Some("dll") | Some("lib") => {},
+            Some("so") | Some("dylib") | Some("colib") | Some("dll") => {},
             _ => return
         }
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
