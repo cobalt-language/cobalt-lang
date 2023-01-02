@@ -253,6 +253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {
                 eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
@@ -473,6 +474,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if fail && !continue_if_err {exit(101)}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&triple);
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -672,6 +674,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if fail && !continue_if_err {exit(101)}
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -779,6 +782,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if fail {eprintln!("parsing failed, the following errors might be incorrect")}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
