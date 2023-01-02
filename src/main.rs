@@ -500,9 +500,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &triple,
                         "",
                         "",
-                        inkwell::OptimizationLevel::Default,
-                        inkwell::targets::RelocMode::Default,
-                        inkwell::targets::CodeModel::Default
+                        inkwell::OptimizationLevel::None,
+                        inkwell::targets::RelocMode::PIC,
+                        inkwell::targets::CodeModel::Small
                     ).expect("failed to create target machine");
                     if output_type == OutputType::Assembly {
                         out.write_all(target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap().as_slice())?;
