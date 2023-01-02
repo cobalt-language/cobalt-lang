@@ -13,6 +13,7 @@ static mut FILENAME: String = String::new();
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
+    ExeLibc,
     Library,
     Object,
     Assembly,
@@ -340,6 +341,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
+                                "exe-libc" | "emit-exe-libc" => {
+                                    if output_type.is_some() {
+                                        eprintln!("{ERROR}: respecification of output type");
+                                        exit(1)
+                                    }
+                                    output_type = Some(OutputType::ExeLibc);
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     exit(1)
@@ -443,7 +451,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
-                OutputType::Executable => "a.out".to_string(),
+                OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
                 OutputType::Library => format!("lib{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
@@ -532,6 +540,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             args.extend(linker_args.into_iter().map(OsString::from));
                             exit(Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0))
+                        },
+                        OutputType::ExeLibc => {
+                            out.write_all(mb.as_slice())?;
+                            let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
+                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
+                            for nf in notfound.iter() {
+                                eprintln!("couldn't find library {nf}");
+                            }
+                            if notfound.len() > 0 {exit(102)}
+                            for lib in libs {
+                                let parent = lib.parent().unwrap().as_os_str().to_os_string();
+                                args.push(OsString::from("-L"));
+                                args.push(parent.clone());
+                                args.push(OsString::from("-rpath"));
+                                args.push(parent);
+                                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
+                            }
+                            args.extend(linker_args.into_iter().map(OsString::from));
+                            exit( // search for cc, then, clang, and finally gcc
+                                Command::new("cc").args(args.iter()).status()
+                                .or_else(|_| Command::new("clang").args(args.iter()).status())
+                                .or_else(|_| Command::new("gcc").args(args.iter()).status())
+                                .ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::Library => {
                             writeln!(out, "!<arch>")?;
