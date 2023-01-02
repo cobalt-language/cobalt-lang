@@ -1,4 +1,4 @@
-use crate::{Location, Flags, Error};
+use crate::*;
 use std::fmt::{self, Display, Formatter};
 use unicode_ident::*;
 #[derive(Clone, PartialEq, Debug)]
@@ -10,7 +10,8 @@ pub enum TokenData {
     Special(char),
     Operator(String),
     Identifier(String),
-    Keyword(String)
+    Keyword(String),
+    Macro(String, Option<String>)
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Token {
@@ -103,12 +104,82 @@ fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut L
         _ => unreachable!("invalid first character to parse_num")
     }
 }
+fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut Location, flags: &Flags) -> (Vec<Token>, Vec<Error>) {
+    let mut name = "".to_string();
+    let start = loc.clone();
+    let mut parse_params = false;
+    while let Some(c) = it.peek() {
+        parse_params = *c == '(';
+        if !(is_xid_continue(*c) || *c == '$' || *c == '_') {break}
+        step(flags.up, loc, c);
+        name.push(*c);
+        it.next();
+    }
+    if name.len() == 0 {return (vec![], vec![Error::new(start, 104, "expected a macro name".to_string())])}
+    let mut errs = vec![];
+    let mut param_start = None;
+    let params = if parse_params {
+        let mut params = "".to_string();
+        let mut depth = 1;
+        param_start = Some(loc.clone());
+        it.next();
+        loop {
+            if depth == 0 {break}
+            match it.next() {
+                Some('(') => {params.push('('); depth += 1; step(flags.up, loc, &'(')},
+                Some(')') => {if depth > 1 {params.push(')')}; depth -= 1; step(flags.up, loc, &')')},
+                Some(c) => {params.push(c); step(flags.up, loc, &c)},
+                None => {
+                    errs.push(Error::new(loc.clone(), 103, "unclosed macro arguments".to_string()).note(Note::new(param_start.clone().unwrap(), "argument list started here".to_string())));
+                    break;
+                }
+            }
+        }
+        Some(params)
+    }
+    else {None};
+    (match name.as_str() {
+        "version" => match params.as_ref().map(|x| x.as_str()) {
+            Some("major") => vec![Token::new(param_start.unwrap(), Int(env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0)))],
+            Some("minor") => vec![Token::new(param_start.unwrap(), Int(env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0)))],
+            Some("patch") => vec![Token::new(param_start.unwrap(), Int(env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0)))],
+            Some("array") => vec![
+                Token::new(param_start.clone().unwrap(), Special('[')),
+                Token::new(param_start.clone().unwrap(), Int(env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0))),
+                Token::new(param_start.clone().unwrap(), Special(',')),
+                Token::new(param_start.clone().unwrap(), Int(env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0))),
+                Token::new(param_start.clone().unwrap(), Special(',')),
+                Token::new(param_start.clone().unwrap(), Int(env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0))),
+                Token::new(param_start.clone().unwrap(), Special(']'))
+            ],
+            None | Some("") => vec![Token::new(start, Str(env!("CARGO_PKG_VERSION").to_string()))],
+            Some(x) => {
+                errs.push(Error::new(param_start.unwrap(), 110, format!("unknown version specification {x}")));
+                vec![]
+            }
+        },
+        "print_toks" if cfg!(debug_assertions) => {
+            println!("debug toks @{start}");
+            let flags = Flags {up: false, ..flags.clone()};
+            let (toks, mut es) = lex(params.as_ref().map(|x| x.as_str()).unwrap_or(""), start, &flags);
+            for tok in toks.iter() {println!("\t{tok:#}")}
+            errs.append(&mut es);
+            toks
+        },
+        _ => vec![Token::new(start, Macro(name, params))]
+    }, errs)
+}
 pub fn lex(data: &str, mut loc: Location, flags: &Flags) -> (Vec<Token>, Vec<Error>) {
     let mut outs = vec![];
     let mut errs = vec![];
     let mut it = data.chars().peekable(); 
     'main: while let Some(c) = it.next() {
         match c {
+            '@' => {
+                let (mut ts, mut es) = parse_macro(&mut it, &mut loc, flags);
+                outs.append(&mut ts);
+                errs.append(&mut es);
+            },
             '#' => {
                 let start = loc.clone();
                 match it.next() {
