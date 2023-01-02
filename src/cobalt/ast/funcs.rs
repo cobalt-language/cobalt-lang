@@ -2,6 +2,7 @@ use crate::*;
 use std::cell::Cell;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
+use inkwell::module::Linkage::*;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
@@ -110,6 +111,101 @@ impl AST for FnDefAST {
                 }
             }
         }, pt == &ParamType::Constant)).collect());
+        let mut errs = vec![];
+        let mut link_type = None;
+        let mut linkas = None;
+        let mut is_extern = false;
+        let mut cconv: Option<u32> = None;
+        for (ann, arg) in self.annotations.iter() {
+            match ann.as_str() {
+                "link" => {
+                    if link_type.is_some() {
+                        errs.push(Error::new(self.loc.clone(), 414, "respecification of linkage type".to_string()))
+                    }
+                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                        None => {errs.push(Error::new(self.loc.clone(), 412, "@link annotation requires an argument".to_string())); None},
+                        Some("extern") | Some("external") => Some(External),
+                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("intern") | Some("internal") => Some(Internal),
+                        Some("private") => Some(Private),
+                        Some("weak") => Some(WeakAny),
+                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
+                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("common") => Some(Common),
+                        Some(x) => {errs.push(Error::new(self.loc.clone(), 413, format!("unknown link type {x:?} for @link annotation"))); None}
+                    }
+                },
+                "linkas" => {
+                    if linkas.is_some() {
+                        errs.push(Error::new(self.loc.clone(), 416, "respecification of @linkas annotation".to_string()))
+                    }
+                    if let Some(arg) = arg {
+                        linkas = Some(arg.clone())
+                    }
+                    else {
+                        errs.push(Error::new(self.loc.clone(), 415, "@linkas annotation requires an argument".to_string()))
+                    }
+                },
+                "cconv" => {
+                    if cconv.is_some() {
+                        errs.push(Error::new(self.loc.clone(), 420, "respecification of calling convention".to_string()))
+                    }
+                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                        None => {errs.push(Error::new(self.loc.clone(), 421, "@cconv annotation requires an argument".to_string())); None},
+                        Some("c") | Some("C") => Some(0),
+                        Some("fast") | Some("Fast") => Some(8),
+                        Some("cold") | Some("Cold") => Some(9),
+                        Some("ghc") | Some("GHC") => Some(10),
+                        Some("hipe") | Some("HiPE") => Some(11),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("anyreg") | Some("AnyReg") => Some(13),
+                        Some("preservemost") | Some("PreserveMost") => Some(14),
+                        Some("preserveall") | Some("PreserveAll") => Some(15),
+                        Some("swift") | Some("Swift") => Some(16),
+                        Some("tail") | Some("Tail") => Some(18),
+                        Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
+                        Some(x) => {
+                            match x.parse::<u32>() {
+                                Ok(v) => Some(v),
+                                Err(_) => {errs.push(Error::new(self.loc.clone(), 422, format!("unknown calling convention {x:?} for @cconv annotation"))); None}
+                            }
+                        }
+                    });
+                },
+                "extern" => {
+                    if is_extern {
+                        errs.push(Error::new(self.loc.clone(), 22, "specifying the @extern annotation multiple times doesn't do anything".to_string()))
+                    }
+                    is_extern = true;
+                    if cconv.is_some() {
+                        errs.push(Error::new(self.loc.clone(), 420, "respecification of calling convention".to_string()))
+                    }
+                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                        None => {errs.pop(); None},
+                        Some("c") | Some("C") => Some(0),
+                        Some("fast") | Some("Fast") => Some(8),
+                        Some("cold") | Some("Cold") => Some(9),
+                        Some("ghc") | Some("GHC") => Some(10),
+                        Some("hipe") | Some("HiPE") => Some(11),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("anyreg") | Some("AnyReg") => Some(13),
+                        Some("preservemost") | Some("PreserveMost") => Some(14),
+                        Some("preserveall") | Some("PreserveAll") => Some(15),
+                        Some("swift") | Some("Swift") => Some(16),
+                        Some("tail") | Some("Tail") => Some(18),
+                        Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
+                        Some(x) => {
+                            match x.parse::<u32>() {
+                                Ok(v) => Some(v),
+                                Err(_) => {errs.push(Error::new(self.loc.clone(), 422, format!("unknown calling convention {x:?} for @cconv annotation"))); None}
+                            }
+                        }
+                    });
+                },
+                x => errs.push(Error::new(self.loc.clone(), 410, format!("unknown annotation {x:?} for variable definition")))
+            }
+        }
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {
@@ -118,6 +214,10 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    f.set_call_conventions(cconv.unwrap_or(8));
+                    if let Some(link) = link_type {
+                        f.as_global_value().set_linkage(link)
+                    }
                     ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                     {
                         let mut param_count = 0;
@@ -149,16 +249,18 @@ impl AST for FnDefAST {
                             }
                         }
                     }
-                    let entry = ctx.context.append_basic_block(f, "entry");
-                    ctx.builder.position_at_end(entry);
-                    let (body, mut es) = self.body.codegen(ctx);
-                    errs.append(&mut es);
-                    ctx.map_vars(|v| v.parent.unwrap());
-                    let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
-                    ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
-                        errs.push(Error::new(self.loc.clone(), 311, err));
-                        llt.const_zero()
-                    })));
+                    if !is_extern {
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
+                        let (body, mut es) = self.body.codegen(ctx);
+                        errs.append(&mut es);
+                        ctx.map_vars(|v| v.parent.unwrap());
+                        let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
+                        ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            llt.const_zero()
+                        })));
+                    }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
@@ -223,11 +325,17 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
-                    let entry = ctx.context.append_basic_block(f, "entry");
-                    ctx.builder.position_at_end(entry);
-                    let (body, mut es) = self.body.codegen(ctx);
-                    errs.append(&mut es);
-                    ctx.builder.build_return(None);
+                    f.set_call_conventions(cconv.unwrap_or(8));
+                    if let Some(link) = link_type {
+                        f.as_global_value().set_linkage(link)
+                    }
+                    if !is_extern {
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
+                        let (body, mut es) = self.body.codegen(ctx);
+                        errs.append(&mut es);
+                        ctx.builder.build_return(None);
+                    }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
@@ -327,8 +435,10 @@ impl AST for FnDefAST {
                 Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
             }
         } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
-        if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
-        else {ctx.builder.clear_insertion_position();}
+        if !is_extern {
+            if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
+            else {ctx.builder.clear_insertion_position();}
+        }
         val
     }
     fn to_code(&self) -> String {
