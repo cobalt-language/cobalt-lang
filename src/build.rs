@@ -33,7 +33,7 @@ pub struct Project {
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
         self.targets.unwrap_or(vec![]).into_iter()
-        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps, needs_crt}| Target {target_type: TargetType::Library, name, files, deps, needs_crt}))
+        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps, needs_crt}| Target {target_type: TargetType::Executable, name, files, deps, needs_crt}))
         .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps, needs_crt}| Target {target_type: TargetType::Library, name, files, deps, needs_crt}))
         .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps, needs_crt}| Target {target_type: TargetType::Library, files: None, name, deps, needs_crt}))
     }
