@@ -250,6 +250,7 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    out_path.set_extension("o");
     if let Err(e) = if out_path.parent().unwrap().exists() {Ok(())} else {std::fs::create_dir_all(out_path.parent().unwrap())} {
         eprintln!("error when creating directory {}: {e}", out_path.parent().unwrap().display());
         return Err(100)
