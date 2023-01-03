@@ -1033,7 +1033,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
-            let build_dir: PathBuf = build_dir.map_or_else(|| format!("{project_dir/build/", PathBuf::from);
+            let build_dir: PathBuf = build_dir.map_or_else(|| {
+                let mut dir = project_dir.clone();
+                dir.push("build");
+                dir
+            }, PathBuf::from);
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
             exit(build::build(project_data, if targets.len() == 0 {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
