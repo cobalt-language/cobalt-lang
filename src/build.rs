@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
+#![allow(unused_variables)]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::process::Command;
 use std::cell::RefCell;
 use serde::*;
@@ -32,9 +33,9 @@ pub struct Project {
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
         self.targets.unwrap_or(vec![]).into_iter()
-        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
-        .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
-        .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps}| Target {target_type: TargetType::Library, files: None, name, deps}))
+        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps, needs_crt}| Target {target_type: TargetType::Library, name, files, deps, needs_crt}))
+        .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps, needs_crt}| Target {target_type: TargetType::Library, name, files, deps, needs_crt}))
+        .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps, needs_crt}| Target {target_type: TargetType::Library, files: None, name, deps, needs_crt}))
     }
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -53,6 +54,11 @@ pub enum TargetType {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Target {
     pub name: String,
+    #[serde(default)]
+    #[serde(alias = "needs-crt")]
+    #[serde(alias = "needs_libc")]
+    #[serde(alias = "needs-libc")]
+    pub needs_crt: bool,
     #[serde(rename = "type")]
     pub target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
@@ -63,6 +69,11 @@ pub struct Target {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Executable {
     pub name: String,
+    #[serde(default)]
+    #[serde(alias = "needs-crt")]
+    #[serde(alias = "needs_libc")]
+    #[serde(alias = "needs-libc")]
+    pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(alias = "dependencies")]
@@ -71,6 +82,11 @@ pub struct Executable {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Library {
     pub name: String,
+    #[serde(default)]
+    #[serde(alias = "needs-crt")]
+    #[serde(alias = "needs_libc")]
+    #[serde(alias = "needs-libc")]
+    pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(alias = "dependencies")]
@@ -79,6 +95,11 @@ pub struct Library {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Meta {
     pub name: String,
+    #[serde(default)]
+    #[serde(alias = "needs-crt")]
+    #[serde(alias = "needs_libc")]
+    #[serde(alias = "needs-libc")]
+    pub needs_crt: bool,
     #[serde(alias = "dependencies")]
     pub deps: Option<HashMap<String, String>>
 }
@@ -99,6 +120,42 @@ enum LibInfo {
 struct TargetData {
     pub libs: Vec<LibInfo>,
     pub deps: Vec<String>,
+    pub needs_crt: bool
+}
+impl TargetData {
+    pub fn init_lib(&mut self, name: &str, path: &Path, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>) {
+        for lib in self.libs.iter_mut() {
+            if let LibInfo::Name(l) = lib {
+                if l == name {
+                    *lib = LibInfo::Path(path.to_path_buf());
+                }
+            }
+        }
+        for dep in self.deps.iter() {
+            targets.get(dep).expect("Dependency should exist!").1.borrow_mut().as_mut().expect("Dependency should be initialized!").init_lib(name, path, targets);
+        }
+    }
+    fn missing_libs<'a, 'b: 'a>(&'b self, targets: &'a HashMap<String, (Target, RefCell<Option<TargetData>>)>) -> Vec<String> {
+        let mut out = self.libs.iter().filter_map(|lib| if let LibInfo::Name(lib) = lib {Some(lib.clone())} else {None}).collect::<Vec<_>>();
+        for dep in self.deps.iter() {out.extend(targets.get(dep).expect("Dependency should exist!").1.borrow().as_ref().expect("Dependency should be initialized!").missing_libs(targets))}
+        out
+    }
+    pub fn init_all(&mut self, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, link_dirs: Vec<&str>) -> Result<(), i32> {
+        let ERROR = "error".bright_red().bold();
+        let mut libs = self.missing_libs(targets);
+        libs.sort();
+        libs.dedup();
+        let (libs, notfound) = libs::find_libs(libs.iter().map(|l| l.as_str()).collect(), link_dirs);
+        for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
+        if notfound.len() > 0 {return Err(102)}
+        libs.into_iter().for_each(|(path, name)| self.init_lib(name, &path, targets));
+        Ok(())
+    }
+    pub fn initialized_libs<'a, 'b: 'a>(&'b self, targets: &'a HashMap<String, (Target, RefCell<Option<TargetData>>)>) -> Vec<PathBuf> {
+        let mut out = self.libs.iter().filter_map(|lib| if let LibInfo::Path(p) = lib {Some(p.clone())} else {None}).collect::<Vec<_>>();
+        for dep in self.deps.iter() {out.extend(targets.get(dep).expect("Dependency should exist!").1.borrow().as_ref().expect("Dependency should be initialized!").initialized_libs(targets))}
+        out
+    }
 }
 static mut FILENAME: String = String::new();
 fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
@@ -108,7 +165,7 @@ fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &in
             cobalt::Symbol::Variable(v) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
                 if let Ok(t) = t {
-                    v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("global variable should have a name")).as_pointer_value()));
+                    v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("Global variable should have a name!")).as_pointer_value()));
                 }
             }
         }
@@ -208,6 +265,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
     let ERROR = "error".bright_red().bold();
     match t.target_type {
         TargetType::Executable => {
+            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
                 match version.as_str() {
                     "project" => {
@@ -219,6 +277,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
+                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {
@@ -233,9 +292,62 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     }
                 }
             }
-            0
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("error in file glob: {e}");
+                        return 108;
+                    }
+                }).filter_map(Result::ok) {
+                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                    match build_file(file.as_path(), ctx, opts) {
+                        Ok(path) => paths.push(path),
+                        Err(code) => return code
+                    }
+                },
+                Some(either::Right(files)) => for file in files.iter().filter_map(|f| match glob::glob((opts.source_dir.to_str()?.to_string() + "/" + f).as_str()) {
+                    Ok(f) => Some(f),
+                    Err(e) => {
+                        eprintln!("error in file glob: {e}");
+                        None
+                    }
+                }).flatten().filter_map(Result::ok) {
+                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                    match build_file(file.as_path(), ctx, opts) {
+                        Ok(path) => paths.push(path),
+                        Err(code) => return code
+                    }
+                },
+                None => {
+                    eprintln!("{ERROR}: executable target must have files");
+                    return 106;
+                }
+            }
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(&t.name);
+            let mut args = vec![OsString::from("-o"), output.into_os_string()];
+            args.extend(paths.into_iter().map(|x| x.into_os_string()));
+            if let Err(e) = data.borrow_mut().as_mut().unwrap().init_all(targets, vec!["/usr/local/lib/", "/usr/lib/", "/lib/"]) {return e}
+            for lib in data.borrow().as_ref().unwrap().initialized_libs(targets) {
+                let parent = lib.parent().unwrap().as_os_str().to_os_string();
+                args.push(OsString::from("-L"));
+                args.push(parent.clone());
+                args.push(OsString::from("-rpath"));
+                args.push(parent);
+                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
+            }
+            if data.borrow().as_ref().unwrap().needs_crt {
+                Command::new("cc").args(args.iter()).status()
+                .or_else(|_| Command::new("clang").args(args.iter()).status())
+                .or_else(|_| Command::new("gcc").args(args.iter()).status())
+                .ok().and_then(|x| x.code()).unwrap_or(0)
+            }
+            else {Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0)}
         },
         TargetType::Library => {
+            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
                 match version.as_str() {
                     "project" => {
@@ -247,6 +359,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
+                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {
@@ -306,6 +419,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 eprintln!("{ERROR}: meta target cannot have files");
                 return 106;
             }
+            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
                 match version.as_str() {
                     "project" => {
@@ -317,6 +431,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
+                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {

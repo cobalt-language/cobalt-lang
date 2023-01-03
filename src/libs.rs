@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-pub fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<PathBuf>, Vec<&'a str>) {
+pub fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<(PathBuf, &'a str)>, Vec<&'a str>) {
     let mut outs = vec![];
     let it = dirs.into_iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file());
     it.for_each(|x| {
@@ -11,7 +11,7 @@ pub fn find_libs<'a>(mut libs: Vec<&'a str>, dirs: Vec<&str>) -> (Vec<PathBuf>, 
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
             for lib in libs.iter_mut().filter(|x| x.len() > 0) {
                 if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
-                    outs.push(path.clone());
+                    outs.push((path.clone(), *lib));
                     *lib = "";
                 }
             }

@@ -532,7 +532,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -551,7 +551,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -577,7 +577,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 buff += lib.to_str().expect("library path must be valid UTF-8");
                                 buff.push('\0');
                             }
