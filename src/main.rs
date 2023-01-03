@@ -3,10 +3,12 @@ use inkwell::targets::*;
 use std::process::{Command, exit};
 use std::io::{Read, Write};
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 mod libs;
 #[allow(dead_code)]
 mod jit;
 mod opt;
+mod build;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
@@ -832,6 +834,216 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
             }
             exit(if overall_fail {101} else {0})
+        },
+        "build" => {
+            let mut project_dir: Option<&str> = None;
+            let mut source_dir: Option<&str> = None;
+            let mut build_dir: Option<&str> = None;
+            let mut profile: Option<&str> = None;
+            let mut triple: Option<TargetTriple> = None;
+            let mut targets: Vec<&str> = vec![];
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if project_dir.is_some() {
+                                eprintln!("{ERROR}: respecification of project directory");
+                                exit(1)
+                            }
+                            project_dir = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    's' => {
+                                        if profile.is_some() {
+                                            eprintln!("{ERROR}: respecification of source directory");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            source_dir = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected source directory after -s flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'b' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of build directory");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            build_dir = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected build directory after -b flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    't' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of target triple");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            triple = Some(TargetTriple::create(x.as_str()));
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected target triple after -t flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'T' => {
+                                        if let Some(x) = it.next() {
+                                            targets.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected build target after -T flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if project_dir.is_some() {
+                            eprintln!("{ERROR}: respecification of project directory");
+                            exit(1)
+                        }
+                        project_dir = Some(arg.as_str());
+                    }
+                }
+            }
+            let (project_data, project_dir) = match project_dir {
+                Some("-") => {
+                    let mut cfg = String::new();
+                    if let Err(e) = std::io::stdin().read_to_string(&mut cfg) {
+                        eprintln!("error when reading project file from stdin: {e}");
+                        exit(100)
+                    }
+                    (match toml::from_str::<build::Project>(cfg.as_str()) {
+                        Ok(proj) => proj,
+                        Err(e) => {
+                            eprintln!("error when parsing project file: {e}");
+                            exit(100)
+                        }
+                    }, PathBuf::from("."))
+                },
+                Some(x) => {
+                    if !Path::new(x).exists() {
+                        eprintln!("{ERROR}: {x} does not exist");
+                        exit(100)
+                    }
+                    match std::fs::metadata(x).map(|x| x.file_type().is_dir()) {
+                        Ok(true) => {
+                            let mut path = std::path::PathBuf::from(x);
+                            path.push("cobalt.toml");
+                            if !path.exists() {
+                                eprintln!("{ERROR}: cannot find cobalt.toml in {x}");
+                                exit(100)
+                            }
+                            let cfg;
+                            match std::fs::read_to_string(path) {
+                                Ok(c) => cfg = c,
+                                Err(e) => {
+                                    eprintln!("error when reading project file: {e}");
+                                    exit(100)
+                                }
+                            }
+                            (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                Ok(proj) => proj,
+                                Err(e) => {
+                                    eprintln!("error when parsing project file: {e}");
+                                    exit(100)
+                                }
+                            }, PathBuf::from(x))
+                        },
+                        Ok(false) => {
+                            let mut path = std::path::PathBuf::from(x);
+                            path.pop();
+                            let cfg;
+                            match std::fs::read_to_string(x) {
+                                Ok(c) => cfg = c,
+                                Err(e) => {
+                                    eprintln!("error when reading project file: {e}");
+                                    exit(100)
+                                }
+                            }
+                            (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                Ok(proj) => proj,
+                                Err(e) => {
+                                    eprintln!("error when parsing project file: {e}");
+                                    exit(100)
+                                }
+                            }, path)
+                        },
+                        Err(e) => {
+                            eprintln!("error when determining type of {x}: {e}");
+                            exit(100)
+                        }
+                    }
+                },
+                None => {
+                    let cfg;
+                    if !Path::new("cobalt.toml").exists() {
+                        eprintln!("{ERROR}: couldn't find cobalt.toml in current directory");
+                        exit(100)
+                    }
+                    match std::fs::read_to_string("cobalt.toml") {
+                        Ok(c) => cfg = c,
+                        Err(e) => {
+                            eprintln!("error when reading project file: {e}");
+                            exit(100)
+                        }
+                    }
+                    (match toml::from_str::<build::Project>(cfg.as_str()) {
+                        Ok(proj) => proj,
+                        Err(e) => {
+                            eprintln!("error when parsing project file: {e}");
+                            exit(100)
+                        }
+                    }, PathBuf::from("."))
+                }
+            };
+            let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
+            let build_dir: PathBuf = build_dir.map_or_else(|| project_dir.clone(), PathBuf::from);
+            if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
+            else {Target::initialize_native(&INIT_NEEDED)?}
+            exit(build::build(project_data, if targets.len() == 0 {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
+                source_dir,
+                build_dir: build_dir.as_path(),
+                profile: profile.unwrap_or("default"),
+                triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
+                continue_build: false,
+                continue_comp: false
+            }));
         },
         x => {
             eprintln!("unknown subcommand '{}'", x);
