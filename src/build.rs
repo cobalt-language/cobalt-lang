@@ -21,14 +21,14 @@ pub struct Project {
     #[serde(alias = "description")]
     pub desc: Option<String>,
     #[serde(alias = "target")]
-    pub targets: Option<Vec<Target>>,
+    targets: Option<Vec<Target>>,
     #[serde(alias = "lib")]
-    pub library: Option<Vec<Library>>,
+    library: Option<Vec<Library>>,
     #[serde(alias = "exe")]
     #[serde(alias = "bin")]
     #[serde(alias = "executable")]
-    pub executable: Option<Vec<Executable>>,
-    pub meta: Option<Vec<Meta>>
+    executable: Option<Vec<Executable>>,
+    meta: Option<Vec<Meta>>
 }
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
@@ -67,7 +67,7 @@ pub struct Target {
     pub deps: Option<HashMap<String, String>>
 }
 #[derive(Debug, Clone, Deserialize)]
-pub struct Executable {
+struct Executable {
     pub name: String,
     #[serde(default)]
     #[serde(alias = "needs-crt")]
@@ -80,7 +80,7 @@ pub struct Executable {
     pub deps: Option<HashMap<String, String>>
 }
 #[derive(Debug, Clone, Deserialize)]
-pub struct Library {
+struct Library {
     pub name: String,
     #[serde(default)]
     #[serde(alias = "needs-crt")]
@@ -93,7 +93,7 @@ pub struct Library {
     pub deps: Option<HashMap<String, String>>
 }
 #[derive(Debug, Clone, Deserialize)]
-pub struct Meta {
+struct Meta {
     pub name: String,
     #[serde(default)]
     #[serde(alias = "needs-crt")]
