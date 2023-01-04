@@ -1051,8 +1051,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }));
         },
         "install" => {
-            let registry = match package::packages() {
-                Ok(r) => r,
+            match package::Package::init_registry() {
+                Ok(()) => {},
                 Err(package::PackageUpdateError::NoInstallDirectory) => {
                     eprintln!("{ERROR}: could not find or infer Cobalt directory");
                     exit(1)
@@ -1067,10 +1067,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             let mut good = 0;
+            let registry = package::Package::registry();
             for pkg in args.iter().skip(2).skip_while(|x| x.len() == 0) {
                 if let Some(p) = registry.get(pkg) {
-                    match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap().to_string(), None, package::InstallOptions::default()) {
-                        Ok(()) => {},
+                    match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap(), None, package::InstallOptions::default()).map_err(|e| e.unwrap_base()) {
                         Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
                         Err(package::InstallError::DownloadError(e)) => {
                             eprintln!("{ERROR}: {e}");
@@ -1099,7 +1099,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(package::InstallError::CfgFileError(e)) => {
                             eprintln!("{ERROR} in {pkg}'s config file: {e}");
                             good = 8;
-                        }
+                        },
+                        Err(package::InstallError::InvalidVersionSpec(_, v)) => {
+                            eprintln!("{ERROR} in {pkg}'s dependencies: invalid version spec {v}");
+                            good = 9;
+                        },
+                        _ => {}
                     }
                 }
                 else {

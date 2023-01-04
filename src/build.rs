@@ -11,7 +11,7 @@ use either::Either;
 use semver::{Version, VersionReq};
 use path_dedot::ParseDot;
 use cobalt::context::CompCtx;
-use super::{libs, opt};
+use super::{libs, opt, package};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
     pub name: String,
@@ -63,8 +63,9 @@ pub struct Target {
     pub target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
+    #[serde(default)]
     #[serde(alias = "dependencies")]
-    pub deps: Option<HashMap<String, String>>
+    pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone, Deserialize)]
 struct Executable {
@@ -76,8 +77,9 @@ struct Executable {
     pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
+    #[serde(default)]
     #[serde(alias = "dependencies")]
-    pub deps: Option<HashMap<String, String>>
+    pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone, Deserialize)]
 struct Library {
@@ -89,8 +91,9 @@ struct Library {
     pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
+    #[serde(default)]
     #[serde(alias = "dependencies")]
-    pub deps: Option<HashMap<String, String>>
+    pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone, Deserialize)]
 struct Meta {
@@ -100,8 +103,9 @@ struct Meta {
     #[serde(alias = "needs_libc")]
     #[serde(alias = "needs-libc")]
     pub needs_crt: bool,
+    #[serde(default)]
     #[serde(alias = "dependencies")]
-    pub deps: Option<HashMap<String, String>>
+    pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone)]
 pub struct BuildOptions<'a, 'b, 'c, 'd> {
@@ -267,7 +271,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
     match t.target_type {
         TargetType::Executable => {
             if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
-            for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
+            for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {
@@ -349,7 +353,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
         },
         TargetType::Library => {
             if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
-            for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
+            for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {
@@ -421,7 +425,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 return 106;
             }
             if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
-            for (target, version) in t.deps.as_ref().unwrap_or(&HashMap::new()).iter() {
+            for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {

@@ -6,6 +6,7 @@ use git2::Repository;
 use std::io::{Read, Cursor};
 use std::path::PathBuf;
 use std::collections::HashMap;
+use try_lazy_init::Lazy;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
     name: String,
@@ -38,13 +39,56 @@ impl std::fmt::Display for Source {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     #[serde(flatten)]
-    src: Source,
-    prebuilt: HashMap<String, Source>
+    pub src: Source,
+    #[serde(default)]
+    #[serde(alias = "dependencies")]
+    pub deps: HashMap<String, String>,
+    pub prebuilt: HashMap<String, Source>
+}
+lazy_static::lazy_static! {
+    static ref REGISTRY: Lazy<HashMap<String, Package>> = Lazy::new();
 }
 impl Package {
-    pub fn install(&self, triple: String, version: Option<VersionReq>, opts: InstallOptions) -> Result<(), InstallError> {
+    fn init_pkgs() -> Result<HashMap<String, Package>, PackageUpdateError> {
+        let cobalt_path = 
+            if let Ok(path) = std::env::var("COBALT_DIR") {format!("{path}/registry")}
+            else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt/registry")}
+            else {return Err(PackageUpdateError::NoInstallDirectory)};
+        match Repository::open(&cobalt_path) {
+            Ok(repo) => { // pull
+                repo.find_remote("origin")?.fetch(&["main"], None, None)?;
+                let fetch_head = repo.find_reference("FETCH_HEAD")?;
+                let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
+                let analysis = repo.merge_analysis(&[&fetch_commit])?;
+                if analysis.0.is_up_to_date() {}
+                else if analysis.0.is_fast_forward() {
+                    let mut reference = repo.find_reference("refs/heads/main")?;
+                    reference.set_target(fetch_commit.id(), "Fast-Forward")?;
+                    repo.set_head("refs/heads/main")?;
+                    repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
+                }
+                else {
+                    panic!("Pull from Cobalt package registry is not fast-forward!");
+                }
+            },
+            Err(_) => {Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path)?;} // eventually, this might be under a cobalt-lang org, or somewhere else
+        }
+        Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some(toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?)).map(|pkg| (pkg.name.clone(), pkg)).collect())
+    }
+    pub fn init_registry() -> Result<(), PackageUpdateError> {REGISTRY.try_get_or_create(Self::init_pkgs).map(std::mem::drop)}
+    pub fn registry() -> &'static HashMap<String, Package> {REGISTRY.get().expect("Package::init_registry() must be successfully called before Package::registry() can be used")}
+    pub fn install<'a>(&'a self, triple: &str, version: Option<VersionReq>, opts: InstallOptions) -> Result<(), InstallError<'a>> {
         let (v, rel) = if let Some(val) = self.releases.iter().filter(|(k, _)| if let Some(v) = &version {v.matches(k)} else {true}).max_by_key(|x| x.0) {val} else {return Err(InstallError::NoMatchesError)};
         if !opts.output.quiet() {eprintln!("installing {} version {v}", self.name);}
+        for (dep, ver) in rel.deps.iter() {
+            if ver == "system" {} // Linking is specified in the library file
+            else if let Ok(ver) = ver.parse::<VersionReq>() {
+                todo!("still no dependencies :'(");
+            }
+            else {
+                return Err(InstallError::InvalidVersionSpec(dep, ver))
+            }
+        }
         let mut install_loc = 
             if let Ok(dir) = std::env::var("COBALT_PKG_DIR") {PathBuf::from(dir)} 
             else if let Ok(dir) = std::env::var("COBALT_DIR") {PathBuf::from(format!("{dir}/packages"))}
@@ -55,7 +99,7 @@ impl Package {
             std::fs::create_dir_all(&install_loc)?;
         }
         let install_dir = install_loc.clone();
-        if let Some(url) = rel.prebuilt.get(&triple) {
+        if let Some(url) = rel.prebuilt.get(triple) {
             if opts.output.verbose() {eprintln!("\tdownloading prebuilt version from {url}");}
             match url {
                 Source::Git(url) => {
@@ -137,7 +181,7 @@ impl Default for InstallOptions {
     fn default() -> Self {InstallOptions {output: OutputLevel::Normal, clean: true}}
 }
 #[derive(Debug)]
-pub enum InstallError {
+pub enum InstallError<'a> {
     NoInstallDirectory,
     NoMatchesError,
     ZipExtractError(zip_extract::ZipExtractError),
@@ -145,21 +189,32 @@ pub enum InstallError {
     GitCloneError(git2::Error),
     StdIoError(std::io::Error),
     CfgFileError(toml::de::Error),
+    FailedToBuildDep(Box<InstallError<'a>>),
+    InvalidVersionSpec(&'a String, &'a String),
     BuildFailed(i32)
 }
-impl From<zip_extract::ZipExtractError> for InstallError {
+impl<'a> InstallError<'a> {
+    pub fn dep_fail(this: InstallError<'a>) -> Self {InstallError::FailedToBuildDep(Box::new(this))}
+    pub fn unwrap_base(self) -> Self {
+        match self {
+            InstallError::FailedToBuildDep(base) => base.unwrap_base(),
+            x => x
+        }
+    }
+}
+impl From<zip_extract::ZipExtractError> for InstallError<'_> {
     fn from(err: zip_extract::ZipExtractError) -> Self {InstallError::ZipExtractError(err)}
 }
-impl From<reqwest::Error> for InstallError {
+impl From<reqwest::Error> for InstallError<'_> {
     fn from(err: reqwest::Error) -> Self {InstallError::DownloadError(err)}
 }
-impl From<git2::Error> for InstallError {
+impl From<git2::Error> for InstallError<'_> {
     fn from(err: git2::Error) -> Self {InstallError::GitCloneError(err)}
 }
-impl From<std::io::Error> for InstallError {
+impl From<std::io::Error> for InstallError<'_> {
     fn from(err: std::io::Error) -> Self {InstallError::StdIoError(err)}
 }
-impl From<toml::de::Error> for InstallError {
+impl From<toml::de::Error> for InstallError<'_> {
     fn from(err: toml::de::Error) -> Self {InstallError::CfgFileError(err)}
 }
 #[derive(Debug)]
@@ -173,30 +228,4 @@ impl From<git2::Error> for PackageUpdateError {
 }
 impl From<std::io::Error> for PackageUpdateError {
     fn from(err: std::io::Error) -> Self {PackageUpdateError::StdIoError(err)}
-}
-pub fn packages() -> Result<HashMap<String, Package>, PackageUpdateError> {
-    let cobalt_path = 
-        if let Ok(path) = std::env::var("COBALT_DIR") {format!("{path}/registry")}
-        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt/registry")}
-        else {return Err(PackageUpdateError::NoInstallDirectory)};
-    match Repository::open(&cobalt_path) {
-        Ok(repo) => { // pull
-            repo.find_remote("origin")?.fetch(&["main"], None, None)?;
-            let fetch_head = repo.find_reference("FETCH_HEAD")?;
-            let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
-            let analysis = repo.merge_analysis(&[&fetch_commit])?;
-            if analysis.0.is_up_to_date() {}
-            else if analysis.0.is_fast_forward() {
-                let mut reference = repo.find_reference("refs/heads/main")?;
-                reference.set_target(fetch_commit.id(), "Fast-Forward")?;
-                repo.set_head("refs/heads/main")?;
-                repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
-            }
-            else {
-                panic!("Pull from Cobalt package registry is not fast-forward!");
-            }
-        },
-        Err(_) => {Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path)?;} // eventually, this might be under a cobalt-lang org, or somewhere else
-    }
-    Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some(toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?)).map(|pkg| (pkg.name.clone(), pkg)).collect())
 }
