@@ -83,7 +83,12 @@ impl Package {
         for (dep, ver) in rel.deps.iter() {
             if ver == "system" {} // Linking is specified in the library file
             else if let Ok(ver) = ver.parse::<VersionReq>() {
-                todo!("still no dependencies :'(");
+                if let Some(pkg) = Self::registry().get(dep) {
+                    pkg.install(triple, Some(ver), opts)?;
+                }
+                else {
+                    return Err(InstallError::PkgNotFound(dep));
+                }
             }
             else {
                 return Err(InstallError::InvalidVersionSpec(dep, ver))
@@ -204,18 +209,9 @@ pub enum InstallError<'a> {
     GitCloneError(git2::Error),
     StdIoError(std::io::Error),
     CfgFileError(toml::de::Error),
-    FailedToBuildDep(Box<InstallError<'a>>),
+    PkgNotFound(&'a String),
     InvalidVersionSpec(&'a String, &'a String),
     BuildFailed(i32)
-}
-impl<'a> InstallError<'a> {
-    pub fn dep_fail(this: InstallError<'a>) -> Self {InstallError::FailedToBuildDep(Box::new(this))}
-    pub fn unwrap_base(self) -> Self {
-        match self {
-            InstallError::FailedToBuildDep(base) => base.unwrap_base(),
-            x => x
-        }
-    }
 }
 impl From<zip_extract::ZipExtractError> for InstallError<'_> {
     fn from(err: zip_extract::ZipExtractError) -> Self {InstallError::ZipExtractError(err)}

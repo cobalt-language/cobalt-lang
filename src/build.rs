@@ -289,7 +289,52 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
                     },
                     x => if let Ok(v) = x.parse::<VersionReq>() {
-                        todo!("externally downloaded projects aren't implemented")
+                        if let Some(pkg) = package::Package::registry().get(target) {
+                            match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
+                                Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
+                                Err(package::InstallError::DownloadError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 4
+                                },
+                                Err(package::InstallError::StdIoError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 3
+                                },
+                                Err(package::InstallError::GitCloneError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 2
+                                },
+                                Err(package::InstallError::ZipExtractError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 5
+                                },
+                                Err(package::InstallError::BuildFailed(e)) => {
+                                    eprintln!("failed to build package {target}");
+                                    return e
+                                },
+                                Err(package::InstallError::NoMatchesError) => {
+                                    eprintln!("package {target:?} has no releases");
+                                    return 7
+                                },
+                                Err(package::InstallError::CfgFileError(e)) => {
+                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    return 8
+                                },
+                                Err(package::InstallError::InvalidVersionSpec(_, v)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    return 9
+                                },
+                                Err(package::InstallError::PkgNotFound(p)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    return 10
+                                },
+                                _ => {}
+                            } // TODO: make library info available through VarMap
+                        }
+                        else {
+                            eprintln!("{ERROR}: can't find package {target}");
+                            return 10
+                        }
                     }
                     else {
                         eprintln!("{ERROR}: unknown version specification {x:?}");
@@ -371,7 +416,52 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
                     },
                     x => if let Ok(v) = x.parse::<VersionReq>() {
-                        todo!("externally downloaded projects aren't implemented")
+                        if let Some(pkg) = package::Package::registry().get(target) {
+                            match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
+                                Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
+                                Err(package::InstallError::DownloadError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 4
+                                },
+                                Err(package::InstallError::StdIoError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 3
+                                },
+                                Err(package::InstallError::GitCloneError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 2
+                                },
+                                Err(package::InstallError::ZipExtractError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 5
+                                },
+                                Err(package::InstallError::BuildFailed(e)) => {
+                                    eprintln!("failed to build package {target}");
+                                    return e
+                                },
+                                Err(package::InstallError::NoMatchesError) => {
+                                    eprintln!("package {target:?} has no releases");
+                                    return 7
+                                },
+                                Err(package::InstallError::CfgFileError(e)) => {
+                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    return 8
+                                },
+                                Err(package::InstallError::InvalidVersionSpec(_, v)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    return 9
+                                },
+                                Err(package::InstallError::PkgNotFound(p)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    return 10
+                                },
+                                _ => {}
+                            } // TODO: make library info available through VarMap
+                        }
+                        else {
+                            eprintln!("{ERROR}: can't find package {target}");
+                            return 10
+                        }
                     }
                     else {
                         eprintln!("{ERROR}: unknown version specification {x:?}");
@@ -443,7 +533,52 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
                     },
                     x => if let Ok(v) = x.parse::<VersionReq>() {
-                        todo!("externally downloaded projects aren't implemented")
+                        if let Some(pkg) = package::Package::registry().get(target) {
+                            match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
+                                Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
+                                Err(package::InstallError::DownloadError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 4
+                                },
+                                Err(package::InstallError::StdIoError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 3
+                                },
+                                Err(package::InstallError::GitCloneError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 2
+                                },
+                                Err(package::InstallError::ZipExtractError(e)) => {
+                                    eprintln!("{ERROR}: {e}");
+                                    return 5
+                                },
+                                Err(package::InstallError::BuildFailed(e)) => {
+                                    eprintln!("failed to build package {target}");
+                                    return e
+                                },
+                                Err(package::InstallError::NoMatchesError) => {
+                                    eprintln!("package {target:?} has no releases");
+                                    return 7
+                                },
+                                Err(package::InstallError::CfgFileError(e)) => {
+                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    return 8
+                                },
+                                Err(package::InstallError::InvalidVersionSpec(_, v)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    return 9
+                                },
+                                Err(package::InstallError::PkgNotFound(p)) => {
+                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    return 10
+                                },
+                                _ => {}
+                            } // TODO: make library info available through VarMap
+                        }
+                        else {
+                            eprintln!("{ERROR}: can't find package {target}");
+                            return 10
+                        }
                     }
                     else {
                         eprintln!("{ERROR}: unknown version specification {x:?}");
