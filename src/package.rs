@@ -95,10 +95,10 @@ impl Package {
             else if let Ok(dir) = std::env::var("HOME") {PathBuf::from(format!("{dir}/.cobalt/packages"))}
             else {return Err(InstallError::NoInstallDirectory)};
         install_loc.push(format!("{}-{v}", self.name));
-        if install_loc.exists() {return Ok(())}
-        else {std::fs::create_dir_all(&install_loc)?;}
+        if !install_loc.exists() {std::fs::create_dir_all(&install_loc)?;}
+        else if !opts.reinstall {return Ok(())}
         let install_dir = install_loc.clone();
-        if let Some(url) = rel.prebuilt.get(triple) {
+        if let (Some(url), false) = (rel.prebuilt.get(triple), opts.build_source) {
             if opts.output.verbose() {eprintln!("\tdownloading prebuilt version from {url}");}
             match url {
                 Source::Git(url) => {
@@ -124,7 +124,14 @@ impl Package {
             Ok(())
         }
         else {
-            if opts.output.verbose() {eprint!("\tno prebuilt version available, building from source... ");}
+            if opts.output.verbose() {
+                if opts.build_source {
+                    eprint!("\tforced to build from source... ");
+                }
+                else {
+                    eprint!("\tno prebuilt version available, building from source... ");
+                }
+            }
             install_loc.push(".download");
             let triple = inkwell::targets::TargetTriple::create(&triple);
             match &rel.src {
@@ -174,10 +181,19 @@ impl OutputLevel {
 #[derive(Debug, Clone, Copy)]
 pub struct InstallOptions {
     pub output: OutputLevel,
-    pub clean: bool
+    pub clean: bool,
+    pub reinstall: bool,
+    pub build_source: bool
 }
 impl Default for InstallOptions {
-    fn default() -> Self {InstallOptions {output: OutputLevel::Normal, clean: true}}
+    fn default() -> Self {
+        InstallOptions {
+            output: OutputLevel::Normal, 
+            clean: true,
+            reinstall: false,
+            build_source: false
+        }
+    }
 }
 #[derive(Debug)]
 pub enum InstallError<'a> {
