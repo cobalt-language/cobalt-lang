@@ -83,20 +83,24 @@ impl Package {
                 continue_build: false,
                 triple: &triple
             });
+            if opts.clean {std::fs::remove_all(install_loc)}
             if res == 0 {Ok(())} else {Err(InstallError::BuildFailed(res))}
         }
     }
 }
 #[derive(Debug, Clone, Copy, Default)]
-pub enum OutputLevel {Normal, Quiet Verbose}
+pub enum OutputLevel {Normal, Quiet, Verbose}
 impl OutputLevel {
     pub fn verbose(self) -> bool {self == Verbose}
     pub fn quiet(self) -> bool {self == Quiet}
 }
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct InstallOptions {
     pub output: OutputLevel,
     pub clean: bool
+}
+impl Default for InstallOptions {
+    fn default() -> Self {InstallOptions {output: OutputLevel::Normal, clean: true}}
 }
 #[derive(Debug, Clone)]
 pub enum InstallError {
