@@ -1,8 +1,11 @@
 use serde::*;
 use semver::{Version, VersionReq};
-use flate2::write::GzDecoder;
-use super::build::{Project, BuildOptions, build};
+use flate2::read::GzDecoder;
+use super::build::{BuildOptions, build};
 use git2::Repository;
+use std::io::{Read, Cursor};
+use std::path::PathBuf;
+use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
     name: String,
@@ -24,6 +27,14 @@ pub enum Source {
     #[serde(alias = "zipball")]
     Zipball(String)
 }
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use Source::*;
+        match self {
+            Git(x) | Tarball(x) | Zipball(x) => write!(f, "{x}")
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     #[serde(flatten)]
@@ -32,67 +43,90 @@ pub struct Release {
 }
 impl Package {
     pub fn install(&self, triple: String, version: Option<VersionReq>, opts: InstallOptions) -> Result<(), InstallError> {
-        let (v, rel) = self.releases.iter().filter(|(k, _)| if let Some(v) = version {k.matches(v)} else {true}).max_by_key(|x| x.0);
+        let (v, rel) = if let Some(val) = self.releases.iter().filter(|(k, _)| if let Some(v) = &version {v.matches(k)} else {true}).max_by_key(|x| x.0) {val} else {return Err(InstallError::NoMatchesError)};
         if !opts.output.quiet() {eprintln!("installing {} version {v}", self.name);}
         let mut install_loc = 
-            if let Some(dir) = std::env::get("COBALT_PKG_DIR") {PathBuf::from(dir)} 
-            else if let Some(dir) = std::env::get("COBALT_DIR") {PathBuf::from(format!("{dir}/packages"))}
-            else if let Some(dir) = std::env::get("HOME") {PathBuf::from(format!("{dir}/.cobalt/packages"))}
+            if let Ok(dir) = std::env::var("COBALT_PKG_DIR") {PathBuf::from(dir)} 
+            else if let Ok(dir) = std::env::var("COBALT_DIR") {PathBuf::from(format!("{dir}/packages"))}
+            else if let Ok(dir) = std::env::var("HOME") {PathBuf::from(format!("{dir}/.cobalt/packages"))}
             else {return Err(InstallError::NoInstallDirectory)};
-        install_loc.push(self.name);
+        install_loc.push(&self.name);
         if !install_loc.exists() {
-            std::fs::create_dir_all(install_loc).map_err(InstallError::StdIoError)?;
+            std::fs::create_dir_all(&install_loc)?;
         }
         let install_dir = install_loc.clone();
-        if let Some(url) = rel.prebuilt.get(triple) {
+        if let Some(url) = rel.prebuilt.get(&triple) {
             if opts.output.verbose() {eprintln!("\tdownloading prebuilt version from {url}");}
-            let body = reqwest::blocking::get(url).map_err(InstallError::DownloadError)?;
-            let decoded = GzDecoder::new(body);
-            tar::Archive::new(decoded).unpack(install_loc);
+            match url {
+                Source::Git(url) => {
+                    if opts.output.verbose() {eprintln!("cloning from git repository from {url}");}
+                    Repository::clone(&url, &install_dir)?;
+                },
+                Source::Tarball(url) => {
+                    if opts.output.verbose() {eprintln!("downloading prebuilt tarball from {url}");}
+                    let mut body = reqwest::blocking::get(url)?;
+                    let mut vec = Vec::new();
+                    body.read_to_end(&mut vec)?;
+                    let decoded = GzDecoder::new(Cursor::new(vec));
+                    tar::Archive::new(decoded).unpack(&install_dir)?;
+                },
+                Source::Zipball(url) => {
+                    if opts.output.verbose() {eprintln!("downloading prebuilt zipball from {url}");}
+                    let mut body = reqwest::blocking::get(url)?;
+                    let mut vec = Vec::new();
+                    body.read_to_end(&mut vec)?;
+                    zip_extract::extract(Cursor::new(vec), &install_dir, true)?;
+                }
+            }
+            Ok(())
         }
         else {
-            if opts.verbose {eprint!("\tno prebuilt version available, building from source... ");}
+            if opts.output.verbose() {eprint!("\tno prebuilt version available, building from source... ");}
             install_loc.push(".download");
-            let triple = inkwell::targets::TargetTriple::new(triple);
-            match rel.src {
-                Git(url) => {
+            let triple = inkwell::targets::TargetTriple::create(&triple);
+            match &rel.src {
+                Source::Git(url) => {
                     if opts.output.verbose() {eprintln!("cloning from git repository from {url}");}
-                    Repository::clone(url, install_loc).map_err(InstallError::GitCloneError);
+                    Repository::clone(&url, &install_loc)?;
                 },
-                Tarball(url) => {
+                Source::Tarball(url) => {
                     if opts.output.verbose() {eprintln!("downloading source tarball from {url}");}
-                    let body = reqwest::blocking::get(url).map_err(InstallError::DownloadError)?;
-                    let decoded = GzDecoder::new(body);
-                    tar::Archive::new(decoded).unpack(install_loc);
+                    let mut body = reqwest::blocking::get(url)?;
+                    let mut vec = Vec::new();
+                    body.read_to_end(&mut vec)?;
+                    let decoded = GzDecoder::new(Cursor::new(vec));
+                    tar::Archive::new(decoded).unpack(&install_loc)?;
                 },
-                Zipball(url) => {
+                Source::Zipball(url) => {
                     if opts.output.verbose() {eprintln!("downloading source zipball from {url}");}
-                    let body = reqwest::blocking::get(url).map_err(InstallError::DownloadError)?;
-                    let reader = std::io::BufReader::new(body);
-                    zip_extract::extract(reader, &install_loc, true).map_err(InstallError::ZipExtractError)?;
+                    let mut body = reqwest::blocking::get(url)?;
+                    let mut vec = Vec::new();
+                    body.read_to_end(&mut vec)?;
+                    zip_extract::extract(Cursor::new(vec), &install_loc, true)?;
                 }
             }
             if !opts.output.quiet() {eprintln!("building {}", self.name)}
             install_loc.push("cobalt.toml");
-            let cfg = std::fs::read_to_string(install_loc).map_err(InstallError::StdIoError)?;
+            let cfg = std::fs::read_to_string(&install_loc)?;
             install_loc.pop();
-            let res = build(toml::from_str(cfg), BuildOptions {
+            let res = build(toml::from_str(&cfg)?, None, &BuildOptions {
                 source_dir: &install_loc,
                 build_dir: &install_dir,
                 continue_comp: false,
                 continue_build: false,
-                triple: &triple
+                triple: &triple,
+                profile: "default"
             });
-            if opts.clean {std::fs::remove_all(install_loc)}
+            if opts.clean {std::fs::remove_dir_all(install_loc)?}
             if res == 0 {Ok(())} else {Err(InstallError::BuildFailed(res))}
         }
     }
 }
-#[derive(Debug, Clone, Copy, Default)]
-pub enum OutputLevel {Normal, Quiet, Verbose}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputLevel {Quiet, Normal, Verbose}
 impl OutputLevel {
-    pub fn verbose(self) -> bool {self == Verbose}
-    pub fn quiet(self) -> bool {self == Quiet}
+    pub fn verbose(self) -> bool {self == OutputLevel::Verbose}
+    pub fn quiet(self) -> bool {self == OutputLevel::Quiet}
 }
 #[derive(Debug, Clone, Copy)]
 pub struct InstallOptions {
@@ -102,47 +136,52 @@ pub struct InstallOptions {
 impl Default for InstallOptions {
     fn default() -> Self {InstallOptions {output: OutputLevel::Normal, clean: true}}
 }
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum InstallError {
     NoInstallDirectory,
-    ZipExtractError(zip_extract::ZipError),
+    NoMatchesError,
+    ZipExtractError(zip_extract::ZipExtractError),
     DownloadError(reqwest::Error),
     GitCloneError(git2::Error),
     StdIoError(std::io::Error),
+    CfgFileError(toml::de::Error),
     BuildFailed(i32)
 }
-impl From<zip_extract::ZipError> for InstallError {
-    pub fn from(err: zip_extract::ZipError) -> Self {InstallError::ZipExtractError(err)}
+impl From<zip_extract::ZipExtractError> for InstallError {
+    fn from(err: zip_extract::ZipExtractError) -> Self {InstallError::ZipExtractError(err)}
 }
 impl From<reqwest::Error> for InstallError {
-    pub fn from(err: reqwest::Error) -> Self {InstallError::DownloadError(err)}
+    fn from(err: reqwest::Error) -> Self {InstallError::DownloadError(err)}
 }
 impl From<git2::Error> for InstallError {
-    pub fn from(err: git2::Error) -> Self {InstallError::GitError(err)}
+    fn from(err: git2::Error) -> Self {InstallError::GitCloneError(err)}
 }
-impl From<std::io::::Error> for InstallError {
-    pub fn from(err: std::io::Error) -> Self {InstallError::StdIoError(err)}
+impl From<std::io::Error> for InstallError {
+    fn from(err: std::io::Error) -> Self {InstallError::StdIoError(err)}
 }
-#[derive(Debug, Clone)]
+impl From<toml::de::Error> for InstallError {
+    fn from(err: toml::de::Error) -> Self {InstallError::CfgFileError(err)}
+}
+#[derive(Debug)]
 pub enum PackageUpdateError {
     NoInstallDirectory,
     GitError(git2::Error),
     StdIoError(std::io::Error)
 }
 impl From<git2::Error> for PackageUpdateError {
-    pub fn from(err: git2::Error) -> Self {PackageUpdateError::GitError(err)}
+    fn from(err: git2::Error) -> Self {PackageUpdateError::GitError(err)}
 }
 impl From<std::io::Error> for PackageUpdateError {
-    pub fn from(err: std::io::Error) -> Self {PackageUpdateError::StdIoError(err)}
+    fn from(err: std::io::Error) -> Self {PackageUpdateError::StdIoError(err)}
 }
 pub fn packages() -> Result<HashMap<String, Package>, PackageUpdateError> {
     let cobalt_path = 
-        if let Some(path) = std::env::get("COBALT_DIR") {format!("{path}/registry")}
-        else if let Some(path) = std::env::get("HOME") {format!("{path}/.cobalt/registry")}
+        if let Ok(path) = std::env::var("COBALT_DIR") {format!("{path}/registry")}
+        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt/registry")}
         else {return Err(PackageUpdateError::NoInstallDirectory)};
-    match Repository::open(&cobalt_path)) {
+    match Repository::open(&cobalt_path) {
         Ok(repo) => { // pull
-            repo.find_remote("origin")?.fetch("main", None, None)?;
+            repo.find_remote("origin")?.fetch(&["main"], None, None)?;
             let fetch_head = repo.find_reference("FETCH_HEAD")?;
             let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
             let analysis = repo.merge_analysis(&[&fetch_commit])?;
@@ -151,13 +190,13 @@ pub fn packages() -> Result<HashMap<String, Package>, PackageUpdateError> {
                 let mut reference = repo.find_reference("refs/heads/main")?;
                 reference.set_target(fetch_commit.id(), "Fast-Forward")?;
                 repo.set_head("refs/heads/main")?;
-                repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+                repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
             }
             else {
                 panic!("Pull from Cobalt package registry is not fast-forward!");
             }
         },
-        Err(_) => Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path) // eventually, this might be under a cobalt-lang org, or somewhere else
-    }?
-    Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some((entry.file_name(), toml::from_str::<Package>(std::fs::read_to_string(entry.ok()?.file_name()).ok()?).ok()?))).collect())
+        Err(_) => {Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path)?;} // eventually, this might be under a cobalt-lang org, or somewhere else
+    }
+    Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some((entry.as_ref().ok()?.file_name().to_str()?.to_string(), toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?))).collect())
 }

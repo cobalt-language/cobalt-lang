@@ -9,6 +9,7 @@ mod libs;
 mod jit;
 mod opt;
 mod build;
+mod package;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
