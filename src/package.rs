@@ -95,9 +95,8 @@ impl Package {
             else if let Ok(dir) = std::env::var("HOME") {PathBuf::from(format!("{dir}/.cobalt/packages"))}
             else {return Err(InstallError::NoInstallDirectory)};
         install_loc.push(format!("{}-{v}", self.name));
-        if !install_loc.exists() {
-            std::fs::create_dir_all(&install_loc)?;
-        }
+        if install_loc.exists() {return Ok(())}
+        else {std::fs::create_dir_all(&install_loc)?;}
         let install_dir = install_loc.clone();
         if let Some(url) = rel.prebuilt.get(triple) {
             if opts.output.verbose() {eprintln!("\tdownloading prebuilt version from {url}");}
