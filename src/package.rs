@@ -50,7 +50,7 @@ impl Package {
             else if let Ok(dir) = std::env::var("COBALT_DIR") {PathBuf::from(format!("{dir}/packages"))}
             else if let Ok(dir) = std::env::var("HOME") {PathBuf::from(format!("{dir}/.cobalt/packages"))}
             else {return Err(InstallError::NoInstallDirectory)};
-        install_loc.push(&self.name);
+        install_loc.push(format!("{}-{v}", self.name));
         if !install_loc.exists() {
             std::fs::create_dir_all(&install_loc)?;
         }
@@ -198,5 +198,5 @@ pub fn packages() -> Result<HashMap<String, Package>, PackageUpdateError> {
         },
         Err(_) => {Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path)?;} // eventually, this might be under a cobalt-lang org, or somewhere else
     }
-    Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some((entry.as_ref().ok()?.file_name().to_str()?.to_string(), toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?))).collect())
+    Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some(toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?)).map(|pkg| (pkg.name.clone(), pkg)).collect())
 }
