@@ -1050,6 +1050,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue_comp: false
             }));
         },
+        "install" => {
+            let registry = match package::packages() {
+                Ok(r) => r,
+                Err(package::PackageUpdateError::NoInstallDirectory) => {
+                    eprintln!("{ERROR}: could not find or infer Cobalt directory");
+                    exit(1)
+                },
+                Err(package::PackageUpdateError::GitError(e)) => {
+                    eprintln!("{ERROR}: {e}");
+                    exit(2)
+                }
+                Err(package::PackageUpdateError::StdIoError(e)) => {
+                    eprintln!("{ERROR}: {e}");
+                    exit(3)
+                }
+            };
+            let mut good = 0;
+            for pkg in args.iter().skip(2).skip_while(|x| x.len() == 0) {
+                if let Some(p) = registry.get(pkg) {
+                    match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap().to_string(), None, package::InstallOptions::default()) {
+                        Ok(()) => {},
+                        Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
+                        Err(package::InstallError::DownloadError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 4;
+                        },
+                        Err(package::InstallError::StdIoError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 3;
+                        },
+                        Err(package::InstallError::GitCloneError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 2;
+                        },
+                        Err(package::InstallError::ZipExtractError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 5;
+                        },
+                        Err(package::InstallError::BuildFailed(e)) => {
+                            eprintln!("failed to build package {pkg}");
+                            good = e;
+                        },
+                        Err(package::InstallError::NoMatchesError) => {
+                            eprintln!("package {p:?} has no releases");
+                            good = 7;
+                        },
+                        Err(package::InstallError::CfgFileError(e)) => {
+                            eprintln!("{ERROR} in {pkg}'s config file: {e}");
+                            good = 8;
+                        }
+                    }
+                }
+                else {
+                    eprintln!("{ERROR}: couldn't find package {pkg:?}");
+                    good = 6;
+                }
+            }
+            exit(good)
+        },
         x => {
             eprintln!("unknown subcommand '{}'", x);
         }
