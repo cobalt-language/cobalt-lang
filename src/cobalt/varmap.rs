@@ -2,7 +2,7 @@ use crate::*;
 use inkwell::values::BasicValueEnum;
 use std::collections::hash_map::{HashMap, Entry};
 use std::cell::Cell;
-use std::io::{self, Write};
+use std::io::{self, Write, Read, BufRead};
 pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
@@ -46,17 +46,57 @@ impl InterData {
             },
             InterData::Array(v) => {
                 out.write_all(&[5])?;
-                out.write_all(&v.len().to_be_bytes())?; // length
+                out.write_all(&(v.len() as u64).to_be_bytes())?; // length
                 for val in v.iter() {val.save(out)?;} // InterData is self-puncatuating
                 Ok(())
             },
             InterData::Function(v) => { // serialized the same as InterData::Array
                 out.write_all(&[6])?;
-                out.write_all(&v.defaults.len().to_be_bytes())?;
+                out.write_all(&(v.defaults.len() as u64).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
                 Ok(())
             }
         }
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Option<Self>> {
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        Ok(match c {
+            0 => None,
+            1 => Some(InterData::Null),
+            2 => {
+                let mut bytes = [0; 16];
+                buf.read_exact(&mut bytes)?;
+                Some(InterData::Int(i128::from_be_bytes(bytes)))
+            },
+            3 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                Some(InterData::Float(f64::from_be_bytes(bytes)))
+            },
+            4 => {
+                let mut vec = Vec::new();
+                buf.read_until(0, &mut vec)?;
+                Some(InterData::Str(std::str::from_utf8(&vec).expect("Interpreted strings should be valid UTF-8").to_string()))
+            },
+            5 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let len = u64::from_be_bytes(bytes);
+                let mut vec = Vec::with_capacity(len as usize);
+                for _ in 0..len {vec.push(Self::load(buf)?.expect("# of unwrapped array elements doesn't match the prefixed count"))}
+                Some(InterData::Array(vec))
+            },
+            6 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let len = u64::from_be_bytes(bytes);
+                let mut vec = Vec::with_capacity(len as usize);
+                for _ in 0..len {vec.push(Self::load(buf)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
+                Some(InterData::Function(FnData{defaults: vec}))
+            },
+            x => panic!("read interpreted data type expecting number in 1..=6, got {x}")
+        })
     }
 }
 #[derive(Clone)]
@@ -92,7 +132,8 @@ impl<'ctx> Symbol<'ctx> {
                 out.write_all(&[1])?; // Variable
                 out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
                 out.write_all(&[0])?;
-                v.inter_val.as_ref().map_or(Ok(()), |v| v.save(out))?; // Interpreted value, self-punctuating
+                if let Some(v) = v.inter_val.as_ref() {v.save(out)?}
+                else {out.write_all(&[0])?} // Interpreted value, self-punctuating
                 v.data_type.save(out) // Type
             },
             Symbol::Module(v) => {
@@ -104,6 +145,39 @@ impl<'ctx> Symbol<'ctx> {
                 }
                 out.write_all(&[0]) // null terminator for symbol list
             }
+        }
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        match c {
+            1 => {
+                let mut var = Variable::error();
+                let mut name = vec![];
+                buf.read_until(0, &mut name)?;
+                if name.last() == Some(&0) {name.pop();}
+                var.inter_val = InterData::load(buf)?;
+                var.data_type = Type::load(buf)?;
+                if name.len() > 0 {
+                    if let Some(t) = var.data_type.llvm_type(ctx) {
+                        let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
+                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    }
+                }
+                Ok(Symbol::Variable(var))
+            },
+            2 => {
+                let mut out = HashMap::new();
+                loop {
+                    let mut name = vec![];
+                    buf.read_until(0, &mut name)?;
+                    if name.last() == Some(&0) {name.pop();}
+                    if name.len() == 0 {break}
+                    out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+                }
+                Ok(Symbol::Module(out))
+            },
+            x => panic!("read symbol type expecting 1 or 2, got {x}")
         }
     }
 }
@@ -134,7 +208,7 @@ impl<'ctx> VarMap<'ctx> {
         mod_insert(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
     }
     pub fn insert_mod(&mut self, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
-         mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)       
+         mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (name, sym) in self.symbols.iter() {
@@ -143,6 +217,27 @@ impl<'ctx> VarMap<'ctx> {
             sym.save(out)?;
         }
         Ok(())
+    }
+    pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<()> {
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
+            self.symbols.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+        }
+        Ok(())
+    }
+    pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        let mut out = HashMap::new();
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
+            out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+        }
+        Ok(VarMap {parent: None, symbols: out})
     }
 }
 pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {

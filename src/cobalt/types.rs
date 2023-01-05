@@ -3,7 +3,7 @@ use crate::*;
 use Type::{*, Char, Int};
 use SizeType::*;
 use std::fmt::*;
-use std::io::{Write, self};
+use std::io::{self, Write, Read, BufRead};
 #[derive(PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
@@ -166,7 +166,7 @@ impl Type {
             },
             Function(b, p) => {
                 out.write_all(&[13])?;
-                out.write_all(&p.len().to_be_bytes())?; // # of params
+                out.write_all(&(p.len() as u64).to_be_bytes())?; // # of params
                 b.save(out)?;
                 for (par, c) in p {
                     par.save(out)?;
@@ -178,6 +178,43 @@ impl Type {
             TypeData => todo!("Types can't be stored in variables yet!"),
             Array(..) => todo!("Arrays aren't implemented yet!")
         }
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        Ok(match c {
+            1 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let v = i64::from_be_bytes(bytes);
+                Type::Int(v.abs() as u64, v < 0)
+            },
+            2 => Type::Char,
+            3 => Type::Float16,
+            4 => Type::Float32,
+            5 => Type::Float64,
+            6 => Type::Float128,
+            7 => Type::Null,
+            8 => Type::Pointer(Box::new(Type::load(buf)?), false),
+            9 => Type::Pointer(Box::new(Type::load(buf)?), true),
+            10 => Type::Reference(Box::new(Type::load(buf)?), false),
+            11 => Type::Reference(Box::new(Type::load(buf)?), true),
+            12 => Type::Borrow(Box::new(Type::load(buf)?)),
+            13 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let v = u64::from_be_bytes(bytes);
+                let ret = Type::load(buf)?;
+                let mut vec = Vec::with_capacity(v as usize);
+                for _ in 0..v {
+                    let t = Type::load(buf)?;
+                    buf.read_exact(std::slice::from_mut(&mut c))?;
+                    vec.push((t, c != 0));
+                }
+                Type::Function(Box::new(ret), vec)
+            }
+            x => panic!("read type value expecting value in 1..=13, got {x}")
+        })
     }
 }
 #[allow(unused_variables)]
