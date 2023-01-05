@@ -2,6 +2,7 @@ use crate::*;
 use inkwell::values::BasicValueEnum;
 use std::collections::hash_map::{HashMap, Entry};
 use std::cell::Cell;
+use std::io::{self, Write};
 pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
@@ -33,6 +34,30 @@ impl InterData {
             _ => None
         }
     }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        match self {
+            InterData::Null => out.write_all(&[1]),
+            InterData::Int(v) => out.write_all(&[2]).and_then(|_| out.write_all(&v.to_be_bytes())),
+            InterData::Float(v) => out.write_all(&[3]).and_then(|_| out.write_all(&v.to_be_bytes())),
+            InterData::Str(v) => {
+                out.write_all(&[4])?;
+                out.write_all(v.as_bytes())?;
+                out.write_all(&[0])
+            },
+            InterData::Array(v) => {
+                out.write_all(&[5])?;
+                out.write_all(&v.len().to_be_bytes())?; // length
+                for val in v.iter() {val.save(out)?;} // InterData is self-puncatuating
+                Ok(())
+            },
+            InterData::Function(v) => { // serialized the same as InterData::Array
+                out.write_all(&[6])?;
+                out.write_all(&v.defaults.len().to_be_bytes())?;
+                for val in v.defaults.iter() {val.save(out)?;}
+                Ok(())
+            }
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Variable<'ctx> {
@@ -61,6 +86,26 @@ impl<'ctx> Symbol<'ctx> {
     pub fn as_mod_mut(&mut self) -> Option<&mut HashMap<String, Symbol<'ctx>>> {if let Symbol::Module(x) = self {Some(x)} else {None}}
     pub fn is_var(&self) -> bool {if let Symbol::Variable(_) = self {true} else {false}}
     pub fn is_mod(&self) -> bool {if let Symbol::Module(_) = self {true} else {false}}
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        match self {
+            Symbol::Variable(v) => {
+                out.write_all(&[1])?; // Variable
+                out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
+                out.write_all(&[0])?;
+                v.inter_val.as_ref().map_or(Ok(()), |v| v.save(out))?; // Interpreted value, self-punctuating
+                v.data_type.save(out) // Type
+            },
+            Symbol::Module(v) => {
+                out.write_all(&[2])?; // Module
+                for (name, sym) in v.iter() {
+                    out.write_all(name.as_bytes())?; // name, null-terminated
+                    out.write_all(&[0])?;
+                    sym.save(out)?;
+                }
+                out.write_all(&[0]) // null terminator for symbol list
+            }
+        }
+    }
 }
 #[derive(Default)]
 pub struct VarMap<'ctx> {
@@ -90,6 +135,14 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn insert_mod(&mut self, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
          mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)       
+    }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (name, sym) in self.symbols.iter() {
+            out.write_all(name.as_bytes())?;
+            out.write_all(&[0])?;
+            sym.save(out)?;
+        }
+        Ok(())
     }
 }
 pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {

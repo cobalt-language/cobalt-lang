@@ -565,22 +565,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::Library => {
-                            writeln!(out, "!<arch>")?;
-                            writeln!(out, "file.o          0           0     0     644     {: >10}`", mb.get_size())?;
-                            out.write(mb.as_slice())?;
-                            writeln!(out)?;
-                            let mut buff = format!("{in_file}\00.1.0\0");
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
-                            }
-                            if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
-                                buff += lib.to_str().expect("library path must be valid UTF-8");
+                            let mut builder = ar::Builder::new(out);
+                            builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
+                            {
+                                let mut buff = format!("{in_file}\00.1.0\0");
+                                let (libs, notfound) = libs::find_libs(linked, link_dirs);
+                                for nf in notfound.iter() {
+                                    eprintln!("couldn't find library {nf}");
+                                }
+                                if notfound.len() > 0 {exit(102)}
+                                for lib in libs {
+                                    buff += lib.to_str().expect("library path must be valid UTF-8");
+                                    buff.push('\0');
+                                }
                                 buff.push('\0');
+                                builder.append(&ar::Header::new(b".libs".to_vec(), buff.len() as u64), buff.as_bytes())?;
                             }
-                            buff.push('\0');
-                            writeln!(out, ".colib          0           0     0     644     {: >10}`\n{}", buff.as_bytes().len(), buff)?;
+                            {
+                                let mut buf: Vec<u8> = vec![];
+                                ctx.with_vars(|v| v.save(&mut buf))?;
+                                builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                            }
                             exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
                         },
                         OutputType::Object => out.write_all(mb.as_slice())?,

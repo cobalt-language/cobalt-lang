@@ -3,6 +3,7 @@ use crate::*;
 use Type::{*, Char, Int};
 use SizeType::*;
 use std::fmt::*;
+use std::io::{Write, self};
 #[derive(PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
@@ -126,6 +127,56 @@ impl Type {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
             _ => false
+        }
+    }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        match self {
+            IntLiteral => panic!("There shouldn't be an int literal in a variable!"),
+            Int(s, u) => {
+                out.write_all(&[1])?;
+                let mut v = *s as i64;
+                if *u {v = -v;}
+                out.write_all(&v.to_be_bytes())
+            },
+            Char => out.write_all(&[2]),
+            Float16 => out.write_all(&[3]),
+            Float32 => out.write_all(&[4]),
+            Float64 => out.write_all(&[5]),
+            Float128 => out.write_all(&[6]),
+            Null => out.write_all(&[7]),
+            Pointer(b, false) => {
+                out.write_all(&[8])?;
+                b.save(out)
+            },
+            Pointer(b, true) => {
+                out.write_all(&[9])?;
+                b.save(out)
+            },
+            Reference(b, false) => {
+                out.write_all(&[10])?;
+                b.save(out)
+            },
+            Reference(b, true) => {
+                out.write_all(&[11])?;
+                b.save(out)
+            },
+            Borrow(b) => {
+                out.write_all(&[12])?;
+                b.save(out)
+            },
+            Function(b, p) => {
+                out.write_all(&[13])?;
+                out.write_all(&p.len().to_be_bytes())?; // # of params
+                b.save(out)?;
+                for (par, c) in p {
+                    par.save(out)?;
+                    out.write_all(&[if *c {1} else {0}])?; // param is const
+                }
+                Ok(())
+            },
+            Module => todo!("Modules can't be stored in variables yet!"),
+            TypeData => todo!("Types can't be stored in variables yet!"),
+            Array(..) => todo!("Arrays aren't implemented yet!")
         }
     }
 }

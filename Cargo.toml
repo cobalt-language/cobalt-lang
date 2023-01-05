@@ -11,6 +11,7 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", feat
 llvm-sys = { version = "140", features = ["strict-versioning"] }
 unicode-ident = "1.0.5"
 walkdir = "2"
+ar = "0.9.0"
 
 [lib]
 name = "cobalt"
