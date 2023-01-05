@@ -3,6 +3,7 @@ use inkwell::targets::*;
 use std::process::{Command, exit};
 use std::io::{Read, Write};
 use std::ffi::OsString;
+use path_dedot::ParseDot;
 mod libs;
 #[allow(dead_code)]
 mod jit;
@@ -465,6 +466,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let flags = cobalt::Flags::default();
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&triple);
+            let (libs, notfound) = libs::find_libs(linked.clone(), &link_dirs, Some(&ctx))?;
+            notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+            if notfound.len() > 0 {exit(102)}
             let mut fail = false;
             let mut overall_fail = false;
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
@@ -484,9 +491,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if fail && !continue_if_err {exit(101)}
-            let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            ctx.module.set_triple(&triple);
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -525,11 +529,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OutputType::Executable => {
                             out.write_all(mb.as_slice())?;
                             let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
-                            }
-                            if notfound.len() > 0 {exit(102)}
                             for lib in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
@@ -544,12 +543,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OutputType::ExeLibc => {
                             out.write_all(mb.as_slice())?;
                             let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
-                            }
-                            if notfound.len() > 0 {exit(102)}
                             for lib in libs {
+                                let lib = lib.parse_dot()?;
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -568,18 +563,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let mut builder = ar::Builder::new(out);
                             builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
                             {
-                                let mut buff = format!("{in_file}\00.1.0\0");
-                                let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                                for nf in notfound.iter() {
-                                    eprintln!("couldn't find library {nf}");
+                                let mut buf = String::new();
+                                for lib in linked {
+                                    buf += lib;
+                                    buf.push('\0');
                                 }
-                                if notfound.len() > 0 {exit(102)}
-                                for lib in libs {
-                                    buff += lib.to_str().expect("library path must be valid UTF-8");
-                                    buff.push('\0');
+                                buf.push('\0');
+                                for link_dir in link_dirs {
+                                    buf += link_dir;
+                                    buf.push('\0');
                                 }
-                                buff.push('\0');
-                                builder.append(&ar::Header::new(b".libs".to_vec(), buff.len() as u64), buff.as_bytes())?;
+                                buf.push('\0');
+                                builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
                             }
                             {
                                 let mut buf: Vec<u8> = vec![];
@@ -696,6 +691,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             *fname = in_file.to_string();
             let mut fail = false;
             let mut overall_fail = false;
+            let ink_ctx = inkwell::context::Context::create();
+            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            let (libs, notfound) = libs::find_libs(linked, &link_dirs, None)?;
+            notfound.iter().for_each(|nf| eprintln!("couldn't find library {nf}"));
+            if notfound.len() > 0 {exit(102)}
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
                 eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
@@ -713,9 +714,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if fail && !continue_if_err {exit(101)}
-            let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -733,11 +731,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
-            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-            for nf in notfound.iter() {
-                eprintln!("couldn't find library {nf}");
-            }
-            if notfound.len() > 0 {exit(102)}
             let jit = jit::LLJIT::new();
             {
                 let mut m = ink_ctx.create_module("");

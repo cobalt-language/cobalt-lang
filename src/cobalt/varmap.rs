@@ -153,6 +153,7 @@ impl<'ctx> Symbol<'ctx> {
         match c {
             1 => {
                 let mut var = Variable::error();
+                var.good.set(true);
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
                 if name.last() == Some(&0) {name.pop();}
