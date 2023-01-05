@@ -452,7 +452,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
-                OutputType::Library => format!("lib{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Library => format!("{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
