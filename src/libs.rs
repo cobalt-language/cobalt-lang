@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::ffi::OsStr;
 use std::io::{self, BufReader, BufRead};
 use std::fs::File;
-pub fn find_libs(mut libs: Vec<&str>, dirs: &Vec<&str>, ctx: Option<&cobalt::CompCtx>) -> io::Result<(Vec<PathBuf>, Vec<String>)> {
+pub fn find_libs<'a>(mut libs: Vec<String>, dirs: &Vec<&str>, ctx: Option<&cobalt::CompCtx>) -> io::Result<(Vec<(PathBuf, String)>, Vec<String>)> {
     let mut out = vec![];
     let mut nf = vec![];
     for x in dirs.iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file()) {
@@ -43,15 +43,16 @@ pub fn find_libs(mut libs: Vec<&str>, dirs: &Vec<&str>, ctx: Option<&cobalt::Com
                                 if data.len() == 0 {break}
                                 if let Ok(s) = std::str::from_utf8(&data) {dirs.push(s.to_string());}
                             }
-                            let mut res = find_libs(libs.iter().map(|x| x.as_str()).collect(), &dirs.iter().map(|x| x.as_str()).collect(), ctx)?;
+                            let mut res = find_libs(libs, &dirs.iter().map(|x| x.as_str()).collect(), ctx)?;
                             out.append(&mut res.0);
                             nf.append(&mut res.1);
                             passed_libs = true;
                             if passed_syms {break}
                         }
                     }
-                    out.push(path.clone());
-                    *lib = "";
+                    let mut val = String::new();
+                    std::mem::swap(&mut val, lib);
+                    out.push((path.clone(), val));
                 }
             }
         }
@@ -64,9 +65,10 @@ pub fn find_libs(mut libs: Vec<&str>, dirs: &Vec<&str>, ctx: Option<&cobalt::Com
         }
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
             for lib in libs.iter_mut().filter(|x| x.len() > 0) {
-                if lib == &stem  || (stem.starts_with("lib") && lib == &&stem[3..]){
-                    out.push(path.clone());
-                    *lib = "";
+                if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
+                    let mut val = String::new();
+                    std::mem::swap(&mut val, lib);
+                    out.push((path.clone(), val));
                 }
             }
         }
@@ -79,9 +81,10 @@ pub fn find_libs(mut libs: Vec<&str>, dirs: &Vec<&str>, ctx: Option<&cobalt::Com
         }
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
             for lib in libs.iter_mut().filter(|x| x.len() > 0) {
-                if lib == &stem  || (stem.starts_with("lib") && lib == &&stem[3..]){
-                    out.push(path.clone());
-                    *lib = "";
+                if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
+                    let mut val = String::new();
+                    std::mem::swap(&mut val, lib);
+                    out.push((path.clone(), val));
                 }
             }
         }
