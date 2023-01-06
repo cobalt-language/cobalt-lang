@@ -3,10 +3,13 @@ use inkwell::targets::*;
 use std::process::{Command, exit};
 use std::io::{Read, Write};
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 mod libs;
 #[allow(dead_code)]
 mod jit;
 mod opt;
+mod build;
+mod package;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 static mut FILENAME: String = String::new();
@@ -530,7 +533,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -549,7 +552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -575,7 +578,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("couldn't find library {nf}");
                             }
                             if notfound.len() > 0 {exit(102)}
-                            for lib in libs {
+                            for (lib, _) in libs {
                                 buff += lib.to_str().expect("library path must be valid UTF-8");
                                 buff.push('\0');
                             }
@@ -832,6 +835,288 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
             }
             exit(if overall_fail {101} else {0})
+        },
+        "build" => {
+            let mut project_dir: Option<&str> = None;
+            let mut source_dir: Option<&str> = None;
+            let mut build_dir: Option<&str> = None;
+            let mut profile: Option<&str> = None;
+            let mut triple: Option<TargetTriple> = None;
+            let mut targets: Vec<&str> = vec![];
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if project_dir.is_some() {
+                                eprintln!("{ERROR}: respecification of project directory");
+                                exit(1)
+                            }
+                            project_dir = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    'p' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                        }
+                                        if let Some(x) = it.next() {
+                                            profile = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    's' => {
+                                        if profile.is_some() {
+                                            eprintln!("{ERROR}: respecification of source directory");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            source_dir = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected source directory after -s flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'b' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of build directory");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            build_dir = Some(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected build directory after -b flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    't' => {
+                                        if profile.is_some() {
+                                            eprintln!("{WARNING}: respecification of target triple");
+                                            exit(1)
+                                        }
+                                        if let Some(x) = it.next() {
+                                            triple = Some(TargetTriple::create(x.as_str()));
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected target triple after -t flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'T' => {
+                                        if let Some(x) = it.next() {
+                                            targets.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected build target after -T flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if project_dir.is_some() {
+                            eprintln!("{ERROR}: respecification of project directory");
+                            exit(1)
+                        }
+                        project_dir = Some(arg.as_str());
+                    }
+                }
+            }
+            let (project_data, project_dir) = match project_dir {
+                Some("-") => {
+                    let mut cfg = String::new();
+                    if let Err(e) = std::io::stdin().read_to_string(&mut cfg) {
+                        eprintln!("error when reading project file from stdin: {e}");
+                        exit(100)
+                    }
+                    (match toml::from_str::<build::Project>(cfg.as_str()) {
+                        Ok(proj) => proj,
+                        Err(e) => {
+                            eprintln!("error when parsing project file: {e}");
+                            exit(100)
+                        }
+                    }, PathBuf::from("."))
+                },
+                Some(x) => {
+                    if !Path::new(x).exists() {
+                        eprintln!("{ERROR}: {x} does not exist");
+                        exit(100)
+                    }
+                    match std::fs::metadata(x).map(|x| x.file_type().is_dir()) {
+                        Ok(true) => {
+                            let mut path = std::path::PathBuf::from(x);
+                            path.push("cobalt.toml");
+                            if !path.exists() {
+                                eprintln!("{ERROR}: cannot find cobalt.toml in {x}");
+                                exit(100)
+                            }
+                            let cfg;
+                            match std::fs::read_to_string(path) {
+                                Ok(c) => cfg = c,
+                                Err(e) => {
+                                    eprintln!("error when reading project file: {e}");
+                                    exit(100)
+                                }
+                            }
+                            (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                Ok(proj) => proj,
+                                Err(e) => {
+                                    eprintln!("error when parsing project file: {e}");
+                                    exit(100)
+                                }
+                            }, PathBuf::from(x))
+                        },
+                        Ok(false) => {
+                            let mut path = std::path::PathBuf::from(x);
+                            path.pop();
+                            let cfg;
+                            match std::fs::read_to_string(x) {
+                                Ok(c) => cfg = c,
+                                Err(e) => {
+                                    eprintln!("error when reading project file: {e}");
+                                    exit(100)
+                                }
+                            }
+                            (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                Ok(proj) => proj,
+                                Err(e) => {
+                                    eprintln!("error when parsing project file: {e}");
+                                    exit(100)
+                                }
+                            }, path)
+                        },
+                        Err(e) => {
+                            eprintln!("error when determining type of {x}: {e}");
+                            exit(100)
+                        }
+                    }
+                },
+                None => {
+                    let cfg;
+                    if !Path::new("cobalt.toml").exists() {
+                        eprintln!("{ERROR}: couldn't find cobalt.toml in current directory");
+                        exit(100)
+                    }
+                    match std::fs::read_to_string("cobalt.toml") {
+                        Ok(c) => cfg = c,
+                        Err(e) => {
+                            eprintln!("error when reading project file: {e}");
+                            exit(100)
+                        }
+                    }
+                    (match toml::from_str::<build::Project>(cfg.as_str()) {
+                        Ok(proj) => proj,
+                        Err(e) => {
+                            eprintln!("error when parsing project file: {e}");
+                            exit(100)
+                        }
+                    }, PathBuf::from("."))
+                }
+            };
+            let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
+            let build_dir: PathBuf = build_dir.map_or_else(|| {
+                let mut dir = project_dir.clone();
+                dir.push("build");
+                dir
+            }, PathBuf::from);
+            if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
+            else {Target::initialize_native(&INIT_NEEDED)?}
+            exit(build::build(project_data, if targets.len() == 0 {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
+                source_dir,
+                build_dir: build_dir.as_path(),
+                profile: profile.unwrap_or("default"),
+                triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
+                continue_build: false,
+                continue_comp: false
+            }));
+        },
+        "install" => {
+            match package::Package::init_registry() {
+                Ok(()) => {},
+                Err(package::PackageUpdateError::NoInstallDirectory) => {
+                    eprintln!("{ERROR}: could not find or infer Cobalt directory");
+                    exit(1)
+                },
+                Err(package::PackageUpdateError::GitError(e)) => {
+                    eprintln!("{ERROR}: {e}");
+                    exit(2)
+                }
+                Err(package::PackageUpdateError::StdIoError(e)) => {
+                    eprintln!("{ERROR}: {e}");
+                    exit(3)
+                }
+            };
+            let mut good = 0;
+            let registry = package::Package::registry();
+            for pkg in args.iter().skip(2).skip_while(|x| x.len() == 0) {
+                if let Some(p) = registry.get(pkg) {
+                    match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap(), None, package::InstallOptions::default()) {
+                        Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
+                        Err(package::InstallError::DownloadError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 4;
+                        },
+                        Err(package::InstallError::StdIoError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 3;
+                        },
+                        Err(package::InstallError::GitCloneError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 2;
+                        },
+                        Err(package::InstallError::ZipExtractError(e)) => {
+                            eprintln!("{ERROR}: {e}");
+                            good = 5;
+                        },
+                        Err(package::InstallError::BuildFailed(e)) => {
+                            eprintln!("failed to build package {pkg}");
+                            good = e;
+                        },
+                        Err(package::InstallError::NoMatchesError) => {
+                            eprintln!("package {p:?} has no releases");
+                            good = 7;
+                        },
+                        Err(package::InstallError::CfgFileError(e)) => {
+                            eprintln!("{ERROR} in {pkg}'s config file: {e}");
+                            good = 8;
+                        },
+                        Err(package::InstallError::InvalidVersionSpec(_, v)) => {
+                            eprintln!("{ERROR} in {pkg}'s dependencies: invalid version spec {v}");
+                            good = 9;
+                        },
+                        Err(package::InstallError::PkgNotFound(p)) => {
+                            eprintln!("{ERROR} in {pkg}'s dependencies: can't find package {p}");
+                            good = 10;
+                        },
+                        _ => {}
+                    }
+                }
+                else {
+                    eprintln!("{ERROR}: couldn't find package {pkg:?}");
+                    good = 6;
+                }
+            }
+            exit(good)
         },
         x => {
             eprintln!("unknown subcommand '{}'", x);
