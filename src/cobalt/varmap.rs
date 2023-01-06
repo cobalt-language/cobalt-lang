@@ -1,5 +1,6 @@
 use crate::*;
 use inkwell::values::BasicValueEnum;
+use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use std::collections::hash_map::{HashMap, Entry};
 use std::cell::Cell;
 use std::io::{self, Write, Read, BufRead};
@@ -160,7 +161,27 @@ impl<'ctx> Symbol<'ctx> {
                 var.inter_val = InterData::load(buf)?;
                 var.data_type = Type::load(buf)?;
                 if name.len() > 0 {
-                    if let Some(t) = var.data_type.llvm_type(ctx) {
+                    if let Type::Function(ret, params) = &var.data_type {
+                        if let Some(llt) = ret.llvm_type(ctx) {
+                            let mut good = true;
+                            let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                            if good {
+                                let ft = llt.fn_type(&ps, false);
+                                let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                                var.comp_val = Some(BasicValueEnum::PointerValue(fv.as_global_value().as_pointer_value()));
+                            }
+                        }
+                        else if **ret == Type::Null {
+                            let mut good = true;
+                            let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                            if good {
+                                let ft = ctx.context.void_type().fn_type(&ps, false);
+                                let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                                var.comp_val = Some(BasicValueEnum::PointerValue(fv.as_global_value().as_pointer_value()));
+                            }
+                        }
+                    }
+                    else if let Some(t) = var.data_type.llvm_type(ctx) {
                         let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
