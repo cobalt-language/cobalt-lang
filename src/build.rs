@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::process::Command;
 use std::cell::RefCell;
 use serde::*;
@@ -114,7 +114,8 @@ pub struct BuildOptions<'a, 'b, 'c, 'd> {
     pub continue_build: bool,
     pub continue_comp: bool,
     pub triple: &'c inkwell::targets::TargetTriple,
-    pub profile: &'d str
+    pub profile: &'d str,
+    pub link_dirs: Vec<String>
 }
 enum LibInfo {
     Name(String),
@@ -149,11 +150,18 @@ impl TargetData {
         let mut libs = self.missing_libs(targets);
         libs.sort();
         libs.dedup();
-        let (libs, notfound) = libs::find_libs(libs.iter().map(|l| l.as_str()).collect(), link_dirs);
-        for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
-        if notfound.len() > 0 {return Err(102)}
-        libs.into_iter().for_each(|(path, name)| self.init_lib(name, &path, targets));
-        Ok(())
+        match libs::find_libs(libs.clone(), &link_dirs, None) {
+            Ok((libs, notfound)) => {
+                for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
+                if notfound.len() > 0 {return Err(102)}
+                libs.into_iter().for_each(|(path, name)| self.init_lib(&name, &path, targets));
+                Ok(())
+            },
+            Err(e) => {
+                eprintln!("{ERROR}: {e}");
+                Err(100)
+            }
+        }
     }
     pub fn initialized_libs<'a, 'b: 'a>(&'b self, targets: &'a HashMap<String, (Target, RefCell<Option<TargetData>>)>) -> Vec<PathBuf> {
         let mut out = self.libs.iter().filter_map(|lib| if let LibInfo::Path(p) = lib {Some(p.clone())} else {None}).collect::<Vec<_>>();
@@ -267,7 +275,8 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     Ok(out_path)
 }
 fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -> i32 {
-    let ERROR = "error".bright_red().bold();
+    let ERROR = &"error".bright_red().bold();
+    let WARNING = &"warning".bright_yellow().bold();
     match t.target_type {
         TargetType::Executable => {
             if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
@@ -329,7 +338,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                     return 10
                                 },
                                 _ => {}
-                            } // TODO: make library info available through VarMap
+                            }
                         }
                         else {
                             eprintln!("{ERROR}: can't find package {target}");
@@ -344,34 +353,44 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             }
             let mut paths = vec![];
             match t.files.as_ref() {
-                Some(either::Left(files)) => for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("error in file glob: {e}");
-                        return 108;
+                Some(either::Left(files)) => {
+                    let mut passed = false;
+                    for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            eprintln!("error in file glob: {e}");
+                            return 108;
+                        }
+                    }).filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        match build_file(file.as_path(), ctx, opts) {
+                            Ok(path) => paths.push(path),
+                            Err(code) => return code
+                        }
+                        passed = true;
                     }
-                }).filter_map(Result::ok) {
-                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                    match build_file(file.as_path(), ctx, opts) {
-                        Ok(path) => paths.push(path),
-                        Err(code) => return code
-                    }
+                    if !passed {eprintln!("{WARNING}: no files matching glob {files}")}
                 },
-                Some(either::Right(files)) => for file in files.iter().filter_map(|f| match glob::glob((opts.source_dir.to_str()?.to_string() + "/" + f).as_str()) {
-                    Ok(f) => Some(f),
-                    Err(e) => {
-                        eprintln!("error in file glob: {e}");
-                        None
+                Some(either::Right(files)) => {
+                    let mut failed = false;
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {
+                            eprintln!("{ERROR}: couldn't find file {file}");
+                            if opts.continue_build {
+                                failed = true;
+                                continue
+                            }
+                            else {return 120}
+                        }
+                        match build_file(Path::new(&file), ctx, opts) {
+                            Ok(path) => paths.push(path),
+                            Err(code) => return code
+                        }
                     }
-                }).flatten().filter_map(Result::ok) {
-                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                    match build_file(file.as_path(), ctx, opts) {
-                        Ok(path) => paths.push(path),
-                        Err(code) => return code
-                    }
+                    if failed {return 120}
                 },
                 None => {
-                    eprintln!("{ERROR}: executable target must have files");
+                    eprintln!("{ERROR}: library target must have files");
                     return 106;
                 }
             }
@@ -471,31 +490,41 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             }
             let mut paths = vec![];
             match t.files.as_ref() {
-                Some(either::Left(files)) => for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("error in file glob: {e}");
-                        return 108;
+                Some(either::Left(files)) => {
+                    let mut passed = false;
+                    for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            eprintln!("error in file glob: {e}");
+                            return 108;
+                        }
+                    }).filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        match build_file(file.as_path(), ctx, opts) {
+                            Ok(path) => paths.push(path),
+                            Err(code) => return code
+                        }
+                        passed = true;
                     }
-                }).filter_map(Result::ok) {
-                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                    match build_file(file.as_path(), ctx, opts) {
-                        Ok(path) => paths.push(path),
-                        Err(code) => return code
-                    }
+                    if !passed {eprintln!("{WARNING}: no files matching glob {files}")}
                 },
-                Some(either::Right(files)) => for file in files.iter().filter_map(|f| match glob::glob((opts.source_dir.to_str()?.to_string() + "/" + f).as_str()) {
-                    Ok(f) => Some(f),
-                    Err(e) => {
-                        eprintln!("error in file glob: {e}");
-                        None
+                Some(either::Right(files)) => {
+                    let mut failed = false;
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {
+                            eprintln!("{ERROR}: couldn't find file {file}");
+                            if opts.continue_build {
+                                failed = true;
+                                continue
+                            }
+                            else {return 120}
+                        }
+                        match build_file(Path::new(&file), ctx, opts) {
+                            Ok(path) => paths.push(path),
+                            Err(code) => return code
+                        }
                     }
-                }).flatten().filter_map(Result::ok) {
-                    if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                    match build_file(file.as_path(), ctx, opts) {
-                        Ok(path) => paths.push(path),
-                        Err(code) => return code
-                    }
+                    if failed {return 120}
                 },
                 None => {
                     eprintln!("{ERROR}: library target must have files");
@@ -504,10 +533,43 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("{}.colib", t.name));
-            Command::new("ar").args([OsStr::new("-rcs"), output.as_os_str()].into_iter().chain(paths.iter().map(|f| f.as_os_str()))).status().ok().and_then(|x| x.code()).unwrap_or_else(|| {
-                eprintln!("{ERROR}: could not invoke ar");
-                109
-            })
+            let file = match std::fs::File::open(output) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("{ERROR} when opening output file: {e}");
+                    return 110
+                }
+            };
+            let mut builder = ar::Builder::new(file);
+            if let Err(e) = paths.iter().try_for_each(|p| builder.append_path(&p)) {
+                eprintln!("{ERROR}: {e}");
+                return 110
+            }
+            {
+                let mut buf = String::new();
+                buf.push('\0');
+                for link_dir in &opts.link_dirs {
+                    buf += &link_dir;
+                    buf.push('\0');
+                }
+                buf.push('\0');
+                if let Err(e) = builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes()) {
+                    eprintln!("{ERROR}: {e}");
+                    return 110
+                }
+            }
+            {
+                let mut buf: Vec<u8> = vec![];
+                if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
+                    eprintln!("{ERROR}: {e}");
+                    return 110
+                }
+                if let Err(e) = builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice()) {
+                    eprintln!("{ERROR}: {e}");
+                    return 110
+                }
+            }
+            0
         },
         TargetType::Meta => {
             if t.files.is_some() {

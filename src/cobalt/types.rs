@@ -3,6 +3,7 @@ use crate::*;
 use Type::{*, Char, Int};
 use SizeType::*;
 use std::fmt::*;
+use std::io::{self, Write, Read, BufRead};
 #[derive(PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
@@ -127,6 +128,93 @@ impl Type {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
             _ => false
         }
+    }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        match self {
+            IntLiteral => panic!("There shouldn't be an int literal in a variable!"),
+            Int(s, u) => {
+                out.write_all(&[1])?;
+                let mut v = *s as i64;
+                if *u {v = -v;}
+                out.write_all(&v.to_be_bytes())
+            },
+            Char => out.write_all(&[2]),
+            Float16 => out.write_all(&[3]),
+            Float32 => out.write_all(&[4]),
+            Float64 => out.write_all(&[5]),
+            Float128 => out.write_all(&[6]),
+            Null => out.write_all(&[7]),
+            Pointer(b, false) => {
+                out.write_all(&[8])?;
+                b.save(out)
+            },
+            Pointer(b, true) => {
+                out.write_all(&[9])?;
+                b.save(out)
+            },
+            Reference(b, false) => {
+                out.write_all(&[10])?;
+                b.save(out)
+            },
+            Reference(b, true) => {
+                out.write_all(&[11])?;
+                b.save(out)
+            },
+            Borrow(b) => {
+                out.write_all(&[12])?;
+                b.save(out)
+            },
+            Function(b, p) => {
+                out.write_all(&[13])?;
+                out.write_all(&(p.len() as u64).to_be_bytes())?; // # of params
+                b.save(out)?;
+                for (par, c) in p {
+                    par.save(out)?;
+                    out.write_all(&[if *c {1} else {0}])?; // param is const
+                }
+                Ok(())
+            },
+            Module => todo!("Modules can't be stored in variables yet!"),
+            TypeData => todo!("Types can't be stored in variables yet!"),
+            Array(..) => todo!("Arrays aren't implemented yet!")
+        }
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        Ok(match c {
+            1 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let v = i64::from_be_bytes(bytes);
+                Type::Int(v.abs() as u64, v < 0)
+            },
+            2 => Type::Char,
+            3 => Type::Float16,
+            4 => Type::Float32,
+            5 => Type::Float64,
+            6 => Type::Float128,
+            7 => Type::Null,
+            8 => Type::Pointer(Box::new(Type::load(buf)?), false),
+            9 => Type::Pointer(Box::new(Type::load(buf)?), true),
+            10 => Type::Reference(Box::new(Type::load(buf)?), false),
+            11 => Type::Reference(Box::new(Type::load(buf)?), true),
+            12 => Type::Borrow(Box::new(Type::load(buf)?)),
+            13 => {
+                let mut bytes = [0; 8];
+                buf.read_exact(&mut bytes)?;
+                let v = u64::from_be_bytes(bytes);
+                let ret = Type::load(buf)?;
+                let mut vec = Vec::with_capacity(v as usize);
+                for _ in 0..v {
+                    let t = Type::load(buf)?;
+                    buf.read_exact(std::slice::from_mut(&mut c))?;
+                    vec.push((t, c != 0));
+                }
+                Type::Function(Box::new(ret), vec)
+            }
+            x => panic!("read type value expecting value in 1..=13, got {x}")
+        })
     }
 }
 #[allow(unused_variables)]

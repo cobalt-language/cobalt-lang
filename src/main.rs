@@ -3,6 +3,7 @@ use inkwell::targets::*;
 use std::process::{Command, exit};
 use std::io::{Read, Write};
 use std::ffi::OsString;
+use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
 mod libs;
 #[allow(dead_code)]
@@ -277,9 +278,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut in_file: Option<&str> = None;
             let mut out_file: Option<&str> = None;
             let mut linked: Vec<&str> = vec![];
-            let mut link_dirs: Vec<&str> = vec![];
+            let mut link_dirs: Vec<String> = vec![];
             let mut triple: Option<TargetTriple> = None;
             let mut continue_if_err = false;
+            let mut no_default_link = false;
             let mut profile: Option<&str> = None;
             let mut linker_args: Vec<&str> = vec![];
             {
@@ -351,6 +353,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::ExeLibc);
                                 },
+                                "no-default-link" => {
+                                    if no_default_link {
+                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                    }
+                                    no_default_link = true;
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     exit(1)
@@ -402,7 +410,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     },
                                     'L' => {
                                         if let Some(x) = it.next() {
-                                            link_dirs.push(x.as_str());
+                                            link_dirs.push(x.clone());
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected directory after -L flag");
@@ -442,6 +450,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            if !no_default_link {
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+            }
             if in_file.is_none() {
                 eprintln!("{ERROR}: no input file given");
                 exit(1)
@@ -455,7 +467,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
-                OutputType::Library => format!("lib{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Library => format!("{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
@@ -468,6 +480,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let flags = cobalt::Flags::default();
             let fname = unsafe {&mut FILENAME};
             *fname = in_file.to_string();
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&triple);
+            let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+            notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+            if notfound.len() > 0 {exit(102)}
             let mut fail = false;
             let mut overall_fail = false;
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
@@ -487,9 +505,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if fail && !continue_if_err {exit(101)}
-            let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            ctx.module.set_triple(&triple);
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -528,11 +543,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OutputType::Executable => {
                             out.write_all(mb.as_slice())?;
                             let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
-                            }
-                            if notfound.len() > 0 {exit(102)}
                             for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
@@ -547,12 +557,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OutputType::ExeLibc => {
                             out.write_all(mb.as_slice())?;
                             let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
-                            }
-                            if notfound.len() > 0 {exit(102)}
                             for (lib, _) in libs {
+                                let lib = lib.parse_dot()?;
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
@@ -568,22 +574,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::Library => {
-                            writeln!(out, "!<arch>")?;
-                            writeln!(out, "file.o          0           0     0     644     {: >10}`", mb.get_size())?;
-                            out.write(mb.as_slice())?;
-                            writeln!(out)?;
-                            let mut buff = format!("{in_file}\00.1.0\0");
-                            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-                            for nf in notfound.iter() {
-                                eprintln!("couldn't find library {nf}");
+                            let mut builder = ar::Builder::new(out);
+                            builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
+                            {
+                                let mut buf = String::new();
+                                for lib in linked {
+                                    buf += lib;
+                                    buf.push('\0');
+                                }
+                                buf.push('\0');
+                                for link_dir in link_dirs {
+                                    buf += &link_dir;
+                                    buf.push('\0');
+                                }
+                                buf.push('\0');
+                                builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
                             }
-                            if notfound.len() > 0 {exit(102)}
-                            for (lib, _) in libs {
-                                buff += lib.to_str().expect("library path must be valid UTF-8");
-                                buff.push('\0');
+                            {
+                                let mut buf: Vec<u8> = vec![];
+                                ctx.with_vars(|v| v.save(&mut buf))?;
+                                builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
                             }
-                            buff.push('\0');
-                            writeln!(out, ".colib          0           0     0     644     {: >10}`\n{}", buff.as_bytes().len(), buff)?;
                             exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
                         },
                         OutputType::Object => out.write_all(mb.as_slice())?,
@@ -595,8 +606,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "jit" => {
             let mut in_file: Option<&str> = None;
             let mut linked: Vec<&str> = vec![];
-            let mut link_dirs: Vec<&str> = vec![];
+            let mut link_dirs: Vec<String> = vec![];
             let mut continue_if_err = false;
+            let mut no_default_link = false;
             let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -617,6 +629,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         eprintln!("{WARNING}: reuse of --continue flag");
                                     }
                                     continue_if_err = true;
+                                },
+                                "no-default-link" => {
+                                    if no_default_link {
+                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                    }
+                                    no_default_link = true;
                                 },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
@@ -656,7 +674,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     },
                                     'L' => {
                                         if let Some(x) = it.next() {
-                                            link_dirs.push(x.as_str());
+                                            link_dirs.push(x.clone());
                                         }
                                         else {
                                             eprintln!("{ERROR}: expected directory after -L flag");
@@ -680,6 +698,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            if !no_default_link {
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+            }
             let (in_file, code) = if in_file.is_none() {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -694,6 +716,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             *fname = in_file.to_string();
             let mut fail = false;
             let mut overall_fail = false;
+            let ink_ctx = inkwell::context::Context::create();
+            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+            notfound.iter().for_each(|nf| eprintln!("couldn't find library {nf}"));
+            if notfound.len() > 0 {exit(102)}
             let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
             for err in errs {
                 eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
@@ -711,9 +739,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if fail && !continue_if_err {exit(101)}
-            let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             fail = false;
             for err in errs {
@@ -731,11 +756,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
-            let (libs, notfound) = libs::find_libs(linked, link_dirs);
-            for nf in notfound.iter() {
-                eprintln!("couldn't find library {nf}");
-            }
-            if notfound.len() > 0 {exit(102)}
             let jit = jit::LLJIT::new();
             {
                 let mut m = ink_ctx.create_module("");
@@ -841,6 +861,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut source_dir: Option<&str> = None;
             let mut build_dir: Option<&str> = None;
             let mut profile: Option<&str> = None;
+            let mut link_dirs: Vec<String> = vec![];
+            let mut no_default_link = false;
             let mut triple: Option<TargetTriple> = None;
             let mut targets: Vec<&str> = vec![];
             {
@@ -856,6 +878,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
+                                "no-default-link" => {
+                                    if no_default_link {
+                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                    }
+                                    no_default_link = true;
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     exit(1)
@@ -1033,6 +1061,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }, PathBuf::from("."))
                 }
             };
+            if !no_default_link {
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+            }
             let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
             let build_dir: PathBuf = build_dir.map_or_else(|| {
                 let mut dir = project_dir.clone();
@@ -1047,7 +1079,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 profile: profile.unwrap_or("default"),
                 triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
                 continue_build: false,
-                continue_comp: false
+                continue_comp: false,
+                link_dirs 
             }));
         },
         "install" => {
