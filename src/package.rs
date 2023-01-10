@@ -170,7 +170,9 @@ impl Package {
                 continue_comp: false,
                 continue_build: false,
                 triple: &triple,
-                profile: "default"
+                profile: "default",
+                link_dirs:  if let Ok(home) = std::env::var("HOME") {vec![format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]}
+                            else {["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from).collect()}
             });
             if opts.clean {std::fs::remove_dir_all(install_loc)?}
             if res == 0 {Ok(())} else {Err(InstallError::BuildFailed(res))}
