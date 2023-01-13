@@ -109,6 +109,7 @@ pub struct Variable<'ctx> {
 }
 impl<'ctx> Variable<'ctx> {
     pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: Cell::new(false)}}
+    pub fn null(data_type: Option<Type>) -> Self {Variable {comp_val: None, inter_val: None, data_type: data_type.unwrap_or(Type::Null), good: Cell::new(false)}}
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Cell::new(true)}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}

@@ -1620,3 +1620,16 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
         })))
     }
 }
+pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if lhs == rhs {return Some(lhs.clone())}
+    match (lhs, rhs) {
+        (lhs, &Type::Reference(ref base, _) | &Type::Borrow(ref base)) if lhs == &**base => Some(lhs.clone()),
+        (&Type::Reference(ref base, _) | &Type::Borrow(ref base), rhs) if rhs == &**base => Some(rhs.clone()),
+        (Type::IntLiteral, x @ Type::Int(..)) | (x @ Type::Int(..), Type::IntLiteral) => Some(x.clone()),
+        (Type::IntLiteral | Type::Int(..), x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) | (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), Type::IntLiteral | Type::Int(..)) => Some(x.clone()),
+        (Type::Float32, Type::Float16) | (Type::Float16, Type::Float32) => Some(Type::Float32),
+        (Type::Float64, Type::Float16 | Type::Float32) | (Type::Float16 | Type::Float32, Type::Float64) => Some(Type::Float64),
+        (Type::Float128, Type::Float16 | Type::Float32 | Type::Float64) | (Type::Float16 | Type::Float32 | Type::Float64, Type::Float128) => Some(Type::Float128),
+        _ => None
+    }
+}
