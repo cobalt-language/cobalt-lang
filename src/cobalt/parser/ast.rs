@@ -1,3 +1,4 @@
+#![allow(unreachable_code)]
 use crate::*;
 use crate::parser::ops::*;
 use TokenData::*;
@@ -32,7 +33,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 idx += 1;
             }
             Special('&') | Special('*') | Special('^') | Special('[') => break,
-            Keyword(x) if x == "const" || x == "mut" => break,
+            Statement(x) if x == "const" || x == "mut" => break,
             x => {
                 errs.push(Error::new(toks[idx].loc.clone(), 210, format!("unexpected token {:?} in type", x)));
                 if !name.global && name.ids.len() == 1 {
@@ -92,7 +93,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
         match &toks[idx].data {
             Special(c) if terminators.contains(*c) => break,
             Operator(s) if s.len() == 1 && terminators.contains(unsafe {s.get_unchecked(0..1)}) => break,
-            Keyword(k) if k == "mut" => match &toks.get(idx + 1).map(|x| &x.data) {
+            Statement(k) if k == "mut" => match &toks.get(idx + 1).map(|x| &x.data) {
                 Some(Operator(x)) => match x.as_str() {
                     "&" => {out = ParsedType::Reference(Box::new(out), true); idx += 2;},
                     "*" => {out = ParsedType::Pointer(Box::new(out), true); idx += 2;},
@@ -110,7 +111,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                     break;
                 }
             },
-            Keyword(k) if k == "const" => match &toks.get(idx + 1).map(|x| &x.data) {
+            Statement(k) if k == "const" => match &toks.get(idx + 1).map(|x| &x.data) {
                 Some(Operator(x)) => match x.as_str() {
                     "&" => {out = ParsedType::Reference(Box::new(out), false); idx += 2;},
                     "*" => {out = ParsedType::Pointer(Box::new(out), false); idx += 2;},
@@ -163,7 +164,6 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
     }
     (out, idx + 1, errs)
 }
-#[allow(unreachable_code)]
 fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, Vec<Error>) {
     let mut idx = 1;
     let mut errs = vec![];
@@ -317,6 +317,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
             let err = if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)]; None}
             else {Some(toks[0].loc.clone())};
             toks = &toks[1..];
+            if toks.len() == 0 {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), if let Some(loc) = err {vec![Error::new(loc, 250, "unmacthed '('".to_string())]} else {vec![]})}
             let (ast, _, mut errs) = parse_expr(toks, "", flags);
             if let Some(loc) = err {
                 errs.insert(0, Error::new(loc, 250, "unmatched '('".to_string()));
@@ -432,6 +433,175 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) 
         None => (null(), vec![]) // technically unreachable
     }
 }
+fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    if let Some(Token {data: Keyword(ref s), ref loc}) = toks.get(0) {
+        match s.as_str() {
+            "if" => {
+                let mut errs = vec![];
+                let loc = loc.clone();
+                toks = &toks[1..];
+                let cond;
+                match toks.get(0).map(|x| &x.data) {
+                    None => return (null(), vec![Error::new(loc, 262, "expected condition after 'if'".to_string())]),
+                    Some(Special('(')) => {
+                        let mut depth = 1;
+                        let mut idx = 2;
+                        {
+                            let mut toks = toks;
+                            let loc = toks[0].loc.clone();
+                            while 'cond: {
+                                toks = &toks[1..];
+                                idx += 1;
+                                match toks.get(0).map(|x| &x.data) {
+                                    None => {
+                                        errs.push(Error::new(loc, 250, "unmatched '('".to_string()));
+                                        break 'cond false
+                                    }
+                                    Some(Special('(')) => depth += 1,
+                                    Some(Special(')')) => depth -= 1,
+                                    _ => {}
+                                }
+                                depth > 0
+                            } {}
+                        }
+                        let (c, ts) = toks.split_at(idx - 1);
+                        toks = ts;
+                        let (c, mut es) = parse_groups(c, flags);
+                        errs.append(&mut es);
+                        cond = c;
+                    },
+                    Some(Special('{')) => {
+                        let mut depth = 1;
+                        let mut idx = 2;
+                        {
+                            let mut toks = toks;
+                            let loc = toks[0].loc.clone();
+                            while 'cond: {
+                                toks = &toks[1..];
+                                idx += 1;
+                                match toks.get(0).map(|x| &x.data) {
+                                    None => {
+                                        errs.push(Error::new(loc, 254, "unmatched '{'".to_string()));
+                                        break 'cond false
+                                    }
+                                    Some(Special('{')) => depth += 1,
+                                    Some(Special('}')) => depth -= 1,
+                                    _ => {}
+                                }
+                                depth > 0
+                            } {}
+                        }
+                        let (c, ts) = toks.split_at(idx - 1);
+                        toks = ts;
+                        let (c, mut es) = parse_groups(c, flags);
+                        errs.append(&mut es);
+                        cond = c;
+                    },
+                    x => {
+                        errs.push(Error::new(toks[0].loc.clone(), 0, format!("expected condition after 'if', got {x:?}")).note(Note::new(toks.get(1).map_or_else(|| toks[0].loc.clone(), |x| x.loc.clone()), "did you forget parentheses around the parameters?".to_string())));
+                        cond = null();
+                    }
+                }
+                let (if_true, cont) = {
+                    let mut i = 0;
+                    while i < toks.len() {
+                        match &toks[i].data {
+                            Special(';') => break,
+                            Keyword(x) if x == "else" => break,
+                            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
+                                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                                _ => true
+                            } => {errs.push(Error::new(toks[i].loc.clone(), 280, "expected a ';' before the next expression".to_string())); break},
+                            Special('(') => {
+                                let start = toks[i].loc.clone();
+                                let mut depth = 1;
+                                i += 1;
+                                while i < toks.len() && depth > 0 {
+                                    match &toks[i].data {
+                                        Special('(') => depth += 1,
+                                        Special(')') => depth -= 1,
+                                        _ => {}
+                                    }
+                                    i += 1;
+                                }
+                                if i == toks.len() && depth > 0 {
+                                    errs.push(Error::new(start, 250, "unmatched '('".to_string()));
+                                }
+                            },
+                            Special('[') => {
+                                let start = toks[i].loc.clone();
+                                let mut depth = 1;
+                                i += 1;
+                                while i < toks.len() && depth > 0 {
+                                    match &toks[i].data {
+                                        Special('[') => depth += 1,
+                                        Special(']') => depth -= 1,
+                                        _ => {}
+                                    }
+                                    i += 1;
+                                }
+                                if i == toks.len() && depth > 0 {
+                                    errs.push(Error::new(start, 252, "unmatched '['".to_string()));
+                                }
+                            },
+                            Special('{') => {
+                                let start = toks[i].loc.clone();
+                                let mut depth = 1;
+                                i += 1;
+                                while i < toks.len() && depth > 0 {
+                                    match &toks[i].data {
+                                        Special('{') => depth += 1,
+                                        Special('}') => depth -= 1,
+                                        _ => {}
+                                    }
+                                    i += 1;
+                                }
+                                if i == toks.len() && depth > 0 {
+                                    errs.push(Error::new(start, 254, "unmatched '{'".to_string()));
+                                }
+                            }
+                            Special(')') => {errs.push(Error::new(toks[i].loc.clone(), 251, "unmatched ')'".to_string())); break;},
+                            Special(']') => {errs.push(Error::new(toks[i].loc.clone(), 253, "unmatched ']'".to_string())); break;},
+                            Special('}') => {errs.push(Error::new(toks[i].loc.clone(), 255, "unmatched '}'".to_string())); break;},
+                            _ => i += 1
+                        }
+                    }
+                    let (mut ast, mut es) = parse_splits(&toks[..i], flags);
+                    errs.append(&mut es);
+                    let cont = match toks.get(i).map(|x| &x.data) {
+                        Some(Keyword(x)) if x == "else" => true,
+                        Some(Special(';')) => toks.get(i + 1).map(|x| &x.data) == Some(&Keyword("else".to_string())) && {
+                            let loc = ast.loc().clone();
+                            ast = Box::new(GroupAST::new(loc.clone(), vec![ast, Box::new(NullAST::new(loc))]));
+                            i += 1;
+                            true
+                        },
+                        _ => false
+                    };
+                    toks = &toks[i..];
+                    (ast, cont)
+                };
+                (Box::new(IfAST::new(loc, cond, if_true, if cont {
+                    let (ast, _, mut es) = parse_expr(&toks[1..], ";", flags);
+                    errs.append(&mut es);
+                    Some(ast)
+                } else {None})), errs)
+            },
+            "else" => {
+                let (ast, mut errs) = parse_calls(&toks[1..], flags);
+                errs.insert(0, Error::new(loc.clone(), 263, "unexpected 'else'".to_string()));
+                (ast, errs)
+            },
+            "while" => {
+                let (ast, mut errs) = parse_calls(&toks[1..], flags);
+                errs.insert(0, Error::new(loc.clone(), 901, "while statements aren't currently implemented".to_string()));
+                (ast, errs)
+            },
+            _ => parse_calls(toks, flags)
+        }
+    }
+    else {parse_calls(toks, flags)}
+}
 fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     let mut errs = vec![];
     let start_idx = toks.iter().position(|x| if let Macro(..) = &x.data {false} else {true}).unwrap_or(toks.len());
@@ -442,7 +612,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Erro
     let val = val.unwrap();
     let ast = 'main: {
         match val.data {
-            Keyword(ref x) => match x.as_str() {
+            Statement(ref x) => match x.as_str() {
                 "module" => {errs.push(Error::new(toks[0].loc.clone(), 275, "local module definitions are not allowed".to_string())); null()},
                 "import" => {
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
@@ -479,7 +649,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Erro
                                     toks = &toks[2..];
                                     break;
                                 }
-                                let param_type = if let Keyword(ref x) = toks[1].data {
+                                let param_type = if let Statement(ref x) = toks[1].data {
                                     match x.as_str() {
                                         "mut" => {
                                             toks = &toks[2..];
@@ -752,7 +922,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
             };
         }
     }
-    parse_calls(toks, flags)
+    parse_flow(toks, flags)
 }
 fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     if let Some((tok, toks)) = toks.split_first() {
@@ -910,6 +1080,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
     }
 }
 fn parse_splits(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+    if toks.len() == 0 {return (null(), vec![Error::new(Location::null(), 292, "expected an expression".to_string())])}
     let start = toks[0].loc.clone();
     let mut errs = vec![];
     let mut slices = vec![];
@@ -993,7 +1164,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
-            Keyword(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
+            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "&&" | "**" | "^" | "^^" => false,
                 _ => true
             } => {errs.push(Error::new(toks[i].loc.clone(), 280, "expected a ';' before the next expression".to_string())); break},
@@ -1073,7 +1244,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                 toks = &toks[1..];
             },
             Special('}') => break,
-            Keyword(ref x) => match x.as_str() {
+            Statement(ref x) => match x.as_str() {
                 "module" => {
                     if annotations.len() > 0 {
                         errs.push(Error::new(val.loc.clone(), 281, "annotations cannot be used on a module".to_string()));
@@ -1158,7 +1329,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                     i += 2;
                                     break;
                                 }
-                                let param_type = if let Keyword(ref x) = toks[1].data {
+                                let param_type = if let Statement(ref x) = toks[1].data {
                                     match x.as_str() {
                                         "mut" => {
                                             toks = &toks[2..];

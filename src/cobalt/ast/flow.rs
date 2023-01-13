@@ -5,6 +5,9 @@ pub struct IfAST {
     pub if_true: Box<dyn AST>,
     pub if_false: Option<Box<dyn AST>>
 }
+impl IfAST {
+    pub fn new(loc: Location, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
+}
 impl AST for IfAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
