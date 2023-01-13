@@ -566,18 +566,9 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
                             _ => i += 1
                         }
                     }
-                    let (mut ast, mut es) = parse_splits(&toks[..i], flags);
+                    let (ast, mut es) = parse_splits(&toks[..i], flags);
                     errs.append(&mut es);
-                    let cont = match toks.get(i).map(|x| &x.data) {
-                        Some(Keyword(x)) if x == "else" => true,
-                        Some(Special(';')) => toks.get(i + 1).map(|x| &x.data) == Some(&Keyword("else".to_string())) && {
-                            let loc = ast.loc().clone();
-                            ast = Box::new(GroupAST::new(loc.clone(), vec![ast, Box::new(NullAST::new(loc))]));
-                            i += 1;
-                            true
-                        },
-                        _ => false
-                    };
+                    let cont = toks.get(i).map(|x| &x.data) == Some(&Keyword("else".to_string()));
                     toks = &toks[i..];
                     (ast, cont)
                 };
