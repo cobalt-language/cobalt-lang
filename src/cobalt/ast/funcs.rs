@@ -218,51 +218,8 @@ impl AST for FnDefAST {
                     if let Some(link) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
-                    ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
-                    {
-                        let mut param_count = 0;
-                        for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
-                            if name.len() == 0 {
-                                if !is_const {
-                                    param_count += 1;
-                                }
-                                continue;
-                            }
-                            if !is_const {
-                                let param = f.get_nth_param(param_count).unwrap();
-                                param.set_name(name.as_str());
-                                ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
-                                    comp_val: Some(param),
-                                    inter_val: None,
-                                    data_type: ty.clone(),
-                                    good: Cell::new(true)
-                                }))).map_or((), |x| ());
-                                param_count += 1;
-                            }
-                            else {
-                                ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
-                                    comp_val: None,
-                                    inter_val: None,
-                                    data_type: ty.clone(),
-                                    good: Cell::new(true)
-                                }))).map_or((), |x| ());
-                            }
-                        }
-                    }
-                    if !is_extern {
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        ctx.builder.position_at_end(entry);
-                        let (body, mut es) = self.body.codegen(ctx);
-                        errs.append(&mut es);
-                        ctx.map_vars(|v| v.parent.unwrap());
-                        let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
-                        ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
-                            llt.const_zero()
-                        })));
-                    }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -285,9 +242,53 @@ impl AST for FnDefAST {
                                 }
                             })).collect()
                         })),
-                        data_type: fty,
+                        data_type: fty.clone(),
                         good: Cell::new(true)
-                    })))
+                    }))).clone();
+                    if !is_extern {
+                        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+                        {
+                            let mut param_count = 0;
+                            for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
+                                if name.len() == 0 {
+                                    if !is_const {
+                                        param_count += 1;
+                                    }
+                                    continue;
+                                }
+                                if !is_const {
+                                    let param = f.get_nth_param(param_count).unwrap();
+                                    param.set_name(name.as_str());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                        comp_val: Some(param),
+                                        inter_val: None,
+                                        data_type: ty.clone(),
+                                        good: Cell::new(true)
+                                    }))).map_or((), |x| ());
+                                    param_count += 1;
+                                }
+                                else {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                        comp_val: None,
+                                        inter_val: None,
+                                        data_type: ty.clone(),
+                                        good: Cell::new(true)
+                                    }))).map_or((), |x| ());
+                                }
+                            }
+                        }
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
+                        let (body, mut es) = self.body.codegen(ctx);
+                        errs.append(&mut es);
+                        ctx.map_vars(|v| v.parent.unwrap());
+                        let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
+                        ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
+                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            llt.const_zero()
+                        })));
+                    }
+                    var
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -316,7 +317,7 @@ impl AST for FnDefAST {
                         })),
                         data_type: fty,
                         good: Cell::new(true)
-                    })))
+                    }))).clone()
                 }
             }
             else if **ret == Type::Null {
@@ -329,15 +330,8 @@ impl AST for FnDefAST {
                     if let Some(link) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
-                    if !is_extern {
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        ctx.builder.position_at_end(entry);
-                        let (body, mut es) = self.body.codegen(ctx);
-                        errs.append(&mut es);
-                        ctx.builder.build_return(None);
-                    }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -360,9 +354,49 @@ impl AST for FnDefAST {
                                 }
                             })).collect()
                         })),
-                        data_type: fty,
+                        data_type: fty.clone(),
                         good: Cell::new(true)
-                    })))
+                    }))).clone();
+                    if !is_extern {
+                        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+                        {
+                            let mut param_count = 0;
+                            for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
+                                if name.len() == 0 {
+                                    if !is_const {
+                                        param_count += 1;
+                                    }
+                                    continue;
+                                }
+                                if !is_const {
+                                    let param = f.get_nth_param(param_count).unwrap();
+                                    param.set_name(name.as_str());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                        comp_val: Some(param),
+                                        inter_val: None,
+                                        data_type: ty.clone(),
+                                        good: Cell::new(true)
+                                    }))).map_or((), |x| ());
+                                    param_count += 1;
+                                }
+                                else {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                        comp_val: None,
+                                        inter_val: None,
+                                        data_type: ty.clone(),
+                                        good: Cell::new(true)
+                                    }))).map_or((), |x| ());
+                                }
+                            }
+                        }
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
+                        let (body, mut es) = self.body.codegen(ctx);
+                        errs.append(&mut es);
+                        ctx.builder.build_return(None);
+                        ctx.map_vars(|v| v.parent.unwrap());
+                    }
+                    var
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -391,7 +425,7 @@ impl AST for FnDefAST {
                         })),
                         data_type: fty,
                         good: Cell::new(true)
-                    })))
+                    }))).clone()
                 }
             }
             else {
@@ -421,7 +455,7 @@ impl AST for FnDefAST {
                     })),
                     data_type: fty,
                     good: Cell::new(true)
-                })))
+                }))).clone()
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {

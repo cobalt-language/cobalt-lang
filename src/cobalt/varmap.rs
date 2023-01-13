@@ -4,10 +4,12 @@ use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use std::collections::hash_map::{HashMap, Entry};
 use std::cell::Cell;
 use std::io::{self, Write, Read, BufRead};
+#[derive(Debug, Clone, Copy)]
 pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
 }
+#[derive(Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
     AlreadyExists(usize, Symbol<'ctx>),
@@ -115,6 +117,7 @@ impl<'ctx> Variable<'ctx> {
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
+#[derive(Clone)]
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),
     Module(HashMap<String, Symbol<'ctx>>)
