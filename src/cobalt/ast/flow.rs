@@ -34,27 +34,29 @@ impl AST for IfAST {
                     ctx.builder.position_at_end(itb);
                     let (if_true, mut es) = self.if_true.codegen(ctx);
                     errs.append(&mut es);
-                    ctx.builder.position_at_end(itb);
+                    ctx.builder.position_at_end(ifb);
                     let (if_false, mut es) = if_false.codegen(ctx);
                     errs.append(&mut es);
                     let ty = if let Some(t) = types::utils::common(&if_true.data_type, &if_false.data_type) {t} else {
                         errs.push(Error::new(self.cond.loc(), 315, format!("no common type for values of types {} and {}", if_true.data_type, if_false.data_type)));
                         Type::Null
                     };
+                    ctx.builder.position_at_end(itb);
+                    let err = format!("cannot convert value of type {} to {ty}", if_true.data_type);
+                    let if_true = if let Some(v) = types::utils::impl_convert(if_true, ty.clone(), ctx) {v} else {
+                        errs.push(Error::new(self.cond.loc(), 312, err));
+                        Variable::error()
+                    };
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(ifb);
+                    let err = format!("cannot convert value of type {} to {ty}", if_false.data_type);
+                    let if_false= if let Some(v) = types::utils::impl_convert(if_false, ty.clone(), ctx) {v} else {
+                        errs.push(Error::new(self.cond.loc(), 312, err));
+                        Variable::error()
+                    };
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
                     if let Some(llt) = ty.llvm_type(ctx) {
-                        ctx.builder.position_at_end(itb);
-                        let err = format!("cannot convert value of type {} to {ty}", if_true.data_type);
-                        let if_true = if let Some(v) = types::utils::impl_convert(if_true, ty.clone(), ctx) {v} else {
-                            errs.push(Error::new(self.cond.loc(), 312, err));
-                            Variable::error()
-                        };
-                        ctx.builder.position_at_end(ifb);
-                        let err = format!("cannot convert value of type {} to {ty}", if_false.data_type);
-                        let if_false= if let Some(v) = types::utils::impl_convert(if_false, ty.clone(), ctx) {v} else {
-                            errs.push(Error::new(self.cond.loc(), 312, err));
-                            Variable::error()
-                        };
-                        ctx.builder.position_at_end(mb);
                         let phi = ctx.builder.build_phi(llt, "");
                         if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
                         if let Some(v) = if_false.value(ctx) {phi.add_incoming(&[(&v, ifb)]);}
@@ -77,6 +79,7 @@ impl AST for IfAST {
                         let (if_true, mut es) = self.if_true.codegen(ctx);
                         errs.append(&mut es);
                         ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(mb);
                         if let Some(llt) = if_true.data_type.llvm_type(ctx) {
                             let phi = ctx.builder.build_phi(llt, "");
                             if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
