@@ -584,9 +584,74 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
                 (ast, errs)
             },
             "while" => {
-                let (ast, mut errs) = parse_calls(&toks[1..], flags);
-                errs.insert(0, Error::new(loc.clone(), 901, "while statements aren't currently implemented".to_string()));
-                (ast, errs)
+                let mut errs = vec![];
+                let loc = loc.clone();
+                toks = &toks[1..];
+                let cond;
+                match toks.get(0).map(|x| &x.data) {
+                    None => return (null(), vec![Error::new(loc, 262, "expected condition after 'if'".to_string())]),
+                    Some(Special('(')) => {
+                        let mut depth = 1;
+                        let mut idx = 2;
+                        {
+                            let mut toks = toks;
+                            let loc = toks[0].loc.clone();
+                            while 'cond: {
+                                toks = &toks[1..];
+                                idx += 1;
+                                match toks.get(0).map(|x| &x.data) {
+                                    None => {
+                                        errs.push(Error::new(loc, 250, "unmatched '('".to_string()));
+                                        break 'cond false
+                                    }
+                                    Some(Special('(')) => depth += 1,
+                                    Some(Special(')')) => depth -= 1,
+                                    _ => {}
+                                }
+                                depth > 0
+                            } {}
+                        }
+                        let (c, ts) = toks.split_at(idx - 1);
+                        toks = ts;
+                        let (c, mut es) = parse_groups(c, flags);
+                        errs.append(&mut es);
+                        cond = c;
+                    },
+                    Some(Special('{')) => {
+                        let mut depth = 1;
+                        let mut idx = 2;
+                        {
+                            let mut toks = toks;
+                            let loc = toks[0].loc.clone();
+                            while 'cond: {
+                                toks = &toks[1..];
+                                idx += 1;
+                                match toks.get(0).map(|x| &x.data) {
+                                    None => {
+                                        errs.push(Error::new(loc, 254, "unmatched '{'".to_string()));
+                                        break 'cond false
+                                    }
+                                    Some(Special('{')) => depth += 1,
+                                    Some(Special('}')) => depth -= 1,
+                                    _ => {}
+                                }
+                                depth > 0
+                            } {}
+                        }
+                        let (c, ts) = toks.split_at(idx - 1);
+                        toks = ts;
+                        let (c, mut es) = parse_groups(c, flags);
+                        errs.append(&mut es);
+                        cond = c;
+                    },
+                    x => {
+                        errs.push(Error::new(toks[0].loc.clone(), 0, format!("expected condition after 'if', got {x:?}")).note(Note::new(toks.get(1).map_or_else(|| toks[0].loc.clone(), |x| x.loc.clone()), "did you forget parentheses around the parameters?".to_string())));
+                        cond = null();
+                    }
+                }
+                let (body, _, mut es) = parse_expr(toks, "", flags);
+                errs.append(&mut es);
+                (Box::new(WhileAST::new(loc, cond, body)), errs)
             },
             _ => parse_calls(toks, flags)
         }
