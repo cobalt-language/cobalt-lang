@@ -94,8 +94,8 @@ impl AST for IfAST {
         else {(Variable::error(), vec![])}
     }
     fn to_code(&self) -> String {
-        if let Some(val) = self.if_false.as_ref() {format!("if ({}) {} else {}", self.cond, self.if_true, val)}
-        else {format!("if ({}) {}", self.cond, self.if_true)}
+        if let Some(val) = self.if_false.as_ref() {format!("if ({}) ({}) else ({})", self.cond, self.if_true, val)}
+        else {format!("if ({}) ({})", self.cond, self.if_true)}
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         if let Some(val) = self.if_false.as_ref() {
@@ -109,5 +109,49 @@ impl AST for IfAST {
             print_ast_child(f, pre, &*self.cond, false)?;
             print_ast_child(f, pre, &*self.if_true, true)
         }
+    }
+}
+pub struct WhileAST {
+    loc: Location,
+    cond: Box<dyn AST>,
+    body: Box<dyn AST>
+}
+impl WhileAST {
+    pub fn new(loc: Location, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {WhileAST {loc, cond, body}}
+}
+impl AST for WhileAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+        if ctx.is_const.get() {return (Variable::null(None), vec![])}
+        if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
+            let cond = ctx.context.append_basic_block(f, "cond");
+            let body = ctx.context.append_basic_block(f, "body");
+            let exit = ctx.context.append_basic_block(f, "exit");
+            ctx.builder.build_unconditional_branch(cond);
+            ctx.builder.position_at_end(cond);
+            let (c, mut errs) = self.cond.codegen(ctx);
+            let err = format!("cannot convert value of type {} to i1", c.data_type);
+            let val = types::utils::expl_convert(c, Type::Int(1, false), ctx).and_then(|v| v.value(ctx)).unwrap_or_else(|| {
+                errs.push(Error::new(self.cond.loc(), 312, err));
+                ctx.context.custom_width_int_type(1).const_int(0, false).into()
+            });
+            ctx.builder.build_conditional_branch(val.into_int_value(), body, exit);
+            ctx.builder.position_at_end(body);
+            let (_, mut es) = self.body.codegen(ctx);
+            errs.append(&mut es);
+            ctx.builder.build_unconditional_branch(cond);
+            ctx.builder.position_at_end(exit);
+            (Variable::null(None), errs)
+        }
+        else {(Variable::error(), vec![])}
+    }
+    fn to_code(&self) -> String {
+        format!("while ({}) ({})", self.cond, self.body)
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "while")?;
+        print_ast_child(f, pre, &*self.cond, false)?;
+        print_ast_child(f, pre, &*self.body, true)
     }
 }
