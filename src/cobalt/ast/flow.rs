@@ -68,8 +68,6 @@ impl AST for IfAST {
             }
             else {
                 let (cond, mut errs) = self.cond.codegen(ctx);
-                let (if_true, mut es) = self.if_true.codegen(ctx);
-                errs.append(&mut es);
                 if let Some(ip) = ctx.builder.get_insert_block() {
                     if let Some(f) = ip.get_parent() {
                         let itb = ctx.context.append_basic_block(f, "if_true");
