@@ -19,3 +19,6 @@ pub use types::{Type, SizeType};
 pub use varmap::*;
 pub(crate) use ast::*;
 pub(crate) use parsed_type::*;
+
+#[cfg(test)]
+mod tests;
