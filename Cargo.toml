@@ -24,6 +24,7 @@ tar = "0.4.38"
 try-lazy-init = "0.0.2"
 lazy_static = "1.4.0"
 ar = "0.9.0"
+codespan-reporting = "0.11.1"
 
 [lib]
 name = "cobalt"

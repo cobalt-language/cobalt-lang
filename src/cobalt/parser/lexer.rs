@@ -1,5 +1,7 @@
 use crate::*;
 use std::fmt::{self, Display, Formatter};
+use std::ops::Range;
+use codespan_reporting::diagnostic::*;
 use unicode_ident::*;
 #[derive(Clone, PartialEq, Debug)]
 pub enum TokenData {
@@ -16,11 +18,11 @@ pub enum TokenData {
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Token {
-    pub loc: Location,
+    pub loc: Range<usize>,
     pub data: TokenData
 }
 impl Token {
-    pub fn new(loc: Location, data: TokenData) -> Self {Token{loc, data}}
+    pub fn new(loc: Range<usize>, data: TokenData) -> Self {Token{loc, data}}
 }
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
