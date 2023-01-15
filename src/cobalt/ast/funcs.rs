@@ -2,6 +2,7 @@ use crate::*;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
+use inkwell::attributes::{Attribute, AttributeLoc::Function};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
@@ -115,6 +116,7 @@ impl AST for FnDefAST {
         let mut linkas = None;
         let mut is_extern = false;
         let mut cconv: Option<u32> = None;
+        let mut inline: Option<bool> = None;
         for (ann, arg) in self.annotations.iter() {
             match ann.as_str() {
                 "link" => {
@@ -202,6 +204,21 @@ impl AST for FnDefAST {
                         }
                     });
                 },
+                "inline" => {
+                    if inline.is_some() {
+                        errs.push(Error::new(self.loc.clone(), 417, "respecification of @inline annotation".to_string()))
+                    }
+                    if let Some(arg) = arg {
+                        match arg.as_str() {
+                            "always" | "true" | "1" => inline = Some(true),
+                            "never" | "false" | "0" => inline = Some(false),
+                            x => errs.push(Error::new(self.loc.clone(), 418, format!("unknown inline specification {x:?}")))
+                        }
+                    }
+                    else {
+                        inline = Some(true)
+                    }
+                },
                 x => errs.push(Error::new(self.loc.clone(), 410, format!("unknown annotation {x:?} for variable definition")))
             }
         }
@@ -213,6 +230,12 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
+                    match inline {
+                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
                     f.set_call_conventions(cconv.unwrap_or(8));
                     if let Some(link) = link_type {
                         f.as_global_value().set_linkage(link)
@@ -325,6 +348,12 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
+                    match inline {
+                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
                     f.set_call_conventions(cconv.unwrap_or(8));
                     if let Some(link) = link_type {
                         f.as_global_value().set_linkage(link)
@@ -578,8 +607,7 @@ impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
-        match self.name.as_str() {
-            "asm" => todo!("inline assembly isn't yet implemented"),
+        match self.name.as_str() { // idk what to put here
             x => (Variable::error(), vec![Error::new(self.loc.clone(), 391, format!("unknown intrinsic {x:?}"))])
         }
     }
