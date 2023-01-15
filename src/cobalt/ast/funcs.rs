@@ -1,5 +1,4 @@
 use crate::*;
-use std::cell::Cell;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
@@ -243,7 +242,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty.clone(),
-                        good: Cell::new(true)
+                        export: true
                     }))).clone();
                     if !is_extern {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -263,7 +262,7 @@ impl AST for FnDefAST {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |x| ());
                                     param_count += 1;
                                 }
@@ -272,7 +271,7 @@ impl AST for FnDefAST {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |x| ());
                                 }
                             }
@@ -316,7 +315,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty,
-                        good: Cell::new(true)
+                        export: true
                     }))).clone()
                 }
             }
@@ -355,7 +354,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty.clone(),
-                        good: Cell::new(true)
+                        export: true
                     }))).clone();
                     if !is_extern {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -375,7 +374,7 @@ impl AST for FnDefAST {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |x| ());
                                     param_count += 1;
                                 }
@@ -384,7 +383,7 @@ impl AST for FnDefAST {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |x| ());
                                 }
                             }
@@ -424,7 +423,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty,
-                        good: Cell::new(true)
+                        export: true
                     }))).clone()
                 }
             }
@@ -454,7 +453,7 @@ impl AST for FnDefAST {
                         })).collect()
                     })),
                     data_type: fty,
-                    good: Cell::new(true)
+                    export: true
                 }))).clone()
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),

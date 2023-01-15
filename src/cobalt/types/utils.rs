@@ -1,6 +1,5 @@
 use crate::*;
 use std::cmp::{min, max};
-use std::cell::Cell;
 use inkwell::values::BasicValueEnum::*;
 use inkwell::types::BasicType;
 use inkwell::{
@@ -541,7 +540,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu && ru),
-                good: Cell::new(true)
+                export: true
             }),
             "-" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -553,7 +552,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu && ru),
-                good: Cell::new(true)
+                export: true
             }),
             "*" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -565,7 +564,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu && ru),
-                good: Cell::new(true)
+                export: true
             }),
             "/" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -577,7 +576,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), ru),
-                good: Cell::new(true)
+                export: true
             }),
             "%" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -589,7 +588,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), ru),
-                good: Cell::new(true)
+                export: true
             }),
             "&" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -601,7 +600,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(min(ls, rs), lu || ru),
-                good: Cell::new(true)
+                export: true
             }),
             "|" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -613,7 +612,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu || ru),
-                good: Cell::new(true)
+                export: true
             }),
             "^" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -625,7 +624,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu || ru),
-                good: Cell::new(true)
+                export: true
             }),
             ">>" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -637,7 +636,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu || ru),
-                good: Cell::new(true)
+                export: true
             }),
             "<<" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -649,7 +648,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(max(ls, rs), lu || ru),
-                good: Cell::new(true)
+                export: true
             }),
             "<" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -661,7 +660,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -673,7 +672,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "<=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -685,7 +684,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -697,7 +696,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "==" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -709,7 +708,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "!=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -721,7 +720,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "^^" => None, // TODO: implement exponents
             _ => None
@@ -743,7 +742,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "-" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -755,7 +754,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "*" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -767,7 +766,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "/" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -779,7 +778,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "%" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -791,7 +790,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "&" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -803,7 +802,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "|" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -815,7 +814,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "^" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -827,7 +826,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             ">>" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -839,7 +838,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "<<" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -851,7 +850,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "^^" => None, // TODO: implement exponents
             "<" => Some(Variable {
@@ -864,7 +863,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -876,7 +875,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "<=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -888,7 +887,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -900,7 +899,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "==" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -912,7 +911,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "!=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -924,7 +923,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -942,7 +941,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Pointer(b, s),
-                good: Cell::new(true)
+                export: true
             }),
             "-" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
@@ -957,7 +956,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Pointer(b, s),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -975,7 +974,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Pointer(b, s),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -992,7 +991,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(64, false),
-                good: Cell::new(true)
+                export: true
             }),
             "<" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1006,7 +1005,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1020,7 +1019,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "<=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1034,7 +1033,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1048,7 +1047,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "==" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1062,7 +1061,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "!=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1076,7 +1075,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 inter_val: None,
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -1109,7 +1108,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: l,
-                good: Cell::new(true)
+                export: true
             }),
             "-" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1121,7 +1120,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: l,
-                good: Cell::new(true)
+                export: true
             }),
             "*" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1133,7 +1132,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: l,
-                good: Cell::new(true)
+                export: true
             }),
             "/" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1145,7 +1144,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: l,
-                good: Cell::new(true)
+                export: true
             }),
             "%" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1157,7 +1156,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: l,
-                good: Cell::new(true)
+                export: true
             }),
             "^^" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1169,7 +1168,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: bin_type(l, r, op),
-                good: Cell::new(true)
+                export: true
             }),
             "<" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1181,7 +1180,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1193,7 +1192,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "<=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1205,7 +1204,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             ">=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1217,7 +1216,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "==" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1229,7 +1228,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             "!=" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
@@ -1241,7 +1240,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                     _ => None
                 },
                 data_type: Type::Int(1, false),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -1435,13 +1434,13 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             "~" => Some(Variable {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::IntLiteral,
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -1454,13 +1453,13 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::Int(s, u),
-                good: Cell::new(true)
+                export: true
             }),
             "~" => Some(Variable {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::Int(s, u),
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         },
@@ -1473,7 +1472,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 comp_val: if let (Some(FloatValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Float(-v))} else {None},
                 data_type: x,
-                good: Cell::new(true)
+                export: true
             }),
             _ => None
         }
@@ -1535,7 +1534,7 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                               else {None},
                     inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
                     data_type: x,
-                    good: Cell::new(true)
+                    export: true
                 }),
                 _ => None
             },
@@ -1582,7 +1581,7 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
                     comp_val: if *c {None} else {v.into_compiled(ctx)},
                     inter_val: Some(v.clone()),
                     data_type: t.clone(),
-                    good: Cell::new(true)
+                    export: true
                 }, Location::null())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
                 let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, suffixes[n % 10], v.data_type);
@@ -1608,7 +1607,7 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
                 comp_val: if good {val.and_then(|v| ctx.builder.build_call(v, args.as_slice(), "").try_as_basic_value().left())} else {None},
                 inter_val: None,
                 data_type: *ret,
-                good: Cell::new(true)
+                export: true
             })
         },
         t => Err(Error::new(loc.clone(), 313, format!("invalid arguments to call of value of type {t}")).note(Note::new(args.get(0).map(|(_, l)| l.clone()).unwrap_or(loc), {
