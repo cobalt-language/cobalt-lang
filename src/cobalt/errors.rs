@@ -1,4 +1,4 @@
-use codespan_reporting::{diagnostic::{self, *}, files::*};
+use codespan_reporting::{diagnostic::{self, *}, files::*, term::*};
 use std::ops::Range;
 use std::cell::Cell;
 pub mod files {
@@ -15,6 +15,7 @@ pub mod files {
 }
 pub type FileId = SimpleFiles::FileId;
 pub type Location = (FileId, Range<usize>);
+#[derive(Clone, Debug, PartialEq, Eq, StructuralPartialEq, StructuralEq)]
 pub struct Diagnostic(pub diagnostic::Diagnostic<FileId>, pub u64);
 impl Diagnostic {
     pub fn error(loc: Location, code: u64) -> Self {
@@ -33,4 +34,10 @@ impl Diagnostic {
         Diagnostic(self.0.with_notes(vec![message]), self.1)
     }
 }
+impl std::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        emit(term_color::NoColor::new(f), Config::default(), files::files(), &self.0)
+    }
+}
+impl std::error::Error for Diagnostic {}
 pub mod info;
