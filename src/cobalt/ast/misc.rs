@@ -10,7 +10,7 @@ impl CastAST {
 impl AST for CastAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.target.into_type(ctx).0.unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.val.codegen(ctx);
         let (t, mut es) = self.target.into_type(ctx);
         errs.append(&mut es);
@@ -57,7 +57,7 @@ impl NullAST {
 impl AST for NullAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {(Variable::metaval(InterData::Null, Type::Null), vec![])}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {(Variable::metaval(InterData::Null, Type::Null), vec![])}
     fn to_code(&self) -> String {
         "null".to_string()
     }

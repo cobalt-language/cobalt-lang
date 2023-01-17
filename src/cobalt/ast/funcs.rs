@@ -67,7 +67,7 @@ impl AST for FnDefAST {
             }
         }, pt == &ParamType::Constant)).collect())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (ret, mut errs) = self.ret.into_type(ctx);
         let ret = match ret {
             Ok(t) => t,
@@ -536,7 +536,7 @@ impl AST for CallAST {
         if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
         else {Type::Null}
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (types::utils::call(val, self.loc.clone(), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
@@ -578,7 +578,7 @@ impl IntrinsicAST {
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
             "asm" => todo!("inline assembly isn't yet implemented"),
             x => (Variable::error(), vec![Error::new(self.loc.clone(), 391, format!("unknown intrinsic {x:?}"))])

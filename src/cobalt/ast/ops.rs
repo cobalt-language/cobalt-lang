@@ -14,7 +14,7 @@ impl AST for BinOpAST {
         if self.op == "&&" || self.op == "||" {self.rhs.res_type(ctx)}
         else {types::utils::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.op.as_str() {
             "&&" => todo!("short-circuiting operators aren't implemented"),
             "||" => todo!("short-circuiting operators aren't implemented"),
@@ -53,7 +53,7 @@ impl AST for PostfixAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         let err = format!("postfix operator {} isn't defined for value of {}", self.op, v.data_type);
         let val = types::utils::post_op(v, self.op.as_str(), ctx);
@@ -83,7 +83,7 @@ impl AST for PrefixAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         let err = format!("prefix operator {} isn't defined for value of {}", self.op, v.data_type);
         let val = types::utils::pre_op(v, self.op.as_str(), ctx);

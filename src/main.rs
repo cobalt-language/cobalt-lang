@@ -1,19 +1,21 @@
 use colored::Colorize;
 use inkwell::targets::*;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
 use std::io::{Read, Write};
 use std::ffi::OsString;
 use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
+/*
 mod libs;
 #[allow(dead_code)]
 mod jit;
 mod opt;
 mod build;
-mod package;
+mod package;*/
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
-static mut FILENAME: String = String::new();
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
@@ -52,7 +54,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "lex" if cfg!(debug_assertions) => {
             let mut nfcl = false;
-            let mut loc = false;
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
+            let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.len() == 0 {continue;}
                 if arg.as_bytes()[0] == ('-' as u8) {
@@ -64,61 +68,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 nfcl = true;
                             }
-                            'l' => {
-                                if loc {
-                                    eprintln!("{WARNING}: reuse of -l flag");
-                                }
-                                loc = true;
-                            },
                             x => eprintln!("{WARNING}: unknown flag -{x}")
                         }
                     }
                 }
                 else if nfcl {
-                    let flags = cobalt::Flags::default();
                     nfcl = false;
-                    let (toks, errs) = cobalt::parser::lex(arg.as_str(), cobalt::Location::from_name("<command line>"), &flags);
-                    for err in errs {
-                        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
-                        for note in err.notes {
-                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                        }
-                    }
-                    for tok in toks {
-                        if loc {
-                            eprintln!("{:#}", tok)
-                        }
-                        else {
-                            eprintln!("{}", tok)
-                        }
-                    }
+                    let file = cobalt::errors::files::add_file("<command line>".to_string(), arg.clone());
+                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let (toks, errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)])).unwrap();}
                 }
                 else {
-                    let flags = cobalt::Flags::default();
-                    let fname = unsafe {&mut FILENAME};
-                    *fname = arg;
-                    let (toks, errs) = cobalt::parser::lex(std::fs::read_to_string(fname.clone())?.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
-                    for err in errs {
-                        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
-                        for note in err.notes {
-                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                        }
-                    }
-                    for tok in toks {
-                        if loc {
-                            println!("{:#}", tok)
-                        }
-                        else {
-                            println!("{}", tok)
-                        }
-                    }
+                    let code = std::fs::read_to_string(arg.as_str())?;
+                    let file = cobalt::errors::files::add_file(arg.clone(), code.clone());
+                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)])).unwrap();}
                 }
             }
             if nfcl {
                 eprintln!("{ERROR}: -c switch must be followed by code");
             }
         },
-        "parse" if cfg!(debug_assertions) => {
+        /*"parse" if cfg!(debug_assertions) => {
             let mut nfcl = false;
             let mut loc = false;
             for arg in args.into_iter().skip(2) {
@@ -1150,7 +1125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             exit(good)
-        },
+        }, */
         x => {
             eprintln!("unknown subcommand '{}'", x);
         }

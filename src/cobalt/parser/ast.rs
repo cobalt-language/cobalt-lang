@@ -3,7 +3,7 @@ use crate::*;
 use crate::parser::ops::*;
 use TokenData::*;
 fn null() -> Box<dyn AST> {Box::new(NullAST::new(Location::null()))}
-fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (ParsedType, usize, Vec<Error>) {
+fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (ParsedType, usize, Vec<Diagnostic>) {
     let mut idx = 1;
     if toks.len() == 0 {
         return (ParsedType::Error, 0, vec![Error::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 291, "expected a type".to_string())]); // parse_type always has code before it
@@ -164,7 +164,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
     }
     (out, idx + 1, errs)
 }
-fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, Vec<Error>) {
+fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, Vec<Diagnostic>) {
     let mut idx = 1;
     let mut errs = vec![];
     let (mut name, mut lwp) = match &toks[0].data {
@@ -219,7 +219,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
     }
     (name, idx + 1, errs)
 }
-fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Error>) {
+fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Diagnostic>) {
     let mut idx = 1;
     let mut errs = vec![];
     if toks.len() == 0 {return (DottedName::local(String::new()), 0, vec![])}
@@ -255,7 +255,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     }
     (name, idx + 1, errs)
 }
-fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() == 0 {return (Box::new(NullAST::new(Location::new("<anonymous>", 0, 0, 0))), vec![])}
     match &toks[0].data {
         Int(x) => {
@@ -311,7 +311,7 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Error>) {
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Error::new(tok.loc.clone(), 272, format!("expected identifier or literal, got {:?}", tok.data))).collect())
     }
 }
-fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     match toks.get(0).map(|x| &x.data) {
         Some(Special('(')) => {
             let err = if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)]; None}
@@ -399,7 +399,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
         None => (null(), vec![])
     }
 }
-fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     match toks.last().map(|x| &x.data) {
         Some(Special(')')) => {
             let mut depth = 1;
@@ -433,7 +433,7 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) 
         None => (null(), vec![]) // technically unreachable
     }
 }
-fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some(Token {data: Keyword(ref s), ref loc}) = toks.get(0) {
         match s.as_str() {
             "if" => {
@@ -658,7 +658,7 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     }
     else {parse_calls(toks, flags)}
 }
-fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     let mut errs = vec![];
     let start_idx = toks.iter().position(|x| if let Macro(..) = &x.data {false} else {true}).unwrap_or(toks.len());
     let val = toks.get(start_idx);
@@ -964,7 +964,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Erro
     errs.extend(toks.iter().map(|x| Error::new(x.loc.clone(), 203, format!("expected ';', got {:?}", x.data))));
     (ast, errs)
 }
-fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_last() {
         if let Operator(op) = &tok.data {
             return if COBALT_POST_OPS.contains(&op.as_str()) {
@@ -980,7 +980,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     }
     parse_flow(toks, flags)
 }
-fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_first() {
         if let Operator(op) = &tok.data {
             return if COBALT_PRE_OPS.contains(&op.as_str()) {
@@ -996,7 +996,7 @@ fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
     }
     parse_postfix(toks, flags)
 }
-fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if ops_arg.len() == 0 {return (Box::new(NullAST::new(toks[0].loc.clone())), vec![])}
     let (op_ty, ops) = ops_arg.split_last().unwrap();
     let mut errs = vec![];
@@ -1135,7 +1135,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
         (ast, errs)
     }
 }
-fn parse_splits(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+fn parse_splits(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() == 0 {return (null(), vec![Error::new(Location::null(), 292, "expected an expression".to_string())])}
     let start = toks[0].loc.clone();
     let mut errs = vec![];
@@ -1214,7 +1214,7 @@ fn parse_splits(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>)
         }).collect())), errs)
     }
 }
-fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Error>) {
+fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Diagnostic>) {
     let mut i = 0;
     let mut errs = vec![];
     while i < toks.len() {
@@ -1282,7 +1282,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
-fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Error>) {
+fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
     let mut errs = vec![];
     let mut i = 0;
@@ -1684,7 +1684,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
     };
     (outs, if toks.len() == 0 {None} else {Some(i + 1)}, errs)
 }
-pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Error>) {
+pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() == 0 {
         return (Box::new(TopLevelAST::new(Location::new("<empty>", 0, 0, 0), vec![])), vec![])
     }
