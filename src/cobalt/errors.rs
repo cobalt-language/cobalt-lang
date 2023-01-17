@@ -20,11 +20,11 @@ impl Diagnostic {
     pub fn is_warn(&self) -> bool {self.1 < 100}
     pub fn error(loc: Location, code: u64, message: Option<String>) -> Self {
         assert!(code >= 100, "errors must have codes greater than or equal to 100");
-        Diagnostic(diagnostic::Diagnostic::error().with_code(format!("E{code:0<4}")).with_message(info::lookup(code).map_or("<unknown error>", |i| i.message)).with_labels(vec![if let Some(message) = message {Label::primary(loc.0, loc.1).with_message(message)} else {Label::primary(loc.0, loc.1)}]), code)
+        Diagnostic(diagnostic::Diagnostic::error().with_code(format!("E{code:0>4}")).with_message(info::lookup(code).map_or("<unknown error>", |i| i.message)).with_labels(vec![if let Some(message) = message {Label::primary(loc.0, loc.1).with_message(message)} else {Label::primary(loc.0, loc.1)}]), code)
     }
     pub fn warning(loc: Location, code: u64, message: Option<String>) -> Self {
         assert!(code < 100, "warnings must have codes less than 100");
-        Diagnostic(diagnostic::Diagnostic::warning().with_code(format!("W{code:0<4}")).with_message(info::lookup(code).map_or("<unknown error>", |i| i.message)).with_labels(vec![if let Some(message) = message {Label::primary(loc.0, loc.1).with_message(message)} else {Label::primary(loc.0, loc.1)}]), code)
+        Diagnostic(diagnostic::Diagnostic::warning().with_code(format!("W{code:0>4}")).with_message(info::lookup(code).map_or("<unknown error>", |i| i.message)).with_labels(vec![if let Some(message) = message {Label::primary(loc.0, loc.1).with_message(message)} else {Label::primary(loc.0, loc.1)}]), code)
     }
     pub fn note(self, loc: Location, message: String) -> Self {
         Diagnostic(self.0.with_labels(vec![Label::secondary(loc.0, loc.1).with_message(message)]), self.1)

@@ -325,7 +325,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                                             break 'main;
                                         }
                                         char::from_u32(x).unwrap_or_else(|| {
-                                            errs.push(Diagnostic::error((loc.0, (start + 1)..(loc.1 + 5)), 133, Some(format!("got value U+{x:<04X}"))));
+                                            errs.push(Diagnostic::error((loc.0, (start + 1)..(loc.1 + 5)), 133, Some(format!("got value U+{x:0>4X}"))));
                                             '\0'
                                         })
                                     },
@@ -457,7 +457,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                                             break 'main;
                                         }
                                         char::from_u32(x).unwrap_or_else(|| {
-                                            errs.push(Diagnostic::error((loc.0, (start + 1)..(loc.1 + 10)), 133, Some(format!("got value U+{x:<04X}"))));
+                                            errs.push(Diagnostic::error((loc.0, (start + 1)..(loc.1 + 10)), 133, Some(format!("got value U+{x:0>4X}"))));
                                             '\0'
                                         })
                                     },
@@ -479,9 +479,8 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                             }
                         },
                         '\'' => {
-                            if flags.up {loc.1 += c.len_utf8()};
                             outs.push(Token::new((loc.0, start..(loc.1 + 1)), Char('\0')));
-                            errs.push(Diagnostic::warning((loc.0, start..(start + 1)), 20, None));
+                            errs.push(Diagnostic::warning((loc.0, start..(start + 2)), 20, None));
                             false
                         },
                         x => {
@@ -491,7 +490,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                         },
                     } {
                         match it.next() {
-                            Some('\'') => if flags.up {loc.1 += 1;},
+                            Some('\'') => {},
                             Some(x) => {
                                 if flags.up {loc.1 += x.len_utf8();}
                                 loop {
@@ -504,7 +503,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                                         }
                                     }
                                 }
-                                errs.push(Diagnostic::error((loc.0, start..(loc.1 + 1)), 134, Some(r#"expected "'""#.to_string())));
+                                errs.push(Diagnostic::error((loc.0, (start + 2)..(loc.1 + 1)), 134, Some(r#"expected "'""#.to_string())));
                             },
                             None => errs.push(Diagnostic::error((loc.0, start..(loc.1 + 1)), 130, None))
                         }
@@ -571,7 +570,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     else {
                         match c {
                             '"' => {
-                                outs.push(Token::new((loc.0, start..(loc.1 + 1)), Str(out)));
+                                outs.push(Token::new((loc.0, start..loc.1), Str(out)));
                                 continue 'main
                             },
                             '\\' => lwbs = true,
@@ -579,16 +578,17 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                         }
                     }
                 }
-                errs.push(Diagnostic::error((loc.0, start..(loc.1 + 1)), 131, None));
+                errs.push(Diagnostic::error((loc.0, start..loc.1), 131, None));
             }
             _ if is_xid_start(c) || c == '$' || c == '_'  => {
                 let mut s = c.to_string();
                 let start = loc.1;
                 while let Some(c) = it.peek() {
-                    if flags.up {loc.1 += c.len_utf8()};
+                    let len = c.len_utf8();
                     if *c == '_' || *c == '$' || is_xid_continue(*c) {s.push(*c);}
                     else {break;}
                     it.next();
+                    if flags.up {loc.1 += len};
                 }
                 outs.push(Token::new((loc.0, start..(loc.1 + 1)), match s.as_str() {
                     "let" | "mut" | "const" | "fn" | "cr" | "module" | "import" => Statement(s),
@@ -650,7 +650,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                 }
                 outs.push(Token::new((loc.0, (start..(loc.1 + 1))), Operator(s)));
             },
-            _ => errs.push(Diagnostic::error((loc.0, loc.1..(loc.1 + 1)), 101, Some(format!("character is {c:?} (U+{:0<4X})", c as u32))))
+            _ => errs.push(Diagnostic::error((loc.0, loc.1..(loc.1 + 1)), 101, Some(format!("character is {c:?} (U+{:0>4X})", c as u32))))
         }
         if flags.up {loc.1 += c.len_utf8()};
     }
