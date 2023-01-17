@@ -60,16 +60,19 @@ fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut (
                     Some(c @ '0'..='9') => {
                         val *= 10;
                         val += c.to_digit(10).unwrap() as i128;
+                        if up {loc.1 += 1};
                     },
                     Some('.') => {
                         let mut val = val as f64;
                         let mut dec_places = -1.0;
                         it.next();
+                        if up {loc.1 += 1};
                         loop {
                             match it.peek() {
                                 Some(c @ '0'..='9') => {
                                     val += c.to_digit(10).unwrap() as f64 * (10f64).powf(dec_places);
                                     dec_places -= 1.0;
+                                    if up {loc.1 += 1};
                                 }
                                 _ => return Ok(Token::new((loc.0, start..(loc.1 + 1)), Float(val)))
                             };
@@ -89,6 +92,7 @@ fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut (
                     Some(c @ '0'..='9') => {
                         val += c.to_digit(10).unwrap() as f64 * (10f64).powf(dec_places);
                         dec_places -= 1.0;
+                        if up {loc.1 += 1};
                     }
                     _ => return Ok(Token::new((loc.0, start..(loc.1 + 1)), Float(val)))
                 };
