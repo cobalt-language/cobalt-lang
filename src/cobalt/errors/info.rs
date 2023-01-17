@@ -61,7 +61,11 @@ Check your spelling"#)]),
     /*131*/ ErrorInfo::new("unterminated string literal", ""),
     /*132*/ ErrorInfo::new("unexpected non-hex character in hex escape sequence", ""),
     /*133*/ ErrorInfo::new("invalid Unicode codepoint", ""),
-    /*134*/ ErrorInfo::new("unexpected characters in character literal", "")])
+    /*134*/ ErrorInfo::new("unexpected characters in character literal", "")]),
+    (313, &[
+    /*313*/ ErrorInfo::new("invalid arguments to call", "")]),
+    (900, &[
+    /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];
 pub fn lookup(code: u64) -> Option<ErrorInfo> {
     ERR_REGISTRY.iter().rev().skip_while(|(start, _)| start > &code).next().and_then(|(start, arr)| arr.get((code - start) as usize).copied().unwrap_or(None))

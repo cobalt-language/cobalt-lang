@@ -32,5 +32,19 @@ impl Diagnostic {
     pub fn info(self, message: String) -> Self {
         Diagnostic(self.0.with_notes(vec![message]), self.1)
     }
+    pub fn add_note(&mut self, loc: Location, message: String) -> &mut Self {
+        let mut d = diagnostic::Diagnostic::error();
+        std::mem::swap(&mut d, &mut self.0);
+        d = d.with_labels(vec![Label::secondary(loc.0, loc.1).with_message(message)]);
+        std::mem::swap(&mut d, &mut self.0);
+        self
+    }
+    pub fn add_info(&mut self, message: String) -> &mut Self {
+        let mut d = diagnostic::Diagnostic::error();
+        std::mem::swap(&mut d, &mut self.0);
+        d = d.with_notes(vec![message]);
+        std::mem::swap(&mut d, &mut self.0);
+        self
+    }
 }
 pub mod info;
