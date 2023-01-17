@@ -9,7 +9,6 @@ impl IntLiteralAST {
     pub fn new(loc: Location, val: i128, suffix: Option<String>) -> Self {IntLiteralAST {loc, val, suffix}}
 }
 impl AST for IntLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
@@ -60,7 +59,6 @@ impl FloatLiteralAST {
     pub fn new(loc: Location, val: f64, suffix: Option<String>) -> Self {FloatLiteralAST {loc, val, suffix}}
 }
 impl AST for FloatLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
@@ -103,7 +101,6 @@ impl CharLiteralAST {
     pub fn new(loc: Location, val: char, suffix: Option<String>) -> Self {CharLiteralAST {loc, val, suffix}}
 }
 impl AST for CharLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|x| x.as_str()) {
@@ -154,7 +151,6 @@ impl StringLiteralAST {
     pub fn new(loc: Location, val: String, suffix: Option<String>) -> Self {StringLiteralAST {loc, val, suffix}}
 }
 impl AST for StringLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix {

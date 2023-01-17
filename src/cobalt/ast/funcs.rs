@@ -21,7 +21,6 @@ impl FnDefAST {
     pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
 }
 impl AST for FnDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let (ret, mut errs) = self.ret.into_type(ctx);
         let ret = match ret {
@@ -531,7 +530,6 @@ impl CallAST {
     pub fn new(loc: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, target, args}}
 }
 impl AST for CallAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
         else {Type::Null}
@@ -576,7 +574,6 @@ impl IntrinsicAST {
     pub fn new(loc: Location, name: String, args: Option<String>) -> Self {IntrinsicAST {loc, name, args}}
 }
 impl AST for IntrinsicAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {

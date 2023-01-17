@@ -5,7 +5,6 @@ pub struct ModuleAST {
     pub vals: Vec<Box<dyn AST>>
 }
 impl AST for ModuleAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for module definitions")}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for module definitions")}
     fn to_code(&self) -> String {
@@ -37,7 +36,6 @@ pub struct ImportAST {
     pub name: CompoundDottedName
 }
 impl AST for ImportAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for imports")}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for imports")}
     fn to_code(&self) -> String {

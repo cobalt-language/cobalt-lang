@@ -11,7 +11,6 @@ pub struct VarDefAST {
     pub global: bool
 }
 impl AST for VarDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -424,7 +423,6 @@ pub struct MutDefAST {
     pub global: bool
 }
 impl AST for MutDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -836,7 +834,6 @@ impl VarGetAST {
     pub fn new(loc: Location, name: DottedName) -> Self {VarGetAST {loc, name}}
 }
 impl AST for VarGetAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Ok(Symbol::Variable(x)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
         else {Type::Null}
@@ -866,7 +863,6 @@ pub struct ConstDefAST {
     pub annotations: Vec<(String, Option<String>)>
 }
 impl AST for ConstDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = self.annotations.iter().map(|(x, _)| Error::new(self.loc.clone(), 410, format!("unknown annotation {x:?} for variable definition"))).collect::<Vec<_>>();

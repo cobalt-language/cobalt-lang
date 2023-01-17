@@ -16,7 +16,6 @@ impl Display for TreePrefix {
     }
 }
 pub trait AST {
-    fn loc(&self) -> Location;
     fn is_const(&self) -> bool {false}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
     fn codegen<'ctx>(& self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>);

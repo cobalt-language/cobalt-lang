@@ -1,5 +1,6 @@
 use crate::*;
-use ParsedType::{*, Error};
+use ParsedType::*;
+pub trait AST {fn to_code(&self) -> String;} // NOTE: remove this once parsing is done
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntoTypeError {
     NotAnInt(String),
@@ -22,8 +23,9 @@ pub enum ParsedType {
     TypeOf(Box<dyn AST>),
     Other(DottedName),
 }
+/*
 impl ParsedType {
-    pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<super::Error>) {
+    pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<Diagnostic>) {
         (match self {
             Error | Null => Ok(Type::Null),
             Bool => Ok(Type::Int(1, false)),
@@ -79,6 +81,7 @@ impl ParsedType {
         }, vec![])
     }
 }
+*/
 impl std::fmt::Debug for ParsedType { // Debug isn't implemented for Box
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {

@@ -9,7 +9,6 @@ impl IfAST {
     pub fn new(loc: Location, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
 }
 impl AST for IfAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
         else {self.if_true.res_type(ctx)}
@@ -120,7 +119,6 @@ impl WhileAST {
     pub fn new(loc: Location, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {WhileAST {loc, cond, body}}
 }
 impl AST for WhileAST {
-    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         if ctx.is_const.get() {return (Variable::null(None), vec![])}
