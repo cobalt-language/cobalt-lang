@@ -119,6 +119,7 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut (FileId,
     let params = if parse_params {
         let mut params = "".to_string();
         let mut depth = 1;
+        if flags.up {loc.1 += 1};
         param_start = Some(loc.1);
         it.next();
         loop {
@@ -152,7 +153,7 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut (FileId,
             ],
             None | Some("") => vec![Token::new((loc.0, start..(loc.1 + 1)), Str(env!("CARGO_PKG_VERSION").to_string()))],
             Some(x) => {
-                errs.push(Diagnostic::error((loc.0, param_start.unwrap()..loc.1), 110, Some(format!(r#"expected "major", "minor", "patch", or "array", got {x:?}"#))));
+                errs.push(Diagnostic::error((loc.0, (param_start.unwrap() + 1)..loc.1), 110, Some(format!(r#"expected "major", "minor", "patch", or "array", got {x:?}"#))));
                 vec![]
             }
         },
