@@ -62,7 +62,10 @@ Check your spelling"#)]),
     /*132*/ ErrorInfo::new("unexpected non-hex character in hex escape sequence", ""),
     /*133*/ ErrorInfo::new("invalid Unicode codepoint", ""),
     /*134*/ ErrorInfo::new("unexpected characters in character literal", "")]),
-    (313, &[
+    (310, &[
+    /*310*/ ErrorInfo::new("operator is not defined for these types", ""),
+    /*311*/ None,
+    /*312*/ None,
     /*313*/ ErrorInfo::new("invalid arguments to call", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
