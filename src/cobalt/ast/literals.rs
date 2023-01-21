@@ -3,41 +3,42 @@ use inkwell::values::BasicValueEnum::*;
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
-    pub suffix: Option<String>
+    pub suffix: Option<(String, Location)>
 }
 impl IntLiteralAST {
-    pub fn new(loc: Location, val: i128, suffix: Option<String>) -> Self {IntLiteralAST {loc, val, suffix}}
+    pub fn new(loc: Location, val: i128, suffix: Option<(String, Location)>) -> Self {IntLiteralAST {loc, val, suffix}}
 }
 impl AST for IntLiteralAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => Type::IntLiteral,
-            Some("isize") => Type::Int(64, false),
-            Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
-            Some("usize") => Type::Int(64, true),
-            Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("", _)) => Type::IntLiteral,
+            Some(("isize", _)) => Type::Int(64, false),
+            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
+            Some(("usize", _)) => Type::Int(64, true),
+            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
             _ => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::IntLiteral), vec![]),
-            Some("isize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, false)), vec![]),
-            Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::IntLiteral), vec![]),
+            Some(("isize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, false)), vec![]),
+            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, false)), vec![])
             },
-            Some("usize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, true)), vec![]),
-            Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
+            Some(("usize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, true)), vec![]),
+            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
             },
-            Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for integer literal"))])
+            Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for integer literal")))])
         }
     }
     fn to_code(&self) -> String {
-        if let Some(ref suf) = self.suffix {
+        if let Some((ref suf, _)) = self.suffix {
             format!("{}{}", self.val, suf)
         }
         else {
@@ -46,40 +47,41 @@ impl AST for IntLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
         write!(f, "int: {}", self.val)?;
-        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }
 pub struct FloatLiteralAST {
     loc: Location,
     pub val: f64,
-    pub suffix: Option<String>
+    pub suffix: Option<(String, Location)>
 }
 impl FloatLiteralAST {
-    pub fn new(loc: Location, val: f64, suffix: Option<String>) -> Self {FloatLiteralAST {loc, val, suffix}}
+    pub fn new(loc: Location, val: f64, suffix: Option<(String, Location)>) -> Self {FloatLiteralAST {loc, val, suffix}}
 }
 impl AST for FloatLiteralAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("f64") => Type::Float64,
-            Some("f16") => Type::Float16,
-            Some("f32") => Type::Float32,
-            Some("f128") => Type::Float64,
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("f64", _)) => Type::Float64,
+            Some(("f16", _)) => Type::Float16,
+            Some(("f32", _)) => Type::Float32,
+            Some(("f128", _)) => Type::Float64,
             _ => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("f64") => (Variable::interpreted(FloatValue(ctx.context.f64_type().const_float(self.val)), InterData::Float(self.val), Type::Float64), vec![]),
-            Some("f16") => (Variable::interpreted(FloatValue(ctx.context.f16_type().const_float(self.val)), InterData::Float(self.val), Type::Float16), vec![]),
-            Some("f32") => (Variable::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
-            Some("f128") => (Variable::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
-            Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for floating-point literal"))])
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("f64", _)) => (Variable::interpreted(FloatValue(ctx.context.f64_type().const_float(self.val)), InterData::Float(self.val), Type::Float64), vec![]),
+            Some(("f16", _)) => (Variable::interpreted(FloatValue(ctx.context.f16_type().const_float(self.val)), InterData::Float(self.val), Type::Float16), vec![]),
+            Some(("f32", _)) => (Variable::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
+            Some(("f128", _)) => (Variable::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
+            Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for float literal")))])
         }
     }
     fn to_code(&self) -> String {
-        if let Some(ref suf) = self.suffix {
+        if let Some((ref suf, _)) = self.suffix {
             format!("{}{}", self.val, suf)
         }
         else {
@@ -88,48 +90,49 @@ impl AST for FloatLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
         write!(f, "float: {}", self.val)?;
-        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }
 pub struct CharLiteralAST {
     loc: Location,
     pub val: char,
-    pub suffix: Option<String>
+    pub suffix: Option<(String, Location)>
 }
 impl CharLiteralAST {
-    pub fn new(loc: Location, val: char, suffix: Option<String>) -> Self {CharLiteralAST {loc, val, suffix}}
+    pub fn new(loc: Location, val: char, suffix: Option<(String, Location)>) -> Self {CharLiteralAST {loc, val, suffix}}
 }
 impl AST for CharLiteralAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => Type::Char,
-            Some("isize") => Type::Int(64, false),
-            Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
-            Some("usize") => Type::Int(64, true),
-            Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("", _)) => Type::Char,
+            Some(("isize", _)) => Type::Int(64, false),
+            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
+            Some(("usize", _)) => Type::Int(64, true),
+            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
             _ => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        match self.suffix.as_ref().map(|x| x.as_str()) {
-            None | Some("") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Char), vec![]),
-            Some("isize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, false)), vec![]),
-            Some(x) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
+        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
+            None | Some(("", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Char), vec![]),
+            Some(("isize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, false)), vec![]),
+            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, false)), vec![])
             },
-            Some("usize") => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, true)), vec![]),
-            Some(x) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
+            Some(("usize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, true)), vec![]),
+            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u64 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
             },
-            Some(x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for character literal"))])
+            Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for character literal")))])
         }
     }
     fn to_code(&self) -> String {
-        if let Some(ref suf) = self.suffix {
+        if let Some((ref suf, _)) = self.suffix {
             format!("{:?}{}", self.val, suf)
         }
         else {
@@ -138,34 +141,35 @@ impl AST for CharLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
         write!(f, "char: {:?}", self.val)?;
-        if let Some(ref s) = self.suffix {writeln!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }
 pub struct StringLiteralAST {
     loc: Location,
     pub val: String,
-    pub suffix: Option<String>
+    pub suffix: Option<(String, Location)>
 }
 impl StringLiteralAST {
-    pub fn new(loc: Location, val: String, suffix: Option<String>) -> Self {StringLiteralAST {loc, val, suffix}}
+    pub fn new(loc: Location, val: String, suffix: Option<(String, Location)>) -> Self {StringLiteralAST {loc, val, suffix}}
 }
 impl AST for StringLiteralAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix {
             None => Type::Pointer(Box::new(Type::Int(8, false)), false),
             Some(_) => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        match self.suffix {
+        match &self.suffix {
             None => (Variable::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Int(8, false)), false)), vec![]),
-            Some(ref x) => (Variable::error(), vec![Error::new(self.loc.clone(), 390, format!("unknown suffix {x} for string literal"))])
+            Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for string literal")))])
         }
     }
     fn to_code(&self) -> String {
-        if let Some(ref suf) = self.suffix {
+        if let Some((ref suf, _)) = self.suffix {
             format!("{:?}{}", self.val, suf)
         }
         else {
@@ -174,7 +178,7 @@ impl AST for StringLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
         write!(f, "string: {:?}", self.val)?;
-        if let Some(ref s) = self.suffix {write!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {write!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }

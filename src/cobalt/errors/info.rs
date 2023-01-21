@@ -67,6 +67,8 @@ Check your spelling"#)]),
     /*311*/ None,
     /*312*/ None,
     /*313*/ ErrorInfo::new("invalid arguments to call", "")]),
+    (390, &[
+    /*390*/ ErrorInfo::new("unknown literal suffix", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];
