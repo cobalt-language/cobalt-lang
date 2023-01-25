@@ -102,12 +102,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if nfcl {
-                eprintln!("{ERROR}: -c switch must be followed by code");
+                eprintln!("{ERROR}: -c flag must be followed by code");
             }
         },
-        /*"parse" if cfg!(debug_assertions) => {
+        "parse" if cfg!(debug_assertions) => {
             let mut nfcl = false;
             let mut loc = false;
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
+            let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.len() == 0 {continue;}
                 if arg.as_bytes()[0] == ('-' as u8) {
@@ -118,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("{WARNING}: reuse of -c flag");
                                 }
                                 nfcl = true;
-                            }
+                            },
                             'l' => {
                                 if loc {
                                     eprintln!("{WARNING}: reuse of -l flag");
@@ -131,49 +134,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let flags = cobalt::Flags::default();
-                    let (toks, mut errs) = cobalt::parser::lex(arg.as_str(), cobalt::Location::from_name("<command line>"), &flags);
+                    let file = cobalt::errors::files::add_file("<command line>".to_string(), arg.clone());
+                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let (toks, mut errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
-                    for err in errs {
-                        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
-                        for note in err.notes {
-                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                        }
-                    }
-                    if loc {
-                        print!("{:#}", ast)
-                    }
-                    else {
-                        print!("{}", ast)
-                    }
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    if loc {print!("{:#}", ast)}
+                    else {print!("{}", ast)}
                 }
                 else {
-                    let flags = cobalt::Flags::default();
-                    let fname = unsafe {&mut FILENAME};
-                    *fname = arg;
-                    let (toks, mut errs) = cobalt::parser::lex(std::fs::read_to_string(fname.clone())?.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
+                    let code = std::fs::read_to_string(arg.as_str())?;
+                    let file = cobalt::errors::files::add_file(arg.clone(), code.clone());
+                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
-                    for err in errs {
-                        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {ERROR}, err.loc, err.message);
-                        for note in err.notes {
-                            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                        }
-                    }
-                    if loc {
-                        print!("{:#}", ast)
-                    }
-                    else {
-                        print!("{}", ast)
-                    }
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    if loc {print!("{:#}", ast)}
+                    else {print!("{}", ast)}
                 }
             }
             if nfcl {
-                eprintln!("{ERROR}: -c switch must be followed by code");
+                eprintln!("{ERROR}: -c flag must be followed by code");
             }
         },
-        "llvm" if cfg!(debug_assertions) => {
+        /*"llvm" if cfg!(debug_assertions) => {
             let mut in_file: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
