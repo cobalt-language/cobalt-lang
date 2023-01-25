@@ -9,6 +9,7 @@ impl IfAST {
     pub fn new(loc: Location, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
 }
 impl AST for IfAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
         else {self.if_true.res_type(ctx)}
@@ -20,7 +21,7 @@ impl AST for IfAST {
         errs.append(&mut es);
         let err = format!("cannot convert value of type {} to i1", cond.data_type);
         let v = if let Some(v) = types::utils::expl_convert(cond, Type::Int(1, false), ctx) {v} else {
-            errs.push(Error::new(self.cond.loc(), 312, err));
+            errs.push(Diagnostic::error(self.cond.loc(), 312, Some(err)));
             Variable::compiled(ctx.context.custom_width_int_type(1).const_int(0, false).into(), Type::Int(1, false))
         };
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = v.comp_val {
@@ -37,20 +38,20 @@ impl AST for IfAST {
                     let (if_false, mut es) = if_false.codegen(ctx);
                     errs.append(&mut es);
                     let ty = if let Some(t) = types::utils::common(&if_true.data_type, &if_false.data_type) {t} else {
-                        errs.push(Error::new(self.cond.loc(), 315, format!("no common type for values of types {} and {}", if_true.data_type, if_false.data_type)));
+                        errs.push(Diagnostic::error(self.cond.loc(), 315, Some(format!("no common type for values of types {} and {}", if_true.data_type, if_false.data_type))));
                         Type::Null
                     };
                     ctx.builder.position_at_end(itb);
                     let err = format!("cannot convert value of type {} to {ty}", if_true.data_type);
                     let if_true = if let Some(v) = types::utils::impl_convert(if_true, ty.clone(), ctx) {v} else {
-                        errs.push(Error::new(self.cond.loc(), 312, err));
+                        errs.push(Diagnostic::error(self.cond.loc(), 311, Some(err)));
                         Variable::error()
                     };
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(ifb);
                     let err = format!("cannot convert value of type {} to {ty}", if_false.data_type);
                     let if_false= if let Some(v) = types::utils::impl_convert(if_false, ty.clone(), ctx) {v} else {
-                        errs.push(Error::new(self.cond.loc(), 312, err));
+                        errs.push(Diagnostic::error(self.cond.loc(), 311, Some(err)));
                         Variable::error()
                     };
                     ctx.builder.build_unconditional_branch(mb);
@@ -66,7 +67,6 @@ impl AST for IfAST {
                 else {Variable::error()}
             }
             else {
-                let (cond, mut errs) = self.cond.codegen(ctx);
                 if let Some(ip) = ctx.builder.get_insert_block() {
                     if let Some(f) = ip.get_parent() {
                         let itb = ctx.context.append_basic_block(f, "if_true");
@@ -119,7 +119,8 @@ impl WhileAST {
     pub fn new(loc: Location, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {WhileAST {loc, cond, body}}
 }
 impl AST for WhileAST {
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         if ctx.is_const.get() {return (Variable::null(None), vec![])}
         if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
@@ -131,7 +132,7 @@ impl AST for WhileAST {
             let (c, mut errs) = self.cond.codegen(ctx);
             let err = format!("cannot convert value of type {} to i1", c.data_type);
             let val = types::utils::expl_convert(c, Type::Int(1, false), ctx).and_then(|v| v.value(ctx)).unwrap_or_else(|| {
-                errs.push(Error::new(self.cond.loc(), 312, err));
+                errs.push(Diagnostic::error(self.cond.loc(), 312, Some(err)));
                 ctx.context.custom_width_int_type(1).const_int(0, false).into()
             });
             ctx.builder.build_conditional_branch(val.into_int_value(), body, exit);

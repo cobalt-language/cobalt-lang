@@ -58,7 +58,7 @@ pub mod scope;
 pub mod misc;
 pub mod funcs;
 pub mod ops;
-// pub mod flow;
+pub mod flow;
 
 pub use vars::*;
 pub use groups::*;
@@ -67,4 +67,4 @@ pub use scope::*;
 pub use misc::*;
 pub use funcs::*;
 pub use ops::*;
-// pub use flow::*;
+pub use flow::*;
