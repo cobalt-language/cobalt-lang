@@ -8,6 +8,7 @@ impl CastAST {
     pub fn new(loc: Location, val: Box<dyn AST>, target: ParsedType) -> Self {CastAST {loc, val, target}}
 }
 impl AST for CastAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.target.into_type(ctx).0.unwrap_or(Type::Null)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.val.codegen(ctx);
@@ -15,27 +16,27 @@ impl AST for CastAST {
         errs.append(&mut es);
         let t = match t {
             Ok(t) => t,
-            Err(IntoTypeError::NotAnInt(name)) => {
-                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+            Err(IntoTypeError::NotAnInt(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                 Type::Null
             },
-            Err(IntoTypeError::NotCompileTime) => {
-                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+            Err(IntoTypeError::NotCompileTime(loc)) => {
+                errs.push(Diagnostic::error(loc, 324, None));
                 Type::Null
             },
-            Err(IntoTypeError::NotAModule(name)) => {
-                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+            Err(IntoTypeError::NotAModule(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                 Type::Null
             },
-            Err(IntoTypeError::DoesNotExist(name)) => {
-                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+            Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Null
             }
         };
         let err = format!("cannot convert value of type {} to {t}", val.data_type);
         if let Some(val) = types::utils::expl_convert(val, t, ctx) {(val, errs)}
         else {
-            errs.push(Error::new(self.loc.clone(), 311, err));
+            errs.push(Diagnostic::error(self.loc.clone(), 311, Some(err)));
             (Variable::error(), errs)
         }
     }
@@ -54,6 +55,7 @@ impl NullAST {
     pub fn new(loc: Location) -> Self {NullAST {loc}}
 }
 impl AST for NullAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {(Variable::metaval(InterData::Null, Type::Null), vec![])}
     fn to_code(&self) -> String {
