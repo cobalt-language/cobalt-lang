@@ -16,6 +16,34 @@ pub enum TokenData {
     Statement(String),
     Macro(String, Option<String>)
 }
+impl Display for TokenData {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if f.alternate() {
+            match self {
+                Int(val) => write!(f, "int '{val}'"),
+                Float(val) => write!(f, "float '{val}'"),
+                Char(val) => write!(f, "char {val:?}"),
+                Str(val) => write!(f, "str {val:?}"),
+                Special(val) => write!(f, "'{val}'"),
+                Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "'{val}'"),
+                Macro(val, None) => write!(f, "'@{val}'"),
+                Macro(val, Some(ref args)) => write!(f, "'@{val}({args})'")
+            }
+        }
+        else {
+            match self {
+                Int(val) => write!(f, "{val}"),
+                Float(val) => write!(f, "{val}"),
+                Char(val) => write!(f, "{val:?}"),
+                Str(val) => write!(f, "{val:?}"),
+                Special(val) => write!(f, "{val}"),
+                Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "{val}"),
+                Macro(val, None) => write!(f, "@{val}"),
+                Macro(val, Some(ref args)) => write!(f, "@{val}({args})")
+            }
+        }
+    }
+}
 #[derive(Clone, PartialEq, Debug)]
 pub struct Token {
     pub loc: Location,
