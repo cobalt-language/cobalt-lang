@@ -56,7 +56,7 @@ pub mod groups;
 pub mod literals;
 pub mod scope;
 pub mod misc;
-// pub mod funcs;
+pub mod funcs;
 pub mod ops;
 // pub mod flow;
 
@@ -65,6 +65,6 @@ pub use groups::*;
 pub use literals::*;
 pub use scope::*;
 pub use misc::*;
-// pub use funcs::*;
+pub use funcs::*;
 pub use ops::*;
 // pub use flow::*;

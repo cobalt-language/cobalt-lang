@@ -15,30 +15,31 @@ pub struct FnDefAST {
     pub ret: ParsedType,
     pub params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, // parameter, mutable, type, default
     pub body: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>)>
+    pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
+    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
 }
 impl AST for FnDefAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let (ret, mut errs) = self.ret.into_type(ctx);
         let ret = match ret {
             Ok(t) => t,
-            Err(IntoTypeError::NotAnInt(name)) => {
-                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+            Err(IntoTypeError::NotAnInt(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                 Type::Null
             },
-            Err(IntoTypeError::NotCompileTime) => {
-                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+            Err(IntoTypeError::NotCompileTime(loc)) => {
+                errs.push(Diagnostic::error(loc, 324, None));
                 Type::Null
             },
-            Err(IntoTypeError::NotAModule(name)) => {
-                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+            Err(IntoTypeError::NotAModule(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                 Type::Null
             },
-            Err(IntoTypeError::DoesNotExist(name)) => {
-                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+            Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Null
             }
         };
@@ -47,20 +48,20 @@ impl AST for FnDefAST {
             errs.append(&mut es);
             match ty {
                 Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                     Type::Null
                 },
-                Err(IntoTypeError::NotCompileTime) => {
-                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                Err(IntoTypeError::NotCompileTime(loc)) => {
+                    errs.push(Diagnostic::error(loc, 324, None));
                     Type::Null
                 },
-                Err(IntoTypeError::NotAModule(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                Err(IntoTypeError::NotAModule(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                     Type::Null
                 },
-                Err(IntoTypeError::DoesNotExist(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                     Type::Null
                 }
             }
@@ -70,20 +71,20 @@ impl AST for FnDefAST {
         let (ret, mut errs) = self.ret.into_type(ctx);
         let ret = match ret {
             Ok(t) => t,
-            Err(IntoTypeError::NotAnInt(name)) => {
-                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+            Err(IntoTypeError::NotAnInt(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                 Type::Null
             },
-            Err(IntoTypeError::NotCompileTime) => {
-                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+            Err(IntoTypeError::NotCompileTime(loc)) => {
+                errs.push(Diagnostic::error(loc, 324, None));
                 Type::Null
             },
-            Err(IntoTypeError::NotAModule(name)) => {
-                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+            Err(IntoTypeError::NotAModule(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                 Type::Null
             },
-            Err(IntoTypeError::DoesNotExist(name)) => {
-                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+            Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Null
             }
         };
@@ -92,20 +93,20 @@ impl AST for FnDefAST {
             errs.append(&mut es);
             match ty {
                 Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                     Type::Null
                 },
-                Err(IntoTypeError::NotCompileTime) => {
-                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                Err(IntoTypeError::NotCompileTime(loc)) => {
+                    errs.push(Diagnostic::error(loc, 324, None));
                     Type::Null
                 },
-                Err(IntoTypeError::NotAModule(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                Err(IntoTypeError::NotAModule(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                     Type::Null
                 },
-                Err(IntoTypeError::DoesNotExist(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                     Type::Null
                 }
             }
@@ -113,16 +114,16 @@ impl AST for FnDefAST {
         let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
-        let mut is_extern = false;
-        let mut cconv: Option<u32> = None;
-        for (ann, arg) in self.annotations.iter() {
+        let mut is_extern = None;
+        let mut cconv = None;
+        for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "link" => {
-                    if link_type.is_some() {
-                        errs.push(Error::new(self.loc.clone(), 414, "respecification of linkage type".to_string()))
+                    if let Some((_, prev)) = link_type.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 414, None).note(prev, "previously defined here".to_string()))
                     }
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Error::new(self.loc.clone(), 412, "@link annotation requires an argument".to_string())); None},
+                        None => {errs.push(Diagnostic::error(loc.clone(), 412, None)); None},
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
@@ -132,26 +133,26 @@ impl AST for FnDefAST {
                         Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
                         Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        Some(x) => {errs.push(Error::new(self.loc.clone(), 413, format!("unknown link type {x:?} for @link annotation"))); None}
-                    }
+                        Some(x) => {errs.push(Diagnostic::error(loc.clone(), 413, Some(format!("unknown link type {x:?}")))); None},
+                    }.map(|x| (x, loc.clone()))
                 },
                 "linkas" => {
-                    if linkas.is_some() {
-                        errs.push(Error::new(self.loc.clone(), 416, "respecification of @linkas annotation".to_string()))
+                    if let Some((_, prev)) = linkas.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 416, None).note(prev, "previously defined here".to_string()))
                     }
                     if let Some(arg) = arg {
-                        linkas = Some(arg.clone())
+                        linkas = Some((arg.clone(), loc.clone()))
                     }
                     else {
-                        errs.push(Error::new(self.loc.clone(), 415, "@linkas annotation requires an argument".to_string()))
+                        errs.push(Diagnostic::error(loc.clone(), 415, None))
                     }
                 },
                 "cconv" => {
-                    if cconv.is_some() {
-                        errs.push(Error::new(self.loc.clone(), 420, "respecification of calling convention".to_string()))
+                    if let Some((_, prev)) = cconv.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
                     }
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Error::new(self.loc.clone(), 421, "@cconv annotation requires an argument".to_string())); None},
+                        None => {errs.push(Diagnostic::error(loc.clone(), 421, None)); None},
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
@@ -167,18 +168,18 @@ impl AST for FnDefAST {
                         Some(x) => {
                             match x.parse::<u32>() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Error::new(self.loc.clone(), 422, format!("unknown calling convention {x:?} for @cconv annotation"))); None}
+                                Err(_) => {errs.push(Diagnostic::error(loc.clone(), 422, Some(format!("unknown calling convention {x:?}")))); None}
                             }
                         }
-                    });
+                    }.map(|cc| (cc, loc.clone())));
                 },
                 "extern" => {
-                    if is_extern {
-                        errs.push(Error::new(self.loc.clone(), 22, "specifying the @extern annotation multiple times doesn't do anything".to_string()))
+                    if let Some(prev) = is_extern.clone() {
+                        errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
                     }
-                    is_extern = true;
-                    if cconv.is_some() {
-                        errs.push(Error::new(self.loc.clone(), 420, "respecification of calling convention".to_string()))
+                    is_extern = Some(loc.clone());
+                    if let Some((_, prev)) = cconv.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
                     }
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
                         None => {errs.pop(); None},
@@ -197,12 +198,12 @@ impl AST for FnDefAST {
                         Some(x) => {
                             match x.parse::<u32>() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Error::new(self.loc.clone(), 422, format!("unknown calling convention {x:?} for @cconv annotation"))); None}
+                                Err(_) => {errs.push(Diagnostic::error(loc.clone(), 422, Some(format!("unknown calling convention {x:?}")))); None}
                             }
                         }
-                    });
+                    }.map(|cc| (cc, loc.clone())));
                 },
-                x => errs.push(Error::new(self.loc.clone(), 410, format!("unknown annotation {x:?} for variable definition")))
+                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
         let old_ip = ctx.builder.get_insert_block();
@@ -213,8 +214,8 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
-                    f.set_call_conventions(cconv.unwrap_or(8));
-                    if let Some(link) = link_type {
+                    f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
+                    if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -231,12 +232,12 @@ impl AST for FnDefAST {
                                 if let Some(val) = val {
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        errs.push(Diagnostic::error(a.loc(), 314, None));
                                         InterData::Null
                                     }
                                 }
                                 else {
-                                    errs.push(Error::new(a.loc(), 311, err));
+                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
                                     InterData::Null
                                 }
                             })).collect()
@@ -244,7 +245,7 @@ impl AST for FnDefAST {
                         data_type: fty.clone(),
                         good: Cell::new(true)
                     }))).clone();
-                    if !is_extern {
+                    if is_extern.is_none() {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -258,21 +259,21 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
                                         good: Cell::new(true)
-                                    }))).map_or((), |x| ());
+                                    }))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
                                         good: Cell::new(true)
-                                    }))).map_or((), |x| ());
+                                    }))).map_or((), |_| ());
                                 }
                             }
                         }
@@ -283,7 +284,7 @@ impl AST for FnDefAST {
                         ctx.map_vars(|v| v.parent.unwrap());
                         let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
                         ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            errs.push(Diagnostic::error(self.body.loc(), 311, Some(err)));
                             llt.const_zero()
                         })));
                     }
@@ -304,12 +305,12 @@ impl AST for FnDefAST {
                                 if let Some(val) = val {
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        errs.push(Diagnostic::error(a.loc(), 314, None));
                                         InterData::Null
                                     }
                                 }
                                 else {
-                                    errs.push(Error::new(a.loc(), 311, err));
+                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
                                     InterData::Null
                                 }
                             })).collect()
@@ -325,8 +326,8 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
-                    f.set_call_conventions(cconv.unwrap_or(8));
-                    if let Some(link) = link_type {
+                    f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
+                    if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -343,12 +344,12 @@ impl AST for FnDefAST {
                                 if let Some(val) = val {
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        errs.push(Diagnostic::error(a.loc(), 314, None));
                                         InterData::Null
                                     }
                                 }
                                 else {
-                                    errs.push(Error::new(a.loc(), 311, err));
+                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
                                     InterData::Null
                                 }
                             })).collect()
@@ -356,7 +357,7 @@ impl AST for FnDefAST {
                         data_type: fty.clone(),
                         good: Cell::new(true)
                     }))).clone();
-                    if !is_extern {
+                    if is_extern.is_none() {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -370,27 +371,27 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
                                         good: Cell::new(true)
-                                    }))).map_or((), |x| ());
+                                    }))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local(name.clone()), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
                                         good: Cell::new(true)
-                                    }))).map_or((), |x| ());
+                                    }))).map_or((), |_| ());
                                 }
                             }
                         }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
-                        let (body, mut es) = self.body.codegen(ctx);
+                        let (_, mut es) = self.body.codegen(ctx);
                         errs.append(&mut es);
                         ctx.builder.build_return(None);
                         ctx.map_vars(|v| v.parent.unwrap());
@@ -412,12 +413,12 @@ impl AST for FnDefAST {
                                 if let Some(val) = val {
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                        errs.push(Diagnostic::error(a.loc(), 314, None));
                                         InterData::Null
                                     }
                                 }
                                 else {
-                                    errs.push(Error::new(a.loc(), 311, err));
+                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
                                     InterData::Null
                                 }
                             })).collect()
@@ -442,12 +443,12 @@ impl AST for FnDefAST {
                             if let Some(val) = val {
                                 if let Some(val) = val.inter_val {val}
                                 else {
-                                    errs.push(Error::new(a.loc(), 312, "function parameter's default value must be constant".to_string()));
+                                    errs.push(Diagnostic::error(a.loc(), 314, None));
                                     InterData::Null
                                 }
                             }
                             else {
-                                errs.push(Error::new(a.loc(), 311, err));
+                                errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
                                 InterData::Null
                             }
                         })).collect()
@@ -458,17 +459,17 @@ impl AST for FnDefAST {
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
             }
         } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
-        if !is_extern {
+        if is_extern.is_none() {
             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
             else {ctx.builder.clear_insertion_position();}
         }
@@ -476,7 +477,7 @@ impl AST for FnDefAST {
     }
     fn to_code(&self) -> String {
         let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
         out += format!("fn {}(", self.name).as_str();
         let mut len = self.params.len();
         for (param, param_ty, ty, default) in self.params.iter() {
@@ -515,7 +516,7 @@ impl AST for FnDefAST {
             len -= 1;
         }
         writeln!(f, "): {}", self.ret)?;
-        for (name, arg) in self.annotations.iter() {
+        for (name, arg, _) in self.annotations.iter() {
             writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
         print_ast_child(f, pre, &*self.body, true)
@@ -523,20 +524,22 @@ impl AST for FnDefAST {
 }
 pub struct CallAST {
     loc: Location,
+    pub cparen: Location,
     pub target: Box<dyn AST>,
     pub args: Vec<Box<dyn AST>>
 }
 impl CallAST {
-    pub fn new(loc: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, target, args}}
+    pub fn new(loc: Location, cparen: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, cparen, target, args}}
 }
 impl AST for CallAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
         else {Type::Null}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.loc.clone(), self.args.iter().map(|a| {
+        (types::utils::call(val, self.loc.clone(), self.cparen.clone(), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
@@ -574,11 +577,12 @@ impl IntrinsicAST {
     pub fn new(loc: Location, name: String, args: Option<String>) -> Self {IntrinsicAST {loc, name, args}}
 }
 impl AST for IntrinsicAST {
+    fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
             "asm" => todo!("inline assembly isn't yet implemented"),
-            x => (Variable::error(), vec![Error::new(self.loc.clone(), 391, format!("unknown intrinsic {x:?}"))])
+            x => (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }
     fn to_code(&self) -> String {self.name.clone() + self.args.as_ref().map(|x| x.as_str()).unwrap_or("")}

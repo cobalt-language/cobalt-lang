@@ -36,7 +36,7 @@ impl AST for CastAST {
         let err = format!("cannot convert value of type {} to {t}", val.data_type);
         if let Some(val) = types::utils::expl_convert(val, t, ctx) {(val, errs)}
         else {
-            errs.push(Diagnostic::error(self.loc.clone(), 311, Some(err)));
+            errs.push(Diagnostic::error(self.loc.clone(), 312, Some(err)));
             (Variable::error(), errs)
         }
     }
