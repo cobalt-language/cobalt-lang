@@ -51,7 +51,7 @@ pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, l
     pre.pop();
     res
 }
-// pub mod vars;
+pub mod vars;
 pub mod groups;
 pub mod literals;
 // pub mod scope;
@@ -60,7 +60,7 @@ pub mod literals;
 pub mod ops;
 // pub mod flow;
 
-// pub use vars::*;
+pub use vars::*;
 pub use groups::*;
 pub use literals::*;
 // pub use scope::*;

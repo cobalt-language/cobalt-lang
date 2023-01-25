@@ -10,10 +10,13 @@ impl ErrorInfo {
 }
 pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     (20, &[
-    /*20*/ ErrorInfo::new("empty character literal", "")
-    ]),
+    /*020*/ ErrorInfo::new("empty character literal", "")]),
+    (30, &[
+    /*030*/ ErrorInfo::new("@static on a global variable does nothing", ""),
+    /*031*/ ErrorInfo::new("respecifying @static does nothing", ""),
+    /*032*/ ErrorInfo::new("respecifying @extern does nothing", "")]),
     (101, &[
-    /*101*/ ErrorInfo::new("invalid character in source file", ""   ),
+    /*101*/ ErrorInfo::new("invalid character in source file", ""),
     /*102*/ ErrorInfo::new("unterminated multiline comment", "Multiline comments must be properly terminated.
 # Erroneous code
 ```
@@ -69,6 +72,17 @@ Check your spelling"#)]),
     /*313*/ ErrorInfo::new("invalid arguments to call", "")]),
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", "")]),
+    (410, &[
+    /*410*/ ErrorInfo::new("unknown annotation", ""),
+    /*411*/ ErrorInfo::new("@static annotation cannot have arguments", ""),
+    /*412*/ ErrorInfo::new("@link annotation requires an argument", ""),
+    /*413*/ ErrorInfo::new("unknown linkage type for @link", ""),
+    /*414*/ ErrorInfo::new("linkage type cannot be respecified on a variable or function definition", ""),
+    /*415*/ ErrorInfo::new("@linkas annotation requires an argument", ""),
+    /*416*/ ErrorInfo::new("@linkas cannot be respecified", ""),
+    /*417*/ ErrorInfo::new("@extern cannot be specified for non-static local variables", ""),
+    /*418*/ ErrorInfo::new("@link cannot be specified for non-static local variables", ""),
+    /*419*/ ErrorInfo::new("@linkas cannot be specified for non-static local variables", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];
