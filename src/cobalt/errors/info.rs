@@ -20,48 +20,10 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*090*/ ErrorInfo::new("value has been moved from and is in an indeterminate state", "")]),
     (101, &[
     /*101*/ ErrorInfo::new("invalid character in source file", ""),
-    /*102*/ ErrorInfo::new("unterminated multiline comment", "Multiline comments must be properly terminated.
-# Erroneous code
-```
-#=
-This is a multiline comment with no end
-```
-# Help
-- If you use comments with more than one `=`, make sure you close them properly
-- Make sure you properly match nested comments"),
-    /*103*/ ErrorInfo::new("function-like @ directives must have closed parameters", "Macros, annotations, and intrinisics in their function-like form must have matched parentheses
-# Erroneous code
-```
-# this is the only way you can get this (unless you do something weird with macros)
-@version(major
-```
-# Help
-Check your parentheses"),
-    /*104*/ ErrorInfo::new("expected a name after @", "Macros, annotations, and intrinisics must have a name.
-# Erroneous code
-```
-@ # <<< an erroneous annotation
-fn main(): i32 = @; # <<< an erroneous intrinsic
-```
-# Help
-There cannot be a space between the `@` and the identifier, so this is also erroneous:
-```
-@ extern(C) fn puts(str: i8 const*): null;
-#^ remove this space
-```")]),
-    (110, &[ErrorInfo::new("unknown version specification", r#"@version macro, when used with arguments, requires a version type.
-Valid options are:
-- `major`
-- `minor`
-- `patch`
-- `array`- this expands to an array containing [major, minor, patch]
-- no argument or an empty argument expands to a string containing "major.minor.patch"
-# Erroneous code
-```
-let major = @version(majoe);
-```
-# Help
-Check your spelling"#)]),
+    /*102*/ ErrorInfo::new("unterminated multiline comment", include_str!("help/E0102.md")),
+    /*103*/ ErrorInfo::new("function-like @ directives must have closed parameters", include_str!("help/E0103.md")),
+    /*104*/ ErrorInfo::new("expected a name after @", include_str!("help/E0104.md"))]),
+    (110, &[ErrorInfo::new("unknown version specification", include_str!("help/E0110.md"))]),
     (130, &[
     /*130*/ ErrorInfo::new("unterminated character literal", ""),
     /*131*/ ErrorInfo::new("unterminated string literal", ""),
