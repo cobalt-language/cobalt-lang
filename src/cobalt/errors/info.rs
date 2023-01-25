@@ -67,9 +67,15 @@ Check your spelling"#)]),
     /*134*/ ErrorInfo::new("unexpected characters in character literal", "")]),
     (310, &[
     /*310*/ ErrorInfo::new("operator is not defined for these types", ""),
-    /*311*/ None,
-    /*312*/ None,
-    /*313*/ ErrorInfo::new("invalid arguments to call", "")]),
+    /*311*/ ErrorInfo::new("invalid implicit conversion", ""),
+    /*312*/ ErrorInfo::new("invalid explicit conversion", ""),
+    /*313*/ ErrorInfo::new("invalid arguments to call", ""),
+    /*314-319*/ None, None, None, None, None, None,
+    /*320*/ ErrorInfo::new("value is not a module", ""),
+    /*321*/ ErrorInfo::new("value does not exist", ""),
+    /*322*/ ErrorInfo::new("value is not a variable", ""),
+    /*323*/ ErrorInfo::new("redefinition of variable", ""),
+    /*324*/ ErrorInfo::new("value cannot be determined at compile-time", "")]),
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", "")]),
     (410, &[

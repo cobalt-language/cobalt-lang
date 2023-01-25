@@ -79,27 +79,27 @@ impl AST for VarDefAST {
                     errs.append(&mut es);
                     match t {
                         Ok(t) => Some(t),
-                        Err(IntoTypeError::NotAnInt(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                             None
                         },
-                        Err(IntoTypeError::NotCompileTime) => {
-                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
                             None
                         },
-                        Err(IntoTypeError::NotAModule(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                             None
                         },
-                        Err(IntoTypeError::DoesNotExist(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                             None
                         }
                     }
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -132,20 +132,20 @@ impl AST for VarDefAST {
                     errs.append(&mut es);
                     let t = match t {
                         Ok(t) => Some(t),
-                        Err(IntoTypeError::NotAnInt(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                             None
                         },
-                        Err(IntoTypeError::NotCompileTime) => {
-                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
                             None
                         },
-                        Err(IntoTypeError::NotAModule(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                             None
                         },
-                        Err(IntoTypeError::DoesNotExist(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                             None
                         }
                     };
@@ -157,10 +157,10 @@ impl AST for VarDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
-                        if let Some(link) = link_type {gv.set_linkage(link)}
+                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
@@ -197,20 +197,20 @@ impl AST for VarDefAST {
                             errs.append(&mut es);
                             let t = match t {
                                 Ok(t) => Some(t),
-                                Err(IntoTypeError::NotAnInt(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                     None
                                 },
-                                Err(IntoTypeError::NotCompileTime) => {
-                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                Err(IntoTypeError::NotCompileTime(loc)) => {
+                                    errs.push(Diagnostic::error(loc, 324, None));
                                     None
                                 },
-                                Err(IntoTypeError::NotAModule(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                Err(IntoTypeError::NotAModule(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                     None
                                 },
-                                Err(IntoTypeError::DoesNotExist(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
@@ -223,9 +223,9 @@ impl AST for VarDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
-                        if let Some(link) = link_type {gv.set_linkage(link)}
+                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
@@ -238,20 +238,20 @@ impl AST for VarDefAST {
                             errs.append(&mut es);
                             let t = match t {
                                 Ok(t) => Some(t),
-                                Err(IntoTypeError::NotAnInt(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                     None
                                 },
-                                Err(IntoTypeError::NotCompileTime) => {
-                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                Err(IntoTypeError::NotCompileTime(loc)) => {
+                                    errs.push(Diagnostic::error(loc, 324, None));
                                     None
                                 },
-                                Err(IntoTypeError::NotAModule(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                Err(IntoTypeError::NotAModule(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                     None
                                 },
-                                Err(IntoTypeError::DoesNotExist(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
@@ -291,20 +291,20 @@ impl AST for VarDefAST {
                         errs.append(&mut es);
                         let t = match t {
                             Ok(t) => Some(t),
-                            Err(IntoTypeError::NotAnInt(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                            Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                 None
                             },
-                            Err(IntoTypeError::NotCompileTime) => {
-                                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                            Err(IntoTypeError::NotCompileTime(loc)) => {
+                                errs.push(Diagnostic::error(loc, 324, None));
                                 None
                             },
-                            Err(IntoTypeError::NotAModule(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                            Err(IntoTypeError::NotAModule(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                 None
                             },
-                            Err(IntoTypeError::DoesNotExist(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                            Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                 None
                             }
                         };
@@ -330,13 +330,13 @@ impl AST for VarDefAST {
             }
         }
         else {
-            if let Some(loc) = is_extern.is_some() {
+            if let Some(loc) = is_extern {
                 errs.push(Diagnostic::error(loc, 417, None))
             }
             if let Some((_, loc)) = link_type {
                 errs.push(Diagnostic::error(loc, 418, None))
             }
-            if let Some((_, loc)) = link_type {
+            if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
             let (val, mut es) = self.val.codegen(ctx);
@@ -347,20 +347,20 @@ impl AST for VarDefAST {
                 errs.append(&mut es);
                 let t = match t {
                     Ok(t) => Some(t),
-                    Err(IntoTypeError::NotAnInt(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                    Err(IntoTypeError::NotAnInt(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                         None
                     },
-                    Err(IntoTypeError::NotCompileTime) => {
-                        errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                    Err(IntoTypeError::NotCompileTime(loc)) => {
+                        errs.push(Diagnostic::error(loc, 324, None));
                         None
                     },
-                    Err(IntoTypeError::NotAModule(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                    Err(IntoTypeError::NotAModule(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                         None
                     },
-                    Err(IntoTypeError::DoesNotExist(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                    Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                         None
                     }
                 };
@@ -401,12 +401,12 @@ impl AST for VarDefAST {
     }
     fn to_code(&self) -> String {
         let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
         out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "vardef: {}", self.name)?;
-        for (name, arg) in self.annotations.iter() {
+        for (name, arg, _) in self.annotations.iter() {
             writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
         print_ast_child(f, pre, &*self.val, true)
@@ -492,27 +492,27 @@ impl AST for MutDefAST {
                     errs.append(&mut es);
                     match t {
                         Ok(t) => Some(t),
-                        Err(IntoTypeError::NotAnInt(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                             None
                         },
-                        Err(IntoTypeError::NotCompileTime) => {
-                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
                             None
                         },
-                        Err(IntoTypeError::NotAModule(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                             None
                         },
-                        Err(IntoTypeError::DoesNotExist(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                             None
                         }
                     }
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -545,20 +545,20 @@ impl AST for MutDefAST {
                     errs.append(&mut es);
                     let t = match t {
                         Ok(t) => Some(t),
-                        Err(IntoTypeError::NotAnInt(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                             None
                         },
-                        Err(IntoTypeError::NotCompileTime) => {
-                            errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
                             None
                         },
-                        Err(IntoTypeError::NotAModule(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                             None
                         },
-                        Err(IntoTypeError::DoesNotExist(name)) => {
-                            errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                             None
                         }
                     };
@@ -570,10 +570,10 @@ impl AST for MutDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
-                        if let Some(link) = link_type {gv.set_linkage(link)}
+                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
@@ -610,20 +610,20 @@ impl AST for MutDefAST {
                             errs.append(&mut es);
                             let t = match t {
                                 Ok(t) => Some(t),
-                                Err(IntoTypeError::NotAnInt(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                     None
                                 },
-                                Err(IntoTypeError::NotCompileTime) => {
-                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                Err(IntoTypeError::NotCompileTime(loc)) => {
+                                    errs.push(Diagnostic::error(loc, 324, None));
                                     None
                                 },
-                                Err(IntoTypeError::NotAModule(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                Err(IntoTypeError::NotAModule(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                     None
                                 },
-                                Err(IntoTypeError::DoesNotExist(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
@@ -636,9 +636,9 @@ impl AST for MutDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.unwrap_or_else(|| format!("{}", self.name)).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
-                        if let Some(link) = link_type {gv.set_linkage(link)}
+                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
@@ -651,20 +651,20 @@ impl AST for MutDefAST {
                             errs.append(&mut es);
                             let t = match t {
                                 Ok(t) => Some(t),
-                                Err(IntoTypeError::NotAnInt(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                     None
                                 },
-                                Err(IntoTypeError::NotCompileTime) => {
-                                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                                Err(IntoTypeError::NotCompileTime(loc)) => {
+                                    errs.push(Diagnostic::error(loc, 324, None));
                                     None
                                 },
-                                Err(IntoTypeError::NotAModule(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                                Err(IntoTypeError::NotAModule(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                     None
                                 },
-                                Err(IntoTypeError::DoesNotExist(name)) => {
-                                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
@@ -704,20 +704,20 @@ impl AST for MutDefAST {
                         errs.append(&mut es);
                         let t = match t {
                             Ok(t) => Some(t),
-                            Err(IntoTypeError::NotAnInt(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                            Err(IntoTypeError::NotAnInt(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                                 None
                             },
-                            Err(IntoTypeError::NotCompileTime) => {
-                                errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                            Err(IntoTypeError::NotCompileTime(loc)) => {
+                                errs.push(Diagnostic::error(loc, 324, None));
                                 None
                             },
-                            Err(IntoTypeError::NotAModule(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                            Err(IntoTypeError::NotAModule(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                                 None
                             },
-                            Err(IntoTypeError::DoesNotExist(name)) => {
-                                errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                            Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                                 None
                             }
                         };
@@ -749,7 +749,7 @@ impl AST for MutDefAST {
             if let Some((_, loc)) = link_type {
                 errs.push(Diagnostic::error(loc, 418, None))
             }
-            if let Some((_, loc)) = link_type {
+            if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
             let (val, mut errs) = self.val.codegen(ctx);
@@ -759,20 +759,20 @@ impl AST for MutDefAST {
                 errs.append(&mut es);
                 let t = match t {
                     Ok(t) => Some(t),
-                    Err(IntoTypeError::NotAnInt(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                    Err(IntoTypeError::NotAnInt(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                         None
                     },
-                    Err(IntoTypeError::NotCompileTime) => {
-                        errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                    Err(IntoTypeError::NotCompileTime(loc)) => {
+                        errs.push(Diagnostic::error(loc, 324, None));
                         None
                     },
-                    Err(IntoTypeError::NotAModule(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                    Err(IntoTypeError::NotAModule(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                         None
                     },
-                    Err(IntoTypeError::DoesNotExist(name)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                    Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                         None
                     }
                 };
@@ -813,12 +813,12 @@ impl AST for MutDefAST {
     }
     fn to_code(&self) -> String {
         let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
         out + format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "mutdef: {}", self.name)?;
-        for (name, arg) in self.annotations.iter() {
+        for (name, arg, _) in self.annotations.iter() {
             writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
         print_ast_child(f, pre, &*self.val, true)
@@ -848,20 +848,20 @@ impl AST for ConstDefAST {
             errs.append(&mut es);
             let t = match t {
                 Ok(t) => Some(t),
-                Err(IntoTypeError::NotAnInt(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 311, format!("cannot convert value of type {name} to u64")));
+                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
                     None
                 },
-                Err(IntoTypeError::NotCompileTime) => {
-                    errs.push(Error::new(self.loc.clone(), 312, format!("array size cannot be determined at compile time")));
+                Err(IntoTypeError::NotCompileTime(loc)) => {
+                    errs.push(Diagnostic::error(loc, 324, None));
                     None
                 },
-                Err(IntoTypeError::NotAModule(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{name} is not a module")));
+                Err(IntoTypeError::NotAModule(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
                     None
                 },
-                Err(IntoTypeError::DoesNotExist(name)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{name} does not exist")));
+                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
                     None
                 }
             };
