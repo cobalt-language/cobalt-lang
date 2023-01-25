@@ -47,7 +47,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     match args[1].as_str() {
         "help" | "--help" | "-h" => {
-            println!("{}", HELP);
+            match args.get(2) {
+                None => println!("{HELP}"),
+                Some(x) if x.len() == 5 && (x.as_bytes()[0] == 'E' as u8 || x.as_bytes()[0] == 'W' as u8) && x.bytes().skip(1).all(|x| x >= '0' as u8 && x <= '9' as u8) => {
+                    match cobalt::errors::info::lookup(x[1..].parse().unwrap()).map(|x| x.help) {
+                        None | Some("") => eprintln!("no help message available for {x}"),
+                        Some(x) => println!("{x}")
+                    }
+                },
+                Some(x) => {
+                    eprintln!("unknown help category {x:?}");
+                    exit(1)
+                }
+            }
         },
         "version" | "--version" | "-v" | "-V" => {
             println!("Cobalt version {} using LLVM version {}", env!("CARGO_PKG_VERSION"), "14.0.1.6");
