@@ -10,11 +10,14 @@ impl ErrorInfo {
 }
 pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     (20, &[
-    /*020*/ ErrorInfo::new("empty character literal", "")]),
+    /*020*/ ErrorInfo::new("empty character literal", ""),
+    /*021*/ ErrorInfo::new("externally linked variable has a non-runtime type", "")]),
     (30, &[
     /*030*/ ErrorInfo::new("@static on a global variable does nothing", ""),
     /*031*/ ErrorInfo::new("respecifying @static does nothing", ""),
     /*032*/ ErrorInfo::new("respecifying @extern does nothing", "")]),
+    (90, &[
+    /*090*/ ErrorInfo::new("value has been moved from and is in an indeterminate state", "")]),
     (101, &[
     /*101*/ ErrorInfo::new("invalid character in source file", ""),
     /*102*/ ErrorInfo::new("unterminated multiline comment", "Multiline comments must be properly terminated.
@@ -71,8 +74,8 @@ Check your spelling"#)]),
     /*312*/ ErrorInfo::new("invalid explicit conversion", ""),
     /*313*/ ErrorInfo::new("invalid arguments to call", ""),
     /*314-319*/ None, None, None, None, None, None,
-    /*320*/ ErrorInfo::new("value is not a module", ""),
-    /*321*/ ErrorInfo::new("value does not exist", ""),
+    /*320*/ ErrorInfo::new("value does not exist", ""),
+    /*321*/ ErrorInfo::new("value is not a module", ""),
     /*322*/ ErrorInfo::new("value is not a variable", ""),
     /*323*/ ErrorInfo::new("redefinition of variable", ""),
     /*324*/ ErrorInfo::new("value cannot be determined at compile-time", "")]),

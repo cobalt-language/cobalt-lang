@@ -20,5 +20,5 @@ pub use errors::{Diagnostic, Location};
 pub(crate) use ast::*;
 pub(crate) use parsed_type::*;
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

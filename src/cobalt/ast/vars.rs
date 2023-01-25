@@ -88,11 +88,11 @@ impl AST for VarDefAST {
                             None
                         },
                         Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                             None
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             None
                         }
                     }
@@ -106,18 +106,18 @@ impl AST for VarDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Error::new(self.loc.clone(), 23, "externally linked variable has a non-runtime type".to_string())); None}),
+                    }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 21, None)); None}),
                     inter_val: None,
                     data_type: dt,
                     good: Cell::new(true)
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -127,10 +127,10 @@ impl AST for VarDefAST {
                 let (val, mut es) = self.val.codegen(ctx);
                 errs.append(&mut es);
                 let t2 = val.data_type.clone();
-                let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                let dt = if let Some(t) = self.type_.as_ref().and_then(|t| {
                     let (t, mut es) = t.into_type(ctx);
                     errs.append(&mut es);
-                    let t = match t {
+                    match t {
                         Ok(t) => Some(t),
                         Err(IntoTypeError::NotAnInt(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
@@ -141,16 +141,15 @@ impl AST for VarDefAST {
                             None
                         },
                         Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                             None
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             None
                         }
-                    };
-                    t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    }
+                }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -174,11 +173,11 @@ impl AST for VarDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -206,18 +205,18 @@ impl AST for VarDefAST {
                                     None
                                 },
                                 Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                     None
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                         }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -247,18 +246,18 @@ impl AST for VarDefAST {
                                     None
                                 },
                                 Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                     None
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                         }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
                         if let Some(v) = val.comp_val {
@@ -300,29 +299,29 @@ impl AST for VarDefAST {
                                 None
                             },
                             Err(IntoTypeError::NotAModule(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                 None
                             },
                             Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                 None
                             }
                         };
                         t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                     }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                     let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                        errs.push(Error::new(self.loc.clone(), 311, err));
+                        errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -356,25 +355,25 @@ impl AST for VarDefAST {
                         None
                     },
                     Err(IntoTypeError::NotAModule(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                         None
                     },
                     Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                         None
                     }
                 };
                 t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
             }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
             let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                errs.push(Error::new(self.loc.clone(), 311, err));
+                errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
             match if ctx.is_const.get() || val.data_type.register() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
-                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |x| x.as_str()));
+                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                 ctx.builder.build_store(a, v);
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: Some(PointerValue(a)),
@@ -388,11 +387,11 @@ impl AST for VarDefAST {
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -501,11 +500,11 @@ impl AST for MutDefAST {
                             None
                         },
                         Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                             None
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             None
                         }
                     }
@@ -519,18 +518,18 @@ impl AST for MutDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Error::new(self.loc.clone(), 23, "externally linked variable has a non-runtime type".to_string())); None}),
+                    }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 23, None)); None}),
                     inter_val: None,
                     data_type: dt,
                     good: Cell::new(true)
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -540,10 +539,10 @@ impl AST for MutDefAST {
                 let (val, mut es) = self.val.codegen(ctx);
                 errs.append(&mut es);
                 let t2 = val.data_type.clone();
-                let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                let dt = if let Some(t) = self.type_.as_ref().and_then(|t| {
                     let (t, mut es) = t.into_type(ctx);
                     errs.append(&mut es);
-                    let t = match t {
+                    match t {
                         Ok(t) => Some(t),
                         Err(IntoTypeError::NotAnInt(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
@@ -554,16 +553,15 @@ impl AST for MutDefAST {
                             None
                         },
                         Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                             None
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             None
                         }
-                    };
-                    t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
-                }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
+                    }
+                }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -587,11 +585,11 @@ impl AST for MutDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -619,18 +617,18 @@ impl AST for MutDefAST {
                                     None
                                 },
                                 Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                     None
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                         }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
@@ -660,18 +658,18 @@ impl AST for MutDefAST {
                                     None
                                 },
                                 Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                     None
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                     None
                                 }
                             };
                             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                         }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Error::new(self.loc.clone(), 311, err));
+                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
                         if let Some(v) = val.comp_val {
@@ -713,29 +711,29 @@ impl AST for MutDefAST {
                                 None
                             },
                             Err(IntoTypeError::NotAModule(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                                 None
                             },
                             Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                                 None
                             }
                         };
                         t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
                     }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
                     let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                        errs.push(Error::new(self.loc.clone(), 311, err));
+                        errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
                     },
                     Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -768,25 +766,25 @@ impl AST for MutDefAST {
                         None
                     },
                     Err(IntoTypeError::NotAModule(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                         None
                     },
                     Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                         None
                     }
                 };
                 t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
             }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
             let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                errs.push(Error::new(self.loc.clone(), 311, err));
+                errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
             match if ctx.is_const.get() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
-                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |x| x.as_str()));
+                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                 ctx.builder.build_store(a, v);
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: Some(PointerValue(a)),
@@ -800,11 +798,11 @@ impl AST for MutDefAST {
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, _)) => {
-                    errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
                 },
                 Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -857,29 +855,29 @@ impl AST for ConstDefAST {
                     None
                 },
                 Err(IntoTypeError::NotAModule(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} is not a module"))));
+                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
                     None
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} does not exist"))));
+                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                     None
                 }
             };
             t.map(|x| (x.clone(), format!("cannot convert value of type {} to {x}", t2)))
         }) {t} else if t2 == Type::IntLiteral {(Type::Int(64, false), "INFALLIBLE".to_string())} else if let Type::Reference(b, _) = t2 {(*b, "INFALLIBLE".to_string())} else {(t2, "INFALLIBLE".to_string())};
         let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-            errs.push(Error::new(self.loc.clone(), 311, err));
+            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
             Variable::error()
         });
         ctx.is_const.set(old_is_const);
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val}))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
-                errs.push(Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(x))));
+                errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Variable::error(), errs)
             },
             Err(RedefVariable::AlreadyExists(x, _)) => {
-                errs.push(Error::new(self.loc.clone(), 321, format!("{} has already been defined", self.name.start(x))));
+                errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                 (Variable::error(), errs)
             },
             Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
@@ -918,16 +916,16 @@ impl AST for VarGetAST {
         match ctx.with_vars(|v| v.lookup(&self.name)) {
             Ok(Symbol::Variable(x)) =>
                 (x.clone(), if x.good.get() {if !x.data_type.copyable() {x.good.set(false);} vec![]}
-                else {vec![Error::new(self.loc.clone(), 90, format!("{} has been moved from and is now in an undefined state", self.name))]}),
-            Ok(Symbol::Module(_)) => (Variable::error(), vec![Error::new(self.loc.clone(), 322, format!("{} is not a variable", self.name))]),
-            Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Error::new(self.loc.clone(), 320, format!("{} is not a module", self.name.start(idx)))]),
-            Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Error::new(self.loc.clone(), 323, format!("{} does not exist", self.name.start(idx)))])
+                else {vec![Diagnostic::warning(self.loc.clone(), 90, None)]}),
+            Ok(Symbol::Module(_)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
+            Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
+            Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx - 1].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
         }
     }
     fn to_code(&self) -> String {
         format!("{}", self.name)
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "varget: {}", self.name)
     }
 }
