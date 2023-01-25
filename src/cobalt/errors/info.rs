@@ -30,6 +30,65 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*132*/ ErrorInfo::new("unexpected non-hex character in hex escape sequence", ""),
     /*133*/ ErrorInfo::new("invalid Unicode codepoint", ""),
     /*134*/ ErrorInfo::new("unexpected characters in character literal", "")]),
+    (200, &[
+    /*200*/ ErrorInfo::new("unexpected top-level token", ""),
+    /*201*/ ErrorInfo::new("expected module body", ""),
+    /*202*/ ErrorInfo::new("expected semicolon after module assignment", ""),
+    /*203*/ ErrorInfo::new("expected a semicolon", "")]),
+    (211, &[
+    /*210*/ ErrorInfo::new("expected token in identifier", ""),
+    /*211*/ ErrorInfo::new("identifier cannot contain consecutive periods", ""),
+    /*212*/ ErrorInfo::new("identifier cannot contain consecutive names", ""),
+    /*213*/ ErrorInfo::new("unexpected token in type", "")]),
+    (230, &[
+    /*230*/ ErrorInfo::new("expected type specification or value after variable definition", ""),
+    /*231*/ ErrorInfo::new("expected semicolon after variable definition", ""),
+    /*232*/ None,
+    /*233*/ ErrorInfo::new("variable definition must have a type specification and/or value", ""),
+    /*234*/ ErrorInfo::new("expected parameters or assignment after function definition", ""),
+    /*235*/ ErrorInfo::new("function declaration requires explicit parameters and return type", ""),
+    /*236*/ None,
+    /*237*/ None,
+    /*238*/ ErrorInfo::new("unexpected end of parameter list", ""),
+    /*239*/ ErrorInfo::new("function parameters cannot be global variables", ""),
+    /*240*/ ErrorInfo::new("expected function return type", ""),
+    /*241*/ ErrorInfo::new("expected ')' or ',' after function parameter", ""),
+    /*242*/ ErrorInfo::new("function parameters must have explicit types", ""),
+    /*243*/ ErrorInfo::new("function declaration requires an explicit return type", ""),
+    /*244*/ ErrorInfo::new("expected function body or semicolon", ""),
+    /*245*/ ErrorInfo::new("functions are defined with '='", ""),
+    /*246*/ ErrorInfo::new("all parameters after the first default parameter must have defaults", "")]),
+    (250, &[
+    /*250*/ ErrorInfo::new("unmatched '('", ""),
+    /*251*/ ErrorInfo::new("unmatched ')'", ""),
+    /*252*/ ErrorInfo::new("unmatched '['", ""),
+    /*253*/ ErrorInfo::new("unmatched ']'", ""),
+    /*254*/ ErrorInfo::new("unmatched '{'", ""),
+    /*255*/ ErrorInfo::new("unmatched '}'", "")]),
+    (261, &[
+    /*261*/ ErrorInfo::new("expected condition for 'if' expression", ""),
+    /*262*/ ErrorInfo::new("expected condition for 'while' expression", ""),
+    /*263*/ ErrorInfo::new("unexpected 'else'", ""),
+    /*264*/ ErrorInfo::new("operator is not a postfix operator", ""),
+    /*265*/ ErrorInfo::new("operator is not a prefix operator", "")]),
+    (270, &[
+    /*270*/ ErrorInfo::new("unexpected token after literal", ""),
+    /*271*/ ErrorInfo::new("unexpected token after variable name", ""),
+    /*272*/ ErrorInfo::new("unexpected token after intrinsic", ""),
+    /*273*/ ErrorInfo::new("expected an identifier, literal, or intrinisic (should be unreachable)", ""),
+    /*274*/ None,
+    /*275*/ ErrorInfo::new("module definitions aren't allowed at local scope", ""),
+    /*276*/ ErrorInfo::new("local function definitions can't have global names", ""),
+    /*277*/ ErrorInfo::new("local variable definitions can't have global names", "")]),
+    (280, &[
+    /*280*/ ErrorInfo::new("expected a ';' before the next expression", ""),
+    /*281*/ ErrorInfo::new("annotations must be used on a variable or function definition", ""),
+    /*282*/ ErrorInfo::new("annotations can't be used on a module", ""),
+    /*283*/ ErrorInfo::new("annotations can't be used on an import statement", "")]),
+    (290, &[
+    /*290*/ ErrorInfo::new("expected an expression", ""),
+    /*291*/ ErrorInfo::new("expected a type", ""),
+    /*292*/ ErrorInfo::new("error when parsing integral type", "")]),
     (310, &[
     /*310*/ ErrorInfo::new("operator is not defined for these types", ""),
     /*311*/ ErrorInfo::new("invalid implicit conversion", ""),
@@ -61,7 +120,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*421*/ ErrorInfo::new("@cconv annotation requires an argument", ""),
     /*422*/ ErrorInfo::new("unknown calling convention for @cconv annotation", "")]),
     (900, &[
-    /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
+    /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
+    /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])
 ];
 pub fn lookup(code: u64) -> Option<ErrorInfo> {
     ERR_REGISTRY.iter().rev().skip_while(|(start, _)| start > &code).next().and_then(|(start, arr)| arr.get((code - start) as usize).copied().unwrap_or(None))

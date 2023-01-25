@@ -9,7 +9,7 @@ pub mod types;
 pub mod varmap;
 
 pub use parser::lexer::{lex, Token, TokenData};
-//pub use parser::ast::parse;
+pub use parser::ast::parse;
 pub use dottedname::*;
 pub use misc::*;
 pub use context::*;
