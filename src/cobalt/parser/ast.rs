@@ -314,21 +314,17 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
 fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     match toks.get(0).map(|x| &x.data) {
         Some(Special('(')) => {
-            let err = if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)]; None}
-            else {Some(toks[0].loc.clone())};
+            if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)];}
             toks = &toks[1..];
-            if toks.len() == 0 {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), if let Some(loc) = err {vec![Diagnostic::error(loc, 250, None)]} else {vec![]})}
-            let (ast, _, mut errs) = parse_expr(toks, "", flags);
-            if let Some(loc) = err {
-                errs.insert(0, Diagnostic::error(loc, 250, None));
-            }
+            if toks.len() == 0 {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), vec![])}
+            let (ast, _, errs) = parse_expr(toks, "", flags);
             (ast, errs)
         },
         Some(Special('{')) => {
             let mut start = toks[0].loc.clone();
             start.1.end = toks.last().unwrap().loc.1.end;
-            let mut errs = if toks.last().unwrap().data == Special('}') {toks = &toks[..(toks.len() - 1)]; vec![]}
-            else {vec![Diagnostic::error(toks[0].loc.clone(), 254, None)]};
+            if toks.last().unwrap().data == Special('}') {toks = &toks[..(toks.len() - 1)];}
+            let mut errs = vec![];
             toks = &toks[1..];
             let len = toks.len();
             let mut idx = 0;
@@ -343,7 +339,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
                     errs.append(&mut es);
                     asts.push(ast);
                     idx += i;
-                    if idx >= 1 && idx <= len && toks[idx - 1].data != Special(';') {idx -= 1;}
+                    if idx >= 1 && match toks.get(idx - 1).map(|x| &x.data) {Some(Statement(_)) => true, _ => false} {idx -= 1;}
                 }
             }
             (Box::new(BlockAST::new(start, asts)), errs)
@@ -401,15 +397,11 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                         let mut idx = 2;
                         {
                             let mut toks = toks;
-                            let loc = toks[0].loc.clone();
                             while 'cond: {
                                 toks = &toks[1..];
                                 idx += 1;
                                 match toks.get(0).map(|x| &x.data) {
-                                    None => {
-                                        errs.push(Diagnostic::error(loc.clone(), 250, None));
-                                        break 'cond false
-                                    }
+                                    None => break 'cond false,
                                     Some(Special('(')) => depth += 1,
                                     Some(Special(')')) => depth -= 1,
                                     _ => {}
@@ -428,15 +420,11 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                         let mut idx = 2;
                         {
                             let mut toks = toks;
-                            let loc = toks[0].loc.clone();
                             while 'cond: {
                                 toks = &toks[1..];
                                 idx += 1;
                                 match toks.get(0).map(|x| &x.data) {
-                                    None => {
-                                        errs.push(Diagnostic::error(loc.clone(), 254, None));
-                                        break 'cond false
-                                    }
+                                    None => break 'cond false,
                                     Some(Special('{')) => depth += 1,
                                     Some(Special('}')) => depth -= 1,
                                     _ => {}
@@ -466,7 +454,6 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                                 _ => true
                             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
                             Special('(') => {
-                                let start = toks[i].loc.clone();
                                 let mut depth = 1;
                                 i += 1;
                                 while i < toks.len() && depth > 0 {
@@ -477,12 +464,8 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                                     }
                                     i += 1;
                                 }
-                                if i == toks.len() && depth > 0 {
-                                    errs.push(Diagnostic::error(start, 250, None));
-                                }
                             },
                             Special('[') => {
-                                let start = toks[i].loc.clone();
                                 let mut depth = 1;
                                 i += 1;
                                 while i < toks.len() && depth > 0 {
@@ -493,12 +476,8 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                                     }
                                     i += 1;
                                 }
-                                if i == toks.len() && depth > 0 {
-                                    errs.push(Diagnostic::error(start, 252, None));
-                                }
                             },
                             Special('{') => {
-                                let start = toks[i].loc.clone();
                                 let mut depth = 1;
                                 i += 1;
                                 while i < toks.len() && depth > 0 {
@@ -509,13 +488,10 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                                     }
                                     i += 1;
                                 }
-                                if i == toks.len() && depth > 0 {
-                                    errs.push(Diagnostic::error(start, 254, None));
-                                }
                             }
-                            Special(')') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 251, None)); break;},
-                            Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
-                            Special('}') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 255, None)); break;},
+                            Special(')') => break,
+                            Special(']') => break,
+                            Special('}') => break,
                             _ => i += 1
                         }
                     }
@@ -548,15 +524,11 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                         let mut idx = 2;
                         {
                             let mut toks = toks;
-                            let loc = toks[0].loc.clone();
                             while 'cond: {
                                 toks = &toks[1..];
                                 idx += 1;
                                 match toks.get(0).map(|x| &x.data) {
-                                    None => {
-                                        errs.push(Diagnostic::error(loc.clone(), 250, None));
-                                        break 'cond false
-                                    }
+                                    None => break 'cond false,
                                     Some(Special('(')) => depth += 1,
                                     Some(Special(')')) => depth -= 1,
                                     _ => {}
@@ -575,15 +547,11 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                         let mut idx = 2;
                         {
                             let mut toks = toks;
-                            let loc = toks[0].loc.clone();
                             while 'cond: {
                                 toks = &toks[1..];
                                 idx += 1;
                                 match toks.get(0).map(|x| &x.data) {
-                                    None => {
-                                        errs.push(Diagnostic::error(loc.clone(), 254, None));
-                                        break 'cond false
-                                    }
+                                    None => break 'cond false,
                                     Some(Special('{')) => depth += 1,
                                     Some(Special('}')) => depth -= 1,
                                     _ => {}
@@ -960,13 +928,12 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
             'main: while let Some(tok) = it.next() {
                 match &tok.data {
                     Special('(') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special('(')) => depth += 1,
                                 Some(Special(')')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 250, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx += 1;
@@ -974,13 +941,12 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         idx += 1;
                     },
                     Special('[') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special('[')) => depth += 1,
                                 Some(Special(']')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 252, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx += 1;
@@ -988,22 +954,21 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         idx += 1;
                     },
                     Special('{') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special('{')) => depth += 1,
                                 Some(Special('}')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 254, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx += 1;
                         }
                         idx += 1;
                     },
-                    Special(')') => {errs.push(Diagnostic::error(tok.loc.clone(), 251, None)); break 'main;},
-                    Special(']') => {errs.push(Diagnostic::error(tok.loc.clone(), 253, None)); break 'main;},
-                    Special('}') => {errs.push(Diagnostic::error(tok.loc.clone(), 255, None)); break 'main;},
+                    Special(')') => break 'main,
+                    Special(']') => break 'main,
+                    Special('}') => break 'main,
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 => {
                         let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
@@ -1022,47 +987,44 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
             'main: while let Some(tok) = it.next() {
                 match &tok.data {
                     Special(')') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special(')')) => depth += 1,
                                 Some(Special('(')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 251, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx -= 1;
                         }
                     },
                     Special(']') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special(']')) => depth += 1,
                                 Some(Special('[')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 253, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx -= 1;
                         }
                     },
                     Special('}') => {
-                        let start = tok.loc.clone();
                         let mut depth = 1;
                         while depth > 0 {
                             match it.next().map(|x| &x.data) {
                                 Some(Special('}')) => depth += 1,
                                 Some(Special('{')) => depth -= 1,
-                                None => {errs.push(Diagnostic::error(start, 255, None)); break 'main;}
+                                None => break 'main,
                                 _ => {}
                             }
                             idx -= 1;
                         }
                     },
-                    Special('(') => {errs.push(Diagnostic::error(tok.loc.clone(), 250, None)); break 'main;},
-                    Special('[') => {errs.push(Diagnostic::error(tok.loc.clone(), 252, None)); break 'main;},
-                    Special('{') => {errs.push(Diagnostic::error(tok.loc.clone(), 254, None)); break 'main;},
+                    Special('(') => break 'main,
+                    Special('[') => break 'main,
+                    Special('{') => break 'main,
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != toks.len() - 1 => {
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
@@ -1120,12 +1082,11 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
-            Statement(k) if i > 0 && ((k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
+            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "&&" | "**" | "^" | "^^" => false,
                 _ => true
-            }) => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
+            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
             Special('(') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1136,12 +1097,8 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 250, None));
-                }
             },
             Special('[') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1152,12 +1109,8 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 252, None));
-                }
             },
             Special('{') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1168,13 +1121,10 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 254, None));
-                }
             }
             Special(')') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 251, None)); break;},
             Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
-            Special('}') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 255, None)); break;},
+            Special('}') => break,
             _ => i += 1
         }
     }
@@ -1193,7 +1143,6 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
                 _ => true
             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
             Special('(') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1204,12 +1153,8 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 250, None));
-                }
             },
             Special('[') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1220,12 +1165,8 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 252, None));
-                }
             },
             Special('{') => {
-                let start = toks[i].loc.clone();
                 let mut depth = 1;
                 i += 1;
                 while i < toks.len() && depth > 0 {
@@ -1236,11 +1177,8 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
                     }
                     i += 1;
                 }
-                if i == toks.len() && depth > 0 {
-                    errs.push(Diagnostic::error(start, 254, None));
-                }
             }
-            Special(')') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 251, None)); break;},
+            Special(')') => break,
             Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
             Special('}') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 255, None)); break;},
             _ => i += 1
