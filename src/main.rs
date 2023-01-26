@@ -217,7 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut fail = false;
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
-            let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}

@@ -225,8 +225,8 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     if toks.len() == 0 {return (DottedName::local((String::new(), (0, 0..0))), 0, vec![])}
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (DottedName::new(vec![], true), true),
-        Identifier(s) => (DottedName::new(vec![(s.clone(), (0, 0..0))], false), false),
-        x => return (DottedName::local((String::new(), (0, 0..0))), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}")))])
+        Identifier(s) => (DottedName::new(vec![(s.clone(), toks[0].loc.clone())], false), false),
+        x => return (DottedName::local((String::new(), toks[0].loc.clone())), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}")))])
     };
     while idx < toks.len() {
         match &toks[idx].data {

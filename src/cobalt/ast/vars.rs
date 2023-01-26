@@ -918,8 +918,8 @@ impl AST for VarGetAST {
                 (x.clone(), if x.good.get() {if !x.data_type.copyable() {x.good.set(false);} vec![]}
                 else {vec![Diagnostic::warning(self.loc.clone(), 90, None)]}),
             Ok(Symbol::Module(_)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
-            Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
-            Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx - 1].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
+            Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
+            Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
         }
     }
     fn to_code(&self) -> String {

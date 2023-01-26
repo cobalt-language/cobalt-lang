@@ -44,7 +44,7 @@ pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, l
         let (file, slice) = ast.loc();
         let start = files.location(file, slice.start).unwrap();
         let end = files.location(file, slice.end).unwrap();
-        write!(f, "({0}:{1}:{2}..{0}:{3}:{4})", files.name(file).unwrap(), start.line_number, start.column_number, end.line_number, end.column_number)?;
+        write!(f, "({0}:{1}:{2}..{0}:{3}:{4}): ", files.name(file).unwrap(), start.line_number, start.column_number, end.line_number, end.column_number)?;
     }
     pre.push(last);
     let res = ast.print_impl(f, pre);
