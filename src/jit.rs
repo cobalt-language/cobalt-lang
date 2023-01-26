@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use llvm_sys::orc2::{*, lljit::*};
 use llvm_sys::error::*;
 use inkwell::LLVMReference;

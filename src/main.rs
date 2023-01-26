@@ -7,11 +7,10 @@ use std::io::{Read, Write};
 use std::ffi::OsString;
 use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
-/*
 mod libs;
-#[allow(dead_code)]
-mod jit;
 mod opt;
+/*
+mod jit;
 mod build;
 mod package;*/
 const HELP: &str = "co- Cobalt compiler and build system
@@ -233,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             print!("{}", ctx.module.to_string());
             exit(if fail {101} else {0})
         },
-        /*"aot" => {
+        "aot" => {
             let mut output_type: Option<OutputType> = None;
             let mut in_file: Option<&str> = None;
             let mut out_file: Option<&str> = None;
@@ -437,48 +436,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
-            let flags = cobalt::Flags::default();
-            let fname = unsafe {&mut FILENAME};
-            *fname = in_file.to_string();
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&triple);
             let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
             notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
             if notfound.len() > 0 {exit(102)}
             let mut fail = false;
             let mut overall_fail = false;
-            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
-            if fail && !continue_if_err {exit(101)}
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
+            let flags = cobalt::Flags::default();
+            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
+            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            overall_fail |= fail;
             fail = false;
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
             if fail && !continue_if_err {exit(101)}
             let (_, errs) = ast.codegen(&ctx);
+            overall_fail |= fail;
             fail = false;
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
-            if overall_fail {exit(101)}
+            if fail || overall_fail {exit(101)}
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
@@ -563,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         },
-        "jit" => {
+        /*"jit" => {
             let mut in_file: Option<&str> = None;
             let mut linked: Vec<&str> = vec![];
             let mut link_dirs: Vec<String> = vec![];
