@@ -81,7 +81,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*276*/ ErrorInfo::new("local function definitions can't have global names", ""),
     /*277*/ ErrorInfo::new("local variable definitions can't have global names", "")]),
     (280, &[
-    /*280*/ ErrorInfo::new("expected a ';' before the next expression", ""),
+    /*280*/ ErrorInfo::new("expected a ';' before the next statement", ""),
     /*281*/ ErrorInfo::new("annotations must be used on a variable or function definition", ""),
     /*282*/ ErrorInfo::new("annotations can't be used on a module", ""),
     /*283*/ ErrorInfo::new("annotations can't be used on an import statement", "")]),
