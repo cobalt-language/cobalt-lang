@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{ERROR}: -c flag must be followed by code");
             }
         },
-        /*"llvm" if cfg!(debug_assertions) => {
+        "llvm" if cfg!(debug_assertions) => {
             let mut in_file: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -211,34 +211,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::io::stdin().read_to_string(&mut s)?;
                 s
             } else {std::fs::read_to_string(in_file)?};
-            let fname = unsafe {&mut FILENAME};
-            *fname = in_file.to_string();
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
             let flags = cobalt::Flags::default();
-            let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname), &flags);
             let mut fail = false;
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
+            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
+            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, fname.as_str());
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {
-                eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; ERROR}, err.loc, err.message);
-                for note in err.notes {
-                    eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-                }
-            }
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 fail = true;
@@ -246,7 +233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             print!("{}", ctx.module.to_string());
             exit(if fail {101} else {0})
         },
-        "aot" => {
+        /*"aot" => {
             let mut output_type: Option<OutputType> = None;
             let mut in_file: Option<&str> = None;
             let mut out_file: Option<&str> = None;
