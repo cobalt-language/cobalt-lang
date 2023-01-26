@@ -532,7 +532,7 @@ impl CallAST {
     pub fn new(loc: Location, cparen: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, cparen, target, args}}
 }
 impl AST for CallAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.cparen.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
         else {Type::Null}

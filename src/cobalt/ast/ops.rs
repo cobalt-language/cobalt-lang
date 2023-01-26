@@ -9,7 +9,7 @@ impl BinOpAST {
     pub fn new(loc: Location, op: String, lhs: Box<dyn AST>, rhs: Box<dyn AST>) -> Self {BinOpAST {loc, op, lhs, rhs}}
 }
 impl AST for BinOpAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.lhs.loc().1.start..self.rhs.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if self.op == "&&" || self.op == "||" {self.rhs.res_type(ctx)}
         else {types::utils::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
@@ -52,7 +52,7 @@ impl PostfixAST {
     pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PostfixAST {loc, op, val}}
 }
 impl AST for PostfixAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.val.loc().1.start..self.loc.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
@@ -83,7 +83,7 @@ impl PrefixAST {
     pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PrefixAST {loc, op, val}}
 }
 impl AST for PrefixAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
