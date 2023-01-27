@@ -144,9 +144,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         (Some(PointerValue(l)), Some(r), false) => {ctx.builder.build_store(l, r);}
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "+=" => {
@@ -160,9 +158,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "-=" => {
@@ -176,9 +172,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "*=" => {
@@ -192,9 +186,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "/=" => {
@@ -209,9 +201,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "%=" => {
@@ -226,9 +216,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "&=" => {
@@ -242,9 +230,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "|=" => {
@@ -258,9 +244,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "^=" => {
@@ -274,9 +258,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "<<=" => {
@@ -290,9 +272,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 ">>=" => {
@@ -306,9 +286,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {}
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 "^^=" => {
@@ -338,9 +316,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Reference(Box::new(x), true);
                     Some(lhs)
                 },
@@ -357,9 +333,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Reference(Box::new(x), true);
                     Some(lhs)
                 },
@@ -376,9 +350,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Reference(Box::new(x), true);
                     Some(lhs)
                 },
@@ -395,9 +367,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Reference(Box::new(x), true);
                     Some(lhs)
                 },
@@ -414,9 +384,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         },
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Reference(Box::new(x), true);
                     Some(lhs)
                 },
@@ -434,9 +402,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         }
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     Some(lhs)
                 },
                 _ => {
@@ -464,9 +430,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         }
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Pointer(b, m);
                     Some(lhs)
                 },
@@ -483,9 +447,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                         }
                         _ => {},
                     }
-                    if let Some(v) = lhs.inter_val {
-                        lhs.inter_val = None;
-                    }
+                    lhs.inter_val = None;
                     lhs.data_type = Type::Pointer(b, m);
                     Some(lhs)
                 },
@@ -517,7 +479,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 else {ctx.builder.build_int_s_extend(val, ctx.context.custom_width_int_type(ls as u32), "")}));
             }
             lhs.data_type = Type::Int(ls, lu);
-            rhs.data_type = Type::Int(ls, lu);
+            rhs.data_type = Type::Int(ls, ru);
             bin_op(lhs, rhs, op, ctx)
         },
         (Type::Int(ls, lu), Type::Int(rs, ru)) if ls < rs => {
@@ -525,7 +487,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 lhs.comp_val = Some(IntValue(if ru {ctx.builder.build_int_z_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}
                 else {ctx.builder.build_int_s_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}));
             }
-            lhs.data_type = Type::Int(rs, ru);
+            lhs.data_type = Type::Int(rs, lu);
             rhs.data_type = Type::Int(rs, ru);
             bin_op(lhs, rhs, op, ctx)
         },
@@ -1148,7 +1110,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }),
             "%" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
-                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => None, // TODO: implement fmod
+                    (Some(FloatValue(_l)), Some(FloatValue(_r)), false) => None, // TODO: implement fmod
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1160,7 +1122,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }),
             "^^" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
-                    (Some(FloatValue(l)), Some(FloatValue(r)), false) => None, // TODO: implement powf
+                    (Some(FloatValue(_l)), Some(FloatValue(_r)), false) => None, // TODO: implement powf
                     _ => None
                 },
                 inter_val: match (lhs.inter_val, rhs.inter_val) {
@@ -1310,9 +1272,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v2 = ctx.builder.build_int_add(v1, x.llvm_type(ctx).unwrap().into_int_type().const_int(1, false), "");
                             ctx.builder.build_store(v, v2);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = x;
                         Some(val)
                     },
@@ -1322,9 +1282,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v2 = ctx.builder.build_int_sub(v1, x.llvm_type(ctx).unwrap().into_int_type().const_int(1, false), "");
                             ctx.builder.build_store(v, v2);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = x;
                         Some(val)
                     },
@@ -1345,9 +1303,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v2 = ctx.builder.build_float_add(v1, x.llvm_type(ctx).unwrap().into_float_type().const_float(1.0), "");
                             ctx.builder.build_store(v, v2);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = x;
                         Some(val)
                     },
@@ -1357,9 +1313,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v2 = ctx.builder.build_float_sub(v1, x.llvm_type(ctx).unwrap().into_float_type().const_float(1.0), "");
                             ctx.builder.build_store(v, v2);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = x;
                         Some(val)
                     },
@@ -1383,9 +1337,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(v, v4);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
                         Some(val)
                     },
@@ -1398,9 +1350,7 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                             let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
                             ctx.builder.build_store(v, v4);
                         }
-                        if let Some(v) = val.inter_val {
-                            val.inter_val = None;
-                        }
+                        val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
                         Some(val)
                     },
@@ -1543,11 +1493,11 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
     }
 }
 pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {impl_convert(val, target, ctx)}
-pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Error> {
+pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Diagnostic> {
     match target.data_type {
         Type::Borrow(b) => {
             target.data_type = *b;
-            call(target, loc, args, ctx)
+            call(target, loc, cparen, args, ctx)
         },
         Type::Reference(b, _) => {
             if !ctx.is_const.get() && b.register() {
@@ -1556,22 +1506,22 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
                 }
             }
             target.data_type = *b;
-            call(target, loc, args, ctx)
+            call(target, loc, cparen, args, ctx)
         },
         Type::Function(ret, params) => {
-            let mut err = Error::new(loc.clone(), 313, format!("invalid arguments to call of value of type {}", Type::Function(ret.clone(), params.clone()))).note(Note::new(args.get(0).map(|(_, l)| l.clone()).unwrap_or(loc), {
+            let mut err = Diagnostic::error(loc.clone(), 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc.clone(), {
                 let mut out = format!("argument types are (");
                 args.iter().for_each(|(Variable {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
                 out.truncate(out.len() - 2);
                 out.push(')');
                 out
-            }));
+            });
             let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
             let mut good = true;
             let p = params.len();
             let mut a = args.len();
             if a > p {
-                err.add_note(Note::new(loc, format!("expected {p} parameters, got {a}")));
+                err.add_note(cparen.clone(), format!("expected {p} parameters, got {a}"));
                 args.truncate(p);
                 a = p;
             }
@@ -1582,24 +1532,24 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
                     inter_val: Some(v.clone()),
                     data_type: t.clone(),
                     export: true
-                }, Location::null())).collect()
+                }, cparen.clone())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
                 let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, suffixes[n % 10], v.data_type);
                 (if let Some(val) = impl_convert(v.clone(), t.clone(), ctx) {
                     if *c && val.inter_val.is_none() {
                         good = false;
-                        err.add_note(Note::new(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, suffixes[n % 10])));
+                        err.add_note(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, suffixes[n % 10]));
                     }
                     val
                 }
                 else {
                     good = false;
-                    err.add_note(Note::new(l.clone(), e));
+                    err.add_note(l.clone(), e);
                     Variable::error()
                 }, c)
             }).partition::<Vec<_>, _>(|(_, c)| **c);
             if !good {return Err(err)}
-            if c.len() > 0 {return Err(Error::new(loc.clone(), 900, "constant function parameters aren't yet supported".to_string()))}
+            if c.len() > 0 {return Err(Diagnostic::error(loc.clone(), 900, None))}
             good = true;
             let val: Option<inkwell::values::CallableValue> = if let Some(PointerValue(v)) = target.comp_val {v.try_into().ok()} else {None};
             let args: Vec<inkwell::values::BasicMetadataValueEnum> = r.into_iter().filter_map(|(Variable {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
@@ -1610,13 +1560,13 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, mut args: Vec<(Vari
                 export: true
             })
         },
-        t => Err(Error::new(loc.clone(), 313, format!("invalid arguments to call of value of type {t}")).note(Note::new(args.get(0).map(|(_, l)| l.clone()).unwrap_or(loc), {
+        t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({
             let mut out = format!("argument types are (");
             args.iter().for_each(|(Variable {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
             out.truncate(out.len() - 2);
             out.push(')');
             out
-        })))
+        }))
     }
 }
 pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {

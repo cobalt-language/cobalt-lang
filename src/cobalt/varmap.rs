@@ -269,24 +269,24 @@ pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &
     let mut idx = 0;
     if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
     while idx + 1 < name.ids.len() {
-        match this.get(&name.ids[idx]) {
+        match this.get(&name.ids[idx].0) {
             None => return Err(UndefVariable::DoesNotExist(idx)),
             Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
             Some(Symbol::Module(x)) => this = x
         }
         idx += 1;
     }
-    this.get(&name.ids[idx]).ok_or(UndefVariable::DoesNotExist(idx))
+    this.get(&name.ids[idx].0).ok_or(UndefVariable::DoesNotExist(idx))
 }
 pub fn mod_insert<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName, sym: Symbol<'ctx>) -> Result<&'a Symbol<'ctx>, RedefVariable<'ctx>> {
     let mut idx = 0;
     if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
     while idx + 1 < name.ids.len() {
-        if let Some(x) = this.entry(name.ids[idx].clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
+        if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
         else {return Err(RedefVariable::NotAModule(idx, sym))}
         idx += 1;
     }
-    match this.entry(name.ids[idx].clone()) {
+    match this.entry(name.ids[idx].0.clone()) {
         Entry::Occupied(mut x) => match x.get_mut() {
             Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, sym)),
             Symbol::Module(m) => {
@@ -305,11 +305,11 @@ pub fn mod_insert_mod<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>,
     let mut idx = 0;
     if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
     while idx + 1 < name.ids.len() {
-        if let Some(x) = this.entry(name.ids[idx].clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
+        if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
         else {return Err(RedefVariable::NotAModule(idx, Symbol::Module(sym)))}
         idx += 1;
     }
-    match this.entry(name.ids[idx].clone()) {
+    match this.entry(name.ids[idx].0.clone()) {
         Entry::Occupied(mut x) => match x.get_mut() {
             Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym))),
             Symbol::Module(ref mut m) => {
@@ -327,10 +327,10 @@ pub fn mod_merge<'ctx>(this: &mut HashMap<String, Symbol<'ctx>>, other: HashMap<
         match this.entry(name.clone()) {
             Entry::Occupied(mut x) => {
                 if let Symbol::Module(x) = x.get_mut() {
-                    if sym.is_mod() {out.extend(mod_merge(x, sym.into_mod().unwrap()).into_iter().map(|mut x| {x.0.ids.insert(0, name.clone()); x}));}
-                    else {out.insert(DottedName::local(name), sym);}
+                    if sym.is_mod() {out.extend(mod_merge(x, sym.into_mod().unwrap()).into_iter().map(|mut x| {x.0.ids.insert(0, (name.clone(), (0, 0..0))); x}));}
+                    else {out.insert(DottedName::local((name, (0, (0..0)))), sym);}
                 }
-                else {out.insert(DottedName::local(name), sym);}
+                else {out.insert(DottedName::local((name, (0, 0..0))), sym);}
             },
             Entry::Vacant(x) => {x.insert(sym);}
         }

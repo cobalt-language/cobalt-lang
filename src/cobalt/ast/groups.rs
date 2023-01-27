@@ -1,4 +1,5 @@
 use crate::*;
+use codespan_reporting::files::Files;
 pub struct BlockAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>
@@ -6,7 +7,7 @@ pub struct BlockAST {
 impl AST for BlockAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         let mut out = Variable::metaval(InterData::Null, Type::Null);
         let mut errs = vec![];
@@ -48,7 +49,7 @@ pub struct GroupAST {
 impl AST for GroupAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut out = Variable::metaval(InterData::Null, Type::Null);
         let mut errs = vec![];
         for val in self.vals.iter() {
@@ -88,7 +89,7 @@ pub struct TopLevelAST {
 impl AST for TopLevelAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Error>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         for val in self.vals.iter() {
             let mut es = val.codegen(ctx).1;
@@ -107,7 +108,7 @@ impl AST for TopLevelAST {
         out
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "{}", self.loc.file)?;
+        writeln!(f, "{}", errors::files::FILES.read().unwrap().name(self.loc.0).unwrap())?;
         let mut count = self.vals.len();
         for val in self.vals.iter() {
             print_ast_child(f, pre, &**val, count == 1)?;

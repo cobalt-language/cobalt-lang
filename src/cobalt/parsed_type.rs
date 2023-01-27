@@ -1,11 +1,11 @@
 use crate::*;
-use ParsedType::{*, Error};
+use ParsedType::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntoTypeError {
-    NotAnInt(String),
-    NotCompileTime,
-    NotAModule(String),
-    DoesNotExist(String)
+    NotAnInt(String, Location),
+    NotCompileTime(Location),
+    NotAModule(String, Location),
+    DoesNotExist(String, Location)
 }
 pub enum ParsedType {
     Error,
@@ -22,8 +22,9 @@ pub enum ParsedType {
     TypeOf(Box<dyn AST>),
     Other(DottedName),
 }
+
 impl ParsedType {
-    pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<super::Error>) {
+    pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<Diagnostic>) {
         (match self {
             Error | Null => Ok(Type::Null),
             Bool => Ok(Type::Int(1, false)),
@@ -65,9 +66,9 @@ impl ParsedType {
                 let err = format!("{}", var.data_type);
                 let var = types::utils::impl_convert(var, Type::Int(64, false), ctx);
                 ctx.is_const.set(old_const);
-                return (if var.is_none() {Err(IntoTypeError::NotAnInt(err))}
+                return (if var.is_none() {Err(IntoTypeError::NotAnInt(err, size.loc()))}
                 else if let Some(InterData::Int(val)) = var.unwrap().inter_val {Ok(Type::Array(Box::new(base), Some(val as u64)))}
-                else {Err(IntoTypeError::NotCompileTime)}, errs);
+                else {Err(IntoTypeError::NotCompileTime(size.loc()))}, errs);
             },
             TypeOf(expr) => {
                 let old_const = ctx.is_const.replace(true);
@@ -75,7 +76,7 @@ impl ParsedType {
                 ctx.is_const.set(old_const);
                 return (Ok(var.data_type), errs);
             },
-            Other(name) => Err(IntoTypeError::DoesNotExist(format!("{}", name)))
+            Other(name) => Err(IntoTypeError::DoesNotExist(format!("{}", name), name.ids.get(0).map_or((0, 0..0), |(_, loc)| loc.clone())))
         }, vec![])
     }
 }

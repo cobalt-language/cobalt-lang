@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-#![allow(unused_variables)]
+use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::ffi::OsString;
@@ -169,7 +169,6 @@ impl TargetData {
         out
     }
 }
-static mut FILENAME: String = String::new();
 fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
     for (_, sym) in this.iter_mut() {
         match sym {
@@ -185,13 +184,13 @@ fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &in
 }
 fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -> Result<PathBuf, i32> {
     let ERROR = &"error".bright_red().bold();
-    let WARNING = &"warning".bright_yellow().bold();
     let MODULE = &"module".blue().bold();
-    let name = path.to_str().expect("File name must be valid UTF-8");
+    let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+    let config = term::Config::default();
     let flags = cobalt::Flags::default();
+    let name = path.to_str().expect("File name must be valid UTF-8");
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
-    let fname = unsafe {&mut FILENAME};
     let mut fail = false;
     let mut overall_fail = false;
     let code = match std::fs::read_to_string(path.parse_dot().unwrap()) {
@@ -201,31 +200,20 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
             return Err(100)
         }
     };
-    let (toks, errs) = cobalt::parser::lexer::lex(code.as_str(), cobalt::Location::from_name(fname.as_str()), &flags);
-    for err in errs {
-        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-        for note in err.notes {
-            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-        }
-    }
+    let file = cobalt::errors::files::add_file(name.to_string(), code.clone());
+    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &flags);
+    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {return Err(101)}
-    let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+    overall_fail |= fail;
     fail = false;
-    for err in errs {
-        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-        for note in err.notes {
-            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-        }
-    }
+    let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {return Err(101)}
     let (_, errs) = ast.codegen(&ctx);
+    overall_fail |= fail;
     fail = false;
-    for err in errs {
-        eprintln!("{}: {:#}: {}", if err.code < 100 {WARNING} else {fail = true; overall_fail = true; ERROR}, err.loc, err.message);
-        for note in err.notes {
-            eprintln!("\t{}: {:#}: {}", "note".bold(), note.loc, note.message);
-        }
-    }
+    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {
         let new = ctx.context.create_module("");
         new.set_triple(&ctx.module.get_triple());
