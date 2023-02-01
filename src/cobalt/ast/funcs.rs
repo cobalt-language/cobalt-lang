@@ -219,6 +219,28 @@ impl AST for FnDefAST {
                         inline = Some((true, loc.clone()))
                     }
                 },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    if let Some((_, prev)) = cconv.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
+                    }
+                    cconv = Some((0, loc.clone()));
+                    if let Some((_, prev)) = linkas.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 416, None).note(prev, "previously defined here".to_string()))
+                    }
+                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
@@ -229,7 +251,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.unwrap_or_else(|| format!("{}", self.name)).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
@@ -347,7 +369,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.unwrap_or_else(|| format!("{}", self.name)).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),

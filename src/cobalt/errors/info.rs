@@ -121,7 +121,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*421*/ ErrorInfo::new("@cconv annotation requires an argument", ""),
     /*422*/ ErrorInfo::new("unknown calling convention for @cconv annotation", ""),
     /*423*/ ErrorInfo::new("respecification of @inline annotation", ""),
-    /*424*/ ErrorInfo::new("unknown inlining specification", "")]),
+    /*424*/ ErrorInfo::new("unknown inlining specification", ""),
+    /*425*/ ErrorInfo::new("unknwon argument for @C annotation", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
     /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])
