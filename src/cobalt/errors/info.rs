@@ -126,13 +126,13 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])
 ];
 pub fn lookup(code: u64) -> Option<ErrorInfo> {
-    let mut idx = ERR_REGISTRY.len();
+    let mut idx = ERR_REGISTRY.len() / 2;
     let mut len = idx;
     loop {
         match ERR_REGISTRY[idx].0.cmp(&code) {
             Less => {
-                if len == 1 {
-                    return ERR_REGISTRY[idx].1.get(idx - len).copied().unwrap_or(None)
+                if len <= 1 {
+                    return ERR_REGISTRY[idx].1.get((code - ERR_REGISTRY[idx].0) as usize).copied().unwrap_or(None)
                 }
                 else {
                     len /= 2;
@@ -140,8 +140,8 @@ pub fn lookup(code: u64) -> Option<ErrorInfo> {
                 }
             },
             Greater => {
-                len /= 2;
-                idx += len;
+                if len >= 2 {len /= 2};
+                idx -= len;
             },
             Equal => return ERR_REGISTRY[idx].1[0]
         }
