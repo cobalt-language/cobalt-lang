@@ -1534,11 +1534,11 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
                     export: true
                 }, cparen.clone())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
-                let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, suffixes[n % 10], v.data_type);
+                let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}, v.data_type);
                 (if let Some(val) = impl_convert(v.clone(), t.clone(), ctx) {
                     if *c && val.inter_val.is_none() {
                         good = false;
-                        err.add_note(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, suffixes[n % 10]));
+                        err.add_note(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}));
                     }
                     val
                 }
