@@ -1082,10 +1082,11 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
-            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
+            Statement(_) if i == 0 => i += 1,
+            Statement(k) if (k != "const" && k != "mut") && match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "&&" | "**" | "^" | "^^" => false,
                 _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
+            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let mut depth = 1;
                 i += 1;
@@ -1121,7 +1122,7 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
                     }
                     i += 1;
                 }
-            }
+            },
             Special(')') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 251, None)); break;},
             Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
             Special('}') => break,
@@ -1138,10 +1139,11 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "&&" | "**" | "^" | "^^" => false,
                 _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
+            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let mut depth = 1;
                 i += 1;
@@ -1177,7 +1179,7 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
                     }
                     i += 1;
                 }
-            }
+            },
             Special(')') => break,
             Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
             Special('}') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 255, None)); break;},
@@ -1195,10 +1197,11 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "&&" | "**" | "^" | "^^" => false,
                 _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
+            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let start = toks[i].loc.clone();
                 let mut depth = 1;
@@ -1246,7 +1249,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
                 if i == toks.len() && depth > 0 {
                     errs.push(Diagnostic::error(start, 254, None));
                 }
-            }
+            },
             Special(')') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 251, None)); break;},
             Special(']') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 253, None)); break;},
             Special('}') => {errs.push(Diagnostic::error(toks[i].loc.clone(), 255, None)); break;},
