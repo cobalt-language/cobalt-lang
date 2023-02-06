@@ -174,18 +174,18 @@ pub fn load_profile(name: Option<&str>, pm: &PassManager<Module>) {
         return;
     }
     match name {
-        "none" => {},
-        "less" => {
+        "default" | "none" | "0" => {},
+        "less" | "1" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Less);
             pmb.populate_module_pass_manager(&pm);
         },
-        "default" => {
+        "some" | "2" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Default);
             pmb.populate_module_pass_manager(&pm);
         },
-        "aggressive" => {
+        "aggressive" | "3" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Aggressive);
             pmb.populate_module_pass_manager(&pm);
