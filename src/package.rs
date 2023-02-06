@@ -112,7 +112,7 @@ impl Package {
                 },
                 Source::Tarball(url) => {
                     if opts.output.verbose() {eprintln!("downloading prebuilt tarball from {url}");}
-                    let mut body = reqwest::blocking::get(url)?;
+                    let mut body = ureq::get(url).call()?.into_reader();
                     let mut vec = Vec::new();
                     body.read_to_end(&mut vec)?;
                     let decoded = GzDecoder::new(Cursor::new(vec));
@@ -120,7 +120,7 @@ impl Package {
                 },
                 Source::Zipball(url) => {
                     if opts.output.verbose() {eprintln!("downloading prebuilt zipball from {url}");}
-                    let mut body = reqwest::blocking::get(url)?;
+                    let mut body = ureq::get(url).call()?.into_reader();
                     let mut vec = Vec::new();
                     body.read_to_end(&mut vec)?;
                     zip_extract::extract(Cursor::new(vec), &install_dir, true)?;
@@ -146,7 +146,7 @@ impl Package {
                 },
                 Source::Tarball(url) => {
                     if opts.output.verbose() {eprintln!("downloading source tarball from {url}");}
-                    let mut body = reqwest::blocking::get(url)?;
+                    let mut body = ureq::get(url).call()?.into_reader();
                     let mut vec = Vec::new();
                     body.read_to_end(&mut vec)?;
                     let decoded = GzDecoder::new(Cursor::new(vec));
@@ -154,7 +154,7 @@ impl Package {
                 },
                 Source::Zipball(url) => {
                     if opts.output.verbose() {eprintln!("downloading source zipball from {url}");}
-                    let mut body = reqwest::blocking::get(url)?;
+                    let mut body = ureq::get(url).call()?.into_reader();
                     let mut vec = Vec::new();
                     body.read_to_end(&mut vec)?;
                     zip_extract::extract(Cursor::new(vec), &install_loc, true)?;
@@ -207,7 +207,7 @@ pub enum InstallError<'a> {
     NoInstallDirectory,
     NoMatchesError,
     ZipExtractError(zip_extract::ZipExtractError),
-    DownloadError(reqwest::Error),
+    DownloadError(ureq::Error),
     GitCloneError(git2::Error),
     StdIoError(std::io::Error),
     CfgFileError(toml::de::Error),
@@ -218,8 +218,8 @@ pub enum InstallError<'a> {
 impl From<zip_extract::ZipExtractError> for InstallError<'_> {
     fn from(err: zip_extract::ZipExtractError) -> Self {InstallError::ZipExtractError(err)}
 }
-impl From<reqwest::Error> for InstallError<'_> {
-    fn from(err: reqwest::Error) -> Self {InstallError::DownloadError(err)}
+impl From<ureq::Error> for InstallError<'_> {
+    fn from(err: ureq::Error) -> Self {InstallError::DownloadError(err)}
 }
 impl From<git2::Error> for InstallError<'_> {
     fn from(err: git2::Error) -> Self {InstallError::GitCloneError(err)}
