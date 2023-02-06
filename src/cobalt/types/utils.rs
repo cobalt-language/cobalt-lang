@@ -1,7 +1,7 @@
 use crate::*;
 use std::cmp::{min, max};
-use inkwell::values::BasicValueEnum::*;
-use inkwell::types::BasicType;
+use inkwell::values::{BasicValueEnum::*, BasicMetadataValueEnum, CallableValue};
+use inkwell::types::{BasicType, BasicMetadataTypeEnum};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
@@ -1493,6 +1493,40 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
     }
 }
 pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {impl_convert(val, target, ctx)}
+fn prep_asm<'ctx>(mut arg: Variable<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMetadataTypeEnum<'ctx>, BasicMetadataValueEnum<'ctx>)> {
+    let i64_ty = ctx.context.i64_type();
+    let i32_ty = ctx.context.i32_type();
+    let i16_ty = ctx.context.i16_type();
+    let i8_ty = ctx.context.i8_type();
+    match arg.data_type {
+        Type::Borrow(b) => {
+            arg.data_type = *b;
+            prep_asm(arg, ctx)
+        },
+        Type::Reference(b, _) => {
+            arg.data_type = *b;
+            if let (Some(PointerValue(val)), true) = (arg.value(ctx), arg.data_type.register()) {
+                arg.comp_val = Some(ctx.builder.build_load(val, ""));
+            }
+            prep_asm(arg, ctx)
+        },
+        Type::IntLiteral => Some((i64_ty.into(), arg.value(ctx)?.into())),
+        Type::Int(64, _) => Some((i64_ty.into(), arg.value(ctx)?.into())),
+        Type::Int(33..=63, true) => Some((i64_ty.into(), ctx.builder.build_int_z_extend(arg.value(ctx)?.into_int_value(), i64_ty, "").into())),
+        Type::Int(33..=63, false) => Some((i64_ty.into(), ctx.builder.build_int_s_extend(arg.value(ctx)?.into_int_value(), i64_ty, "").into())),
+        Type::Int(32, _) => Some((i32_ty.into(), arg.value(ctx)?.into())),
+        Type::Int(17..=31, true) => Some((i32_ty.into(), ctx.builder.build_int_z_extend(arg.value(ctx)?.into_int_value(), i32_ty, "").into())),
+        Type::Int(17..=31, false) => Some((i32_ty.into(), ctx.builder.build_int_s_extend(arg.value(ctx)?.into_int_value(), i32_ty, "").into())),
+        Type::Int(16, _) => Some((i64_ty.into(), arg.value(ctx)?.into())),
+        Type::Int(9..=15, true) => Some((i16_ty.into(), ctx.builder.build_int_z_extend(arg.value(ctx)?.into_int_value(), i16_ty, "").into())),
+        Type::Int(9..=15, false) => Some((i16_ty.into(), ctx.builder.build_int_s_extend(arg.value(ctx)?.into_int_value(), i16_ty, "").into())),
+        Type::Int(8, _) => Some((i64_ty.into(), arg.value(ctx)?.into())),
+        Type::Int(1..=7, true) => Some((i8_ty.into(), ctx.builder.build_int_z_extend(arg.value(ctx)?.into_int_value(), i8_ty, "").into())),
+        Type::Int(1..=7, false) => Some((i8_ty.into(), ctx.builder.build_int_s_extend(arg.value(ctx)?.into_int_value(), i8_ty, "").into())),
+        t @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)) => Some((t.llvm_type(ctx).unwrap().into(), arg.comp_val.or_else(|| arg.inter_val.and_then(|x| x.into_compiled(ctx)))?.into())),
+        _ => None
+    }
+}
 pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Diagnostic> {
     match target.data_type {
         Type::Borrow(b) => {
@@ -1560,6 +1594,29 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
                 export: true
             })
         },
+        Type::InlineAsm => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
+            let mut params = Vec::with_capacity(args.len());
+            let mut comp_args = Vec::with_capacity(args.len());
+            let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
+            let mut good = true;
+            let mut err = Diagnostic::error(loc, 432, None);
+            for (n, (arg, l)) in args.into_iter().enumerate() {
+                let e = format!("cannot pass value of type {}({}{} argument) to assembly", arg.data_type, n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]});
+                if let Some((ty, val)) = prep_asm(arg, ctx) {
+                    params.push(ty);
+                    comp_args.push(val);
+                }
+                else {
+                    good = false;
+                    err.add_note(l, e);
+                }
+            }
+            if !good {return Err(err)}
+            let fty = ctx.context.void_type().fn_type(&params, false);
+            let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
+            ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
+            Ok(Variable::null(None))
+        } else {Ok(Variable::error())},
         t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({
             let mut out = format!("argument types are (");
             args.iter().for_each(|(Variable {data_type, ..}, _)| out += format!("{data_type}, ").as_str());

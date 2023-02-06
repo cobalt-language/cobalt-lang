@@ -584,8 +584,11 @@ impl CallAST {
 impl AST for CallAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.cparen.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
-        else {Type::Null}
+        match self.target.res_type(ctx) {
+            Type::Function(ret, _) => *ret,
+            Type::InlineAsm => Type::Null,
+            _ => Type::Null
+        }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
@@ -628,9 +631,22 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {if self.name == "asm" {Type::InlineAsm} else {Type::Null}}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        match self.name.as_str() { // idk what to put here
+        match self.name.as_str() {
+            "asm" => {
+                if let Some(ref args) = self.args {
+                    if let Some(idx) = args.find(';') {
+                        (Variable::metaval(InterData::InlineAsm(args[..idx].to_string(), args[(idx + 1)..].to_string()), Type::InlineAsm), vec![])
+                    }
+                    else {
+                        (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 431, None)])
+                    }
+                }
+                else {
+                    (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 430, None)])
+                }
+            },
             x => (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }

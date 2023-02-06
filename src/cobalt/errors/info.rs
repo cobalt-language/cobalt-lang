@@ -123,7 +123,11 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*422*/ ErrorInfo::new("unknown calling convention for @cconv annotation", ""),
     /*423*/ ErrorInfo::new("respecification of @inline annotation", ""),
     /*424*/ ErrorInfo::new("unknown inlining specification", ""),
-    /*425*/ ErrorInfo::new("unknwon argument for @C annotation", "")]),
+    /*425*/ ErrorInfo::new("unknwon argument for @C annotation", ""),
+    /*426-429*/ None, None, None, None,
+    /*430*/ ErrorInfo::new("@asm intrinsic requires arguments", ""),
+    /*431*/ ErrorInfo::new("@asm intrinsic requires a constraint, delimited by a semicolon, and a body", ""),
+    /*432*/ ErrorInfo::new("invalid call to inline assembly", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
     /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])

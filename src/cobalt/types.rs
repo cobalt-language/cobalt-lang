@@ -23,7 +23,7 @@ pub enum Type {
     Int(u64, bool),
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
-    Null, Module, TypeData, Array(Box<Type>, Option<u64>),
+    Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u64>),
     Function(Box<Type>, Vec<(Type, bool)>)
 }
 impl Display for Type {
@@ -45,6 +45,7 @@ impl Display for Type {
             Null => write!(f, "null"),
             Module => write!(f, "module"),
             TypeData => write!(f, "type"),
+            InlineAsm => write!(f, "inline assembly"),
             Array(x, None) => write!(f, "{}[]", *x),
             Array(x, Some(s)) => write!(f, "{}[{s}]", *x),
             Function(ret, args) => {
@@ -75,7 +76,7 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(..) | Module | TypeData => Meta,
+            Function(..) | Module | TypeData | InlineAsm => Meta,
             Pointer(..) | Reference(..) => Static(8),
             Borrow(b) => b.size()
         }
@@ -95,7 +96,7 @@ impl Type {
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(),
-            Function(..) | Module | TypeData => 0,
+            Function(..) | Module | TypeData | InlineAsm => 0,
             Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align()
         }
@@ -109,7 +110,7 @@ impl Type {
             Float32 => Some(FloatType(ctx.context.f32_type())),
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(..) | Module | TypeData => None,
+            Null | Function(..) | Module | TypeData | InlineAsm => None,
             Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
             Array(_, None) => todo!("arrays aren't implemented yet"),
             Pointer(b, _) | Reference(b, _) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)))),
@@ -174,6 +175,7 @@ impl Type {
                 }
                 Ok(())
             },
+            InlineAsm => out.write_all(&[14]),
             Module => todo!("Modules can't be stored in variables yet!"),
             TypeData => todo!("Types can't be stored in variables yet!"),
             Array(..) => todo!("Arrays aren't implemented yet!")
@@ -213,7 +215,8 @@ impl Type {
                 }
                 Type::Function(Box::new(ret), vec)
             }
-            x => panic!("read type value expecting value in 1..=13, got {x}")
+            14 => Type::InlineAsm,
+            x => panic!("read type value expecting value in 1..=14, got {x}")
         })
     }
 }
