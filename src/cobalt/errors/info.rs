@@ -120,7 +120,16 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*419*/ ErrorInfo::new("@linkas cannot be specified for non-static local variables", ""),
     /*420*/ ErrorInfo::new("@cconv annotation cannot be respecified", ""),
     /*421*/ ErrorInfo::new("@cconv annotation requires an argument", ""),
-    /*422*/ ErrorInfo::new("unknown calling convention for @cconv annotation", "")]),
+    /*422*/ ErrorInfo::new("unknown calling convention for @cconv annotation", ""),
+    /*423*/ ErrorInfo::new("respecification of @inline annotation", ""),
+    /*424*/ ErrorInfo::new("unknown inlining specification", ""),
+    /*425*/ ErrorInfo::new("unknwon argument for @C annotation", ""),
+    /*426*/ ErrorInfo::new("@target annotation requires arguments", ""),
+    /*427*/ ErrorInfo::new("error in target glob", ""),
+    /*428-429*/ None, None,
+    /*430*/ ErrorInfo::new("@asm intrinsic requires arguments", ""),
+    /*431*/ ErrorInfo::new("@asm intrinsic requires a constraint, delimited by a semicolon, and a body", ""),
+    /*432*/ ErrorInfo::new("invalid call to inline assembly", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
     /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])

@@ -1,7 +1,7 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
-use std::cell::Cell;
+use glob::Pattern;
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -19,6 +19,7 @@ impl AST for VarDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "static" => {
@@ -68,9 +69,23 @@ impl AST for VarDefAST {
                     }
                     is_extern = Some(loc.clone());
                 },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
@@ -109,7 +124,7 @@ impl AST for VarDefAST {
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 21, None)); None}),
                     inter_val: None,
                     data_type: dt,
-                    good: Cell::new(true)
+                    export: true
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -152,7 +167,7 @@ impl AST for VarDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -164,12 +179,12 @@ impl AST for VarDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: Type::Reference(Box::new(dt), false),
-                            good: Cell::new(true)
+                            export: true
                         })))
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -219,7 +234,7 @@ impl AST for VarDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
@@ -269,7 +284,7 @@ impl AST for VarDefAST {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
                                 data_type: Type::Reference(Box::new(dt), false),
-                                good: Cell::new(true)
+                                export: true
                             })))
                         }
                         else {
@@ -277,7 +292,7 @@ impl AST for VarDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                         }
                     }
                 }
@@ -313,7 +328,7 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -370,7 +385,7 @@ impl AST for VarDefAST {
                 Variable::error()
             });
             match if ctx.is_const.get() || val.data_type.register() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -379,11 +394,11 @@ impl AST for VarDefAST {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), false),
-                    good: Cell::new(true)
+                    export: true
                 })))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -431,6 +446,7 @@ impl AST for MutDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "static" => {
@@ -480,9 +496,23 @@ impl AST for MutDefAST {
                     }
                     is_extern = Some(loc.clone());
                 },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
@@ -521,7 +551,7 @@ impl AST for MutDefAST {
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 23, None)); None}),
                     inter_val: None,
                     data_type: dt,
-                    good: Cell::new(true)
+                    export: true
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -564,7 +594,7 @@ impl AST for MutDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -576,12 +606,12 @@ impl AST for MutDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: Type::Reference(Box::new(dt), false),
-                            good: Cell::new(true)
+                            export: true
                         })))
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -631,7 +661,7 @@ impl AST for MutDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
@@ -681,7 +711,7 @@ impl AST for MutDefAST {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
                                 data_type: Type::Reference(Box::new(dt), false),
-                                good: Cell::new(true)
+                                export: true
                             })))
                         }
                         else {
@@ -689,7 +719,7 @@ impl AST for MutDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                         }
                     }
                 }
@@ -725,7 +755,7 @@ impl AST for MutDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -781,7 +811,7 @@ impl AST for MutDefAST {
                 Variable::error()
             });
             match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -790,11 +820,11 @@ impl AST for MutDefAST {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), true),
-                    good: Cell::new(true)
+                    export: true
                 })))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -870,7 +900,7 @@ impl AST for ConstDefAST {
             Variable::error()
         });
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {good: Cell::new(true), ..val}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val}))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -914,9 +944,7 @@ impl AST for VarGetAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match ctx.with_vars(|v| v.lookup(&self.name)) {
-            Ok(Symbol::Variable(x)) =>
-                (x.clone(), if x.good.get() {if !x.data_type.copyable() {x.good.set(false);} vec![]}
-                else {vec![Diagnostic::warning(self.loc.clone(), 90, None)]}),
+            Ok(Symbol::Variable(x)) => (x.clone(), vec![]),
             Ok(Symbol::Module(_)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
             Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
             Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])

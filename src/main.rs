@@ -25,7 +25,7 @@ enum OutputType {
     Bitcode
 }
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
-    asm_parser: false,
+    asm_parser: true,
     asm_printer: true,
     base: true,
     disassembler: false,

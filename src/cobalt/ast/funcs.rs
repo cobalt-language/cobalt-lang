@@ -1,8 +1,9 @@
 use crate::*;
-use std::cell::Cell;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
+use inkwell::attributes::{Attribute, AttributeLoc::Function};
+use glob::Pattern;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
@@ -116,6 +117,8 @@ impl AST for FnDefAST {
         let mut linkas = None;
         let mut is_extern = None;
         let mut cconv = None;
+        let mut inline = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "link" => {
@@ -203,9 +206,60 @@ impl AST for FnDefAST {
                         }
                     }.map(|cc| (cc, loc.clone())));
                 },
+                "inline" => {
+                    if let Some((_, prev)) = inline.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 423, None).note(prev, "previous specification here".to_string()))
+                    }
+                    if let Some(arg) = arg {
+                        match arg.as_str() {
+                            "always" | "true" | "1" => inline = Some((true, loc.clone())),
+                            "never" | "false" | "0" => inline = Some((false, loc.clone())),
+                            x => errs.push(Diagnostic::error(loc.clone(), 424, Some(format!("expected 'always' or 'never', got {x:?}"))))
+                        }
+                    }
+                    else {
+                        inline = Some((true, loc.clone()))
+                    }
+                },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    if let Some((_, prev)) = cconv.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
+                    }
+                    cconv = Some((0, loc.clone()));
+                    if let Some((_, prev)) = linkas.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 416, None).note(prev, "previously defined here".to_string()))
+                    }
+                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
+                },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {
@@ -213,7 +267,13 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
+                    match inline {
+                        Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
                     f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
                     if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
@@ -243,7 +303,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty.clone(),
-                        good: Cell::new(true)
+                        export: true
                     }))).clone();
                     if is_extern.is_none() {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -263,7 +323,7 @@ impl AST for FnDefAST {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |_| ());
                                     param_count += 1;
                                 }
@@ -272,7 +332,7 @@ impl AST for FnDefAST {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |_| ());
                                 }
                             }
@@ -316,7 +376,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty,
-                        good: Cell::new(true)
+                        export: true
                     }))).clone()
                 }
             }
@@ -325,7 +385,13 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(format!("{}", self.name).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
+                    match inline {
+                        Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
                     f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
                     if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
@@ -355,7 +421,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty.clone(),
-                        good: Cell::new(true)
+                        export: true
                     }))).clone();
                     if is_extern.is_none() {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -375,7 +441,7 @@ impl AST for FnDefAST {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |_| ());
                                     param_count += 1;
                                 }
@@ -384,7 +450,7 @@ impl AST for FnDefAST {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        good: Cell::new(true)
+                                        export: true
                                     }))).map_or((), |_| ());
                                 }
                             }
@@ -424,7 +490,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty,
-                        good: Cell::new(true)
+                        export: true
                     }))).clone()
                 }
             }
@@ -454,7 +520,7 @@ impl AST for FnDefAST {
                         })).collect()
                     })),
                     data_type: fty,
-                    good: Cell::new(true)
+                    export: true
                 }))).clone()
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -534,8 +600,11 @@ impl CallAST {
 impl AST for CallAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.cparen.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Type::Function(ret, _) = self.target.res_type(ctx) {*ret}
-        else {Type::Null}
+        match self.target.res_type(ctx) {
+            Type::Function(ret, _) => *ret,
+            Type::InlineAsm => Type::Null,
+            _ => Type::Null
+        }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
@@ -578,10 +647,22 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {if self.name == "asm" {Type::InlineAsm} else {Type::Null}}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
-            "asm" => todo!("inline assembly isn't yet implemented"),
+            "asm" => {
+                if let Some(ref args) = self.args {
+                    if let Some(idx) = args.find(';') {
+                        (Variable::metaval(InterData::InlineAsm(args[..idx].to_string(), args[(idx + 1)..].to_string()), Type::InlineAsm), vec![])
+                    }
+                    else {
+                        (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 431, None)])
+                    }
+                }
+                else {
+                    (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 430, None)])
+                }
+            },
             x => (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }

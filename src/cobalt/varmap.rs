@@ -2,7 +2,6 @@ use crate::*;
 use inkwell::values::BasicValueEnum;
 use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use std::collections::hash_map::{HashMap, Entry};
-use std::cell::Cell;
 use std::io::{self, Write, Read, BufRead};
 #[derive(Debug, Clone, Copy)]
 pub enum UndefVariable {
@@ -26,7 +25,8 @@ pub enum InterData {
     Float(f64),
     Str(String),
     Array(Vec<InterData>),
-    Function(FnData)
+    Function(FnData),
+    InlineAsm(String, String)
 }
 impl InterData {
     pub fn into_compiled<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
@@ -58,6 +58,13 @@ impl InterData {
                 out.write_all(&(v.defaults.len() as u64).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
                 Ok(())
+            },
+            InterData::InlineAsm(c, b) => {
+                out.write_all(&[7])?;
+                out.write_all(c.as_bytes())?;
+                out.write_all(&[0])?;
+                out.write_all(b.as_bytes())?;
+                out.write_all(&[0])
             }
         }
     }
@@ -98,7 +105,14 @@ impl InterData {
                 for _ in 0..len {vec.push(Self::load(buf)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
                 Some(InterData::Function(FnData{defaults: vec}))
             },
-            x => panic!("read interpreted data type expecting number in 1..=6, got {x}")
+            7 => {
+                let mut constraint = Vec::new();
+                let mut body = Vec::new();
+                buf.read_until(0, &mut constraint)?;
+                buf.read_until(0, &mut body)?;
+                Some(InterData::InlineAsm(std::str::from_utf8(&constraint).expect("Inline assmebly constraint should be valid UTF-8").to_string(), std::str::from_utf8(&body).expect("Inline assembly should be valid UTF-8").to_string()))
+            },
+            x => panic!("read interpreted data type expecting number in 1..=7, got {x}")
         })
     }
 }
@@ -107,14 +121,14 @@ pub struct Variable<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData>,
     pub data_type: Type,
-    pub good: Cell<bool>
+    pub export: bool
 }
 impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, good: Cell::new(false)}}
-    pub fn null(data_type: Option<Type>) -> Self {Variable {comp_val: None, inter_val: None, data_type: data_type.unwrap_or(Type::Null), good: Cell::new(false)}}
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, good: Cell::new(true)}}
-    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
-    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, good: Cell::new(true)}}
+    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, export: true}}
+    pub fn null(data_type: Option<Type>) -> Self {Variable {comp_val: None, inter_val: None, data_type: data_type.unwrap_or(Type::Null), export: true}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, export: true}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, export: true}}
+    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, export: true}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 #[derive(Clone)]
@@ -133,14 +147,14 @@ impl<'ctx> Symbol<'ctx> {
     pub fn is_mod(&self) -> bool {if let Symbol::Module(_) = self {true} else {false}}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
-            Symbol::Variable(v) => {
+            Symbol::Variable(v) => if v.export {
                 out.write_all(&[1])?; // Variable
                 out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
                 out.write_all(&[0])?;
                 if let Some(v) = v.inter_val.as_ref() {v.save(out)?}
                 else {out.write_all(&[0])?} // Interpreted value, self-punctuating
                 v.data_type.save(out) // Type
-            },
+            } else {Ok(())},
             Symbol::Module(v) => {
                 out.write_all(&[2])?; // Module
                 for (name, sym) in v.iter() {
@@ -158,7 +172,7 @@ impl<'ctx> Symbol<'ctx> {
         match c {
             1 => {
                 let mut var = Variable::error();
-                var.good.set(true);
+                var.export = true;
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
                 if name.last() == Some(&0) {name.pop();}
