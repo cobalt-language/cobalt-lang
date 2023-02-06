@@ -431,7 +431,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file))
             });
-            let mut out = if out_file == "-" {Box::new(std::io::stdout()) as Box<dyn Write>} else {Box::new(std::fs::File::create(out_file.as_str())?) as Box<dyn Write>};
+            let out_file = if out_file == "-" {None} else {Some(out_file)};
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
@@ -475,8 +475,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
             match output_type {
-                OutputType::LLVM => write!(out, "{}", ctx.module.to_string())?,
-                OutputType::Bitcode => out.write_all(ctx.module.write_bitcode_to_memory().as_slice())?,
+                OutputType::LLVM =>
+                    if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
+                    else {println!("{}", ctx.module.to_string())},
+                OutputType::Bitcode =>
+                    if let Some(out) = out_file {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
+                    else {std::io::stdout().write_all(ctx.module.write_bitcode_to_memory().as_slice())?},
                 _ => {
                     let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
                         &triple,
@@ -487,14 +491,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         inkwell::targets::CodeModel::Small
                     ).expect("failed to create target machine");
                     if output_type == OutputType::Assembly {
-                        out.write_all(target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap().as_slice())?;
+                        let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
+                        if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
+                        else {std::io::stdout().write_all(code.as_slice())?}
                         return Ok(())
                     }
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
                     match output_type {
                         OutputType::Executable => {
-                            out.write_all(mb.as_slice())?;
-                            let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
+                            if out_file.is_none() {
+                                eprintln!("cannot output executable to stdout");
+                                exit(4)
+                            }
+                            let tmp = temp_file::with_contents(mb.as_slice());
+                            let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
                             for (lib, _) in libs {
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
@@ -507,8 +517,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             exit(Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::ExeLibc => {
-                            out.write_all(mb.as_slice())?;
-                            let mut args = vec![OsString::from(out_file.clone()), OsString::from("-o"), OsString::from(out_file)];
+                            if out_file.is_none() {
+                                eprintln!("cannot output executable to stdout");
+                                exit(4)
+                            }
+                            let tmp = temp_file::with_contents(mb.as_slice());
+                            let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
                             for (lib, _) in libs {
                                 let lib = lib.parse_dot()?;
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
@@ -526,30 +540,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .ok().and_then(|x| x.code()).unwrap_or(0))
                         },
                         OutputType::Library => {
-                            let mut builder = ar::Builder::new(out);
-                            builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
-                            {
-                                let mut buf = String::new();
-                                for lib in linked {
-                                    buf += lib;
+                            if let Some(out_file) = out_file {
+                                let out = std::fs::File::create(&out_file)?;
+                                let mut builder = ar::Builder::new(out);
+                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
+                                {
+                                    let mut buf = String::new();
+                                    for lib in linked {
+                                        buf += lib;
+                                        buf.push('\0');
+                                    }
                                     buf.push('\0');
-                                }
-                                buf.push('\0');
-                                for link_dir in link_dirs {
-                                    buf += &link_dir;
+                                    for link_dir in link_dirs {
+                                        buf += &link_dir;
+                                        buf.push('\0');
+                                    }
                                     buf.push('\0');
+                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
                                 }
-                                buf.push('\0');
-                                builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
+                                {
+                                    let mut buf: Vec<u8> = vec![];
+                                    ctx.with_vars(|v| v.save(&mut buf))?;
+                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                                }
+                                exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
                             }
-                            {
-                                let mut buf: Vec<u8> = vec![];
-                                ctx.with_vars(|v| v.save(&mut buf))?;
-                                builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                            else {
+                                let mut builder = ar::Builder::new(std::io::stdout());
+                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
+                                {
+                                    let mut buf = String::new();
+                                    for lib in linked {
+                                        buf += lib;
+                                        buf.push('\0');
+                                    }
+                                    buf.push('\0');
+                                    for link_dir in link_dirs {
+                                        buf += &link_dir;
+                                        buf.push('\0');
+                                    }
+                                    buf.push('\0');
+                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
+                                }
+                                {
+                                    let mut buf: Vec<u8> = vec![];
+                                    ctx.with_vars(|v| v.save(&mut buf))?;
+                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                                }
                             }
-                            exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
                         },
-                        OutputType::Object => out.write_all(mb.as_slice())?,
+                        OutputType::Object =>
+                            if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
+                            else {std::io::stdout().write_all(mb.as_slice())?}
                         x => panic!("{x:?} has already been handled")
                     }
                 }
