@@ -258,6 +258,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     if flags.up {loc.1 += c.len_utf8()};
                     if match c {
                         '\\' => 'early_exit: {
+                            if flags.up {loc.1 += 1};
                             if let Some(c) = it.next() {
                                 if flags.up {loc.1 += c.len_utf8()};
                                 let val = match c {
@@ -597,7 +598,6 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                             'a' => '\x07',
                             _ => c
                         });
-                        if flags.up {loc.1 += 1};
                         lwbs = false;
                     }
                     else {
