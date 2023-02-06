@@ -438,9 +438,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&triple);
-            let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
-            notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
-            if notfound.len() > 0 {exit(102)}
+            let libs = if linked.len() > 0 {
+                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                if notfound.len() > 0 {exit(102)}
+                libs
+            } else {vec![]};
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
@@ -663,9 +666,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
-            notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
-            if notfound.len() > 0 {exit(102)}
+            let libs = if linked.len() > 0 {
+                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                if notfound.len() > 0 {exit(102)}
+                libs
+            } else {vec![]};
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
