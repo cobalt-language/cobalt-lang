@@ -3,6 +3,7 @@ use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
+use glob::Pattern;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
@@ -117,6 +118,7 @@ impl AST for FnDefAST {
         let mut is_extern = None;
         let mut cconv = None;
         let mut inline = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "link" => {
@@ -241,9 +243,23 @@ impl AST for FnDefAST {
                     }
                     linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
                 },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {

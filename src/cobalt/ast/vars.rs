@@ -1,6 +1,7 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
+use glob::Pattern;
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -18,6 +19,7 @@ impl AST for VarDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "static" => {
@@ -67,9 +69,23 @@ impl AST for VarDefAST {
                     }
                     is_extern = Some(loc.clone());
                 },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
@@ -430,6 +446,7 @@ impl AST for MutDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
                 "static" => {
@@ -479,9 +496,23 @@ impl AST for MutDefAST {
                     }
                     is_extern = Some(loc.clone());
                 },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        if target_match == 0 {return (Variable::error(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
