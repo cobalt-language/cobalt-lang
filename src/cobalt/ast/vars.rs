@@ -114,7 +114,7 @@ impl AST for VarDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -171,7 +171,7 @@ impl AST for VarDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -237,7 +237,7 @@ impl AST for VarDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
@@ -541,7 +541,7 @@ impl AST for MutDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -598,7 +598,7 @@ impl AST for MutDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -664,7 +664,7 @@ impl AST for MutDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));

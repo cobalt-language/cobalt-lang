@@ -267,7 +267,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
@@ -385,7 +385,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
