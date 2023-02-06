@@ -306,6 +306,7 @@ impl AST for FnDefAST {
                         export: true
                     }))).clone();
                     if is_extern.is_none() {
+                        let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -347,6 +348,7 @@ impl AST for FnDefAST {
                             errs.push(Diagnostic::error(self.body.loc(), 311, Some(err)));
                             llt.const_zero()
                         })));
+                        ctx.restore_scope(old_scope);
                     }
                     var
                 }
@@ -424,6 +426,7 @@ impl AST for FnDefAST {
                         export: true
                     }))).clone();
                     if is_extern.is_none() {
+                        let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -461,6 +464,7 @@ impl AST for FnDefAST {
                         errs.append(&mut es);
                         ctx.builder.build_return(None);
                         ctx.map_vars(|v| v.parent.unwrap());
+                        ctx.restore_scope(old_scope);
                     }
                     var
                 }

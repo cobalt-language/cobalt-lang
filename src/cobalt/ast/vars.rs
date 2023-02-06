@@ -244,6 +244,7 @@ impl AST for VarDefAST {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
+                        let old_scope = ctx.push_scope(&self.name);
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -275,6 +276,7 @@ impl AST for VarDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
+                        ctx.restore_scope(old_scope);
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
@@ -297,6 +299,7 @@ impl AST for VarDefAST {
                     }
                 }
                 else {
+                    let old_scope = ctx.push_scope(&self.name);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
@@ -328,6 +331,7 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
+                    ctx.restore_scope(old_scope);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -353,6 +357,7 @@ impl AST for VarDefAST {
             if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
+            let old_scope = ctx.push_scope(&self.name);
             let (val, mut es) = self.val.codegen(ctx);
             errs.append(&mut es);
             let t2 = val.data_type.clone();
@@ -384,6 +389,7 @@ impl AST for VarDefAST {
                 errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
+            ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || val.data_type.register() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
@@ -566,6 +572,7 @@ impl AST for MutDefAST {
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
+                let old_scope = ctx.push_scope(&self.name);
                 let (val, mut es) = self.val.codegen(ctx);
                 errs.append(&mut es);
                 let t2 = val.data_type.clone();
@@ -592,6 +599,7 @@ impl AST for MutDefAST {
                         }
                     }
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
+                ctx.restore_scope(old_scope);
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
@@ -671,6 +679,7 @@ impl AST for MutDefAST {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
+                        let old_scope = ctx.push_scope(&self.name);
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -702,6 +711,7 @@ impl AST for MutDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
+                        ctx.restore_scope(old_scope);
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
@@ -724,6 +734,7 @@ impl AST for MutDefAST {
                     }
                 }
                 else {
+                    let old_scope = ctx.push_scope(&self.name);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
@@ -755,6 +766,7 @@ impl AST for MutDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
+                    ctx.restore_scope(old_scope);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -780,6 +792,7 @@ impl AST for MutDefAST {
             if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
+            let old_scope = ctx.push_scope(&self.name);
             let (val, mut errs) = self.val.codegen(ctx);
             let t2 = val.data_type.clone();
             let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
@@ -810,6 +823,7 @@ impl AST for MutDefAST {
                 errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
+            ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
@@ -868,6 +882,7 @@ impl AST for ConstDefAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = self.annotations.iter().map(|(x, _, loc)| Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition")))).collect::<Vec<_>>();
         let old_is_const = ctx.is_const.replace(true);
+        let old_scope = ctx.push_scope(&self.name);
         let (val, mut es) = self.val.codegen(ctx);
         errs.append(&mut es);
         let t2 = val.data_type.clone();
@@ -899,6 +914,7 @@ impl AST for ConstDefAST {
             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
             Variable::error()
         });
+        ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val}))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
