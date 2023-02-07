@@ -201,6 +201,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
             },
             '#' => {
                 let start = loc.1;
+                if flags.up {loc.1 += 1};
                 match it.next() {
                     None => break, // single-line, followed by EOF
                     Some('\n') => { // single-line, empty
@@ -209,6 +210,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     },
                     Some('=') => { // multiline
                         let mut count = 1;
+                        if flags.up {loc.1 += 1};
                         loop { // count '='s
                             match it.next() {
                                 None => {
@@ -229,25 +231,30 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                             }
                             let mut rem = count;
                             while rem > 0 && it.peek() == Some(&'=') { // the number of consecutive '='s
-                                if flags.up {loc.1 += 1}
+                                if flags.up {loc.1 += 1};
                                 if rem > 0 { // it's ok if there's extra '='s
                                     rem -= 1;
                                 }
                                 it.next();
                             }
                             if it.peek() == Some(&'#') { // check to make sure that it's actually ended
-                                if flags.up {loc.1 += 1}
+                                if flags.up {loc.1 += 1};
                                 break;
                             }
                         }
                         continue;
                     },
                     Some(_) => { // single-line, non-empty
-                        if let Some(pos) = it.position(|x| x == '\n') {
-                            if flags.up {loc.1 +=pos + 1;}
-                            continue;
+                        loop {
+                            match it.next() {
+                                None => break,
+                                Some('\n') => {
+                                    if flags.up {loc.1 += 1};
+                                    break;
+                                },
+                                Some(c) => if flags.up {loc.1 += c.len_utf8()}
+                            }
                         }
-                        else {break}
                     }
                 }
             },
