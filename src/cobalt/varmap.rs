@@ -248,7 +248,7 @@ impl<'ctx> VarMap<'ctx> {
         mod_merge(&mut self.symbols, other)
     }
     pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
-        match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, name) {
+        match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, if name.global {&self.root().imports} else {&self.imports}, name) {
             Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
             x => x
         }
@@ -301,14 +301,20 @@ impl<'ctx> VarMap<'ctx> {
         Ok(VarMap {parent: None, symbols: out, imports})
     }
 }
-pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {
+pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, mut imports: &'a Vec<CompoundDottedName>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {
     let mut idx = 0;
     if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
     while idx + 1 < name.ids.len() {
         match this.get(&name.ids[idx].0) {
-            None => return Err(UndefVariable::DoesNotExist(idx)),
+            None => imports.iter().filter_map(|i| {
+                if i.matches(name) {mod_lookup(this, imports, &name.end(idx)).ok()}
+                else {None}
+            }).next().ok_or(Err(UndefVariable::DoesNotExist(idx))),
             Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
-            Some(Symbol::Module(x)) => this = x
+            Some(Symbol::Module(x, i)) => {
+                this = x;
+                imports = i;
+            }
         }
         idx += 1;
     }

@@ -11,6 +11,7 @@ impl DottedName {
     pub fn relative(ids: Vec<(String, Location)>) -> Self {Self::new(ids, false)}
     pub fn local(id: (String, Location)) -> Self {Self::new(vec![id], false)}
     pub fn start(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[..(len + 1)].to_vec()}}
+    pub fn end(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[len..].to_vec()}}
 }
 impl Display for DottedName {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
@@ -62,6 +63,7 @@ impl CompoundDottedName {
     pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, true)}
     pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, false)}
     pub fn local(id: CompoundDottedNameSegment) -> Self {Self::new(vec![id], false)}
+    pub fn matches(name: &DottedName) -> bool {todo!("Matching of a DottedName against a CompoundDottedName can wait")}
 }
 impl From<DottedName> for CompoundDottedName {
     fn from(other: DottedName) -> Self {Self::new(other.ids.into_iter().map(|(id, loc)| CompoundDottedNameSegment::Identifier(id, loc)).collect(), other.global)}
