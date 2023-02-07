@@ -172,7 +172,7 @@ impl TargetData {
 fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
     for (_, sym) in this.iter_mut() {
         match sym {
-            cobalt::Symbol::Module(m) => clear_mod(m, module),
+            cobalt::Symbol::Module(m, _) => clear_mod(m, module),
             cobalt::Symbol::Variable(v) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
                 if let Ok(t) = t {

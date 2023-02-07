@@ -952,7 +952,7 @@ impl AST for VarGetAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match ctx.with_vars(|v| v.lookup(&self.name)) {
             Ok(Symbol::Variable(x)) => (x.clone(), vec![]),
-            Ok(Symbol::Module(_)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
+            Ok(Symbol::Module(..)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
             Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
             Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
         }

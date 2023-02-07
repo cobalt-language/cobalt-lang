@@ -37,18 +37,18 @@ impl CompoundDottedNameSegment {
         use CompoundDottedNameSegment::*;
         match self {
             Identifier(id, _) => {
-                w.write_all(&[1])?;
-                w.write_all(&id.as_bytes())?;
-                w.write_all(&[0])
+                out.write_all(&[1])?;
+                out.write_all(&id.as_bytes())?;
+                out.write_all(&[0])
             },
-            Glob(_) => w.write_all(&[2]),
+            Glob(_) => out.write_all(&[2]),
             Group(groups) => {
-                w.write_all(&[3])?;
+                out.write_all(&[3])?;
                 for group in groups.iter() {
                     group.iter().try_for_each(|id| id.save(out))?;
                     out.write_all(&[0])?;
                 }
-                w.write_all(&[0])
+                out.write_all(&[0])
             }
         }
     }
