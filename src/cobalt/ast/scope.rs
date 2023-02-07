@@ -59,8 +59,11 @@ pub struct ImportAST {
 }
 impl AST for ImportAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for imports")}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for imports")}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        ctx.with_vars(|v| v.imports.push(self.name.clone()));
+        (Variable::null(None), vec![])
+    }
     fn to_code(&self) -> String {
         format!("import {}", self.name)
     }

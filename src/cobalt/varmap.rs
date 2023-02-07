@@ -249,7 +249,7 @@ impl<'ctx> VarMap<'ctx> {
         match pat.get(0)? {
             Identifier(id, _) =>
                 if pat.len() == 1 {
-                    if name.len() == 0 && &name[0].0 == id {symbols.get(id)} else {None}
+                    if name.len() == 1 && &name[0].0 == id {symbols.get(id)} else {None}
                 }
                 else {Self::satisfy(symbols.get(id)?.as_mod()?, root, &name[1..], &pat[1..])},
             Group(ids) => ids.iter().cloned().filter_map(|mut v| {
@@ -258,7 +258,7 @@ impl<'ctx> VarMap<'ctx> {
             }).next(),
             Glob(_) =>
                 if pat.len() == 1 {
-                    if name.len() == 0 {symbols.get(&name[0].0)} else {None}
+                    if name.len() == 1 {symbols.get(&name[0].0)} else {None}
                 }
                 else {symbols.values().filter_map(|v| Self::satisfy(v.as_mod()?, root, &name[1..], &pat[1..])).next()}
         }

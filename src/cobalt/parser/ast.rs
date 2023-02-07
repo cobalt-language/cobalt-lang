@@ -575,9 +575,10 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                 "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, None)); null()},
                 "import" => {
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
+                    let loc = toks[0].loc.clone();
                     toks = &toks[idx..];
                     errs.append(&mut es);
-                    Box::new(ImportAST::new(toks[0].loc.clone(), name))
+                    Box::new(ImportAST::new(loc, name))
                 },
                 "fn" => {
                     let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
