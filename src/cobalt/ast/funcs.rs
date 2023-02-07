@@ -535,8 +535,7 @@ impl AST for FnDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
         if is_extern.is_none() {

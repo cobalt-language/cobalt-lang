@@ -134,8 +134,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
@@ -194,8 +193,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else {
@@ -342,8 +340,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
         }
@@ -414,8 +411,7 @@ impl AST for VarDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         }
     }
@@ -567,8 +563,7 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
@@ -629,8 +624,7 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else {
@@ -777,8 +771,7 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
         }
@@ -848,8 +841,7 @@ impl AST for MutDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         }
     }
@@ -925,8 +917,7 @@ impl AST for ConstDefAST {
             Err(RedefVariable::AlreadyExists(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                 (Variable::error(), errs)
-            },
-            Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+            }
         }
     }
     fn to_code(&self) -> String {
