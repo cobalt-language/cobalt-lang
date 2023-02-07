@@ -63,6 +63,7 @@ impl CompoundDottedName {
     pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, true)}
     pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, false)}
     pub fn local(id: CompoundDottedNameSegment) -> Self {Self::new(vec![id], false)}
+    pub fn matches(name: &DottedName) -> bool {false} // TODO: pattern matching
 }
 impl From<DottedName> for CompoundDottedName {
     fn from(other: DottedName) -> Self {Self::new(other.ids.into_iter().map(|(id, loc)| CompoundDottedNameSegment::Identifier(id, loc)).collect(), other.global)}

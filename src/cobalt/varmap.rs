@@ -247,15 +247,28 @@ impl<'ctx> VarMap<'ctx> {
     pub fn merge(&mut self, other: HashMap<String, Symbol<'ctx>>) -> HashMap<DottedName, Symbol<'ctx>> {
         mod_merge(&mut self.symbols, other)
     }
+    fn satisfy<'a>((symbols, imports): (&'a HashMap<String, Symbol<'ctx>>, &'a Vec<CompoundDottedName>), name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&'a Symbol<'ctx>> {
+        use CompoundDottedNameSegment::*;
+        if pat.len() == 0 {return None}
+        if name.len() == 1 && pat.matches(name) {return self.symbols.get(&name[0].0)}
+        match &pat[0] {
+            Glob(p) => None, // no
+            Group(ids) => ids.iter().filter_map(|v| {
+                let mut v = v.clone();
+                v.extend_from_slice(&pat[1..]);
+                Self::satisfy((symbols, imports), name, &v)
+            }).next(),
+            Identifier(id) => if name.get(0) == Some(id) {self.symbols.get(id).and_then(|v| Self::satisfy(v.as_mod()?, &name[1..], &pat[1..]))} else {None}
+        }
+    }
+    fn self_satisfy(&self, name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&Symbol<'ctx>> {Self::satisfy((&self.symbols, &self.imports), name, pat)}
     pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
         let (mut this, mut imports) = if name.global {(&self.root().symbols, &self.root().imports)} else {(&self.symbols, &self.imports)};
         let mut idx = 0;
         if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
         while idx + 1 < name.ids.len() {
             match this.get(&name.ids[idx].0) {
-                None => return imports.iter().filter_map(|i| {
-                    None
-                }).next().ok_or_else(|| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x)))),
+                None => return imports.iter().filter_map(|i| Self::satisfy((if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}), &name.ids[(idx + 1)..], &i.ids[(idx + 1)..])).next().ok_or_else(|| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x)))),
                 Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
                 Some(Symbol::Module(x, i)) => {
                     this = x;
@@ -264,7 +277,7 @@ impl<'ctx> VarMap<'ctx> {
             }
             idx += 1;
         }
-        this.get(&name.ids[idx].0).ok_or_else(|| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))))
+        this.get(&name.ids[idx].0).ok_or_else(|| imports.iter().filter_map(|i| Self::satisfy((if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}), &name.ids[(idx + 1)..], &i.ids[(idx + 1)..])).next()).ok_or_else(|| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))))
     }
     pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
         let this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
