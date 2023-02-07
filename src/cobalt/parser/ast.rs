@@ -1260,7 +1260,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
-fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
+fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
     let mut errs = vec![];
     let mut i = 0;
@@ -1277,7 +1277,11 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                 i += 1; 
                 toks = &toks[1..];
             },
-            Special('}') => break,
+            Special('}') => if is_tl {
+                errs.push(Diagnostic::error(val.loc.clone(), 255, None));
+                i += 1;
+                toks = &toks[1..];
+            } else {break 'main},
             Statement(ref x) => match x.as_str() {
                 "module" => {
                     if annotations.len() > 0 {
@@ -1294,7 +1298,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     }
                     match &toks[0].data {
                         Special('{') => {
-                            let (vals, idx, mut e) = parse_tl(&toks[1..], flags);
+                            let (vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
                             if let Some(idx) = idx {
                                 outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vals)));
                                 errs.append(&mut e);
@@ -1341,7 +1345,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     let start = toks[0].loc.clone();
                     let (name, idx, mut es) = parse_path(&toks[1..], "(=;");
                     toks = &toks[idx..];
-                    i = idx;
+                    i += idx;
                     errs.append(&mut es);
                     let mut anns = vec![];
                     std::mem::swap(&mut annotations, &mut anns);
@@ -1659,22 +1663,14 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                 toks = &toks[1..];
             }
         }
-    };
+    }
     (outs, if toks.len() == 0 {None} else {Some(i + 1)}, errs)
 }
-pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+pub fn parse(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() == 0 {
         return (Box::new(TopLevelAST::new((0, 0..0), vec![])), vec![])
     }
     let start = toks[0].loc.clone(); // already bounds checked
-    let (mut out, mut len, mut errs) = parse_tl(toks, flags);
-    while let Some(l) = len {
-        errs.push(Diagnostic::error(toks[l - 1].loc.clone(), 255, None));
-        toks = &toks[l..];
-        let (mut o, l, mut e) = parse_tl(toks, flags);
-        out.append(&mut o);
-        len = l;
-        errs.append(&mut e);
-    }
+    let (out, _, errs) = parse_tl(toks, flags, true);
     return (Box::new(TopLevelAST::new(start, out)), errs);
 }
