@@ -248,7 +248,10 @@ impl<'ctx> VarMap<'ctx> {
         mod_insert(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
     }
     pub fn insert_mod(&mut self, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
-         mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
+        mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
+    }
+    pub fn lookup_mod(&mut self, name: &DottedName) -> Result<HashMap<String, Symbol<'ctx>>, UndefVariable> {
+        mod_lookup_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (name, sym) in self.symbols.iter() {
@@ -292,6 +295,22 @@ pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &
         idx += 1;
     }
     this.get(&name.ids[idx].0).ok_or(UndefVariable::DoesNotExist(idx))
+}
+pub fn mod_lookup_mod<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<HashMap<String, Symbol<'ctx>>, UndefVariable> {
+    let mut idx = 0;
+    if name.ids.len() == 0 {panic!("mod_lookup_insert cannot find a module at an empty name")}
+    while idx + 1 < name.ids.len() {
+        if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
+        else {return Err(UndefVariable::NotAModule(idx))}
+        idx += 1;
+    }
+    match this.entry(name.ids[idx].0.clone()) {
+        Entry::Occupied(mut x) => match x.get_mut() {
+            Symbol::Variable(_) => Err(UndefVariable::DoesNotExist(idx)), // should be AlreadyExists, but DoesNotExist wouldn't arise here
+            Symbol::Module(_) => Ok(x.remove().into_mod().unwrap())
+        },
+        Entry::Vacant(x) => Ok(x.insert(Symbol::Module(HashMap::new())).as_mod().unwrap().clone())
+    }
 }
 pub fn mod_insert<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName, sym: Symbol<'ctx>) -> Result<&'a Symbol<'ctx>, RedefVariable<'ctx>> {
     let mut idx = 0;

@@ -46,6 +46,12 @@ impl<'ctx> CompCtx<'ctx> {
         self.vars.set(MaybeUninit::new(unsafe {f(val.assume_init())}));
         self
     }
+    pub fn map_split_vars<R, F: FnOnce(Box<VarMap<'ctx>>) -> (Box<VarMap<'ctx>>, R)>(&self, f: F) -> R {
+        let val = self.vars.replace(MaybeUninit::uninit());
+        let (v, out) = unsafe {f(val.assume_init())};
+        self.vars.set(MaybeUninit::new(v));
+        out
+    }
     pub fn mangle(&self, name: &DottedName) -> String {
         if name.global {format!("{name}")}
         else {

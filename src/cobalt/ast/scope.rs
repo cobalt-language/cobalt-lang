@@ -6,8 +6,29 @@ pub struct ModuleAST {
 }
 impl AST for ModuleAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for module definitions")}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for module definitions")}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        ctx.map_vars(|mut v| {
+            match v.lookup_mod(&self.name) {
+                Ok(m) => Box::new(VarMap {parent: Some(v), symbols: m}),
+                Err(UndefVariable::NotAModule(x)) => {
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    Box::new(VarMap::new(Some(v)))
+                },
+                Err(UndefVariable::DoesNotExist(x)) => {
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Box::new(VarMap::new(Some(v)))
+                }
+            }
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        errs.extend(self.vals.iter().flat_map(|val| val.codegen(ctx).1));
+        ctx.restore_scope(old_scope);
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms)));
+        (Variable::null(None), errs)
+    }
     fn to_code(&self) -> String {
         let mut out = format!("module {} {{", self.name);
         let mut count = self.vals.len();
