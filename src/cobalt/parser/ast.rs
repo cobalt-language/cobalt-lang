@@ -177,37 +177,19 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
             Special(';') => break,
             Special(',') | Special('}') if is_nested => break,
             Special('.') => {
-                if lwp {
-                    errs.push(Diagnostic::error(toks[idx].loc.clone(), 211, None))
-                }
+                if lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 211, None))}
                 lwp = true;
                 idx += 1;
             }
             Identifier(s) => {
-                if !lwp {
-                    if let Some(CompoundDottedNameSegment::Glob(ref x, l)) = name.ids.last() {
-                        name.ids.push(CompoundDottedNameSegment::Glob(x.to_owned() + s, (l.0, l.1.start..toks[idx].loc.1.end)));
-                    }
-                    else {
-                        errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))
-                    }
-                }
+                if !lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))}
                 lwp = false;
                 name.ids.push(CompoundDottedNameSegment::Identifier(s.clone(), toks[idx].loc.clone()));
                 idx += 1;
             }
             Operator(ref x) if x == "*" => {
-                if lwp {
-                    name.ids.push(CompoundDottedNameSegment::Glob('*'.to_string(), toks[idx].loc.clone()));
-                }
-                else {
-                    match name.ids.pop() {
-                        Some(CompoundDottedNameSegment::Identifier(x, l)) |
-                        Some(CompoundDottedNameSegment::Glob(x, l)) => name.ids.push(CompoundDottedNameSegment::Glob(x + "*", (l.0, l.1.start..toks[idx].loc.1.end))),
-                        Some(CompoundDottedNameSegment::Group(_)) => errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None)),
-                        None => unreachable!("if the last element was not a period, then there is at least one element in name.ids")
-                    }
-                }
+                if !lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))}
+                name.ids.push(CompoundDottedNameSegment::Glob(toks[idx].loc.clone()));
                 lwp = false;
                 idx += 1;
             },
@@ -1321,7 +1303,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                 break;
                             }
                             let mut cname: CompoundDottedName = oname.into();
-                            cname.ids.push(CompoundDottedNameSegment::Glob('*'.to_string(), toks[0].loc.clone()));
+                            cname.ids.push(CompoundDottedNameSegment::Glob(toks[0].loc.clone()));
                             outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))])));
                         },
                         Special(';') => {

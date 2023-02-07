@@ -28,13 +28,14 @@ impl Display for DottedName {
 #[derive(Clone, Debug)]
 pub enum CompoundDottedNameSegment {
     Identifier(String, Location),
-    Glob(String, Location),
+    Glob(Location),
     Group(Vec<Vec<CompoundDottedNameSegment>>)
 }
 impl Display for CompoundDottedNameSegment {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Self::Identifier(x, _) | Self::Glob(x, _) => write!(f, "{x}"),
+            Self::Identifier(x, _) => write!(f, "{x}"),
+            Self::Glob(_) => write!(f, "*"),
             Self::Group(x) => {
                 write!(f, "{{")?;
                 let mut count = x.len();
