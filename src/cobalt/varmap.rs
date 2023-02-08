@@ -228,6 +228,21 @@ impl<'ctx> Symbol<'ctx> {
             x => panic!("read symbol type expecting 1 or 2, got {x}")
         }
     }
+    pub fn dump(&self, mut depth: usize) {
+        match self {
+            Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
+            Symbol::Module(m, i) => {
+                eprintln!("{}module", std::iter::repeat(' ').take(depth).collect::<String>());
+                depth += 4;
+                let pre = std::iter::repeat(' ').take(depth).collect::<String>();
+                i.iter().for_each(|i| eprintln!("{pre}import {i}"));
+                m.iter().for_each(|(k, v)| {
+                    eprint!("{pre}{k:?}: ");
+                    v.dump(depth);
+                })
+            }
+        }
+    }
 }
 #[derive(Default)]
 pub struct VarMap<'ctx> {
@@ -244,23 +259,30 @@ impl<'ctx> VarMap<'ctx> {
         if self.parent.is_some() {self.parent.as_mut().unwrap().root_mut()}
         else {self}
     }
-    fn satisfy<'a>((symbols, imports): (&'a HashMap<String, Symbol<'ctx>>, &'a Vec<CompoundDottedName>), root: &VarMap, name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&'a Symbol<'ctx>> {
+    pub fn find_sym(&self, name: &str) -> Option<&Symbol<'ctx>> {self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|p| p.find_sym(name)))}
+    fn satisfy<'a>((symbols, imports): (&'a HashMap<String, Symbol<'ctx>>, &'a Vec<CompoundDottedName>), parent: &'a Option<Box<VarMap<'ctx>>>, root: &VarMap, name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&'a Symbol<'ctx>> {
         use CompoundDottedNameSegment::*;
         match pat.get(0)? {
             Identifier(id, _) =>
                 if pat.len() == 1 {
-                    if name.len() == 1 && &name[0].0 == id {symbols.get(id)} else {None}
+                    if name.len() == 1 && &name[0].0 == id {
+                        symbols.get(id).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&id)))
+                    } else {None}
                 }
-                else {Self::satisfy(symbols.get(id)?.as_mod()?, root, &name[1..], &pat[1..])},
-            Group(ids) => ids.iter().cloned().filter_map(|mut v| {
+                else {
+                    Self::satisfy(symbols.get(id).and_then(|s| s.as_mod()).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&id))?.as_mod())?, parent, root, &name, &pat[1..])
+                },
+            Group(ids) => ids.iter().cloned().find_map(|mut v| {
                 v.extend_from_slice(&pat[1..]);
-                Self::satisfy((symbols, imports), root, name, &v)
-            }).next(),
+                Self::satisfy((symbols, imports), parent, root, name, &v)
+            }),
             Glob(_) =>
                 if pat.len() == 1 {
-                    if name.len() == 1 {symbols.get(&name[0].0)} else {None}
+                    if name.len() == 1 {
+                        symbols.get(&name[0].0).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&name[0].0)))
+                    } else {None}
                 }
-                else {symbols.values().filter_map(|v| Self::satisfy(v.as_mod()?, root, &name[1..], &pat[1..])).next()}
+                else {symbols.values().find_map(|v| Self::satisfy(v.as_mod()?, parent, root, &name, &pat[1..]))}
         }
     }
     pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
@@ -269,9 +291,9 @@ impl<'ctx> VarMap<'ctx> {
         if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
         while idx + 1 < name.ids.len() {
             match this.get(&name.ids[idx].0) {
-                None => return imports.iter().filter_map(|i| Self::satisfy(
-                    if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, self.root(),
-                    &name.ids[(idx + 1)..], &i.ids[(idx + 1)..])).next()
+                None => return imports.iter().find_map(|i| Self::satisfy(
+                    if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, &self.parent, self.root(),
+                    &name.ids[idx..], &i.ids))
                     .ok_or(UndefVariable::DoesNotExist(idx))
                     .or_else(|e| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(e))),
                 Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
@@ -282,9 +304,9 @@ impl<'ctx> VarMap<'ctx> {
             }
             idx += 1;
         }
-        this.get(&name.ids[idx].0).or_else(|| imports.iter().filter_map(|i| Self::satisfy(
-            if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, self.root(),
-            &name.ids[(idx + 1)..], &i.ids[(idx + 1)..])).next())
+        this.get(&name.ids[idx].0).or_else(|| imports.iter().find_map(|i| Self::satisfy(
+            if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, &self.parent, self.root(),
+            &name.ids[idx..], &i.ids)))
             .ok_or(UndefVariable::DoesNotExist(idx))
             .or_else(|e| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(e)))
     }
@@ -377,5 +399,13 @@ impl<'ctx> VarMap<'ctx> {
             else {break}
         }
         Ok(VarMap {parent: None, symbols: out, imports})
+    }
+    pub fn dump(&self) {
+        eprintln!("module");
+        self.imports.iter().for_each(|i| eprintln!("    import {i}"));
+        self.symbols.iter().for_each(|(k, v)| {
+            eprint!("    {k:?}: ");
+            v.dump(4);
+        })
     }
 }
