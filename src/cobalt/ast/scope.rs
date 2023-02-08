@@ -1,13 +1,56 @@
 use crate::*;
+use glob::Pattern;
 pub struct ModuleAST {
     loc: Location,
     pub name: DottedName,
-    pub vals: Vec<Box<dyn AST>>
+    pub vals: Vec<Box<dyn AST>>,
+    pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl AST for ModuleAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for module definitions")}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for module definitions")}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        let mut target_match = 2u8;
+        for (ann, arg, loc) in self.annotations.iter() {
+            match ann.as_str() {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
+                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+            }
+        }
+        if target_match == 0 {return (Variable::error(), errs)}
+        ctx.map_vars(|mut v| {
+            match v.lookup_mod(&self.name) {
+                Ok((m, i)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
+                Err(UndefVariable::NotAModule(x)) => {
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    Box::new(VarMap::new(Some(v)))
+                },
+                Err(UndefVariable::DoesNotExist(x)) => {
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Box::new(VarMap::new(Some(v)))
+                }
+            }
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        errs.extend(self.vals.iter().flat_map(|val| val.codegen(ctx).1));
+        ctx.restore_scope(old_scope);
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms)));
+        (Variable::null(None), errs)
+    }
     fn to_code(&self) -> String {
         let mut out = format!("module {} {{", self.name);
         let mut count = self.vals.len();
@@ -30,7 +73,7 @@ impl AST for ModuleAST {
     }
 }
 impl ModuleAST {
-    pub fn new(loc: Location, name: DottedName, vals: Vec<Box<dyn AST>>) -> Self {ModuleAST {loc, name, vals}}
+    pub fn new(loc: Location, name: DottedName, vals: Vec<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ModuleAST {loc, name, vals, annotations}}
 }
 pub struct ImportAST {
     loc: Location,
@@ -38,8 +81,11 @@ pub struct ImportAST {
 }
 impl AST for ImportAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {todo!("code generation has not been implemented for imports")}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {todo!("code generation has not been implemented for imports")}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        ctx.with_vars(|v| v.imports.push(self.name.clone()));
+        (Variable::null(None), vec![])
+    }
     fn to_code(&self) -> String {
         format!("import {}", self.name)
     }

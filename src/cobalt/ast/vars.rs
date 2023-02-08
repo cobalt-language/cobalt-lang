@@ -114,7 +114,7 @@ impl AST for VarDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -134,8 +134,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
@@ -171,7 +170,7 @@ impl AST for VarDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -194,8 +193,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else {
@@ -237,13 +235,14 @@ impl AST for VarDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
+                        let old_scope = ctx.push_scope(&self.name);
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -275,6 +274,7 @@ impl AST for VarDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
+                        ctx.restore_scope(old_scope);
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
@@ -297,6 +297,7 @@ impl AST for VarDefAST {
                     }
                 }
                 else {
+                    let old_scope = ctx.push_scope(&self.name);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
@@ -328,6 +329,7 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
+                    ctx.restore_scope(old_scope);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -338,8 +340,7 @@ impl AST for VarDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
         }
@@ -353,6 +354,7 @@ impl AST for VarDefAST {
             if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
+            let old_scope = ctx.push_scope(&self.name);
             let (val, mut es) = self.val.codegen(ctx);
             errs.append(&mut es);
             let t2 = val.data_type.clone();
@@ -384,6 +386,7 @@ impl AST for VarDefAST {
                 errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
+            ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || val.data_type.register() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
@@ -408,8 +411,7 @@ impl AST for VarDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         }
     }
@@ -541,7 +543,7 @@ impl AST for MutDefAST {
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
                     comp_val: dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -561,11 +563,11 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
+                let old_scope = ctx.push_scope(&self.name);
                 let (val, mut es) = self.val.codegen(ctx);
                 errs.append(&mut es);
                 let t2 = val.data_type.clone();
@@ -592,13 +594,14 @@ impl AST for MutDefAST {
                         }
                     }
                 }) {t} else if t2 == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t2 {*b} else {t2};
+                ctx.restore_scope(old_scope);
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -621,8 +624,7 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
             else {
@@ -664,13 +666,14 @@ impl AST for MutDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| format!("{}", self.name), |(name, _)| name).as_str());
+                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
+                        let old_scope = ctx.push_scope(&self.name);
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -702,6 +705,7 @@ impl AST for MutDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Variable::error()
                         });
+                        ctx.restore_scope(old_scope);
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
@@ -724,6 +728,7 @@ impl AST for MutDefAST {
                     }
                 }
                 else {
+                    let old_scope = ctx.push_scope(&self.name);
                     let (val, es) = self.val.codegen(ctx);
                     errs = es;
                     let t2 = val.data_type.clone();
@@ -755,6 +760,7 @@ impl AST for MutDefAST {
                         errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                         Variable::error()
                     });
+                    ctx.restore_scope(old_scope);
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -765,8 +771,7 @@ impl AST for MutDefAST {
                     Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Variable::error(), errs)
-                    },
-                    Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                    }
                 }
             }
         }
@@ -780,6 +785,7 @@ impl AST for MutDefAST {
             if let Some((_, loc)) = linkas {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
+            let old_scope = ctx.push_scope(&self.name);
             let (val, mut errs) = self.val.codegen(ctx);
             let t2 = val.data_type.clone();
             let (dt, err) = if let Some(t) = self.type_.as_ref().and_then(|t| {
@@ -810,6 +816,7 @@ impl AST for MutDefAST {
                 errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                 Variable::error()
             });
+            ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
             } 
@@ -834,8 +841,7 @@ impl AST for MutDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         }
     }
@@ -868,6 +874,7 @@ impl AST for ConstDefAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let mut errs = self.annotations.iter().map(|(x, _, loc)| Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition")))).collect::<Vec<_>>();
         let old_is_const = ctx.is_const.replace(true);
+        let old_scope = ctx.push_scope(&self.name);
         let (val, mut es) = self.val.codegen(ctx);
         errs.append(&mut es);
         let t2 = val.data_type.clone();
@@ -899,6 +906,7 @@ impl AST for ConstDefAST {
             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
             Variable::error()
         });
+        ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val}))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -909,8 +917,7 @@ impl AST for ConstDefAST {
             Err(RedefVariable::AlreadyExists(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                 (Variable::error(), errs)
-            },
-            Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+            }
         }
     }
     fn to_code(&self) -> String {
@@ -945,7 +952,7 @@ impl AST for VarGetAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match ctx.with_vars(|v| v.lookup(&self.name)) {
             Ok(Symbol::Variable(x)) => (x.clone(), vec![]),
-            Ok(Symbol::Module(_)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
+            Ok(Symbol::Module(..)) => (Variable::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
             Err(UndefVariable::NotAModule(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
             Err(UndefVariable::DoesNotExist(idx)) => (Variable::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
         }

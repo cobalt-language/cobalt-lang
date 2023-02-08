@@ -267,7 +267,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
@@ -306,6 +306,7 @@ impl AST for FnDefAST {
                         export: true
                     }))).clone();
                     if is_extern.is_none() {
+                        let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -347,6 +348,7 @@ impl AST for FnDefAST {
                             errs.push(Diagnostic::error(self.body.loc(), 311, Some(err)));
                             llt.const_zero()
                         })));
+                        ctx.restore_scope(old_scope);
                     }
                     var
                 }
@@ -385,7 +387,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| format!("{}", self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
                     f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
@@ -424,6 +426,7 @@ impl AST for FnDefAST {
                         export: true
                     }))).clone();
                     if is_extern.is_none() {
+                        let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         {
                             let mut param_count = 0;
@@ -461,6 +464,7 @@ impl AST for FnDefAST {
                         errs.append(&mut es);
                         ctx.builder.build_return(None);
                         ctx.map_vars(|v| v.parent.unwrap());
+                        ctx.restore_scope(old_scope);
                     }
                     var
                 }
@@ -531,8 +535,7 @@ impl AST for FnDefAST {
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Variable::error(), errs)
-                },
-                Err(RedefVariable::MergeConflict(_, _)) => panic!("merge conflicts shouldn't be reachable when inserting a variable")
+                }
             }
         } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
         if is_extern.is_none() {

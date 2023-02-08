@@ -11,8 +11,7 @@ pub enum UndefVariable {
 #[derive(Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
-    AlreadyExists(usize, Symbol<'ctx>),
-    MergeConflict(usize, HashMap<DottedName, Symbol<'ctx>>)
+    AlreadyExists(usize, Symbol<'ctx>)
 }
 #[derive(Clone)]
 pub struct FnData {
@@ -134,17 +133,17 @@ impl<'ctx> Variable<'ctx> {
 #[derive(Clone)]
 pub enum Symbol<'ctx> {
     Variable(Variable<'ctx>),
-    Module(HashMap<String, Symbol<'ctx>>)
+    Module(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)
 }
 impl<'ctx> Symbol<'ctx> {
     pub fn into_var(self) -> Option<Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
-    pub fn into_mod(self) -> Option<HashMap<String, Symbol<'ctx>>> {if let Symbol::Module(x) = self {Some(x)} else {None}}
+    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
     pub fn as_var(&self) -> Option<&Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
-    pub fn as_mod(&self) -> Option<&HashMap<String, Symbol<'ctx>>> {if let Symbol::Module(x) = self {Some(x)} else {None}}
+    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
     pub fn as_var_mut(&mut self) -> Option<&mut Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
-    pub fn as_mod_mut(&mut self) -> Option<&mut HashMap<String, Symbol<'ctx>>> {if let Symbol::Module(x) = self {Some(x)} else {None}}
+    pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
     pub fn is_var(&self) -> bool {if let Symbol::Variable(_) = self {true} else {false}}
-    pub fn is_mod(&self) -> bool {if let Symbol::Module(_) = self {true} else {false}}
+    pub fn is_mod(&self) -> bool {if let Symbol::Module(..) = self {true} else {false}}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
             Symbol::Variable(v) => if v.export {
@@ -155,14 +154,18 @@ impl<'ctx> Symbol<'ctx> {
                 else {out.write_all(&[0])?} // Interpreted value, self-punctuating
                 v.data_type.save(out) // Type
             } else {Ok(())},
-            Symbol::Module(v) => {
+            Symbol::Module(v, i) => {
                 out.write_all(&[2])?; // Module
                 for (name, sym) in v.iter() {
                     out.write_all(name.as_bytes())?; // name, null-terminated
                     out.write_all(&[0])?;
                     sym.save(out)?;
                 }
-                out.write_all(&[0]) // null terminator for symbol list
+                out.write_all(&[0])?; // null terminator for symbol list
+                for import in i.iter() {
+                    import.save(out)?;
+                }
+                out.write_all(&[0])
             }
         }
     }
@@ -208,6 +211,7 @@ impl<'ctx> Symbol<'ctx> {
             },
             2 => {
                 let mut out = HashMap::new();
+                let mut imports = vec![];
                 loop {
                     let mut name = vec![];
                     buf.read_until(0, &mut name)?;
@@ -215,40 +219,148 @@ impl<'ctx> Symbol<'ctx> {
                     if name.len() == 0 {break}
                     out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
                 }
-                Ok(Symbol::Module(out))
+                loop {
+                    if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
+                    else {break}
+                }
+                Ok(Symbol::Module(out, imports))
             },
             x => panic!("read symbol type expecting 1 or 2, got {x}")
+        }
+    }
+    pub fn dump(&self, mut depth: usize) {
+        match self {
+            Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
+            Symbol::Module(m, i) => {
+                eprintln!("{}module", std::iter::repeat(' ').take(depth).collect::<String>());
+                depth += 4;
+                let pre = std::iter::repeat(' ').take(depth).collect::<String>();
+                i.iter().for_each(|i| eprintln!("{pre}import {i}"));
+                m.iter().for_each(|(k, v)| {
+                    eprint!("{pre}{k:?}: ");
+                    v.dump(depth);
+                })
+            }
         }
     }
 }
 #[derive(Default)]
 pub struct VarMap<'ctx> {
     pub parent: Option<Box<VarMap<'ctx>>>,
-    pub symbols: HashMap<String, Symbol<'ctx>>
+    pub symbols: HashMap<String, Symbol<'ctx>>,
+    pub imports: Vec<CompoundDottedName>
 }
 impl<'ctx> VarMap<'ctx> {
-    pub fn new(parent: Option<Box<VarMap<'ctx>>>) -> Self {VarMap {parent, symbols: HashMap::new()}}
-    pub fn orphan(self) -> Self {VarMap {parent: None, symbols: self.symbols}}
-    pub fn reparent(self, parent: Box<VarMap<'ctx>>) -> Self {VarMap {parent: Some(parent), symbols: self.symbols}}
+    pub fn new(parent: Option<Box<VarMap<'ctx>>>) -> Self {VarMap {parent, ..Self::default()}}
+    pub fn orphan(self) -> Self {VarMap {parent: None, ..self}}
+    pub fn reparent(self, parent: Box<VarMap<'ctx>>) -> Self {VarMap {parent: Some(parent), ..self}}
     pub fn root(&self) -> &Self {self.parent.as_ref().map(|x| x.root()).unwrap_or(&self)}
     pub fn root_mut(&mut self) -> &mut Self {
         if self.parent.is_some() {self.parent.as_mut().unwrap().root_mut()}
         else {self}
     }
-    pub fn merge(&mut self, other: HashMap<String, Symbol<'ctx>>) -> HashMap<DottedName, Symbol<'ctx>> {
-        mod_merge(&mut self.symbols, other)
-    }
-    pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
-        match mod_lookup(if name.global {&self.root().symbols} else {&self.symbols}, name) {
-            Err(UndefVariable::DoesNotExist(x)) => self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(UndefVariable::DoesNotExist(x))),
-            x => x
+    pub fn find_sym(&self, name: &str) -> Option<&Symbol<'ctx>> {self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|p| p.find_sym(name)))}
+    fn satisfy<'a>((symbols, imports): (&'a HashMap<String, Symbol<'ctx>>, &'a Vec<CompoundDottedName>), parent: &'a Option<Box<VarMap<'ctx>>>, root: &VarMap, name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&'a Symbol<'ctx>> {
+        use CompoundDottedNameSegment::*;
+        match pat.get(0)? {
+            Identifier(id, _) =>
+                if pat.len() == 1 {
+                    if name.len() == 1 && &name[0].0 == id {
+                        symbols.get(id).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&id)))
+                    } else {None}
+                }
+                else {
+                    Self::satisfy(symbols.get(id).and_then(|s| s.as_mod()).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&id))?.as_mod())?, parent, root, &name, &pat[1..])
+                },
+            Group(ids) => ids.iter().cloned().find_map(|mut v| {
+                v.extend_from_slice(&pat[1..]);
+                Self::satisfy((symbols, imports), parent, root, name, &v)
+            }),
+            Glob(_) =>
+                if pat.len() == 1 {
+                    if name.len() == 1 {
+                        symbols.get(&name[0].0).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&name[0].0)))
+                    } else {None}
+                }
+                else {symbols.values().find_map(|v| Self::satisfy(v.as_mod()?, parent, root, &name, &pat[1..]))}
         }
     }
-    pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
-        mod_insert(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
+    pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
+        let (mut this, mut imports) = if name.global {(&self.root().symbols, &self.root().imports)} else {(&self.symbols, &self.imports)};
+        let mut idx = 0;
+        if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
+        while idx + 1 < name.ids.len() {
+            match this.get(&name.ids[idx].0) {
+                None => return imports.iter().find_map(|i| Self::satisfy(
+                    if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, &self.parent, self.root(),
+                    &name.ids[idx..], &i.ids))
+                    .ok_or(UndefVariable::DoesNotExist(idx))
+                    .or_else(|e| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(e))),
+                Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
+                Some(Symbol::Module(x, i)) => {
+                    this = x;
+                    imports = i;
+                }
+            }
+            idx += 1;
+        }
+        this.get(&name.ids[idx].0).or_else(|| imports.iter().find_map(|i| Self::satisfy(
+            if i.global {let root = self.root(); (&root.symbols, &root.imports)} else {(&this, &imports)}, &self.parent, self.root(),
+            &name.ids[idx..], &i.ids)))
+            .ok_or(UndefVariable::DoesNotExist(idx))
+            .or_else(|e| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(e)))
     }
-    pub fn insert_mod(&mut self, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
-         mod_insert_mod(if name.global {&mut self.root_mut().symbols} else {&mut self.symbols}, name, sym)
+    pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
+        let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
+        let mut idx = 0;
+        if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
+        while idx + 1 < name.ids.len() {
+            if let Some((x, _)) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new(), vec![])).as_mod_mut() {this = x}
+            else {return Err(RedefVariable::NotAModule(idx, sym))}
+            idx += 1;
+        }
+        match this.entry(name.ids[idx].0.clone()) {
+            Entry::Occupied(_) => Err(RedefVariable::AlreadyExists(idx, sym)),
+            Entry::Vacant(x) => Ok(&*x.insert(sym))
+        }
+    }
+    pub fn insert_mod(&mut self, name: &DottedName, mut sym: (HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)) -> Result<(&HashMap<String, Symbol<'ctx>>, &Vec<CompoundDottedName>), RedefVariable<'ctx>> {
+        let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
+        let mut idx = 0;
+        if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
+        while idx + 1 < name.ids.len() {
+            if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new(), vec![])).as_mod_mut() {this = x.0}
+            else {return Err(RedefVariable::NotAModule(idx, Symbol::Module(sym.0, sym.1)))}
+            idx += 1;
+        }
+        match this.entry(name.ids[idx].0.clone()) {
+            Entry::Occupied(mut x) => match x.get_mut() {
+                Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym.0, sym.1))),
+                Symbol::Module(ref mut m, ref mut i) => {
+                    *m = sym.0;
+                    i.append(&mut sym.1);
+                    Ok(x.into_mut().as_mod().unwrap())
+                }
+            },
+            Entry::Vacant(x) => Ok(x.insert(Symbol::Module(sym.0, sym.1)).as_mod().unwrap())
+        }
+    }
+    pub fn lookup_mod(&mut self, name: &DottedName) -> Result<(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>), UndefVariable> {
+        let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
+        let mut idx = 0;
+        if name.ids.len() == 0 {panic!("mod_lookup_insert cannot find a module at an empty name")}
+        while idx + 1 < name.ids.len() {
+            if let Some((x, _)) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new(), vec![])).as_mod_mut() {this = x}
+            else {return Err(UndefVariable::NotAModule(idx))}
+            idx += 1;
+        }
+        match this.entry(name.ids[idx].0.clone()) {
+            Entry::Occupied(mut x) => match x.get_mut() {
+                Symbol::Variable(_) => Err(UndefVariable::DoesNotExist(idx)), // should be AlreadyExists, but DoesNotExist wouldn't arise here
+                Symbol::Module(..) => Ok(x.remove().into_mod().unwrap())
+            },
+            Entry::Vacant(x) => Ok(x.insert(Symbol::Module(HashMap::new(), vec![])).clone().into_mod().unwrap())
+        }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (name, sym) in self.symbols.iter() {
@@ -266,10 +378,15 @@ impl<'ctx> VarMap<'ctx> {
             if name.len() == 0 {break}
             self.symbols.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
         }
+        loop {
+            if let Some(val) = CompoundDottedName::load(buf)? {self.imports.push(val);}
+            else {break}
+        }
         Ok(())
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
         let mut out = HashMap::new();
+        let mut imports = vec![];
         loop {
             let mut name = vec![];
             buf.read_until(0, &mut name)?;
@@ -277,78 +394,18 @@ impl<'ctx> VarMap<'ctx> {
             if name.len() == 0 {break}
             out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
         }
-        Ok(VarMap {parent: None, symbols: out})
-    }
-}
-pub fn mod_lookup<'a, 'ctx>(mut this: &'a HashMap<String, Symbol<'ctx>>, name: &DottedName) -> Result<&'a Symbol<'ctx>, UndefVariable> {
-    let mut idx = 0;
-    if name.ids.len() == 0 {panic!("mod_lookup cannot lookup an empty name")}
-    while idx + 1 < name.ids.len() {
-        match this.get(&name.ids[idx].0) {
-            None => return Err(UndefVariable::DoesNotExist(idx)),
-            Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
-            Some(Symbol::Module(x)) => this = x
+        loop {
+            if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
+            else {break}
         }
-        idx += 1;
+        Ok(VarMap {parent: None, symbols: out, imports})
     }
-    this.get(&name.ids[idx].0).ok_or(UndefVariable::DoesNotExist(idx))
-}
-pub fn mod_insert<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName, sym: Symbol<'ctx>) -> Result<&'a Symbol<'ctx>, RedefVariable<'ctx>> {
-    let mut idx = 0;
-    if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
-    while idx + 1 < name.ids.len() {
-        if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
-        else {return Err(RedefVariable::NotAModule(idx, sym))}
-        idx += 1;
+    pub fn dump(&self) {
+        eprintln!("module");
+        self.imports.iter().for_each(|i| eprintln!("    import {i}"));
+        self.symbols.iter().for_each(|(k, v)| {
+            eprint!("    {k:?}: ");
+            v.dump(4);
+        })
     }
-    match this.entry(name.ids[idx].0.clone()) {
-        Entry::Occupied(mut x) => match x.get_mut() {
-            Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, sym)),
-            Symbol::Module(m) => {
-                if sym.is_var() {Err(RedefVariable::AlreadyExists(idx, sym))}
-                else {
-                    let errs = mod_merge(m, sym.into_mod().unwrap());
-                    if errs.len() == 0 {Ok(&*x.into_mut())}
-                    else {Err(RedefVariable::MergeConflict(idx, errs))}
-                }
-            }
-        },
-        Entry::Vacant(x) => Ok(&*x.insert(sym))
-    }
-}
-pub fn mod_insert_mod<'a, 'ctx>(mut this: &'a mut HashMap<String, Symbol<'ctx>>, name: &DottedName, sym: HashMap<String, Symbol<'ctx>>) -> Result<&'a HashMap<String, Symbol<'ctx>>, RedefVariable<'ctx>> {
-    let mut idx = 0;
-    if name.ids.len() == 0 {panic!("mod_insert cannot insert a value at an empty name")}
-    while idx + 1 < name.ids.len() {
-        if let Some(x) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::Module(HashMap::new())).as_mod_mut() {this = x}
-        else {return Err(RedefVariable::NotAModule(idx, Symbol::Module(sym)))}
-        idx += 1;
-    }
-    match this.entry(name.ids[idx].0.clone()) {
-        Entry::Occupied(mut x) => match x.get_mut() {
-            Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym))),
-            Symbol::Module(ref mut m) => {
-                    let errs = mod_merge(m, sym);
-                    if errs.len() == 0 {Ok(&x.into_mut().as_mod().unwrap())}
-                    else {Err(RedefVariable::MergeConflict(idx, errs))}
-            }
-        },
-        Entry::Vacant(x) => Ok(&x.insert(Symbol::Module(sym)).as_mod().unwrap())
-    }
-}
-pub fn mod_merge<'ctx>(this: &mut HashMap<String, Symbol<'ctx>>, other: HashMap<String, Symbol<'ctx>>) -> HashMap<DottedName, Symbol<'ctx>> {
-    let mut out: HashMap<DottedName, Symbol> = HashMap::new();
-    for (name, sym) in other {
-        match this.entry(name.clone()) {
-            Entry::Occupied(mut x) => {
-                if let Symbol::Module(x) = x.get_mut() {
-                    if sym.is_mod() {out.extend(mod_merge(x, sym.into_mod().unwrap()).into_iter().map(|mut x| {x.0.ids.insert(0, (name.clone(), (0, 0..0))); x}));}
-                    else {out.insert(DottedName::local((name, (0, (0..0)))), sym);}
-                }
-                else {out.insert(DottedName::local((name, (0, 0..0))), sym);}
-            },
-            Entry::Vacant(x) => {x.insert(sym);}
-        }
-    }
-    out
 }

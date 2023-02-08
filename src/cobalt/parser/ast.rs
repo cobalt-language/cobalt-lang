@@ -170,53 +170,62 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (CompoundDottedName::new(vec![], true), true),
         Identifier(str) => (CompoundDottedName::new(vec![CompoundDottedNameSegment::Identifier(str.clone(), toks[0].loc.clone())], false), false),
-        x => return (CompoundDottedName::local(CompoundDottedNameSegment::Identifier(String::new(), toks[0].loc.clone())), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}")))])
+        x => return (CompoundDottedName::local(CompoundDottedNameSegment::Identifier(String::new(), toks[0].loc.clone())), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected identifier, '{{', '*', or '.', got {x:#}")))])
     };
-    while idx < toks.len() {
+    'main: while idx < toks.len() {
         match &toks[idx].data {
             Special(';') => break,
             Special(',') | Special('}') if is_nested => break,
             Special('.') => {
-                if lwp {
-                    errs.push(Diagnostic::error(toks[idx].loc.clone(), 211, None))
-                }
+                if lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 211, None))}
                 lwp = true;
                 idx += 1;
-            }
-            Identifier(s) => {
-                if !lwp {
-                    if let Some(CompoundDottedNameSegment::Glob(ref x, l)) = name.ids.last() {
-                        name.ids.push(CompoundDottedNameSegment::Glob(x.to_owned() + s, (l.0, l.1.start..toks[idx].loc.1.end)));
-                    }
-                    else {
-                        errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))
+            },
+            Special('{') => {
+                if !lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))}
+                let mut groups = vec![];
+                lwp = false;
+                idx += 1;
+                loop {
+                    let (sub, i, mut es) = parse_paths(&toks[idx..], true);
+                    errs.append(&mut es);
+                    if sub.global {errs.push(Diagnostic::error(toks[idx].loc.clone(), 215, None))}
+                    groups.push(sub.ids);
+                    idx += i - 1;
+                    match &toks[idx].data {
+                        Special(',') => idx += 1,
+                        Special('}') => {
+                            idx += 1;
+                            break;
+                        },
+                        _ => {
+                            errs.push(Diagnostic::error(toks[idx].loc.clone(), 216, None));
+                            name.ids.push(CompoundDottedNameSegment::Group(groups));
+                            break 'main;
+                        }
                     }
                 }
+                name.ids.push(CompoundDottedNameSegment::Group(groups));
+            },
+            Identifier(s) => {
+                if !lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))}
                 lwp = false;
                 name.ids.push(CompoundDottedNameSegment::Identifier(s.clone(), toks[idx].loc.clone()));
                 idx += 1;
-            }
+            },
             Operator(ref x) if x == "*" => {
-                if lwp {
-                    name.ids.push(CompoundDottedNameSegment::Glob('*'.to_string(), toks[idx].loc.clone()));
-                }
-                else {
-                    match name.ids.pop() {
-                        Some(CompoundDottedNameSegment::Identifier(x, l)) |
-                        Some(CompoundDottedNameSegment::Glob(x, l)) => name.ids.push(CompoundDottedNameSegment::Glob(x + "*", (l.0, l.1.start..toks[idx].loc.1.end))),
-                        Some(CompoundDottedNameSegment::Group(_)) => errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None)),
-                        None => unreachable!("if the last element was not a period, then there is at least one element in name.ids")
-                    }
-                }
+                if !lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 212, None))}
+                name.ids.push(CompoundDottedNameSegment::Glob(toks[idx].loc.clone()));
                 lwp = false;
                 idx += 1;
             },
             x => {
-                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}"))));
+                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("expected {}, got {x:#}", if lwp {"identifier, '{', or '*'"} else {"'.'"}))));
                 break;
             }
         }
     }
+    if lwp {errs.push(Diagnostic::error(toks[idx].loc.clone(), 214, None))}
     (name, idx + 1, errs)
 }
 fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Diagnostic>) {
@@ -226,7 +235,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (DottedName::new(vec![], true), true),
         Identifier(s) => (DottedName::new(vec![(s.clone(), toks[0].loc.clone())], false), false),
-        x => return (DottedName::local((String::new(), toks[0].loc.clone())), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}")))])
+        x => return (DottedName::local((String::new(), toks[0].loc.clone())), 2, vec![Diagnostic::error(toks[0].loc.clone(), 210, Some(format!("expected identifier or '.', got {x:#}")))])
     };
     while idx < toks.len() {
         match &toks[idx].data {
@@ -248,7 +257,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
                 idx += 1;
             }
             x => {
-                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("expected Identifier, got {x:#}"))));
+                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("expected {}, got {x:#}", if lwp {"identifier"} else {"'.'"}))));
                 break;
             }
         }
@@ -593,9 +602,10 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                 "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, None)); null()},
                 "import" => {
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
+                    let loc = toks[0].loc.clone();
                     toks = &toks[idx..];
                     errs.append(&mut es);
-                    Box::new(ImportAST::new(toks[0].loc.clone(), name))
+                    Box::new(ImportAST::new(loc, name))
                 },
                 "fn" => {
                     let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
@@ -1260,7 +1270,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
-fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
+fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
     let mut errs = vec![];
     let mut i = 0;
@@ -1277,13 +1287,15 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                 i += 1; 
                 toks = &toks[1..];
             },
-            Special('}') => break,
+            Special('}') => if is_tl {
+                errs.push(Diagnostic::error(val.loc.clone(), 255, None));
+                i += 1;
+                toks = &toks[1..];
+            } else {break 'main},
             Statement(ref x) => match x.as_str() {
                 "module" => {
-                    if annotations.len() > 0 {
-                        errs.push(Diagnostic::error(val.loc.clone(), 282, None));
-                        annotations = vec![];
-                    }
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
                     let (name, idx, mut es) = parse_path(&toks[1..], "=;{");
                     i += idx;
                     toks = &toks[idx..];
@@ -1294,9 +1306,9 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     }
                     match &toks[0].data {
                         Special('{') => {
-                            let (vals, idx, mut e) = parse_tl(&toks[1..], flags);
+                            let (vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
                             if let Some(idx) = idx {
-                                outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vals)));
+                                outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vals, anns)));
                                 errs.append(&mut e);
                                 toks = &toks[(idx + 1)..];
                                 i += idx + 1;
@@ -1317,11 +1329,11 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                                 break;
                             }
                             let mut cname: CompoundDottedName = oname.into();
-                            cname.ids.push(CompoundDottedNameSegment::Glob('*'.to_string(), toks[0].loc.clone()));
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))])));
+                            cname.ids.push(CompoundDottedNameSegment::Glob(toks[0].loc.clone()));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))], anns)));
                         },
                         Special(';') => {
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![])));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![], anns)));
                         },
                         x => unreachable!("unexpected value after module: {:#}", x)
                     }
@@ -1341,7 +1353,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                     let start = toks[0].loc.clone();
                     let (name, idx, mut es) = parse_path(&toks[1..], "(=;");
                     toks = &toks[idx..];
-                    i = idx;
+                    i += idx;
                     errs.append(&mut es);
                     let mut anns = vec![];
                     std::mem::swap(&mut annotations, &mut anns);
@@ -1659,22 +1671,14 @@ fn parse_tl(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usi
                 toks = &toks[1..];
             }
         }
-    };
+    }
     (outs, if toks.len() == 0 {None} else {Some(i + 1)}, errs)
 }
-pub fn parse(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+pub fn parse(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() == 0 {
         return (Box::new(TopLevelAST::new((0, 0..0), vec![])), vec![])
     }
     let start = toks[0].loc.clone(); // already bounds checked
-    let (mut out, mut len, mut errs) = parse_tl(toks, flags);
-    while let Some(l) = len {
-        errs.push(Diagnostic::error(toks[l - 1].loc.clone(), 255, None));
-        toks = &toks[l..];
-        let (mut o, l, mut e) = parse_tl(toks, flags);
-        out.append(&mut o);
-        len = l;
-        errs.append(&mut e);
-    }
+    let (out, _, errs) = parse_tl(toks, flags, true);
     return (Box::new(TopLevelAST::new(start, out)), errs);
 }
