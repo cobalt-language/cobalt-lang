@@ -24,7 +24,8 @@ pub enum Type {
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
     Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u64>),
-    Function(Box<Type>, Vec<(Type, bool)>)
+    Function(Box<Type>, Vec<(Type, bool)>),
+    Error
 }
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -59,7 +60,8 @@ impl Display for Type {
                     if len > 1 {write!(f, ", ")?}
                 }
                 write!(f, "): {}", *ret)
-            }
+            },
+            Error => write!(f, "<error>")
         }
     }
 }
@@ -76,7 +78,7 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(..) | Module | TypeData | InlineAsm => Meta,
+            Function(..) | Module | TypeData | InlineAsm | Error => Meta,
             Pointer(..) | Reference(..) => Static(8),
             Borrow(b) => b.size()
         }
@@ -96,7 +98,7 @@ impl Type {
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(),
-            Function(..) | Module | TypeData | InlineAsm => 0,
+            Function(..) | Module | TypeData | InlineAsm | Error => 0,
             Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align()
         }
@@ -110,7 +112,7 @@ impl Type {
             Float32 => Some(FloatType(ctx.context.f32_type())),
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(..) | Module | TypeData | InlineAsm => None,
+            Null | Function(..) | Module | TypeData | InlineAsm | Error => None,
             Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
             Array(_, None) => todo!("arrays aren't implemented yet"),
             Pointer(b, _) | Reference(b, _) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)))),
@@ -176,6 +178,7 @@ impl Type {
                 Ok(())
             },
             InlineAsm => out.write_all(&[14]),
+            Error => panic!("error values shouldn't be serialized!"),
             Module => todo!("Modules can't be stored in variables yet!"),
             TypeData => todo!("Types can't be stored in variables yet!"),
             Array(..) => todo!("Arrays aren't implemented yet!")
