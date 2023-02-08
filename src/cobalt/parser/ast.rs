@@ -1294,10 +1294,8 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
             } else {break 'main},
             Statement(ref x) => match x.as_str() {
                 "module" => {
-                    if annotations.len() > 0 {
-                        errs.push(Diagnostic::error(val.loc.clone(), 282, None));
-                        annotations = vec![];
-                    }
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
                     let (name, idx, mut es) = parse_path(&toks[1..], "=;{");
                     i += idx;
                     toks = &toks[idx..];
@@ -1310,7 +1308,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                         Special('{') => {
                             let (vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
                             if let Some(idx) = idx {
-                                outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vals)));
+                                outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vals, anns)));
                                 errs.append(&mut e);
                                 toks = &toks[(idx + 1)..];
                                 i += idx + 1;
@@ -1332,10 +1330,10 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                             }
                             let mut cname: CompoundDottedName = oname.into();
                             cname.ids.push(CompoundDottedNameSegment::Glob(toks[0].loc.clone()));
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))])));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))], anns)));
                         },
                         Special(';') => {
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![])));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![], anns)));
                         },
                         x => unreachable!("unexpected value after module: {:#}", x)
                     }
