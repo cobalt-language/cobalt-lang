@@ -1615,7 +1615,7 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
             let fty = ctx.context.void_type().fn_type(&params, false);
             let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
             ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
-            Ok(Variable::null(None))
+            Ok(Variable::null())
         } else {Ok(Variable::error())},
         t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({
             let mut out = format!("argument types are (");

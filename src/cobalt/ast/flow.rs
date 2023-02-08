@@ -15,7 +15,7 @@ impl AST for IfAST {
         else {self.if_true.res_type(ctx)}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        if ctx.is_const.get() {return (Variable::null(None), vec![])}
+        if ctx.is_const.get() {return (Variable::null(), vec![])}
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
@@ -122,7 +122,7 @@ impl AST for WhileAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        if ctx.is_const.get() {return (Variable::null(None), vec![])}
+        if ctx.is_const.get() {return (Variable::null(), vec![])}
         if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
             let cond = ctx.context.append_basic_block(f, "cond");
             let body = ctx.context.append_basic_block(f, "body");
@@ -141,7 +141,7 @@ impl AST for WhileAST {
             errs.append(&mut es);
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(exit);
-            (Variable::null(None), errs)
+            (Variable::null(), errs)
         }
         else {(Variable::error(), vec![])}
     }
