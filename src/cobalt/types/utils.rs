@@ -1529,6 +1529,7 @@ fn prep_asm<'ctx>(mut arg: Variable<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(Basic
 }
 pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Diagnostic> {
     match target.data_type {
+        Type::Error => Ok(Variable::error()),
         Type::Borrow(b) => {
             target.data_type = *b;
             call(target, loc, cparen, args, ctx)

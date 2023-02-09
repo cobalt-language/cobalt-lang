@@ -259,7 +259,7 @@ impl AST for FnDefAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
-        if target_match == 0 {return (Variable::error(), errs)}
+        if target_match == 0 {return (Variable::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {

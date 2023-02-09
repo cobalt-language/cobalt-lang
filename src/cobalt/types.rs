@@ -1,6 +1,6 @@
 use inkwell::types::{BasicType, BasicTypeEnum::{self, *}};
 use crate::*;
-use Type::{*, Char, Int};
+use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
 use std::io::{self, Write, Read, BufRead};

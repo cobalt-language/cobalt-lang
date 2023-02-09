@@ -123,7 +123,7 @@ pub struct Variable<'ctx> {
     pub export: bool
 }
 impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Null, export: true}}
+    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}}
     pub fn null() -> Self {Variable {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null, export: true}}
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, export: true}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, export: true}}
