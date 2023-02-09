@@ -1,5 +1,6 @@
 use colored::Colorize;
 use inkwell::targets::*;
+use inkwell::execution_engine::FunctionLookupError;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
@@ -9,7 +10,6 @@ use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
 mod libs;
 mod opt;
-mod jit;
 mod build;
 mod package;
 const HELP: &str = "co- Cobalt compiler and build system
@@ -32,7 +32,6 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
-type MainFn = unsafe extern "C" fn(i32, *const *const i8, *const *const i8) -> i32;
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ERROR = &"error".bright_red().bold();
@@ -706,7 +705,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (f, std::fs::read_to_string(f)?)
             };
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if linked.len() > 0 {
                 let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
@@ -744,15 +743,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
-            let jit = jit::LLJIT::new();
-            {
-                let mut m = ink_ctx.create_module("");
-                std::mem::swap(&mut m, &mut ctx.module);
-                jit.add_module(jit.main(), m);
+            let ee = ctx.module.create_jit_execution_engine(inkwell::OptimizationLevel::None).expect("Couldn't create execution engine!");
+            for (lib, _) in libs {
+                match lib.extension().map(|x| x.to_str().expect("Path should be valid UTF-8!")).unwrap_or("") {
+                    "so" | "dylib" | "dll" => {inkwell::support::load_library_permanently(lib.to_str().expect("Path should be valid UTF-8!"));},
+                    "a" | "lib" | "colib" => todo!("JIT cannot handle static libraries!"),
+                    _ => {}
+                }
             }
-            std::mem::drop(libs);
             unsafe {
-                exit(jit.lookup_main::<MainFn>(&std::ffi::CString::new("_start").unwrap()).expect("couldn't find 'main'")(1, [format!("co jit {}", if in_file == "<stdin>" {"-"} else {in_file}).as_ptr() as *const i8].as_ptr(), [0 as *const i8].as_ptr()));
+                let main_fn = match ee.get_function::<unsafe extern "C" fn (i32, *const *const u8, *const *const u8)>("_start") {
+                    Ok(main_fn) => main_fn,
+                    Err(FunctionLookupError::JITNotEnabled) => unreachable!("program should've panicked already!"),
+                    Err(FunctionLookupError::FunctionNotFound) => {
+                        eprintln!("couldn't find symbol '_start'");
+                        exit(255)
+                    }
+                };
+                let this = format!("{} {in_file}", std::env::args().next().unwrap_or("<no exe?>".to_string()));
+                let env = std::env::vars().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>();
+                main_fn.call(1, [this.as_ptr() as *const u8].as_ptr(), env.iter().map(|x| x.as_ptr()).collect::<Vec<_>>().as_ptr());
+                exit(0);
             }
         },
         "check" => {
