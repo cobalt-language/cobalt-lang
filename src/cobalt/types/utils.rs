@@ -1594,7 +1594,7 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
                 export: true
             })
         },
-        Type::InlineAsm => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
+        Type::InlineAsm => if let (Some(InterData::InlineAsm(r, c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
             let mut comp_args = Vec::with_capacity(args.len());
             let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
@@ -1612,10 +1612,23 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
                 }
             }
             if !good {return Err(err)}
-            let fty = ctx.context.void_type().fn_type(&params, false);
-            let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
-            ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
-            Ok(Variable::null(None))
+            if let Some(llt) = r.llvm_type(ctx) {
+                let fty = llt.fn_type(&params, false);
+                let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
+                let ret = ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
+                Ok(Variable {
+                    comp_val: ret.try_as_basic_value().left(),
+                    inter_val: None,
+                    data_type: *r,
+                    export: true
+                })
+            }
+            else {
+                let fty = ctx.context.void_type().fn_type(&params, false);
+                let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
+                ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
+                Ok(Variable::null(None))
+            }
         } else {Ok(Variable::error())},
         t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({
             let mut out = format!("argument types are (");
