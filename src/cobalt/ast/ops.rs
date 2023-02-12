@@ -22,6 +22,7 @@ impl AST for BinOpAST {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let (rhs, mut es) = self.rhs.codegen(ctx);
                 errs.append(&mut es);
+                if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Variable::error(), errs)}
                 let ln = format!("{}", lhs.data_type);
                 let rn = format!("{}", rhs.data_type);
                 let val = types::utils::bin_op(lhs, rhs, x, ctx);
@@ -58,6 +59,7 @@ impl AST for PostfixAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
+        if v.data_type == Type::Error {return (Variable::error(), errs)}
         let n = format!("{}", v.data_type);
         let val = types::utils::post_op(v, self.op.as_str(), ctx);
         if val.is_none() {
@@ -89,6 +91,7 @@ impl AST for PrefixAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
+        if v.data_type == Type::Error {return (Variable::error(), errs)}
         let n = format!("{}", v.data_type);
         let val = types::utils::pre_op(v, self.op.as_str(), ctx);
         if val.is_none() {

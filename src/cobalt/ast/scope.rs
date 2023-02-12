@@ -30,7 +30,7 @@ impl AST for ModuleAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
-        if target_match == 0 {return (Variable::error(), errs)}
+        if target_match == 0 {return (Variable::null(), errs)}
         ctx.map_vars(|mut v| {
             match v.lookup_mod(&self.name) {
                 Ok((m, i)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
@@ -49,7 +49,7 @@ impl AST for ModuleAST {
         ctx.restore_scope(old_scope);
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms)));
-        (Variable::null(None), errs)
+        (Variable::null(), errs)
     }
     fn to_code(&self) -> String {
         let mut out = format!("module {} {{", self.name);
@@ -84,7 +84,7 @@ impl AST for ImportAST {
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         ctx.with_vars(|v| v.imports.push(self.name.clone()));
-        (Variable::null(None), vec![])
+        (Variable::null(), vec![])
     }
     fn to_code(&self) -> String {
         format!("import {}", self.name)

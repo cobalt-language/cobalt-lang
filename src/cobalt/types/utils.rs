@@ -1529,6 +1529,7 @@ fn prep_asm<'ctx>(mut arg: Variable<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(Basic
 }
 pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, mut args: Vec<(Variable<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Variable<'ctx>, Diagnostic> {
     match target.data_type {
+        Type::Error => Ok(Variable::error()),
         Type::Borrow(b) => {
             target.data_type = *b;
             call(target, loc, cparen, args, ctx)
@@ -1627,7 +1628,7 @@ pub fn call<'ctx>(mut target: Variable<'ctx>, loc: Location, cparen: Location, m
                 let fty = ctx.context.void_type().fn_type(&params, false);
                 let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
                 ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
-                Ok(Variable::null(None))
+                Ok(Variable::null())
             }
         } else {Ok(Variable::error())},
         t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({

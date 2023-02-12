@@ -85,7 +85,7 @@ impl AST for VarDefAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
-        if target_match == 0 {return (Variable::error(), errs)}
+        if target_match == 0 {return (Variable::null(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
@@ -514,7 +514,7 @@ impl AST for MutDefAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
-        if target_match == 0 {return (Variable::error(), errs)}
+        if target_match == 0 {return (Variable::null(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);

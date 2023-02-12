@@ -12,6 +12,7 @@ impl AST for CastAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.target.into_type(ctx).0.unwrap_or(Type::Null)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.val.codegen(ctx);
+        if val.data_type == Type::Error {return (Variable::error(), errs)}
         let (t, mut es) = self.target.into_type(ctx);
         errs.append(&mut es);
         let t = match t {
