@@ -132,7 +132,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*428-429*/ None, None,
     /*430*/ ErrorInfo::new("@asm intrinsic requires arguments", ""),
     /*431*/ ErrorInfo::new("@asm intrinsic requires a constraint, delimited by a semicolon, and a body", ""),
-    /*432*/ ErrorInfo::new("invalid call to inline assembly", "")]),
+    /*432*/ ErrorInfo::new("invalid call to inline assembly", ""),
+    /*433*/ ErrorInfo::new("invalid return specification for @asm intrinsic", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
     /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])

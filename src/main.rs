@@ -435,8 +435,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
+            let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
+                &triple,
+                "",
+                "",
+                inkwell::OptimizationLevel::None,
+                inkwell::targets::RelocMode::PIC,
+                inkwell::targets::CodeModel::Small
+            ).expect("failed to create target machine");
+            let mut flags = cobalt::Flags::default();
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size;}
+            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if linked.len() > 0 {
                 let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
@@ -448,15 +458,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {exit(101)}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
@@ -482,14 +491,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
                     else {std::io::stdout().write_all(ctx.module.write_bitcode_to_memory().as_slice())?},
                 _ => {
-                    let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
-                        &triple,
-                        "",
-                        "",
-                        inkwell::OptimizationLevel::None,
-                        inkwell::targets::RelocMode::PIC,
-                        inkwell::targets::CodeModel::Small
-                    ).expect("failed to create target machine");
                     if output_type == OutputType::Assembly {
                         let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
                         if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
