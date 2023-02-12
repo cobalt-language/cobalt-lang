@@ -1455,7 +1455,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                             match &toks[0].data {
                                 Special(';') => {
                                     errs.push(Diagnostic::error(toks[0].loc.clone(), 243, None));
-                                    outs.push(Box::new(FnDefAST::new(start, name, ParsedType::Error, params, Box::new(NullAST::new(toks[0].loc.clone())), anns)));
+                                    outs.push(Box::new(FnDefAST::new(start, name, ParsedType::Null, params, Box::new(NullAST::new(toks[0].loc.clone())), anns)));
                                     toks = &toks[1..];
                                     i += 1;
                                 },
