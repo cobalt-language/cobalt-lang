@@ -25,7 +25,7 @@ pub enum InterData {
     Str(String),
     Array(Vec<InterData>),
     Function(FnData),
-    InlineAsm(String, String)
+    InlineAsm(Box<Type>, String, String)
 }
 impl InterData {
     pub fn into_compiled<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
@@ -58,12 +58,13 @@ impl InterData {
                 for val in v.defaults.iter() {val.save(out)?;}
                 Ok(())
             },
-            InterData::InlineAsm(c, b) => {
+            InterData::InlineAsm(r, c, b) => {
                 out.write_all(&[7])?;
                 out.write_all(c.as_bytes())?;
                 out.write_all(&[0])?;
                 out.write_all(b.as_bytes())?;
-                out.write_all(&[0])
+                out.write_all(&[0])?;
+                r.save(out)
             }
         }
     }
@@ -109,7 +110,7 @@ impl InterData {
                 let mut body = Vec::new();
                 buf.read_until(0, &mut constraint)?;
                 buf.read_until(0, &mut body)?;
-                Some(InterData::InlineAsm(std::str::from_utf8(&constraint).expect("Inline assmebly constraint should be valid UTF-8").to_string(), std::str::from_utf8(&body).expect("Inline assembly should be valid UTF-8").to_string()))
+                Some(InterData::InlineAsm(Box::new(Type::load(buf)?), std::str::from_utf8(&constraint).expect("Inline assmebly constraint should be valid UTF-8").to_string(), std::str::from_utf8(&body).expect("Inline assembly should be valid UTF-8").to_string()))
             },
             x => panic!("read interpreted data type expecting number in 1..=7, got {x}")
         })
