@@ -698,8 +698,8 @@ impl AST for IntrinsicAST {
                                 "f32" => Type::Float32,
                                 "f64" => Type::Float64,
                                 "f128" => Type::Float128,
-                                "isize" => Type::Int(ctx.flags.word_size.into() * 8, false),
-                                "usize" => Type::Int(ctx.flags.word_size.into() * 8, true),
+                                "isize" => Type::Int(ctx.flags.word_size * 8, false),
+                                "usize" => Type::Int(ctx.flags.word_size * 8, true),
                                 x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(64), false),
                                 x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(64), true),
                                 x => return (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 433, Some(format!("expected 'null', 'f{{size}}', 'i{{size}}', 'u{{size}}', or a pointer to one, got {x}")))])
