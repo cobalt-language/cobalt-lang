@@ -32,7 +32,11 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 name.ids.push((str.clone(), toks[idx].loc.clone()));
                 idx += 1;
             }
-            Special('&') | Special('*') | Special('^') | Special('[') => break,
+            Special('[') => break,
+            Operator(x) if match x.as_str() {
+                "*" | "&" | "^" => true,
+                _ => false
+            } => break,
             Statement(x) if x == "const" || x == "mut" => break,
             x => {
                 errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("got {x:#}"))));
