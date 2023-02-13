@@ -927,6 +927,65 @@ fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>
     }
     parse_postfix(toks, flags)
 }
+fn parse_casts(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+    let mut errs = vec![];
+    {
+        let mut it = toks.iter().rev();
+        let mut idx = toks.len() - 1;
+        'main: while let Some(tok) = it.next() {
+            match &tok.data {
+                Special(')') => {
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match it.next().map(|x| &x.data) {
+                            Some(Special(')')) => depth += 1,
+                            Some(Special('(')) => depth -= 1,
+                            None => break 'main,
+                            _ => {}
+                        }
+                        idx -= 1;
+                    }
+                },
+                Special(']') => {
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match it.next().map(|x| &x.data) {
+                            Some(Special(']')) => depth += 1,
+                            Some(Special('[')) => depth -= 1,
+                            None => break 'main,
+                            _ => {}
+                        }
+                        idx -= 1;
+                    }
+                },
+                Special('}') => {
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match it.next().map(|x| &x.data) {
+                            Some(Special('}')) => depth += 1,
+                            Some(Special('{')) => depth -= 1,
+                            None => break 'main,
+                            _ => {}
+                        }
+                        idx -= 1;
+                    }
+                },
+                Special('(') => break 'main,
+                Special('[') => break 'main,
+                Special('{') => break 'main,
+                Special(':')  => {
+                    let (lhs, mut es) = parse_casts(&toks[..idx], flags);
+                    errs.append(&mut es);
+                    let (rhs, _, mut es) = parse_type(&toks[(idx + 1)..], "", flags);
+                    errs.append(&mut es);
+                    return (Box::new(CastAST::new(tok.loc.clone(), lhs, rhs)), errs);
+                },
+                _ => if idx == 0 {break} else {idx -= 1}
+            }
+        }
+    }
+    parse_prefix(toks, flags)
+}
 fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if ops_arg.len() == 0 {return (Box::new(NullAST::new(toks[0].loc.clone())), vec![])}
     let (op_ty, ops) = ops_arg.split_last().unwrap();
@@ -983,7 +1042,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
-                        else {parse_prefix(&toks[..idx], flags)};
+                        else {parse_casts(&toks[..idx], flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -1039,7 +1098,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
-                        else {parse_prefix(&toks[(idx + 1)..], flags)};
+                        else {parse_casts(&toks[(idx + 1)..], flags)};
                         errs.append(&mut es);
                         return (Box::new(BinOpAST::new(tok.loc.clone(), x.clone(), lhs, rhs)), errs);
                     },
@@ -1055,7 +1114,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
         (ast, errs)
     }
     else {
-        let (ast, mut es) = parse_prefix(toks, flags);
+        let (ast, mut es) = parse_casts(toks, flags);
         errs.append(&mut es);
         (ast, errs)
     }
