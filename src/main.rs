@@ -60,7 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         "version" | "--version" | "-v" | "-V" => {
-            println!("Cobalt version {} using LLVM version {}", env!("CARGO_PKG_VERSION"), "14.0.1.6");
+            println!(
+                "Cobalt version {}\n\
+                LLVM version {}\n\
+                Git commit {} on branch {}{}", env!("CARGO_PKG_VERSION"), "14.0.1.6", env!("GIT_COMMIT"), env!("GIT_BRANCH"), if cfg!(debug_assertions) {"\nDebug Build"} else {""});
         }
         "lex" if cfg!(debug_assertions) => {
             let mut nfcl = false;
