@@ -4,7 +4,7 @@ use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
 use std::io::{self, Write, Read, BufRead};
-#[derive(PartialEq, Eq, PartialOrd, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u64),
     Dynamic,
@@ -16,6 +16,15 @@ impl SizeType {
     pub fn is_meta(self) -> bool {self == Meta}
     pub fn as_static(self) -> Option<u64> {if let Static(x) = self {Some(x)} else {None}}
     pub fn map_static<F: FnOnce(u64) -> u64>(self, f: F) -> SizeType {if let Static(x) = self {Static(f(x))} else {self}}
+}
+impl Display for SizeType {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            SizeType::Static(size) => write!(f, "{size}"),
+            SizeType::Dynamic => write!(f, "dynamic"),
+            SizeType::Meta => write!(f, "meta")
+        }
+    }
 }
 #[derive(PartialEq, Eq, Clone)]
 pub enum Type {
