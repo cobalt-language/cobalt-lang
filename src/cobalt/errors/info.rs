@@ -35,7 +35,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*201*/ ErrorInfo::new("expected module body", ""),
     /*202*/ ErrorInfo::new("expected semicolon after module assignment", ""),
     /*203*/ ErrorInfo::new("expected a semicolon", "")]),
-    (211, &[
+    (210, &[
     /*210*/ ErrorInfo::new("expected token in identifier", ""),
     /*211*/ ErrorInfo::new("identifier cannot contain consecutive periods", ""),
     /*212*/ ErrorInfo::new("identifier cannot contain consecutive names", ""),

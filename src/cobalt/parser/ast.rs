@@ -39,7 +39,7 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
             } => break,
             Statement(x) if x == "const" || x == "mut" => break,
             x => {
-                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("got {x:#}"))));
+                errs.push(Diagnostic::error(toks[idx].loc.clone(), 213, Some(format!("got {x:#}"))));
                 if !name.global && name.ids.len() == 1 {
                     match name.ids[0].0.as_str() {
                         "isize" => return (ParsedType::ISize, idx + 1, errs),
