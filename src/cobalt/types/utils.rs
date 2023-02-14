@@ -1488,11 +1488,207 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 }),
                 _ => None
             },
+            Type::Int(ls, true) => match target {
+                Type::Int(1, false) => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    data_type: Type::Int(1, false),
+                    export: true
+                }),
+                Type::Int(rs, true) if ls < rs => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    inter_val: val.inter_val,
+                    data_type: Type::Int(rs, true),
+                    export: true
+                }),
+                Type::Int(rs, false) if ls < rs => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    inter_val: val.inter_val,
+                    data_type: Type::Int(rs, false),
+                    export: true
+                }),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    data_type: x,
+                    export: true
+                }),
+                _ => None
+            },
+            Type::Int(ls, false) => match target {
+                Type::Int(1, false) => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    data_type: Type::Int(1, false),
+                    export: true
+                }),
+                Type::Int(rs, ru) if ls < rs => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    inter_val: val.inter_val,
+                    data_type: Type::Int(rs, ru),
+                    export: true
+                }),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    data_type: x,
+                    export: true
+                }),
+                _ => None
+            },
             _ => None
         }
     }
 }
-pub fn expl_convert<'ctx>(val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {impl_convert(val, target, ctx)}
+pub fn expl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {
+    if val.data_type == target {return Some(val)}
+    match val.data_type {
+        Type::Borrow(b) => {
+            val.data_type = *b;
+            impl_convert(val, target, ctx)
+        },
+        Type::Reference(b, true) => {
+            if &target == &Type::Reference(b.clone(), false) {Some(Variable {data_type: Type::Reference(b, false), ..val})}
+            else {
+                if !ctx.is_const.get() && b.register() {
+                    if let Some(PointerValue(v)) = val.comp_val {
+                        val.comp_val = Some(ctx.builder.build_load(v, ""));
+                    }
+                }
+                val.data_type = *b;
+                impl_convert(val, target, ctx)
+            }
+        },
+        Type::Reference(b, false) => {
+            if !ctx.is_const.get() && b.register() {
+                if let Some(PointerValue(v)) = val.comp_val {
+                    val.comp_val = Some(ctx.builder.build_load(v, ""));
+                }
+            }
+            val.data_type = *b;
+            impl_convert(val, target, ctx)
+        },
+        Type::IntLiteral => match target {
+            x @ Type::Int(..) => Some(Variable {
+                comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
+                          else if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_z_extend(v, x.llvm_type(ctx).unwrap().into_int_type(), "")))}
+                          else {None},
+                data_type: x,
+                ..val
+            }),
+            x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
+                          else if let Some(IntValue(v)) = val.comp_val {Some(FloatValue(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "")))}
+                          else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                data_type: x,
+                export: true
+            }),
+            _ => None
+        },
+        Type::Int(ls, true) => match target {
+            Type::Int(rs, ru) if ls == rs => Some(Variable {data_type: Type::Int(rs, ru), ..val}),
+            Type::Int(1, false) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                data_type: Type::Int(1, false),
+                export: true
+            }),
+            Type::Int(rs, true) if ls < rs => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                inter_val: val.inter_val,
+                data_type: Type::Int(rs, true),
+                export: true
+            }),
+            Type::Int(rs, false) if ls < rs => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                inter_val: val.inter_val,
+                data_type: Type::Int(rs, false),
+                export: true
+            }),
+            Type::Int(rs, ru) if ls > rs => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                inter_val: val.inter_val,
+                data_type: Type::Int(rs, ru),
+                export: true
+            }),
+            x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                data_type: x,
+                export: true
+            }),
+            Type::Pointer(b, m) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
+                inter_val: None,
+                data_type: Type::Pointer(b, m),
+                export: true
+            }),
+            _ => None
+        },
+        Type::Int(ls, false) => match target {
+            Type::Int(rs, ru) if ls == rs => Some(Variable {data_type: Type::Int(rs, ru), ..val}),
+            Type::Int(1, false) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                data_type: Type::Int(1, false),
+                export: true
+            }),
+            Type::Int(rs, ru) if ls < rs => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                inter_val: val.inter_val,
+                data_type: Type::Int(rs, ru),
+                export: true
+            }),
+            Type::Int(rs, ru) if ls > rs => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                inter_val: val.inter_val,
+                data_type: Type::Int(rs, ru),
+                export: true
+            }),
+            x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                data_type: x,
+                export: true
+            }),
+            Type::Pointer(b, m) => Some(Variable {
+                comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
+                inter_val: None,
+                data_type: Type::Pointer(b, m),
+                export: true
+            }),
+            _ => None
+        },
+        ref x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match target {
+            Type::Int(1, false) => Some(Variable {
+                comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_compare(ONE, v, x.llvm_type(ctx).unwrap().into_float_type().const_zero(), "").into())} else {None},
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                data_type: Type::Int(1, false),
+                export: true
+            }),
+            Type::Int(s, false) => Some(Variable {
+                comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_signed_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
+                inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
+                data_type: Type::Int(s, false),
+                export: true
+            }),
+            Type::Int(s, true) => Some(Variable {
+                comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_unsigned_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
+                inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
+                data_type: Type::Int(s, false),
+                export: true
+            }),
+            r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Some(Variable {
+                comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_cast(v, r.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                data_type: x.clone(),
+                ..val
+            }),
+            _ => None
+        },
+        _ => None
+    }
+}
 fn prep_asm<'ctx>(mut arg: Variable<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMetadataTypeEnum<'ctx>, BasicMetadataValueEnum<'ctx>)> {
     let i64_ty = ctx.context.i64_type();
     let i32_ty = ctx.context.i32_type();

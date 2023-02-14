@@ -35,7 +35,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*201*/ ErrorInfo::new("expected module body", ""),
     /*202*/ ErrorInfo::new("expected semicolon after module assignment", ""),
     /*203*/ ErrorInfo::new("expected a semicolon", "")]),
-    (211, &[
+    (210, &[
     /*210*/ ErrorInfo::new("expected token in identifier", ""),
     /*211*/ ErrorInfo::new("identifier cannot contain consecutive periods", ""),
     /*212*/ ErrorInfo::new("identifier cannot contain consecutive names", ""),
@@ -100,7 +100,9 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*313*/ ErrorInfo::new("invalid arguments to call", ""),
     /*314*/ ErrorInfo::new("function parameter's default value must be constant", ""),
     /*315*/ ErrorInfo::new("no common type available", ""),
-    /*316-319*/ None, None, None, None,
+    /*316*/ ErrorInfo::new("bit casts must be done on statically sized types", ""),
+    /*317*/ ErrorInfo::new("bit cast target must be same size as source", ""),
+    /*318-319*/ None, None,
     /*320*/ ErrorInfo::new("value does not exist", ""),
     /*321*/ ErrorInfo::new("value is not a module", ""),
     /*322*/ ErrorInfo::new("value is not a variable", ""),

@@ -22,11 +22,11 @@ pub enum ParsedType {
     TypeOf(Box<dyn AST>),
     Other(DottedName),
 }
-
 impl ParsedType {
     pub fn into_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Result<Type, IntoTypeError>, Vec<Diagnostic>) {
         (match self {
-            Error | Null => Ok(Type::Error),
+            Error => Ok(Type::Error),
+            Null => Ok(Type::Null),
             Bool => Ok(Type::Int(1, false)),
             Int(size) => Ok(Type::Int(*size, false)),
             UInt(size) => Ok(Type::Int(*size, true)),
