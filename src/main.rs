@@ -17,7 +17,6 @@ A program can be compiled using the `co aot' subcommand, or JIT compiled using t
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
-    ExeLibc,
     Library,
     Object,
     Assembly,
@@ -395,13 +394,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
-                                "exe-libc" | "emit-exe-libc" => {
-                                    if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::ExeLibc);
-                                },
                                 "no-default-link" => {
                                     if no_default_link {
                                         eprintln!("{WARNING}: reuse of --no-default-link flag");
@@ -519,7 +511,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             else {Target::initialize_native(&INIT_NEEDED)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
-                OutputType::Executable | OutputType::ExeLibc => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
+                OutputType::Executable => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
                 OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
@@ -592,24 +584,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
                     match output_type {
                         OutputType::Executable => {
-                            if out_file.is_none() {
-                                eprintln!("cannot output executable to stdout");
-                                exit(4)
-                            }
-                            let tmp = temp_file::with_contents(mb.as_slice());
-                            let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
-                            for (lib, _) in libs {
-                                let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                                args.push(OsString::from("-L"));
-                                args.push(parent.clone());
-                                args.push(OsString::from("-rpath"));
-                                args.push(parent);
-                                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-                            }
-                            args.extend(linker_args.into_iter().map(OsString::from));
-                            exit(Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0))
-                        },
-                        OutputType::ExeLibc => {
                             if out_file.is_none() {
                                 eprintln!("cannot output executable to stdout");
                                 exit(4)
