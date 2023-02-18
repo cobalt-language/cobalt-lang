@@ -183,6 +183,7 @@ impl<'ctx> Symbol<'ctx> {
                 var.inter_val = InterData::load(buf)?;
                 var.data_type = Type::load(buf)?;
                 if name.len() > 0 {
+                    use inkwell::module::Linkage::DLLImport;
                     if let Type::Function(ret, params) = &var.data_type {
                         if let Some(llt) = ret.llvm_type(ctx) {
                             let mut good = true;
@@ -190,7 +191,9 @@ impl<'ctx> Symbol<'ctx> {
                             if good {
                                 let ft = llt.fn_type(&ps, false);
                                 let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
-                                var.comp_val = Some(BasicValueEnum::PointerValue(fv.as_global_value().as_pointer_value()));
+                                let gv = fv.as_global_value();
+                                gv.set_linkage(DLLImport);
+                                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                             }
                         }
                         else if **ret == Type::Null {
@@ -199,12 +202,15 @@ impl<'ctx> Symbol<'ctx> {
                             if good {
                                 let ft = ctx.context.void_type().fn_type(&ps, false);
                                 let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
-                                var.comp_val = Some(BasicValueEnum::PointerValue(fv.as_global_value().as_pointer_value()));
+                                let gv = fv.as_global_value();
+                                gv.set_linkage(DLLImport);
+                                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                             }
                         }
                     }
-                    else if let Some(t) = var.data_type.llvm_type(ctx) {
+                    else if let Some(t) = if let Type::Reference(ref b, _) = var.data_type {b.llvm_type(ctx)} else {None} {
                         let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
+                        gv.set_linkage(DLLImport);
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
                 }
@@ -233,7 +239,7 @@ impl<'ctx> Symbol<'ctx> {
         match self {
             Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
             Symbol::Module(m, i) => {
-                eprintln!("{}module", std::iter::repeat(' ').take(depth).collect::<String>());
+                eprintln!("module");
                 depth += 4;
                 let pre = std::iter::repeat(' ').take(depth).collect::<String>();
                 i.iter().for_each(|i| eprintln!("{pre}import {i}"));
@@ -369,7 +375,11 @@ impl<'ctx> VarMap<'ctx> {
             out.write_all(&[0])?;
             sym.save(out)?;
         }
-        Ok(())
+        out.write_all(&[0])?;
+        for import in self.imports.iter() {
+            import.save(out)?;
+        }
+        out.write_all(&[0])
     }
     pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<()> {
         loop {

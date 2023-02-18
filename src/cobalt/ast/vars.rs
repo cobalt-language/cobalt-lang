@@ -198,8 +198,31 @@ impl AST for VarDefAST {
             }
             else {
                 let t = self.val.res_type(ctx);
+                let dt = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                    let (t, mut es) = t.into_type(ctx);
+                    errs.append(&mut es);
+                    match t {
+                        Ok(t) => Some(t),
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
+                            None
+                        },
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
+                            None
+                        },
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
+                            None
+                        },
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                            None
+                        }
+                    }
+                }) {t} else if t == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t {*b} else {t};
                 let mut errs;
-                match if let Some(t) = t.llvm_type(ctx) {
+                match if let Some(t) = dt.llvm_type(ctx) {
                     if ctx.is_const.get() {
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
@@ -629,8 +652,31 @@ impl AST for MutDefAST {
             }
             else {
                 let t = self.val.res_type(ctx);
+                let dt = if let Some(t) = self.type_.as_ref().and_then(|t| {
+                    let (t, mut es) = t.into_type(ctx);
+                    errs.append(&mut es);
+                    match t {
+                        Ok(t) => Some(t),
+                        Err(IntoTypeError::NotAnInt(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
+                            None
+                        },
+                        Err(IntoTypeError::NotCompileTime(loc)) => {
+                            errs.push(Diagnostic::error(loc, 324, None));
+                            None
+                        },
+                        Err(IntoTypeError::NotAModule(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
+                            None
+                        },
+                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                            None
+                        }
+                    }
+                }) {t} else if t == Type::IntLiteral {Type::Int(64, false)} else if let Type::Reference(b, _) = t {*b} else {t};
                 let mut errs;
-                match if let Some(t) = t.llvm_type(ctx) {
+                match if let Some(t) = dt.llvm_type(ctx) {
                     if ctx.is_const.get() {
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;

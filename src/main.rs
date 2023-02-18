@@ -4,7 +4,7 @@ use inkwell::execution_engine::FunctionLookupError;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
-use std::io::{Read, Write};
+use std::io::{Read, Write, BufReader};
 use std::ffi::OsString;
 use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
@@ -17,12 +17,12 @@ A program can be compiled using the `co aot' subcommand, or JIT compiled using t
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
-    ExeLibc,
     Library,
     Object,
     Assembly,
     LLVM,
-    Bitcode
+    Bitcode,
+    Header
 }
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
     asm_parser: true,
@@ -233,6 +233,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             print!("{}", ctx.module.to_string());
             exit(if fail {101} else {0})
         },
+        "lib-header" if cfg!(debug_assertions) => {
+            let mut in_file: Option<&str> = None;
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if in_file.is_some() {
+                                eprintln!("{ERROR}: respecification of input file");
+                                exit(1)
+                            }
+                            in_file = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if in_file.is_some() {
+                            eprintln!("{ERROR}: respecification of input file");
+                            exit(1)
+                        }
+                        in_file = Some(arg.as_str());
+                    }
+                }
+            }
+            if in_file.is_none() {
+                eprintln!("{ERROR}: no input file given");
+                exit(1)
+            }
+            let in_file = in_file.unwrap();
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
+            let flags = cobalt::Flags::default();
+            let mut fail = false;
+            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
+            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                fail = true;
+            }
+            if let Err(e) = ctx.with_vars(|v| v.save(&mut std::io::stdout())) {
+                eprintln!("error saving {in_file}: {e}");
+                exit(102)
+            }
+            exit(if fail {101} else {0});
+        },
+        "read-lib" if cfg!(debug_assertions) => {
+            for fname in std::env::args().skip(2) {
+                let ink_ctx = inkwell::context::Context::create();
+                let ctx = cobalt::CompCtx::new(&ink_ctx, "<anon>");
+                let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
+                match cobalt::varmap::VarMap::load_new(&mut file, &ctx) {
+                    Ok(v) => v.dump(),
+                    Err(e) => eprintln!("error loading {fname}: {e}")
+                }
+            }
+        },
         "aot" => {
             let mut output_type: Option<OutputType> = None;
             let mut in_file: Option<&str> = None;
@@ -243,6 +331,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut continue_if_err = false;
             let mut no_default_link = false;
             let mut profile: Option<&str> = None;
+            let mut headers: Vec<&str> = vec![];
             let mut linker_args: Vec<&str> = vec![];
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -306,12 +395,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
-                                "exe-libc" | "emit-exe-libc" => {
+                                "header" | "emit-header" => {
                                     if output_type.is_some() {
                                         eprintln!("{ERROR}: respecification of output type");
                                         exit(1)
                                     }
-                                    output_type = Some(OutputType::ExeLibc);
+                                    output_type = Some(OutputType::Header);
                                 },
                                 "no-default-link" => {
                                     if no_default_link {
@@ -393,6 +482,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     'X' => {
                                         linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(","));
                                     },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -411,6 +509,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if !no_default_link {
+                if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
@@ -425,18 +524,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s
             } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
-            let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
-                OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
-                OutputType::Library => format!("{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file))
-            });
-            let out_file = if out_file == "-" {None} else {Some(out_file)};
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
+            let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
+                OutputType::Executable => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
+                OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+            });
+            let out_file = if out_file == "-" {None} else {Some(out_file)};
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
                 &triple,
                 "",
@@ -456,6 +556,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if notfound.len() > 0 {exit(102)}
                 libs
             } else {vec![]};
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
@@ -486,6 +590,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
             match output_type {
+                OutputType::Header =>
+                    if let Some(out) = out_file {
+                        let mut file = std::fs::File::create(out)?;
+                        ctx.with_vars(|v| v.save(&mut file))?;
+                    }
+                    else {ctx.with_vars(|v| v.save(&mut std::io::stdout()))?}
                 OutputType::LLVM =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
@@ -502,24 +612,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
                     match output_type {
                         OutputType::Executable => {
-                            if out_file.is_none() {
-                                eprintln!("cannot output executable to stdout");
-                                exit(4)
-                            }
-                            let tmp = temp_file::with_contents(mb.as_slice());
-                            let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
-                            for (lib, _) in libs {
-                                let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                                args.push(OsString::from("-L"));
-                                args.push(parent.clone());
-                                args.push(OsString::from("-rpath"));
-                                args.push(parent);
-                                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-                            }
-                            args.extend(linker_args.into_iter().map(OsString::from));
-                            exit(Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0))
-                        },
-                        OutputType::ExeLibc => {
                             if out_file.is_none() {
                                 eprintln!("cannot output executable to stdout");
                                 exit(4)
@@ -544,53 +636,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                         OutputType::Library => {
                             if let Some(out_file) = out_file {
-                                let out = std::fs::File::create(&out_file)?;
-                                let mut builder = ar::Builder::new(out);
-                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
-                                {
-                                    let mut buf = String::new();
-                                    for lib in linked {
-                                        buf += lib;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    for link_dir in link_dirs {
-                                        buf += &link_dir;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
+                                let mut tmp = temp_file::with_contents(mb.as_slice());
+                                let mut cmd = Command::new("ld");
+                                cmd
+                                    .arg("--shared")
+                                    .arg(tmp.path())
+                                    .arg("-o")
+                                    .arg(&out_file);
+                                let mut args = vec![];
+                                for (lib, _) in libs {
+                                    let parent = lib.parent().unwrap().as_os_str().to_os_string();
+                                    args.push(OsString::from("-L"));
+                                    args.push(parent.clone());
+                                    args.push(OsString::from("-rpath"));
+                                    args.push(parent);
+                                    args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
                                 }
-                                {
-                                    let mut buf: Vec<u8> = vec![];
-                                    ctx.with_vars(|v| v.save(&mut buf))?;
-                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                                let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
+                                if code != 0 {exit(code)}
+                                let mut buf = Vec::<u8>::new();
+                                if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
+                                    eprintln!("{ERROR}: {e}");
+                                    exit(4)
                                 }
-                                exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
+                                tmp = temp_file::with_contents(&buf);
+                                cmd = Command::new("objcopy");
+                                cmd
+                                    .arg(&out_file)
+                                    .arg("--add-section")
+                                    .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
+                                    .arg("--set-section-flags")
+                                    .arg(format!(".colib=readonly,data"));
+                                exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
                             }
-                            else {
-                                let mut builder = ar::Builder::new(std::io::stdout());
-                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
-                                {
-                                    let mut buf = String::new();
-                                    for lib in linked {
-                                        buf += lib;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    for link_dir in link_dirs {
-                                        buf += &link_dir;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
-                                }
-                                {
-                                    let mut buf: Vec<u8> = vec![];
-                                    ctx.with_vars(|v| v.save(&mut buf))?;
-                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
-                                }
-                            }
+                            else {eprintln!("{ERROR}: cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
                             if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
@@ -606,6 +685,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut link_dirs: Vec<String> = vec![];
             let mut continue_if_err = false;
             let mut no_default_link = false;
+            let mut headers: Vec<&str> = vec![];
             let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -678,6 +758,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             exit(1)
                                         }
                                     },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -717,6 +806,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if notfound.len() > 0 {exit(102)}
                 libs
             } else {vec![]};
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
@@ -772,6 +865,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "check" => {
             let mut in_file: Option<&str> = None;
+            let mut linked: Vec<&str> = vec![];
+            let mut link_dirs: Vec<String> = vec![];
+            let mut headers: Vec<&str> = vec![];
+            let mut no_default_link = false;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -785,6 +882,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
+                                "no-default-link" => {
+                                    if no_default_link {
+                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                    }
+                                    no_default_link = true;
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     exit(1)
@@ -794,6 +897,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'l' => {
+                                        if let Some(x) = it.next() {
+                                            linked.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'L' => {
+                                        if let Some(x) = it.next() {
+                                            link_dirs.push(x.clone());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -811,6 +941,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            if !no_default_link {
+                if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+            }
             let (in_file, code) = if in_file.is_none() {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -820,36 +955,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let f = in_file.unwrap();
                 (f, std::fs::read_to_string(f)?)
             };
+            Target::initialize_native(&INIT_NEEDED)?;
+            let triple = TargetMachine::get_default_triple();
+            let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
+                &triple,
+                "",
+                "",
+                inkwell::OptimizationLevel::None,
+                inkwell::targets::RelocMode::PIC,
+                inkwell::targets::CodeModel::Small
+            ).expect("failed to create target machine");
+            let mut flags = cobalt::Flags::default();
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size;}
+            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
+            ctx.module.set_triple(&triple);
+            if linked.len() > 0 {
+                let notfound = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?.1;
+                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                if notfound.len() > 0 {exit(102)}
+            }
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
-            let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            overall_fail |= fail;
-            if fail {eprintln!("{ERROR}: lexing failed; the following errors may not be accurate")}
-            fail = false;
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            overall_fail |= fail;
-            if fail {eprintln!("{ERROR}: parsing failed; the following errors may not be accurate")}
-            fail = false;
             let (_, errs) = ast.codegen(&ctx);
-            overall_fail |= fail;
-            fail = false;
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            if fail {eprintln!("{ERROR}: code generation failed; the following errors may not be accurate")}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
-            if fail || overall_fail {exit(101)}
+            if fail {exit(101)}
         },
         "build" => {
             let mut project_dir: Option<&str> = None;

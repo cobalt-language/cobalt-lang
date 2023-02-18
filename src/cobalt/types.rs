@@ -60,13 +60,14 @@ impl Display for Type {
             Array(x, Some(s)) => write!(f, "{}[{s}]", *x),
             Function(ret, args) => {
                 write!(f, "fn (")?;
-                let len = args.len();
+                let mut len = args.len();
                 for (arg, ty) in args.iter() {
                     write!(f, "{}{}", match ty {
                         true => "const ",
                         false => ""
                     }, arg)?;
                     if len > 1 {write!(f, ", ")?}
+                    len -= 1;
                 }
                 write!(f, "): {}", *ret)
             },
