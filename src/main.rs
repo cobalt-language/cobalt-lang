@@ -426,8 +426,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s
             } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
+            if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
+            else {Target::initialize_native(&INIT_NEEDED)?}
+            let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
-                OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
+                OutputType::Executable | OutputType::ExeLibc => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
                 OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
@@ -435,9 +438,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file))
             });
             let out_file = if out_file == "-" {None} else {Some(out_file)};
-            if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
-            else {Target::initialize_native(&INIT_NEEDED)?}
-            let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
                 &triple,
                 "",
