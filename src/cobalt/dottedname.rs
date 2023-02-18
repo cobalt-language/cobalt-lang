@@ -119,7 +119,7 @@ impl CompoundDottedName {
     }
     pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Option<Self>> {
         let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
+        if buf.read_exact(std::slice::from_mut(&mut c)).is_err() {return Ok(None)};
         match c {
             0 => Ok(None),
             1 | 2 => {

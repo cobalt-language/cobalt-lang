@@ -369,7 +369,11 @@ impl<'ctx> VarMap<'ctx> {
             out.write_all(&[0])?;
             sym.save(out)?;
         }
-        Ok(())
+        out.write_all(&[0])?;
+        for import in self.imports.iter() {
+            import.save(out)?;
+        }
+        out.write_all(&[0])
     }
     pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<()> {
         loop {
