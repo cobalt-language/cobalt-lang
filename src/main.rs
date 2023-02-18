@@ -3,7 +3,7 @@ use inkwell::targets::*;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
-use std::io::{Read, Write};
+use std::io::{Read, Write, BufReader};
 use std::ffi::OsString;
 use path_dedot::ParseDot;
 use std::path::{Path, PathBuf};
@@ -233,6 +233,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             print!("{}", ctx.module.to_string());
             exit(if fail {101} else {0})
+        },
+        "lib-header" if cfg!(debug_assertions) => {
+            let mut in_file: Option<&str> = None;
+            {
+                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                while let Some(arg) = it.next() {
+                    if arg.len() == 0 {continue;}
+                    if arg.as_bytes()[0] == ('-' as u8) {
+                        if arg.as_bytes().len() == 1 {
+                            if in_file.is_some() {
+                                eprintln!("{ERROR}: respecification of input file");
+                                exit(1)
+                            }
+                            in_file = Some("-");
+                        }
+                        else if arg.as_bytes()[1] == ('-' as u8) {
+                            match &arg[2..] {
+                                x => {
+                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    exit(1)
+                                }
+                            }
+                        }
+                        else {
+                            for c in arg.chars().skip(1) {
+                                match c {
+                                    x => {
+                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        exit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if in_file.is_some() {
+                            eprintln!("{ERROR}: respecification of input file");
+                            exit(1)
+                        }
+                        in_file = Some(arg.as_str());
+                    }
+                }
+            }
+            if in_file.is_none() {
+                eprintln!("{ERROR}: no input file given");
+                exit(1)
+            }
+            let in_file = in_file.unwrap();
+            let code = if in_file == "-" {
+                let mut s = String::new();
+                std::io::stdin().read_to_string(&mut s)?;
+                s
+            } else {std::fs::read_to_string(in_file)?};
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let config = term::Config::default();
+            let flags = cobalt::Flags::default();
+            let mut fail = false;
+            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
+            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            let (_, errs) = ast.codegen(&ctx);
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            if let Err(msg) = ctx.module.verify() {
+                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                fail = true;
+            }
+            if let Err(e) = ctx.with_vars(|v| v.save(&mut std::io::stdout())) {
+                eprintln!("error saving {in_file}: {e}");
+                exit(102)
+            }
+            exit(if fail {101} else {0});
+        },
+        "read-lib" if cfg!(debug_assertions) => {
+            for fname in std::env::args().skip(2) {
+                let ink_ctx = inkwell::context::Context::create();
+                let ctx = cobalt::CompCtx::new(&ink_ctx, "<anon>");
+                let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
+                match cobalt::varmap::VarMap::load_new(&mut file, &ctx) {
+                    Ok(v) => v.dump(),
+                    Err(e) => eprintln!("error loading {fname}: {e}")
+                }
+            }
         },
         "aot" => {
             let mut output_type: Option<OutputType> = None;
