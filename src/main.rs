@@ -428,7 +428,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_type = output_type.unwrap_or(OutputType::Executable);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable | OutputType::ExeLibc => "a.out".to_string(),
-                OutputType::Library => format!("{}.colib", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
@@ -545,53 +545,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                         OutputType::Library => {
                             if let Some(out_file) = out_file {
-                                let out = std::fs::File::create(&out_file)?;
-                                let mut builder = ar::Builder::new(out);
-                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
-                                {
-                                    let mut buf = String::new();
-                                    for lib in linked {
-                                        buf += lib;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    for link_dir in link_dirs {
-                                        buf += &link_dir;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
+                                let mut tmp = temp_file::with_contents(mb.as_slice());
+                                let mut cmd = Command::new("ld");
+                                cmd
+                                    .arg("--shared")
+                                    .arg(tmp.path())
+                                    .arg("-o")
+                                    .arg(&out_file);
+                                let mut args = vec![];
+                                for (lib, _) in libs {
+                                    let parent = lib.parent().unwrap().as_os_str().to_os_string();
+                                    args.push(OsString::from("-L"));
+                                    args.push(parent.clone());
+                                    args.push(OsString::from("-rpath"));
+                                    args.push(parent);
+                                    args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
                                 }
-                                {
-                                    let mut buf: Vec<u8> = vec![];
-                                    ctx.with_vars(|v| v.save(&mut buf))?;
-                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
+                                let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
+                                if code != 0 {exit(code)}
+                                let mut buf = Vec::<u8>::new();
+                                if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
+                                    eprintln!("{ERROR}: {e}");
+                                    exit(4)
                                 }
-                                exit(Command::new("ranlib").arg(out_file).status().ok().and_then(|x| x.code()).unwrap_or(0));
+                                tmp = temp_file::with_contents(&buf);
+                                cmd = Command::new("objcopy");
+                                cmd
+                                    .arg(&out_file)
+                                    .arg("--add-section")
+                                    .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
+                                    .arg("--set-section-flags")
+                                    .arg(format!(".colib=readonly,data"));
+                                exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
                             }
-                            else {
-                                let mut builder = ar::Builder::new(std::io::stdout());
-                                builder.append(&ar::Header::new(b"file.o".to_vec(), mb.get_size() as u64), mb.as_slice())?;
-                                {
-                                    let mut buf = String::new();
-                                    for lib in linked {
-                                        buf += lib;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    for link_dir in link_dirs {
-                                        buf += &link_dir;
-                                        buf.push('\0');
-                                    }
-                                    buf.push('\0');
-                                    builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes())?;
-                                }
-                                {
-                                    let mut buf: Vec<u8> = vec![];
-                                    ctx.with_vars(|v| v.save(&mut buf))?;
-                                    builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice())?;
-                                }
-                            }
+                            else {eprintln!("{ERROR}: cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
                             if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
