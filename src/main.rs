@@ -332,6 +332,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut continue_if_err = false;
             let mut no_default_link = false;
             let mut profile: Option<&str> = None;
+            let mut headers: Vec<&str> = vec![];
             let mut linker_args: Vec<&str> = vec![];
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -482,6 +483,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     'X' => {
                                         linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(","));
                                     },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -547,6 +557,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if notfound.len() > 0 {exit(102)}
                 libs
             } else {vec![]};
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
@@ -672,6 +686,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut link_dirs: Vec<String> = vec![];
             let mut continue_if_err = false;
             let mut no_default_link = false;
+            let mut headers: Vec<&str> = vec![];
             let mut profile: Option<&str> = None;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
@@ -744,6 +759,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             exit(1)
                                         }
                                     },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -783,6 +807,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if notfound.len() > 0 {exit(102)}
                 libs
             } else {vec![]};
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
