@@ -239,7 +239,7 @@ impl<'ctx> Symbol<'ctx> {
         match self {
             Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
             Symbol::Module(m, i) => {
-                eprintln!("{}module", std::iter::repeat(' ').take(depth).collect::<String>());
+                eprintln!("module");
                 depth += 4;
                 let pre = std::iter::repeat(' ').take(depth).collect::<String>();
                 i.iter().for_each(|i| eprintln!("{pre}import {i}"));
