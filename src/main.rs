@@ -21,7 +21,8 @@ enum OutputType {
     Object,
     Assembly,
     LLVM,
-    Bitcode
+    Bitcode,
+    Header
 }
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
     asm_parser: true,
@@ -394,6 +395,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
+                                "header" | "emit-header" => {
+                                    if output_type.is_some() {
+                                        eprintln!("{ERROR}: respecification of output type");
+                                        exit(1)
+                                    }
+                                    output_type = Some(OutputType::Header);
+                                },
                                 "no-default-link" => {
                                     if no_default_link {
                                         eprintln!("{WARNING}: reuse of --no-default-link flag");
@@ -516,7 +524,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file))
+                OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
             });
             let out_file = if out_file == "-" {None} else {Some(out_file)};
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
@@ -568,6 +577,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
             match output_type {
+                OutputType::Header =>
+                    if let Some(out) = out_file {
+                        let mut file = std::fs::File::create(out)?;
+                        ctx.with_vars(|v| v.save(&mut file))?;
+                    }
+                    else {ctx.with_vars(|v| v.save(&mut std::io::stdout()))?}
                 OutputType::LLVM =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
