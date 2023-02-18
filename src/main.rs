@@ -854,6 +854,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "check" => {
             let mut in_file: Option<&str> = None;
+            let mut linked: Vec<&str> = vec![];
+            let mut link_dirs: Vec<String> = vec![];
+            let mut headers: Vec<&str> = vec![];
+            let mut no_default_link = false;
             {
                 let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
                 while let Some(arg) = it.next() {
@@ -867,6 +871,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         else if arg.as_bytes()[1] == ('-' as u8) {
                             match &arg[2..] {
+                                "no-default-link" => {
+                                    if no_default_link {
+                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                    }
+                                    no_default_link = true;
+                                },
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
                                     exit(1)
@@ -876,6 +886,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         else {
                             for c in arg.chars().skip(1) {
                                 match c {
+                                    'l' => {
+                                        if let Some(x) = it.next() {
+                                            linked.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'L' => {
+                                        if let Some(x) = it.next() {
+                                            link_dirs.push(x.clone());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            exit(1)
+                                        }
+                                    },
+                                    'h' => {
+                                        if let Some(x) = it.next() {
+                                            headers.push(x.as_str());
+                                        }
+                                        else {
+                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            exit(1)
+                                        }
+                                    },
                                     x => {
                                         eprintln!("{ERROR}: unknown flag -{x}");
                                         exit(1)
@@ -893,6 +930,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            if !no_default_link {
+                if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+            }
             let (in_file, code) = if in_file.is_none() {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -902,36 +944,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let f = in_file.unwrap();
                 (f, std::fs::read_to_string(f)?)
             };
+            Target::initialize_native(&INIT_NEEDED)?;
+            let triple = TargetMachine::get_default_triple();
+            let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
+                &triple,
+                "",
+                "",
+                inkwell::OptimizationLevel::None,
+                inkwell::targets::RelocMode::PIC,
+                inkwell::targets::CodeModel::Small
+            ).expect("failed to create target machine");
+            let mut flags = cobalt::Flags::default();
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size;}
+            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
+            ctx.module.set_triple(&triple);
+            if linked.len() > 0 {
+                let notfound = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?.1;
+                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                if notfound.len() > 0 {exit(102)}
+            }
+            for head in headers {
+                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+            }
             let mut fail = false;
-            let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            overall_fail |= fail;
-            if fail {eprintln!("{ERROR}: lexing failed; the following errors may not be accurate")}
-            fail = false;
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            overall_fail |= fail;
-            if fail {eprintln!("{ERROR}: parsing failed; the following errors may not be accurate")}
-            fail = false;
             let (_, errs) = ast.codegen(&ctx);
-            overall_fail |= fail;
-            fail = false;
             for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-            if fail {eprintln!("{ERROR}: code generation failed; the following errors may not be accurate")}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
             }
-            if fail || overall_fail {exit(101)}
+            if fail {exit(101)}
         },
         "build" => {
             let mut project_dir: Option<&str> = None;
