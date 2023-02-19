@@ -1226,7 +1226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
                 continue_build: false,
                 continue_comp: false,
-                link_dirs
+                link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
             }));
         },
         "install" => {

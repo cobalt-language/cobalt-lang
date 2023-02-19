@@ -164,6 +164,8 @@ impl Package {
             install_loc.push("cobalt.toml");
             let cfg = std::fs::read_to_string(&install_loc)?;
             install_loc.pop();
+            let link_dirs = if let Ok(home) = std::env::var("HOME") {vec![format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]}
+                            else {["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from).collect()};
             let res = build(toml::from_str(&cfg)?, None, &BuildOptions {
                 source_dir: &install_loc,
                 build_dir: &install_dir,
@@ -171,8 +173,7 @@ impl Package {
                 continue_build: false,
                 triple: &triple,
                 profile: "default",
-                link_dirs:  if let Ok(home) = std::env::var("HOME") {vec![format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]}
-                            else {["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from).collect()}
+                link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
             });
             if opts.clean {std::fs::remove_dir_all(install_loc)?}
             if res == 0 {Ok(())} else {Err(InstallError::BuildFailed(res))}
