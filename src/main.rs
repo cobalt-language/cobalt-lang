@@ -785,6 +785,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if !no_default_link {
+                if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
@@ -844,23 +845,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for (lib, _) in libs {
                 match lib.extension().map(|x| x.to_str().expect("Path should be valid UTF-8!")).unwrap_or("") {
                     "so" | "dylib" | "dll" => {inkwell::support::load_library_permanently(lib.to_str().expect("Path should be valid UTF-8!"));},
-                    "a" | "lib" | "colib" => todo!("JIT cannot handle static libraries!"),
+                    "a" | "lib" => todo!("JIT cannot handle static libraries!"),
                     _ => {}
                 }
             }
             unsafe {
-                let main_fn = match ee.get_function::<unsafe extern "C" fn (i32, *const *const u8, *const *const u8)>("_start") {
+                let main_fn = match ee.get_function_value("main") {
                     Ok(main_fn) => main_fn,
-                    Err(FunctionLookupError::JITNotEnabled) => unreachable!("program should've panicked already!"),
+                    Err(FunctionLookupError::JITNotEnabled) => panic!("JIT not enabled here"),
                     Err(FunctionLookupError::FunctionNotFound) => {
-                        eprintln!("couldn't find symbol '_start'");
+                        eprintln!("couldn't find symbol 'main'");
                         exit(255)
                     }
                 };
                 let this = format!("{} {in_file}", std::env::args().next().unwrap_or("<no exe?>".to_string()));
-                let env = std::env::vars().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>();
-                main_fn.call(1, [this.as_ptr() as *const u8].as_ptr(), env.iter().map(|x| x.as_ptr()).collect::<Vec<_>>().as_ptr());
-                exit(0);
+                exit(ee.run_function_as_main(main_fn, &[&this]));
             }
         },
         "check" => {
