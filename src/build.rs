@@ -33,9 +33,9 @@ pub struct Project {
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
         self.targets.unwrap_or(vec![]).into_iter()
-        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps, needs_crt}| Target {target_type: TargetType::Executable, name, files, deps, needs_crt}))
-        .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps, needs_crt}| Target {target_type: TargetType::Library, name, files, deps, needs_crt}))
-        .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps, needs_crt}| Target {target_type: TargetType::Library, files: None, name, deps, needs_crt}))
+        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
+        .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
+        .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps}| Target {target_type: TargetType::Library, files: None, name, deps}))
     }
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -54,11 +54,6 @@ pub enum TargetType {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Target {
     pub name: String,
-    #[serde(default)]
-    #[serde(alias = "needs-crt")]
-    #[serde(alias = "needs_libc")]
-    #[serde(alias = "needs-libc")]
-    pub needs_crt: bool,
     #[serde(rename = "type")]
     pub target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
@@ -70,11 +65,6 @@ pub struct Target {
 #[derive(Debug, Clone, Deserialize)]
 struct Executable {
     pub name: String,
-    #[serde(default)]
-    #[serde(alias = "needs-crt")]
-    #[serde(alias = "needs_libc")]
-    #[serde(alias = "needs-libc")]
-    pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(default)]
@@ -84,11 +74,6 @@ struct Executable {
 #[derive(Debug, Clone, Deserialize)]
 struct Library {
     pub name: String,
-    #[serde(default)]
-    #[serde(alias = "needs-crt")]
-    #[serde(alias = "needs_libc")]
-    #[serde(alias = "needs-libc")]
-    pub needs_crt: bool,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(default)]
@@ -98,11 +83,6 @@ struct Library {
 #[derive(Debug, Clone, Deserialize)]
 struct Meta {
     pub name: String,
-    #[serde(default)]
-    #[serde(alias = "needs-crt")]
-    #[serde(alias = "needs_libc")]
-    #[serde(alias = "needs-libc")]
-    pub needs_crt: bool,
     #[serde(default)]
     #[serde(alias = "dependencies")]
     pub deps: HashMap<String, String>
@@ -125,7 +105,6 @@ enum LibInfo {
 struct TargetData {
     pub libs: Vec<LibInfo>,
     pub deps: Vec<String>,
-    pub needs_crt: bool
 }
 impl TargetData {
     pub fn init_lib(&mut self, name: &str, path: &Path, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>) {
@@ -267,7 +246,6 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
     let WARNING = &"warning".bright_yellow().bold();
     match t.target_type {
         TargetType::Executable => {
-            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
@@ -279,7 +257,6 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
-                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {
@@ -395,16 +372,12 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 args.push(parent);
                 args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
             }
-            if data.borrow().as_ref().unwrap().needs_crt {
-                Command::new("cc").args(args.iter()).status()
-                .or_else(|_| Command::new("clang").args(args.iter()).status())
-                .or_else(|_| Command::new("gcc").args(args.iter()).status())
-                .ok().and_then(|x| x.code()).unwrap_or(0)
-            }
-            else {Command::new("ld").args(args).status().ok().and_then(|x| x.code()).unwrap_or(0)}
+            Command::new("cc").args(args.iter()).status()
+            .or_else(|_| Command::new("clang").args(args.iter()).status())
+            .or_else(|_| Command::new("gcc").args(args.iter()).status())
+            .ok().and_then(|x| x.code()).unwrap_or(0)
         },
         TargetType::Library => {
-            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
@@ -416,7 +389,6 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
-                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {
@@ -520,51 +492,32 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 }
             }
             let mut output = opts.build_dir.to_path_buf();
-            output.push(format!("{}.colib", t.name));
-            let file = match std::fs::File::open(output) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("{ERROR} when opening output file: {e}");
-                    return 110
-                }
-            };
-            let mut builder = ar::Builder::new(file);
-            if let Err(e) = paths.iter().try_for_each(|p| builder.append_path(&p)) {
+            output.push(format!("lib{}.so", t.name));
+            let mut cmd = Command::new("ld");
+            cmd.args(&["--shared", "-o"]).arg(&output);
+            cmd.args(paths);
+            let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
+            if code != 0 {return code}
+            let mut buf = Vec::<u8>::new();
+            if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
                 eprintln!("{ERROR}: {e}");
-                return 110
+                return 4
             }
-            {
-                let mut buf = String::new();
-                buf.push('\0');
-                for link_dir in &opts.link_dirs {
-                    buf += &link_dir;
-                    buf.push('\0');
-                }
-                buf.push('\0');
-                if let Err(e) = builder.append(&ar::Header::new(b".libs".to_vec(), buf.len() as u64), buf.as_bytes()) {
-                    eprintln!("{ERROR}: {e}");
-                    return 110
-                }
-            }
-            {
-                let mut buf: Vec<u8> = vec![];
-                if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
-                    eprintln!("{ERROR}: {e}");
-                    return 110
-                }
-                if let Err(e) = builder.append(&ar::Header::new(b".co-syms".to_vec(), buf.len() as u64), buf.as_slice()) {
-                    eprintln!("{ERROR}: {e}");
-                    return 110
-                }
-            }
-            0
+            let tmp = temp_file::with_contents(&buf);
+            cmd = Command::new("objcopy");
+            cmd
+                .arg(&output)
+                .arg("--add-section")
+                .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
+                .arg("--set-section-flags")
+                .arg(format!(".colib=readonly,data"));
+            cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1)
         },
         TargetType::Meta => {
             if t.files.is_some() {
                 eprintln!("{ERROR}: meta target cannot have files");
                 return 106;
             }
-            if t.needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
             for (target, version) in t.deps.iter() {
                 match version.as_str() {
                     "project" => {
@@ -576,7 +529,6 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         else {*d.borrow_mut() = Some(TargetData::default())}
                         let res = build_target(t, d, targets, ctx, opts);
                         if res != 0 {return res}
-                        if d.borrow().as_ref().unwrap().needs_crt {data.borrow_mut().as_mut().unwrap().needs_crt = true;}
                         data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
                     },
                     "system" => {
