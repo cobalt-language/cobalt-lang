@@ -11,39 +11,39 @@ pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
         (l, Type::Reference(x, _) | Type::Borrow(x)) => bin_type(l, *x, op),
         (Type::Int(ls, lu), Type::Int(rs, ru)) => match op {
             "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => Type::Int(max(ls, rs), lu && ru),
-            _ => Type::Null
+            _ => Type::Error
         },
         (x @ Type::Int(..), Type::IntLiteral) | (Type::IntLiteral, x @ Type::Int(..)) => match op {
             "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => x,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => Type::IntLiteral,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::Int(..) | Type::IntLiteral, x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) | (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), Type::Int(..) | Type::IntLiteral) => match op {
             "+" | "-" | "*" | "/" | "%" => x,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::Float16, Type::Float16) => match op {
             "+" | "-" | "*" | "/" | "%" => Type::Float16,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::Float32, Type::Float16 | Type::Float32) | (Type::Float16, Type::Float32) => match op {
             "+" | "-" | "*" | "/" | "%" => Type::Float32,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::Float64, Type::Float16 | Type::Float32 | Type::Float64) | (Type::Float16 | Type::Float32, Type::Float64) => match op {
             "+" | "-" | "*" | "/" | "%" => Type::Float64,
-            _ => Type::Null
+            _ => Type::Error
         },
         (Type::Float128, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) | (Type::Float16 | Type::Float32 | Type::Float64, Type::Float128) => match op {
             "+" | "-" | "*" | "/" | "%" => Type::Float128,
-            _ => Type::Null
+            _ => Type::Error
         },
         (x @ Type::Pointer(..), Type::IntLiteral | Type::Int(..)) | (Type::IntLiteral | Type::Int(..), x @ Type::Pointer(..)) => match op {
             "+" | "-" => x,
-            _ => Type::Null
+            _ => Type::Error
         }
         (Type::Reference(x, true), r) => match (*x, r) {
             (Type::IntLiteral, _) => panic!("There shouldn't be a reference to an integer literal"),
@@ -66,7 +66,7 @@ pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
             (x, r) => bin_type(x, r, op)
         },
         (Type::Reference(x, false) | Type::Borrow(x), r) => bin_type(*x, r, op),
-        _ => Type::Null
+        _ => Type::Error
     }
 }
 pub fn pre_type(val: Type, op: &str) -> Type {
@@ -75,31 +75,31 @@ pub fn pre_type(val: Type, op: &str) -> Type {
             Type::IntLiteral => panic!("There shouldn't be a reference to an integer literal"),
             x @ (Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)) => match op {
                 "++" | "--" => Type::Reference(Box::new(x), true),
-                _ => Type::Null
+                _ => Type::Error
             }
             x => pre_type(x, op)
         }
         Type::Reference(x, false) | Type::Borrow(x) => pre_type(*x, op),
         x @ (Type::IntLiteral | Type::Int(..)) => match op {
             "+" | "-" | "~" => x,
-            _ => Type::Null
+            _ => Type::Error
         },
         x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
             "+" | "-" => x,
-            _ => Type::Null
+            _ => Type::Error
         }
         Type::Pointer(b, c) => match op {
             "+" | "-" => Type::Pointer(b, c),
             "*" => Type::Reference(b, c),
-            _ => Type::Null
+            _ => Type::Error
         }
-        _ => Type::Null
+        _ => Type::Error
     }
 }
 pub fn post_type(val: Type, op: &str) -> Type {
     match val {
         Type::Reference(x, _) | Type::Borrow(x) => post_type(*x, op),
-        _ => Type::Null
+        _ => Type::Error
     }
 }
 pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {

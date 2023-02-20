@@ -11,7 +11,7 @@ impl IfAST {
 impl AST for IfAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
+        if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Error)}
         else {self.if_true.res_type(ctx)}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
@@ -39,7 +39,7 @@ impl AST for IfAST {
                     errs.append(&mut es);
                     let ty = if let Some(t) = types::utils::common(&if_true.data_type, &if_false.data_type) {t} else {
                         errs.push(Diagnostic::error(self.cond.loc(), 315, Some(format!("no common type for values of types {} and {}", if_true.data_type, if_false.data_type))));
-                        Type::Null
+                        Type::Error
                     };
                     ctx.builder.position_at_end(itb);
                     let err = format!("cannot convert value of type {} to {ty}", if_true.data_type);

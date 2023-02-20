@@ -993,7 +993,7 @@ impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Ok(Symbol::Variable(x)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
-        else {Type::Null}
+        else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match ctx.with_vars(|v| v.lookup(&self.name)) {

@@ -29,19 +29,19 @@ impl AST for FnDefAST {
             Ok(t) => t,
             Err(IntoTypeError::NotAnInt(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::NotCompileTime(loc)) => {
                 errs.push(Diagnostic::error(loc, 324, None));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::NotAModule(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                Type::Null
+                Type::Error
             }
         };
         Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
@@ -51,19 +51,19 @@ impl AST for FnDefAST {
                 Ok(t) => t,
                 Err(IntoTypeError::NotAnInt(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::NotCompileTime(loc)) => {
                     errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::NotAModule(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Null
+                    Type::Error
                 }
             }
         }, pt == &ParamType::Constant)).collect())
@@ -74,19 +74,19 @@ impl AST for FnDefAST {
             Ok(t) => t,
             Err(IntoTypeError::NotAnInt(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::NotCompileTime(loc)) => {
                 errs.push(Diagnostic::error(loc, 324, None));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::NotAModule(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                Type::Null
+                Type::Error
             },
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                Type::Null
+                Type::Error
             }
         };
         let fty = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
@@ -96,19 +96,19 @@ impl AST for FnDefAST {
                 Ok(t) => t,
                 Err(IntoTypeError::NotAnInt(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::NotCompileTime(loc)) => {
                     errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::NotAModule(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Null
+                    Type::Error
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Null
+                    Type::Error
                 }
             }
         }, pt == &ParamType::Constant)).collect());
@@ -606,7 +606,7 @@ impl AST for CallAST {
         match self.target.res_type(ctx) {
             Type::Function(ret, _) => *ret,
             Type::InlineAsm => Type::Null,
-            _ => Type::Null
+            _ => Type::Error
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
@@ -650,7 +650,7 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {if self.name == "asm" {Type::InlineAsm} else {Type::Null}}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {if self.name == "asm" {Type::InlineAsm} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
             "asm" => {
