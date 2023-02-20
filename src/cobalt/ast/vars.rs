@@ -123,7 +123,7 @@ impl AST for VarDefAST {
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 21, None)); None}),
                     inter_val: None,
-                    data_type: dt,
+                    data_type: Type::Reference(Box::new(dt), false),
                     export: true
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -575,7 +575,7 @@ impl AST for MutDefAST {
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 23, None)); None}),
                     inter_val: None,
-                    data_type: dt,
+                    data_type: Type::Reference(Box::new(dt), true),
                     export: true
                 }))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
