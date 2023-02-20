@@ -726,7 +726,7 @@ impl AST for MutDefAST {
                         gv.set_constant(false);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        let f = ctx.module.add_function(format!("__internals.init{}", ctx.mangle(self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        let f = ctx.module.add_function(format!("__internals.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         {
                             let as0 = inkwell::AddressSpace::from(0u16);
                             let i32t = ctx.context.i32_type();
