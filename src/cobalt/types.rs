@@ -191,7 +191,16 @@ impl Type {
             Error => panic!("error values shouldn't be serialized!"),
             Module => todo!("Modules can't be stored in variables yet!"),
             TypeData => todo!("Types can't be stored in variables yet!"),
-            Array(..) => todo!("Arrays aren't implemented yet!")
+            Array(b, None) => {
+                out.write_all(&[15])?;
+                b.save(out)
+            },
+            Array(b, Some(s)) => {
+                let mut data = [16u8, 0, 0, 0, 0];
+                data[1..].copy_from_slice(&s.to_be_bytes());
+                out.write_all(&data)?;
+                b.save(out)
+            }
         }
     }
     pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
@@ -229,7 +238,13 @@ impl Type {
                 Type::Function(Box::new(ret), vec)
             }
             14 => Type::InlineAsm,
-            x => panic!("read type value expecting value in 1..=14, got {x}")
+            15 => Type::Array(Box::new(Type::load(buf)?), None),
+            16 => {
+                let mut bytes = [0; 4];
+                buf.read_exact(&mut bytes)?;
+                Type::Array(Box::new(Type::load(buf)?), Some(u32::from_be_bytes(bytes)))
+            },
+            x => panic!("read type value expecting value in 1..=16, got {x}")
         })
     }
 }
