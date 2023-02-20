@@ -859,7 +859,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
                 let this = format!("{} {in_file}", std::env::args().next().unwrap_or("<no exe?>".to_string()));
-                exit(ee.run_function_as_main(main_fn, &[&this]));
+                ee.run_static_constructors();
+                let ec = ee.run_function_as_main(main_fn, &[&this]);
+                ee.run_static_destructors();
+                exit(ec);
             }
         },
         "check" => {
