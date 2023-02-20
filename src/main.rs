@@ -1180,24 +1180,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 None => {
                     let cfg;
-                    if !Path::new("cobalt.toml").exists() {
-                        eprintln!("{ERROR}: couldn't find cobalt.toml in current directory");
-                        exit(100)
+                    let mut path = std::env::current_dir()?;
+                    loop {
+                        path.push("cobalt.toml");
+                        if path.exists() {break}
+                        path.pop();
+                        if !path.pop() {
+                            eprintln!("{ERROR}: couldn't find cobalt.toml in current directory");
+                            exit(100)
+                        }
                     }
-                    match std::fs::read_to_string("cobalt.toml") {
+                    match std::fs::read_to_string(&path) {
                         Ok(c) => cfg = c,
                         Err(e) => {
                             eprintln!("error when reading project file: {e}");
                             exit(100)
                         }
                     }
+                    path.pop();
                     (match toml::from_str::<build::Project>(cfg.as_str()) {
                         Ok(proj) => proj,
                         Err(e) => {
                             eprintln!("error when parsing project file: {e}");
                             exit(100)
                         }
-                    }, PathBuf::from("."))
+                    }, path)
                 }
             };
             if !no_default_link {
@@ -1219,7 +1226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
                 continue_build: false,
                 continue_comp: false,
-                link_dirs
+                link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
             }));
         },
         "install" => {
