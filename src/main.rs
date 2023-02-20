@@ -6,7 +6,7 @@ use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
 use std::io::{Read, Write, BufReader};
 use std::ffi::OsString;
-use path_dedot::ParseDot;
+use path_calculate::*;
 use std::path::{Path, PathBuf};
 mod libs;
 mod opt;
@@ -619,7 +619,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let tmp = temp_file::with_contents(mb.as_slice());
                             let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
                             for (lib, _) in libs {
-                                let lib = lib.parse_dot()?;
+                                let lib = lib.as_absolute_path()?;
                                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                                 args.push(OsString::from("-L"));
                                 args.push(parent.clone());
