@@ -260,6 +260,7 @@ impl AST for VarDefAST {
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
+                        gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");
@@ -714,6 +715,7 @@ impl AST for MutDefAST {
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         gv.set_constant(false);
+                        gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
                         let entry = ctx.context.append_basic_block(f, "entry");

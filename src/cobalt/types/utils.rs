@@ -1748,6 +1748,7 @@ pub fn expl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 },
                 _ => None
             },
+            Type::Null => Some(Variable {comp_val: target.llvm_type(ctx).map(|t| t.const_zero()), inter_val: None, data_type: target, export: true}),
             Type::Error => Some(Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}),
             _ => None
         }
