@@ -102,6 +102,7 @@ pub fn post_type(val: Type, op: &str) -> Type {
         _ => Type::Error
     }
 }
+pub fn sub_type(val: Type, idx: Type) -> Type {Type::Error}
 pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {
     match (lhs.data_type, rhs.data_type) {
         (Type::Borrow(l), r) => {
@@ -1440,6 +1441,9 @@ pub fn post_op<'ctx>(val: Variable<'ctx>, _op: &str, _ctx: &CompCtx<'ctx>) -> Op
     match val.data_type { // The only posfix operators are ? and !, and they're for error handling
         _ => None
     }
+}
+pub fn subscript<'ctx>(val: Variable<'ctx>, idx: Variable<'ctx>, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {
+    None
 }
 pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'ctx>) -> Option<Variable<'ctx>> {
     if val.data_type == target {Some(val)}

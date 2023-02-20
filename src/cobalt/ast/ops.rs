@@ -108,3 +108,34 @@ impl AST for PrefixAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+pub struct SubAST {
+    loc: Location,
+    pub target: Box<dyn AST>,
+    pub index: Box<dyn AST>,
+}
+impl SubAST {
+    pub fn new(loc: Location, target: Box<dyn AST>, index: Box<dyn AST>) -> Self {SubAST {loc, target, index}}
+}
+impl AST for SubAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        let (target, mut errs) = self.target.codegen(ctx);
+        let (index, mut es) = self.index.codegen(ctx);
+        errs.append(&mut es);
+        let t = target.data_type.to_string();
+        let i = index.data_type.to_string();
+        (types::utils::subscript(target, index, ctx).unwrap_or_else(|| {
+            errs.push(Diagnostic::error(self.loc.clone(), 318, None).note(self.target.loc(), format!("target type is {t}")).note(self.index.loc(), format!("index type is {i}")));
+            Variable::error()
+        }), errs)
+    }
+    fn to_code(&self) -> String {
+        format!("{}[{}]", self.target.to_code(), self.index.to_code())
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "subscript")?;
+        print_ast_child(f, pre, &*self.target, false)?;
+        print_ast_child(f, pre, &*self.index, true)
+    }
+}
