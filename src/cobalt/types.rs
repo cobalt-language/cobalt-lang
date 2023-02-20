@@ -125,7 +125,7 @@ impl Type {
             Null | Function(..) | Module | TypeData | InlineAsm | Error => None,
             Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
             Array(_, None) => todo!("arrays aren't implemented yet"),
-            Pointer(b, _) | Reference(b, _) => Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)))),
+            Pointer(b, _) | Reference(b, _) => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16))))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16))))},
             Borrow(b) => b.llvm_type(ctx)
         }
     }

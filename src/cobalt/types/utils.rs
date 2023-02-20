@@ -1538,7 +1538,29 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 }),
                 _ => None
             },
-            Type::Error => Some(Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true})
+            Type::Pointer(_, false) => match target {
+                Type::Pointer(rb, false) if *rb == Type::Null => Some(Variable {
+                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                    inter_val: None,
+                    data_type: Type::Pointer(Box::new(Type::Null), false),
+                    export: true
+                }),
+                _ => None
+            },
+            Type::Pointer(ref lb, true) => match target {
+                Type::Pointer(rb, false) => match *rb {
+                    Type::Null => Some(Variable {
+                        comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                        inter_val: None,
+                        data_type: Type::Pointer(Box::new(Type::Null), false),
+                        export: true
+                    }),
+                    x if x == **lb => Some(Variable {data_type: Type::Pointer(Box::new(x), false), ..val}),
+                    _ => None
+                },
+                _ => None
+            },
+            Type::Error => Some(Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}),
             _ => None
         }
     }
@@ -1692,7 +1714,42 @@ pub fn expl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 }),
                 _ => None
             },
-            Type::Error => Some(Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true})
+            Type::Pointer(ref lb, false) => match target {
+                Type::Pointer(rb, false) if *rb == Type::Null => Some(Variable {
+                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                    inter_val: None,
+                    data_type: Type::Pointer(Box::new(Type::Null), false),
+                    export: true
+                }),
+                Type::Pointer(rb, false) if **lb == Type::Null => Some(Variable {
+                    comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, rb.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)), ""))),
+                    inter_val: None,
+                    data_type: Type::Pointer(rb, false),
+                    export: true
+                }),
+                _ => None
+            },
+            Type::Pointer(ref lb, true) => match target {
+                Type::Pointer(rb, false) => match *rb {
+                    Type::Null => Some(Variable {
+                        comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                        inter_val: None,
+                        data_type: Type::Pointer(Box::new(Type::Null), false),
+                        export: true
+                    }),
+                    Type::Pointer(rb, m) if **lb == Type::Null => Some(Variable {
+                        comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, rb.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)), ""))),
+                        inter_val: None,
+                        data_type: Type::Pointer(rb, m),
+                        export: true
+                    }),
+                    x if x == **lb => Some(Variable {data_type: Type::Pointer(Box::new(x), false), ..val}),
+                    _ => None
+                },
+                _ => None
+            },
+            Type::Null => Some(Variable {comp_val: target.llvm_type(ctx).map(|t| t.const_zero()), inter_val: None, data_type: target, export: true}),
+            Type::Error => Some(Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}),
             _ => None
         }
     }
