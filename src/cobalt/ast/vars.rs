@@ -262,7 +262,16 @@ impl AST for VarDefAST {
                         gv.set_constant(false);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        let f = ctx.module.add_function(format!("__internals.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        {
+                            let as0 = inkwell::AddressSpace::from(0u16);
+                            let i32t = ctx.context.i32_type();
+                            let i8tp = ctx.context.i8_type().ptr_type(as0);
+                            let st = ctx.context.struct_type(&[i32t.into(), ctx.context.void_type().fn_type(&[], false).ptr_type(as0).into(), i8tp.into()], false);
+                            let g = ctx.module.add_global(st.array_type(1), None, "llvm.global_ctors");
+                            g.set_linkage(inkwell::module::Linkage::Appending);
+                            g.set_initializer(&st.const_array(&[st.const_named_struct(&[i32t.const_int(ctx.priority.decr().get() as u64, false).into(), f.as_global_value().as_pointer_value().into(), i8tp.const_zero().into()])]));
+                        }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
@@ -717,7 +726,16 @@ impl AST for MutDefAST {
                         gv.set_constant(false);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        let f = ctx.module.add_function(format!("__internals.init.{}", self.name).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        let f = ctx.module.add_function(format!("__internals.init{}", ctx.mangle(self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                        {
+                            let as0 = inkwell::AddressSpace::from(0u16);
+                            let i32t = ctx.context.i32_type();
+                            let i8tp = ctx.context.i8_type().ptr_type(as0);
+                            let st = ctx.context.struct_type(&[i32t.into(), ctx.context.void_type().fn_type(&[], false).ptr_type(as0).into(), i8tp.into()], false);
+                            let g = ctx.module.add_global(st.array_type(1), None, "llvm.global_ctors");
+                            g.set_linkage(inkwell::module::Linkage::Appending);
+                            g.set_initializer(&st.const_array(&[st.const_named_struct(&[i32t.const_int(ctx.priority.decr().get() as u64, false).into(), f.as_global_value().as_pointer_value().into(), i8tp.const_zero().into()])]));
+                        }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
