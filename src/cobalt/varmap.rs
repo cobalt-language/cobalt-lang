@@ -48,13 +48,13 @@ impl InterData {
             },
             InterData::Array(v) => {
                 out.write_all(&[5])?;
-                out.write_all(&(v.len() as u64).to_be_bytes())?; // length
+                out.write_all(&(v.len() as u32).to_be_bytes())?; // length
                 for val in v.iter() {val.save(out)?;} // InterData is self-puncatuating
                 Ok(())
             },
             InterData::Function(v) => { // serialized the same as InterData::Array
                 out.write_all(&[6])?;
-                out.write_all(&(v.defaults.len() as u64).to_be_bytes())?;
+                out.write_all(&(v.defaults.len() as u32).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
                 Ok(())
             },
@@ -90,17 +90,17 @@ impl InterData {
                 Some(InterData::Str(std::str::from_utf8(&vec).expect("Interpreted strings should be valid UTF-8").to_string()))
             },
             5 => {
-                let mut bytes = [0; 8];
+                let mut bytes = [0; 4];
                 buf.read_exact(&mut bytes)?;
-                let len = u64::from_be_bytes(bytes);
+                let len = u32::from_be_bytes(bytes);
                 let mut vec = Vec::with_capacity(len as usize);
                 for _ in 0..len {vec.push(Self::load(buf)?.expect("# of unwrapped array elements doesn't match the prefixed count"))}
                 Some(InterData::Array(vec))
             },
             6 => {
-                let mut bytes = [0; 8];
+                let mut bytes = [0; 4];
                 buf.read_exact(&mut bytes)?;
-                let len = u64::from_be_bytes(bytes);
+                let len = u32::from_be_bytes(bytes);
                 let mut vec = Vec::with_capacity(len as usize);
                 for _ in 0..len {vec.push(Self::load(buf)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
                 Some(InterData::Function(FnData{defaults: vec}))

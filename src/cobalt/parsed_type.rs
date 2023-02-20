@@ -10,8 +10,8 @@ pub enum IntoTypeError {
 pub enum ParsedType {
     Error,
     Null, Bool,
-    Int(u64),
-    UInt(u64),
+    Int(u16),
+    UInt(u16),
     ISize, USize,
     F16, F32, F64, F128,
     Pointer(Box<ParsedType>, bool),
@@ -67,7 +67,7 @@ impl ParsedType {
                 let var = types::utils::impl_convert(var, Type::Int(64, false), ctx);
                 ctx.is_const.set(old_const);
                 return (if var.is_none() {Err(IntoTypeError::NotAnInt(err, size.loc()))}
-                else if let Some(InterData::Int(val)) = var.unwrap().inter_val {Ok(Type::Array(Box::new(base), Some(val as u64)))}
+                else if let Some(InterData::Int(val)) = var.unwrap().inter_val {Ok(Type::Array(Box::new(base), Some(val as u32)))}
                 else {Err(IntoTypeError::NotCompileTime(size.loc()))}, errs);
             },
             TypeOf(expr) => {

@@ -6,7 +6,7 @@ use std::fmt::*;
 use std::io::{self, Write, Read, BufRead};
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
-    Static(u64),
+    Static(u32),
     Dynamic,
     Meta
 }
@@ -14,8 +14,8 @@ impl SizeType {
     pub fn is_static(self) -> bool {if let Static(_) = self {true} else {false}}
     pub fn is_dynamic(self) -> bool {self == Dynamic}
     pub fn is_meta(self) -> bool {self == Meta}
-    pub fn as_static(self) -> Option<u64> {if let Static(x) = self {Some(x)} else {None}}
-    pub fn map_static<F: FnOnce(u64) -> u64>(self, f: F) -> SizeType {if let Static(x) = self {Static(f(x))} else {self}}
+    pub fn as_static(self) -> Option<u32> {if let Static(x) = self {Some(x)} else {None}}
+    pub fn map_static<F: FnOnce(u32) -> u32>(self, f: F) -> SizeType {if let Static(x) = self {Static(f(x))} else {self}}
 }
 impl Display for SizeType {
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -29,10 +29,10 @@ impl Display for SizeType {
 #[derive(PartialEq, Eq, Clone)]
 pub enum Type {
     IntLiteral, Char,
-    Int(u64, bool),
+    Int(u16, bool),
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
-    Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u64>),
+    Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u32>),
     Function(Box<Type>, Vec<(Type, bool)>),
     Error
 }
@@ -79,7 +79,7 @@ impl Type {
     pub fn size(&self) -> SizeType {
         match self {
             IntLiteral => Static(8),
-            Int(size, _) => Static((size + 7) / 8),
+            Int(size, _) => Static(((size + 7) / 8) as u32),
             Char => Static(4),
             Float16 => Static(2),
             Float32 => Static(4),
@@ -93,7 +93,7 @@ impl Type {
             Borrow(b) => b.size()
         }
     }
-    pub fn align(&self) -> u64 {
+    pub fn align(&self) -> u16 {
         match self {
             IntLiteral => 8,
             Int(size, _) => match size {
@@ -147,7 +147,7 @@ impl Type {
             IntLiteral => panic!("There shouldn't be an int literal in a variable!"),
             Int(s, u) => {
                 out.write_all(&[1])?;
-                let mut v = *s as i64;
+                let mut v = *s as i16;
                 if *u {v = -v;}
                 out.write_all(&v.to_be_bytes())
             },
@@ -179,7 +179,7 @@ impl Type {
             },
             Function(b, p) => {
                 out.write_all(&[13])?;
-                out.write_all(&(p.len() as u64).to_be_bytes())?; // # of params
+                out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
                 b.save(out)?;
                 for (par, c) in p {
                     par.save(out)?;
@@ -199,10 +199,10 @@ impl Type {
         buf.read_exact(std::slice::from_mut(&mut c))?;
         Ok(match c {
             1 => {
-                let mut bytes = [0; 8];
+                let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
-                let v = i64::from_be_bytes(bytes);
-                Type::Int(v.abs() as u64, v < 0)
+                let v = i16::from_be_bytes(bytes);
+                Type::Int(v.abs() as u16, v < 0)
             },
             2 => Type::Char,
             3 => Type::Float16,
@@ -216,9 +216,9 @@ impl Type {
             11 => Type::Reference(Box::new(Type::load(buf)?), true),
             12 => Type::Borrow(Box::new(Type::load(buf)?)),
             13 => {
-                let mut bytes = [0; 8];
+                let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
-                let v = u64::from_be_bytes(bytes);
+                let v = u16::from_be_bytes(bytes);
                 let ret = Type::load(buf)?;
                 let mut vec = Vec::with_capacity(v as usize);
                 for _ in 0..v {
