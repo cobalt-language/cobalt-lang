@@ -547,7 +547,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).expect("failed to create target machine");
             let mut flags = cobalt::Flags::default();
             let ink_ctx = inkwell::context::Context::create();
-            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size;}
+            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if linked.len() > 0 {
@@ -966,7 +966,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).expect("failed to create target machine");
             let mut flags = cobalt::Flags::default();
             let ink_ctx = inkwell::context::Context::create();
-            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size;}
+            if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             if linked.len() > 0 {

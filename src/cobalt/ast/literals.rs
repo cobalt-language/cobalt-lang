@@ -26,12 +26,12 @@ impl AST for IntLiteralAST {
             None | Some(("", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::IntLiteral), vec![]),
             Some(("isize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, false)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
-                let size: u64 = x[1..].parse().unwrap_or(0);
+                let size: u16 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, false)), vec![])
             },
             Some(("usize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, true)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
-                let size: u64 = x[1..].parse().unwrap_or(0);
+                let size: u16 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
             },
             Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for integer literal")))])
@@ -120,12 +120,12 @@ impl AST for CharLiteralAST {
             None | Some(("", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Char), vec![]),
             Some(("isize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, false)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
-                let size: u64 = x[1..].parse().unwrap_or(0);
+                let size: u16 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, false)), vec![])
             },
             Some(("usize", _)) => (Variable::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, true)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
-                let size: u64 = x[1..].parse().unwrap_or(0);
+                let size: u16 = x[1..].parse().unwrap_or(0);
                 (Variable::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
             },
             Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for character literal")))])
