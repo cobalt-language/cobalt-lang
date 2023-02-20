@@ -9,6 +9,7 @@ pub struct CompCtx<'ctx> {
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>,
     pub is_const: Cell<bool>,
+    pub null_type: inkwell::types::BasicTypeEnum<'ctx>,
     vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
     name: Cell<MaybeUninit<String>>
 }
@@ -20,6 +21,7 @@ impl<'ctx> CompCtx<'ctx> {
             module: ctx.create_module(name),
             builder: ctx.create_builder(),
             is_const: Cell::new(false),
+            null_type: ctx.opaque_struct_type("null").into(),
             vars: Cell::new(MaybeUninit::new(Box::default())),
             name: Cell::new(MaybeUninit::new(".".to_string()))
         }
@@ -31,6 +33,7 @@ impl<'ctx> CompCtx<'ctx> {
             module: ctx.create_module(name),
             builder: ctx.create_builder(),
             is_const: Cell::new(false),
+            null_type: ctx.opaque_struct_type("null").into(),
             vars: Cell::new(MaybeUninit::new(Box::default())),
             name: Cell::new(MaybeUninit::new(".".to_string()))
         }
