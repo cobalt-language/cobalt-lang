@@ -433,16 +433,11 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             (Type::Pointer(b, m), r @ (Type::IntLiteral | Type::Int(..))) => match op {
                 "+=" => {
                     match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
-                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => {
-                            let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                            let v0 = ctx.builder.build_int_cast(r, pt, "");
-                            let v1 = ctx.builder.build_load(l, "").into_pointer_value();
-                            let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                            let v3 = ctx.builder.build_ptr_to_int(v1, pt, "");
-                            let v4 = ctx.builder.build_int_add(v3, v2, "");
-                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                            ctx.builder.build_store(l, v5);
-                        }
+                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => unsafe {
+                            let lv = ctx.builder.build_load(l, "").into_pointer_value();
+                            let v = ctx.builder.build_gep(lv, &[r], "");
+                            ctx.builder.build_store(l, v);
+                        },
                         _ => {},
                     }
                     lhs.inter_val = None;
@@ -451,16 +446,12 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
                 },
                 "-=" => {
                     match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
-                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => {
-                            let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                            let v0 = ctx.builder.build_int_cast(r, pt, "");
-                            let v1 = ctx.builder.build_load(l, "").into_pointer_value();
-                            let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                            let v3 = ctx.builder.build_ptr_to_int(v1, pt, "");
-                            let v4 = ctx.builder.build_int_sub(v3, v2, "");
-                            let v5 = ctx.builder.build_int_to_ptr(v4, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                            ctx.builder.build_store(l, v5);
-                        }
+                        (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => unsafe {
+                            let lv = ctx.builder.build_load(l, "").into_pointer_value();
+                            let rv = ctx.builder.build_int_neg(r, "");
+                            let v = ctx.builder.build_gep(lv, &[rv], "");
+                            ctx.builder.build_store(l, v);
+                        },
                         _ => {},
                     }
                     lhs.inter_val = None;
@@ -908,14 +899,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         (Type::Pointer(b, s), Type::Int(..) | Type::IntLiteral) => match op {
             "+" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                        let v0 = ctx.builder.build_int_cast(r, pt, "");
-                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
-                        let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                        let v3 = ctx.builder.build_int_add(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
-                    }),
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                     _ => None
                 },
                 inter_val: None,
@@ -924,13 +908,9 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
             }),
             "-" => Some(Variable {
                 comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                        let v0 = ctx.builder.build_int_cast(r, pt, "");
-                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
-                        let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                        let v3 = ctx.builder.build_int_sub(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {
+                        let v = ctx.builder.build_int_neg(r, "");
+                        ctx.builder.build_gep(l, &[v], "").into()
                     }),
                     _ => None
                 },
@@ -943,14 +923,7 @@ pub fn bin_op<'ctx>(mut lhs: Variable<'ctx>, mut rhs: Variable<'ctx>, op: &str, 
         (Type::Int(..) | Type::IntLiteral, Type::Pointer(b, s)) => match op {
             "+" => Some(Variable {
                 comp_val: match (rhs.comp_val, lhs.comp_val, b.size(), ctx.is_const.get()) { // I just swapped the sides here
-                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                        let v0 = ctx.builder.build_int_cast(r, pt, "");
-                        let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
-                        let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                        let v3 = ctx.builder.build_int_add(v1, v2, "");
-                        PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
-                    }),
+                    (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                     _ => None
                 },
                 inter_val: None,
@@ -1348,26 +1321,20 @@ pub fn pre_op<'ctx>(mut val: Variable<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> O
                 },
                 Type::Pointer(b, m) => match op {
                     "++" => {
-                        if let (Some(PointerValue(v)), SizeType::Static(x), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
-                            let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        if let (Some(PointerValue(v)), SizeType::Static(_), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
-                            let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
-                            let v3 = ctx.builder.build_int_add(v2, pt.const_int(x as u64, false), "");
-                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                            ctx.builder.build_store(v, v4);
+                            let v2 = unsafe {ctx.builder.build_gep(v1, &[ctx.context.i8_type().const_int(1, true)], "")};
+                            ctx.builder.build_store(v, v2);
                         }
                         val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
                         Some(val)
                     },
                     "--" => {
-                        if let (Some(PointerValue(v)), SizeType::Static(x), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
-                            let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        if let (Some(PointerValue(v)), SizeType::Static(_), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
                             let v1 = ctx.builder.build_load(v, "").into_pointer_value();
-                            let v2 = ctx.builder.build_ptr_to_int(v1, pt, "");
-                            let v3 = ctx.builder.build_int_sub(v2, pt.const_int(x as u64, false), "");
-                            let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                            ctx.builder.build_store(v, v4);
+                            let v2 = unsafe {ctx.builder.build_gep(v1, &[ctx.context.i8_type().const_int(u64::MAX, true)], "")};
+                            ctx.builder.build_store(v, v2);
                         }
                         val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
@@ -1468,7 +1435,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
         },
         Type::Reference(x, _) => {
             if x.register() && !ctx.is_const.get() {
-                if let Some(PointerValue(v)) = val.comp_val {
+                if let Some(PointerValue(v)) = idx.comp_val {
                     idx.comp_val = Some(ctx.builder.build_load(v, ""));
                 }
             }
@@ -1481,14 +1448,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                 Type::Pointer(b, m) => match idx.data_type.clone() {
                     Type::IntLiteral | Type::Int(..) => Some(Variable {
                         comp_val: match (val.comp_val, idx.value(ctx), b.size(), ctx.is_const.get()) {
-                            (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(x), false) => Some({
-                                let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                let v0 = ctx.builder.build_int_cast(r, pt, "");
-                                let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
-                                let v2 = ctx.builder.build_int_mul(v0, pt.const_int(x as u64, false), "");
-                                let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                PointerValue(ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), ""))
-                            }),
+                            (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                             _ => None
                         },
                         inter_val: None,
@@ -1500,7 +1460,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                 Type::Reference(b, m) => match *b {
                     Type::Array(b, None) => match idx.data_type.clone() {
                         Type::IntLiteral | Type::Int(_, true) => Some(Variable {
-                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(x), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
                                     let len = ctx.builder.build_extract_value(sv, 1, "").unwrap().into_int_value();
@@ -1515,11 +1475,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let gtmcmp = ctx.builder.build_int_compare(SLT, iv, len, "");
                                     ctx.builder.build_conditional_branch(gtmcmp, ltm, bad);
                                     ctx.builder.position_at_end(ltm);
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                                    let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
                                     if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
@@ -1528,25 +1484,18 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     }
                                     ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
-                                    let phi = ctx.builder.build_phi(v4.get_type(), "");
-                                    phi.add_incoming(&[(&v4, ltm), (&v4.get_type().const_zero(), bad)]);
+                                    let phi = ctx.builder.build_phi(val.get_type(), "");
+                                    phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
                                 }
-                                else {
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                                    Some(v4.into())
-                                }
+                                else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m),
                             export: true
                         }),
                         Type::Int(_, false) => Some(Variable {
-                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(x), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
                                     let len = ctx.builder.build_extract_value(sv, 1, "").unwrap().into_int_value();
@@ -1561,11 +1510,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let gtmcmp = ctx.builder.build_int_compare(ULT, iv, len, "");
                                     ctx.builder.build_conditional_branch(gtmcmp, ltm, bad);
                                     ctx.builder.position_at_end(ltm);
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                                    let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
                                     if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
@@ -1574,18 +1519,11 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     }
                                     ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
-                                    let phi = ctx.builder.build_phi(v4.get_type(), "");
-                                    phi.add_incoming(&[(&v4, ltm), (&v4.get_type().const_zero(), bad)]);
+                                    let phi = ctx.builder.build_phi(val.get_type(), "");
+                                    phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
                                 }
-                                else {
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                                    Some(v4.into())
-                                }
+                                else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m),
@@ -1595,7 +1533,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                     },
                     Type::Array(b, Some(s)) => match idx.data_type.clone() {
                         Type::IntLiteral | Type::Int(_, true) => Some(Variable {
-                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(x), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
                                     let f = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -1609,11 +1547,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let gtmcmp = ctx.builder.build_int_compare(SLT, iv, len, "");
                                     ctx.builder.build_conditional_branch(gtmcmp, ltm, bad);
                                     ctx.builder.position_at_end(ltm);
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                                    let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
                                     if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
@@ -1622,25 +1556,18 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     }
                                     ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
-                                    let phi = ctx.builder.build_phi(v4.get_type(), "");
-                                    phi.add_incoming(&[(&v4, ltm), (&v4.get_type().const_zero(), bad)]);
+                                    let phi = ctx.builder.build_phi(val.get_type(), "");
+                                    phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
                                 }
-                                else {
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                                    Some(v4.into())
-                                }
+                                else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m),
                             export: true
                         }),
                         Type::Int(_, false) => Some(Variable {
-                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(x), false) = (Variable {data_type: Type::Reference(Box::new(Type::Array(b.clone(), None)), m), ..val.clone()}.value(ctx), Variable {data_type: idx.data_type.clone(), ..idx.clone()}.value(ctx), b.size(), ctx.is_const.get()) {
+                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
                                     let f = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -1654,11 +1581,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let gtmcmp = ctx.builder.build_int_compare(ULT, iv, len, "");
                                     ctx.builder.build_conditional_branch(gtmcmp, ltm, bad);
                                     ctx.builder.position_at_end(ltm);
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                                    let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
                                     if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
@@ -1667,18 +1590,11 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     }
                                     ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
-                                    let phi = ctx.builder.build_phi(v4.get_type(), "");
-                                    phi.add_incoming(&[(&v4, ltm), (&v4.get_type().const_zero(), bad)]);
+                                    let phi = ctx.builder.build_phi(val.get_type(), "");
+                                    phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
                                 }
-                                else {
-                                    let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
-                                    let v1 = ctx.builder.build_ptr_to_int(raw, pt, "");
-                                    let v2 = ctx.builder.build_int_mul(iv, pt.const_int(x as u64, false), "");
-                                    let v3 = ctx.builder.build_int_add(v1, v2, "");
-                                    let v4 = ctx.builder.build_int_to_ptr(v3, b.llvm_type(ctx).unwrap().ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                                    Some(v4.into())
-                                }
+                                else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m),
