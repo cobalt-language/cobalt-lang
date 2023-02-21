@@ -123,6 +123,7 @@ impl AST for SubAST {
         let (target, mut errs) = self.target.codegen(ctx);
         let (index, mut es) = self.index.codegen(ctx);
         errs.append(&mut es);
+        if target.data_type == Type::Error || index.data_type == Type::Error {return (Variable::error(), errs)}
         let t = target.data_type.to_string();
         let i = index.data_type.to_string();
         (types::utils::subscript(target, index, ctx).unwrap_or_else(|| {
