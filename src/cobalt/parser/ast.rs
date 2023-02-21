@@ -409,7 +409,7 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnost
                 let (idx, _, mut errs) = parse_expr(toks, "", flags);
                 let (target, _, mut es) = parse_expr(target, "", flags);
                 errs.append(&mut es);
-                (Box::new(SubAST::new((target.loc().0, target.loc().1.start..idx.loc().1.end), target, idx)), errs)
+                (Box::new(SubAST::new((target.loc().0, target.loc().1.start..ts.last().unwrap().loc.1.end), target, idx)), errs)
             }
         },
         Some(_) => parse_groups(toks, flags),
