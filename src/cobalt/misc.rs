@@ -3,12 +3,14 @@ use std::cell::Cell;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
     pub word_size: u16,
+    pub bounds_checks: bool,
     pub(crate) up: bool
 }
 impl Default for Flags {
     fn default()->Self {
         Flags {
             word_size: std::mem::size_of::<isize>() as u16,
+            bounds_checks: true,
             up: true
         }
     }
