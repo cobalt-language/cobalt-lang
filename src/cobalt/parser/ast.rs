@@ -391,6 +391,27 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnost
                 (Box::new(CallAST::new(target.loc().clone(), unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, target, args)), errs)
             }
         },
+        Some(Special(']')) => {
+            let mut depth = 1;
+            let mut idx = toks.len() - 1;
+            while idx > 0 && depth > 0 {
+                idx -= 1;
+                match &toks[idx].data {
+                    Special(']') => depth += 1,
+                    Special('[') => depth -= 1,
+                    _ => {}
+                }
+            }
+            if idx == 0 || depth > 0 {parse_groups(toks, flags)}
+            else {
+                let (target, ts) = toks.split_at(idx);
+                toks = &ts[1..(ts.len() - 1)];
+                let (idx, _, mut errs) = parse_expr(toks, "", flags);
+                let (target, _, mut es) = parse_expr(target, "", flags);
+                errs.append(&mut es);
+                (Box::new(SubAST::new((target.loc().0, target.loc().1.start..idx.loc().1.end), target, idx)), errs)
+            }
+        },
         Some(_) => parse_groups(toks, flags),
         None => (null(), vec![]) // technically unreachable
     }
