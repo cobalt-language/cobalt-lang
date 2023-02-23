@@ -357,6 +357,23 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
             }
             (Box::new(BlockAST::new(start, asts)), errs)
         },
+        Some(Special('[')) => {
+            let start = toks[0].loc.clone();
+            let end = toks.last().unwrap().loc.clone();
+            if toks.last().unwrap().data == Special(']') {toks = &toks[..(toks.len() - 1)];}
+            let mut errs = vec![];
+            toks = &toks[1..];
+            let len = toks.len();
+            let mut idx = 0;
+            let mut asts: Vec<Box<dyn AST>> = vec![];
+            while idx <= len {
+                let (ast, i, mut es) = parse_expr(&toks[idx..], ",", flags);
+                errs.append(&mut es);
+                asts.push(ast);
+                idx += i;
+            }
+            (Box::new(ArrayLiteralAST::new(start, end, asts)), errs)
+        },
         Some(_) => parse_literals(toks),
         None => (null(), vec![])
     }

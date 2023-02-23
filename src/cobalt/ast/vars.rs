@@ -454,7 +454,7 @@ impl AST for VarDefAST {
         out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "vardef: {}", self.name)?;
+        writeln!(f, "let: {}", self.name)?;
         for (name, arg, _) in self.annotations.iter() {
             writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
@@ -917,7 +917,7 @@ impl AST for MutDefAST {
         out + format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "mutdef: {}", self.name)?;
+        writeln!(f, "mut: {}", self.name)?;
         for (name, arg, _) in self.annotations.iter() {
             writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
@@ -1027,6 +1027,6 @@ impl AST for VarGetAST {
         format!("{}", self.name)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "varget: {}", self.name)
+        writeln!(f, "var: {}", self.name)
     }
 }

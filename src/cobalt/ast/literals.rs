@@ -182,3 +182,49 @@ impl AST for StringLiteralAST {
         else {writeln!(f)}
     }
 }
+pub struct ArrayLiteralAST {
+    pub start: Location,
+    pub end: Location,
+    pub vals: Vec<Box<dyn AST>>,
+}
+impl ArrayLiteralAST {
+    pub fn new(start: Location, end: Location, vals: Vec<Box<dyn AST>>) -> Self {ArrayLiteralAST {start, end, vals}}
+}
+impl AST for ArrayLiteralAST {
+    fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        let mut elem = self.vals.get(0).map_or(Type::Null, |x| x.res_type(ctx));
+        for val in self.vals.iter() {
+            if let Some(c) = types::utils::common(&elem, &val.res_type(ctx)) {elem = c;}
+            else {
+                elem = Type::Error;
+                break;
+            }
+        }
+        Type::Array(Box::new(elem), self.vals.len().try_into().ok())
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        todo!("code generation for array literals is not implemented!")
+    }
+    fn to_code(&self) -> String {
+        let mut out = "[".to_string();
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            out += &val.to_code();
+            if len != 1 {
+                out += ", ";
+                len -= 1;
+            }
+        }
+        out + "]"
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "array")?;
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            print_ast_child(f, pre, &**val, len == 1)?;
+            len -= 1;
+        }
+        Ok(())
+    }
+}
