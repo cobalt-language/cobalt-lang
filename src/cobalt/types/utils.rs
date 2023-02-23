@@ -1628,25 +1628,57 @@ pub fn impl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 impl_convert(val, target, ctx)
             },
             Type::Reference(b, true) => {
-                if &target == &Type::Reference(b.clone(), false) {Some(Variable {data_type: Type::Reference(b, false), ..val})}
-                else {
+                if &target == &Type::Reference(b.clone(), false) {return Some(Variable {data_type: Type::Reference(b, false), ..val});}
+                match *b {
+                    Type::Array(b, Some(_)) => match target {
+                        Type::Pointer(b2, m) if b == b2 => Some(Variable {data_type: Type::Pointer(b, m), ..val}),
+                        _ => None
+                    },
+                    Type::Array(b, None) => match target {
+                        Type::Pointer(b2, m) if b == b2 => {
+                            val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)), true);
+                            if let Some(StructValue(sv)) = val.value(ctx) {
+                                val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                            }
+                            Some(Variable {data_type: Type::Pointer(b, m), ..val})
+                        },
+                        _ => None
+                    },
+                    b => {
+                        if !ctx.is_const.get() && b.register() {
+                            if let Some(PointerValue(v)) = val.comp_val {
+                                val.comp_val = Some(ctx.builder.build_load(v, ""));
+                            }
+                        }
+                        val.data_type = b;
+                        impl_convert(val, target, ctx)
+                    }
+                }
+            },
+            Type::Reference(b, false) => match *b {
+                Type::Array(b, Some(_)) => match target {
+                    Type::Pointer(b2, false) if b == b2 => Some(Variable {data_type: Type::Pointer(b, false), ..val}),
+                    _ => None
+                },
+                Type::Array(b, None) => match target {
+                    Type::Pointer(b2, false) if b == b2 => {
+                        val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)), false);
+                        if let Some(StructValue(sv)) = val.value(ctx) {
+                            val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                        }
+                        Some(Variable {data_type: Type::Pointer(b, false), ..val})
+                    },
+                    _ => None
+                },
+                b => {
                     if !ctx.is_const.get() && b.register() {
                         if let Some(PointerValue(v)) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(v, ""));
                         }
                     }
-                    val.data_type = *b;
+                    val.data_type = b;
                     impl_convert(val, target, ctx)
                 }
-            },
-            Type::Reference(b, false) => {
-                if !ctx.is_const.get() && b.register() {
-                    if let Some(PointerValue(v)) = val.comp_val {
-                        val.comp_val = Some(ctx.builder.build_load(v, ""));
-                    }
-                }
-                val.data_type = *b;
-                impl_convert(val, target, ctx)
             },
             Type::IntLiteral => match target {
                 x @ Type::Int(..) => Some(Variable {
@@ -1752,25 +1784,57 @@ pub fn expl_convert<'ctx>(mut val: Variable<'ctx>, target: Type, ctx: &CompCtx<'
                 impl_convert(val, target, ctx)
             },
             Type::Reference(b, true) => {
-                if &target == &Type::Reference(b.clone(), false) {Some(Variable {data_type: Type::Reference(b, false), ..val})}
-                else {
+                if &target == &Type::Reference(b.clone(), false) {return Some(Variable {data_type: Type::Reference(b, false), ..val});}
+                match *b {
+                    Type::Array(b, Some(_)) => match target {
+                        Type::Pointer(b2, m) if b == b2 => Some(Variable {data_type: Type::Pointer(b, m), ..val}),
+                        _ => None
+                    },
+                    Type::Array(b, None) => match target {
+                        Type::Pointer(b2, m) if b == b2 => {
+                            val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)), true);
+                            if let Some(StructValue(sv)) = val.value(ctx) {
+                                val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                            }
+                            Some(Variable {data_type: Type::Pointer(b, m), ..val})
+                        },
+                        _ => None
+                    },
+                    b => {
+                        if !ctx.is_const.get() && b.register() {
+                            if let Some(PointerValue(v)) = val.comp_val {
+                                val.comp_val = Some(ctx.builder.build_load(v, ""));
+                            }
+                        }
+                        val.data_type = b;
+                        impl_convert(val, target, ctx)
+                    }
+                }
+            },
+            Type::Reference(b, false) => match *b {
+                Type::Array(b, Some(_)) => match target {
+                    Type::Pointer(b2, false) if b == b2 => Some(Variable {data_type: Type::Pointer(b, false), ..val}),
+                    _ => None
+                },
+                Type::Array(b, None) => match target {
+                    Type::Pointer(b2, false) if b == b2 => {
+                        val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)), false);
+                        if let Some(StructValue(sv)) = val.value(ctx) {
+                            val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                        }
+                        Some(Variable {data_type: Type::Pointer(b, false), ..val})
+                    },
+                    _ => None
+                },
+                b => {
                     if !ctx.is_const.get() && b.register() {
                         if let Some(PointerValue(v)) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(v, ""));
                         }
                     }
-                    val.data_type = *b;
+                    val.data_type = b;
                     impl_convert(val, target, ctx)
                 }
-            },
-            Type::Reference(b, false) => {
-                if !ctx.is_const.get() && b.register() {
-                    if let Some(PointerValue(v)) = val.comp_val {
-                        val.comp_val = Some(ctx.builder.build_load(v, ""));
-                    }
-                }
-                val.data_type = *b;
-                impl_convert(val, target, ctx)
             },
             Type::IntLiteral => match target {
                 x @ Type::Int(..) => Some(Variable {
