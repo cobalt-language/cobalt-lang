@@ -103,7 +103,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*316*/ ErrorInfo::new("bit casts must be done on statically sized types", ""),
     /*317*/ ErrorInfo::new("bit cast target must be same size as source", ""),
     /*318*/ ErrorInfo::new("subscript is not defined for these types", ""),
-    /*319*/ None,
+    /*319*/ ErrorInfo::new("array value types do not match", ""),
     /*320*/ ErrorInfo::new("value does not exist", ""),
     /*321*/ ErrorInfo::new("value is not a module", ""),
     /*322*/ ErrorInfo::new("value is not a variable", ""),
@@ -112,7 +112,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*325*/ ErrorInfo::new("redefinition of values in module", "")]),
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", ""),
-    /*391*/ ErrorInfo::new("unknown intrinisc", "")]),
+    /*391*/ ErrorInfo::new("unknown intrinisc", ""),
+    /*392*/ ErrorInfo::new("array literal is too long", "")]),
     (410, &[
     /*410*/ ErrorInfo::new("unknown annotation", ""),
     /*411*/ ErrorInfo::new("@static annotation cannot have arguments", ""),
