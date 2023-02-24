@@ -1,5 +1,6 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
+use inkwell::types::BasicType;
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -201,10 +202,53 @@ impl AST for ArrayLiteralAST {
                 break;
             }
         }
-        Type::Array(Box::new(elem), self.vals.len().try_into().ok())
+        Type::Reference(Box::new(Type::Array(Box::new(elem), Some(self.vals.len().try_into().unwrap_or(u32::MAX)))), true)
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        todo!("code generation for array literals is not implemented!")
+        let mut elems = vec![];
+        let mut ty = Type::Null;
+        let mut first = true;
+        let mut elem_loc: Location = (0, 0..0);
+        let mut errs = vec![];
+        for val in self.vals.iter() {
+            let (v, mut es) = val.codegen(ctx);
+            errs.append(&mut es);
+            if first {
+                first = false;
+                elem_loc = val.loc();
+                ty = v.data_type.clone();
+            }
+            else if ty != v.data_type {
+                if let Some(t) = types::utils::common(&ty, &v.data_type) {
+                    ty = t;
+                    elem_loc = val.loc();
+                }
+                else {
+                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {}", v.data_type))).note(elem_loc.clone(), format!("type set to {ty} here")));
+                }
+            }
+            elems.push(v);
+        }
+        if elems.len() > u32::MAX as usize {
+            errs.push(Diagnostic::error(self.loc(), 300, Some(format!("this array has {} elements, the max is 4294967295", elems.len()))));
+            elems.truncate(u32::MAX as usize);
+        }
+        let elems = elems.into_iter().filter_map(|v| types::utils::impl_convert(v, ty.clone(), ctx)).collect::<Vec<_>>();
+        (Variable {
+            comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
+                let alloca = ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "");
+                let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                let loaded = ctx.builder.build_load(alloca, "").into_array_value();
+                for (n, elem) in elems.iter().enumerate() {
+                    ctx.builder.build_insert_value(loaded, elem.value(ctx).unwrap_or_else(|| llt.const_zero()), n as u32, "");
+                }
+                Some(llv.into())
+            } else {None},
+            inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
+            data_type: Type::Reference(Box::new(ty), true),
+            export: true
+        }, errs)
+
     }
     fn to_code(&self) -> String {
         let mut out = "[".to_string();
