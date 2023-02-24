@@ -275,8 +275,7 @@ impl AST for ArrayLiteralAST {
                 Some(llv.into())
             } else {None},
             data_type: Type::Reference(Box::new(Type::Array(Box::new(ty), Some(elems.len() as u32))), true),
-            inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
-            export: true
+            inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect()))
         }, errs)
 
     }

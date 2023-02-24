@@ -34,11 +34,11 @@ impl AST for ModuleAST {
         ctx.map_vars(|mut v| {
             match v.lookup_mod(&self.name) {
                 Ok((m, i)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
-                Err(UndefValue::NotAModule(x)) => {
+                Err(UndefVariable::NotAModule(x)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     Box::new(VarMap::new(Some(v)))
                 },
-                Err(UndefValue::DoesNotExist(x)) => {
+                Err(UndefVariable::DoesNotExist(x)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     Box::new(VarMap::new(Some(v)))
                 }

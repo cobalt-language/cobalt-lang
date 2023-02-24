@@ -132,15 +132,14 @@ impl AST for VarDefAST {
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 21, None)); None}),
                     inter_val: None,
-                    data_type: Type::Reference(Box::new(dt), false),
-                    export: true
-                }))) {
+                    data_type: Type::Reference(Box::new(dt), false)
+                }, VariableData::new(self.loc.clone())))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -184,7 +183,7 @@ impl AST for VarDefAST {
                 };
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -195,20 +194,19 @@ impl AST for VarDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
-                            data_type: Type::Reference(Box::new(dt), false),
-                            export: true
-                        })))
+                            data_type: Type::Reference(Box::new(dt), false)
+                        }, VariableData::new(self.loc.clone()))))
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -292,7 +290,7 @@ impl AST for VarDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Value::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -362,16 +360,15 @@ impl AST for VarDefAST {
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
-                                data_type: Type::Reference(Box::new(dt), false),
-                                export: true
-                            })))
+                                data_type: Type::Reference(Box::new(dt), false)
+                            }, VariableData::new(self.loc.clone()))))
                         }
                         else {
                             unsafe {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -420,14 +417,14 @@ impl AST for VarDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -487,7 +484,7 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || val.data_type.register() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -495,19 +492,18 @@ impl AST for VarDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
-                    data_type: Type::Reference(Box::new(val.data_type), false),
-                    export: true
-                })))
+                    data_type: Type::Reference(Box::new(val.data_type), false)
+                }, VariableData::new(self.loc.clone()))))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
-                Err(RedefValue::NotAModule(x, _)) => {
+                Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
                 },
-                Err(RedefValue::AlreadyExists(x, _)) => {
+                Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Value::error(), errs)
                 }
@@ -660,15 +656,14 @@ impl AST for MutDefAST {
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 23, None)); None}),
                     inter_val: None,
-                    data_type: Type::Reference(Box::new(dt), true),
-                    export: true
-                }))) {
+                    data_type: Type::Reference(Box::new(dt), true)
+                }, VariableData::new(self.loc.clone())))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -714,7 +709,7 @@ impl AST for MutDefAST {
                 ctx.restore_scope(old_scope);
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -725,20 +720,19 @@ impl AST for MutDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
-                            data_type: Type::Reference(Box::new(dt), false),
-                            export: true
-                        })))
+                            data_type: Type::Reference(Box::new(dt), false)
+                        }, VariableData::new(self.loc.clone()))))
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -822,7 +816,7 @@ impl AST for MutDefAST {
                             errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
                             Value::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -892,16 +886,15 @@ impl AST for MutDefAST {
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
-                                data_type: Type::Reference(Box::new(dt), false),
-                                export: true
-                            })))
+                                data_type: Type::Reference(Box::new(dt), false)
+                            }, VariableData::new(self.loc.clone()))))
                         }
                         else {
                             unsafe {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -950,14 +943,14 @@ impl AST for MutDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
-                    Err(RedefValue::NotAModule(x, _)) => {
+                    Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefValue::AlreadyExists(x, _)) => {
+                    Err(RedefVariable::AlreadyExists(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                         (Value::error(), errs)
                     }
@@ -1016,7 +1009,7 @@ impl AST for MutDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -1024,19 +1017,18 @@ impl AST for MutDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
-                    data_type: Type::Reference(Box::new(val.data_type), true),
-                    export: true
-                })))
+                    data_type: Type::Reference(Box::new(val.data_type), true)
+                }, VariableData::new(self.loc.clone()))))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val})))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
-                Err(RedefValue::NotAModule(x, _)) => {
+                Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
                 },
-                Err(RedefValue::AlreadyExists(x, _)) => {
+                Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                     (Value::error(), errs)
                 }
@@ -1115,13 +1107,13 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {export: true, ..val}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone())))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
-            Err(RedefValue::NotAModule(x, _)) => {
+            Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Value::error(), errs)
             },
-            Err(RedefValue::AlreadyExists(x, _)) => {
+            Err(RedefVariable::AlreadyExists(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
                 (Value::error(), errs)
             }
@@ -1153,15 +1145,15 @@ impl VarGetAST {
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Ok(Symbol::Variable(x)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
+        if let Ok(Symbol::Variable(x, _)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
         else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match ctx.with_vars(|v| v.lookup(&self.name)) {
-            Ok(Symbol::Variable(x)) => (x.clone(), vec![]),
+            Ok(Symbol::Variable(x, _)) => (x.clone(), vec![]),
             Ok(Symbol::Module(..)) => (Value::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
-            Err(UndefValue::NotAModule(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
-            Err(UndefValue::DoesNotExist(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
+            Err(UndefVariable::NotAModule(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
+            Err(UndefVariable::DoesNotExist(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
         }
     }
     fn to_code(&self) -> String {

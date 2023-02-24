@@ -302,8 +302,7 @@ impl AST for FnDefAST {
                             })).collect()
                         })),
                         data_type: fty.clone(),
-                        export: true
-                    }))).clone();
+                    }, VariableData::new(self.loc.clone())))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -323,8 +322,7 @@ impl AST for FnDefAST {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        export: true
-                                    }))).map_or((), |_| ());
+                                    }, VariableData::default()))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
@@ -332,8 +330,7 @@ impl AST for FnDefAST {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
-                                        export: true
-                                    }))).map_or((), |_| ());
+                                    }, VariableData::default()))).map_or((), |_| ());
                                 }
                             }
                         }
@@ -376,9 +373,8 @@ impl AST for FnDefAST {
                                 }
                             })).collect()
                         })),
-                        data_type: fty,
-                        export: true
-                    }))).clone()
+                        data_type: fty
+                    }, VariableData::new(self.loc.clone())))).clone()
                 }
             }
             else if **ret == Type::Null {
@@ -420,9 +416,8 @@ impl AST for FnDefAST {
                                 }
                             })).collect()
                         })),
-                        data_type: fty.clone(),
-                        export: true
-                    }))).clone();
+                        data_type: fty.clone()
+                    }, VariableData::new(self.loc.clone())))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -441,18 +436,16 @@ impl AST for FnDefAST {
                                     ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: Some(param),
                                         inter_val: None,
-                                        data_type: ty.clone(),
-                                        export: true
-                                    }))).map_or((), |_| ());
+                                        data_type: ty.clone()
+                                    }, VariableData::default()))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
                                     ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: None,
                                         inter_val: None,
-                                        data_type: ty.clone(),
-                                        export: true
-                                    }))).map_or((), |_| ());
+                                        data_type: ty.clone()
+                                    }, VariableData::default()))).map_or((), |_| ());
                                 }
                             }
                         }
@@ -491,9 +484,8 @@ impl AST for FnDefAST {
                                 }
                             })).collect()
                         })),
-                        data_type: fty,
-                        export: true
-                    }))).clone()
+                        data_type: fty
+                    }, VariableData::new(self.loc.clone())))).clone()
                 }
             }
             else {
@@ -521,9 +513,8 @@ impl AST for FnDefAST {
                             }
                         })).collect()
                     })),
-                    data_type: fty,
-                    export: true
-                }))).clone()
+                    data_type: fty
+                }, VariableData::new(self.loc.clone())))).clone()
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
