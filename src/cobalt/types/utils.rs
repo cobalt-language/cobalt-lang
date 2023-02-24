@@ -1482,8 +1482,8 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
-                                    ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
+                                    ctx.builder.position_at_end(merge);
                                     let phi = ctx.builder.build_phi(val.get_type(), "");
                                     phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
@@ -1517,8 +1517,8 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
-                                    ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
+                                    ctx.builder.position_at_end(merge);
                                     let phi = ctx.builder.build_phi(val.get_type(), "");
                                     phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
@@ -1554,8 +1554,8 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
-                                    ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
+                                    ctx.builder.position_at_end(merge);
                                     let phi = ctx.builder.build_phi(val.get_type(), "");
                                     phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())
@@ -1588,8 +1588,8 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
-                                    ctx.builder.build_unreachable();
                                     ctx.builder.build_unconditional_branch(merge);
+                                    ctx.builder.position_at_end(merge);
                                     let phi = ctx.builder.build_phi(val.get_type(), "");
                                     phi.add_incoming(&[(&val, ltm), (&val.get_type().const_zero(), bad)]);
                                     Some(phi.as_basic_value())

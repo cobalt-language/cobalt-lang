@@ -194,9 +194,23 @@ impl ArrayLiteralAST {
 impl AST for ArrayLiteralAST {
     fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        let mut elem = self.vals.get(0).map_or(Type::Null, |x| x.res_type(ctx));
+        let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
+            Type::IntLiteral => Type::Int(64, false),
+            Type::Reference(b, m) => match *b {
+                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                x => x
+            },
+            x => x
+        });
         for val in self.vals.iter() {
-            if let Some(c) = types::utils::common(&elem, &val.res_type(ctx)) {elem = c;}
+            if let Some(c) = types::utils::common(&elem, &match val.res_type(ctx) {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            }) {elem = c;}
             else {
                 elem = Type::Error;
                 break;
@@ -212,19 +226,27 @@ impl AST for ArrayLiteralAST {
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
+            let dt = match v.data_type.clone() {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            };
             errs.append(&mut es);
             if first {
                 first = false;
                 elem_loc = val.loc();
-                ty = v.data_type.clone();
+                ty = dt;
             }
-            else if ty != v.data_type {
-                if let Some(t) = types::utils::common(&ty, &v.data_type) {
+            else if ty != dt {
+                if let Some(t) = types::utils::common(&ty, &dt) {
                     ty = t;
                     elem_loc = val.loc();
                 }
                 else {
-                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {}", v.data_type))).note(elem_loc.clone(), format!("type set to {ty} here")));
+                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {dt}"))).note(elem_loc.clone(), format!("type set to {ty} here")));
                 }
             }
             elems.push(v);
@@ -238,14 +260,14 @@ impl AST for ArrayLiteralAST {
             comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
                 let alloca = ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "");
                 let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                let loaded = ctx.builder.build_load(alloca, "").into_array_value();
                 for (n, elem) in elems.iter().enumerate() {
-                    ctx.builder.build_insert_value(loaded, elem.value(ctx).unwrap_or_else(|| llt.const_zero()), n as u32, "");
+                    let gep = unsafe {ctx.builder.build_in_bounds_gep(llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
+                    ctx.builder.build_store(gep, elem.value(ctx).unwrap_or_else(|| llt.const_zero()));
                 }
                 Some(llv.into())
             } else {None},
+            data_type: Type::Reference(Box::new(Type::Array(Box::new(ty), Some(elems.len() as u32))), true),
             inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
-            data_type: Type::Reference(Box::new(ty), true),
             export: true
         }, errs)
 
