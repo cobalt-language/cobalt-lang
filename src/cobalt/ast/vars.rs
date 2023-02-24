@@ -136,11 +136,15 @@ impl AST for VarDefAST {
                 }, VariableData::new(self.loc.clone())))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -203,11 +207,15 @@ impl AST for VarDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -421,11 +429,15 @@ impl AST for VarDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -500,11 +512,15 @@ impl AST for VarDefAST {
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
                 },
-                Err(RedefVariable::AlreadyExists(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                    let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                    if let Some(loc) = d {
+                        err.add_note(loc, "previously defined here".to_string());
+                    }
+                    errs.push(err);
                     (Value::error(), errs)
                 }
             }
@@ -660,11 +676,15 @@ impl AST for MutDefAST {
                 }, VariableData::new(self.loc.clone())))) {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -729,11 +749,15 @@ impl AST for MutDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -947,11 +971,15 @@ impl AST for MutDefAST {
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
                     },
-                    Err(RedefVariable::AlreadyExists(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                        let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                        if let Some(loc) = d {
+                            err.add_note(loc, "previously defined here".to_string());
+                        }
+                        errs.push(err);
                         (Value::error(), errs)
                     }
                 }
@@ -1025,11 +1053,15 @@ impl AST for MutDefAST {
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
                 },
-                Err(RedefVariable::AlreadyExists(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                    let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                    if let Some(loc) = d {
+                        err.add_note(loc, "previously defined here".to_string());
+                    }
+                    errs.push(err);
                     (Value::error(), errs)
                 }
             }
@@ -1110,11 +1142,15 @@ impl AST for ConstDefAST {
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone())))) {
             Ok(x) => (x.as_var().unwrap().clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
-                errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Value::error(), errs)
             },
-            Err(RedefVariable::AlreadyExists(x, _)) => {
-                errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+            Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                if let Some(loc) = d {
+                    err.add_note(loc, "previously defined here".to_string());
+                }
+                errs.push(err);
                 (Value::error(), errs)
             }
         }

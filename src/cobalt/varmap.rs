@@ -11,7 +11,7 @@ pub enum UndefVariable {
 #[derive(Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
-    AlreadyExists(usize, Symbol<'ctx>)
+    AlreadyExists(usize, Option<Location>, Symbol<'ctx>)
 }
 #[derive(Clone)]
 pub struct FnData {
@@ -354,7 +354,7 @@ impl<'ctx> VarMap<'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(_) => Err(RedefVariable::AlreadyExists(idx, sym)),
+            Entry::Occupied(x) => Err(RedefVariable::AlreadyExists(idx, if let Symbol::Variable(_, d) = x.get() {d.loc.clone()} else {None}, sym)),
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
     }
@@ -369,7 +369,7 @@ impl<'ctx> VarMap<'ctx> {
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol::Variable(..) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym.0, sym.1))),
+                Symbol::Variable(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc.clone(), Symbol::Module(sym.0, sym.1))),
                 Symbol::Module(ref mut m, ref mut i) => {
                     *m = sym.0;
                     i.append(&mut sym.1);
