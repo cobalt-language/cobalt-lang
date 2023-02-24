@@ -68,7 +68,7 @@ impl AST for FnDefAST {
             }
         }, pt == &ParamType::Constant)).collect())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (ret, mut errs) = self.ret.into_type(ctx);
         let ret = match ret {
             Ok(t) => t,
@@ -259,7 +259,7 @@ impl AST for FnDefAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
-        if target_match == 0 {return (Variable::null(), errs)}
+        if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {
@@ -278,7 +278,7 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -319,7 +319,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -328,7 +328,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -353,7 +353,7 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                         comp_val: None,
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -397,7 +397,7 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -438,7 +438,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -447,7 +447,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Variable {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -468,7 +468,7 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                         comp_val: None,
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -498,7 +498,7 @@ impl AST for FnDefAST {
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                     comp_val: None,
                     inter_val: Some(InterData::Function(FnData {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -528,11 +528,11 @@ impl AST for FnDefAST {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
-                    (Variable::error(), errs)
+                    (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
-                    (Variable::error(), errs)
+                    (Value::error(), errs)
                 }
             }
         } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
@@ -607,13 +607,13 @@ impl AST for CallAST {
             _ => Type::Error
         }
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (types::utils::call(val, self.loc.clone(), self.cparen.clone(), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
-        }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Variable::error()}), errs)
+        }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Value::error()}), errs)
     }
     fn to_code(&self) -> String {
         let mut out = format!("{}(", self.target.to_code());
@@ -649,7 +649,7 @@ impl IntrinsicAST {
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {if self.name == "asm" {Type::InlineAsm} else {Type::Error}}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
             "asm" => {
                 if let Some(ref args) = self.args {
@@ -700,7 +700,7 @@ impl AST for IntrinsicAST {
                                 "usize" => Type::Int(ctx.flags.word_size * 8, true),
                                 x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(64), false),
                                 x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(64), true),
-                                x => return (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 433, Some(format!("expected 'null', 'f{{size}}', 'i{{size}}', 'u{{size}}', or a pointer to one, got {x}")))])
+                                x => return (Value::error(), vec![Diagnostic::error(self.loc.clone(), 433, Some(format!("expected 'null', 'f{{size}}', 'i{{size}}', 'u{{size}}', or a pointer to one, got {x}")))])
                             };
                             for m in modifiers {
                                 match m {
@@ -714,17 +714,17 @@ impl AST for IntrinsicAST {
                             (ty, constraint[(idx + 1)..].to_string())
                         }
                         else {(Type::Null, constraint.to_string())};
-                        (Variable::metaval(InterData::InlineAsm(Box::new(ty), constraint, body), Type::InlineAsm), vec![])
+                        (Value::metaval(InterData::InlineAsm(Box::new(ty), constraint, body), Type::InlineAsm), vec![])
                     }
                     else {
-                        (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 431, None)])
+                        (Value::error(), vec![Diagnostic::error(self.loc.clone(), 431, None)])
                     }
                 }
                 else {
-                    (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 430, None)])
+                    (Value::error(), vec![Diagnostic::error(self.loc.clone(), 430, None)])
                 }
             },
-            x => (Variable::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
+            x => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }
     fn to_code(&self) -> String {self.name.clone() + self.args.as_ref().map(|x| x.as_str()).unwrap_or("")}

@@ -11,9 +11,9 @@ impl CastAST {
 impl AST for CastAST {
     fn loc(&self) -> Location {(self.target_loc.0, self.val.loc().1.start..self.target_loc.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.target.into_type(ctx).0.unwrap_or(Type::Error)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.val.codegen(ctx);
-        if val.data_type == Type::Error {return (Variable::error(), errs)}
+        if val.data_type == Type::Error {return (Value::error(), errs)}
         let (t, mut es) = self.target.into_type(ctx);
         errs.append(&mut es);
         let t = match t {
@@ -41,7 +41,7 @@ impl AST for CastAST {
         if let Some(val) = types::utils::expl_convert(val, t, ctx) {(val, errs)}
         else {
             errs.push(Diagnostic::error(self.loc.clone(), 312, Some(err)).note(self.val.loc(), l).note(self.target_loc.clone(), r));
-            (Variable::error(), errs)
+            (Value::error(), errs)
         }
     }
     fn to_code(&self) -> String {
@@ -64,9 +64,9 @@ impl BitCastAST {
 impl AST for BitCastAST {
     fn loc(&self) -> Location {(self.target_loc.0, self.val.loc().1.start..self.target_loc.1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.target.into_type(ctx).0.unwrap_or(Type::Error)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
-        if val.data_type == Type::Error {return (Variable::error(), errs)}
+        if val.data_type == Type::Error {return (Value::error(), errs)}
         let (t, mut es) = self.target.into_type(ctx);
         errs.append(&mut es);
         let t = match t {
@@ -92,12 +92,12 @@ impl AST for BitCastAST {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
                     errs.push(Diagnostic::error(self.loc.clone(), 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size())).note(self.target_loc.clone(), format!("target type is {t}, which has a size of {}", t.size())));
-                    return (Variable::error(), errs)
+                    return (Value::error(), errs)
                 }
             },
             _ => {
                 errs.push(Diagnostic::error(self.loc.clone(), 316, None).note(self.val.loc(), format!("source type is {}", val.data_type)).note(self.target_loc.clone(), format!("target type is {t}")));
-                return (Variable::error(), errs)
+                return (Value::error(), errs)
             }
         }
         if let (Some(llt), Some(ctval)) = (t.llvm_type(ctx), val.comp_val) {
@@ -105,7 +105,7 @@ impl AST for BitCastAST {
             val.data_type = t;
             (val, errs)
         }
-        else {(Variable::error(), errs)}
+        else {(Value::error(), errs)}
     }
     fn to_code(&self) -> String {
         format!("{}:? {}", self.val.to_code(), self.target)
@@ -124,7 +124,7 @@ impl NullAST {
 impl AST for NullAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {(Variable::null(), vec![])}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::null(), vec![])}
     fn to_code(&self) -> String {
         "null".to_string()
     }

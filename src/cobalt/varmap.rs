@@ -117,38 +117,38 @@ impl InterData {
     }
 }
 #[derive(Clone)]
-pub struct Variable<'ctx> {
+pub struct Value<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData>,
     pub data_type: Type,
     pub export: bool
 }
-impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}}
-    pub fn null() -> Self {Variable {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null, export: true}}
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, export: true}}
-    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, export: true}}
-    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, export: true}}
+impl<'ctx> Value<'ctx> {
+    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error, export: true}}
+    pub fn null() -> Self {Value {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null, export: true}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type, export: true}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, export: true}}
+    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type, export: true}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 #[derive(Clone)]
 pub enum Symbol<'ctx> {
-    Variable(Variable<'ctx>),
+    Variable(Value<'ctx>),
     Module(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)
 }
 impl<'ctx> Symbol<'ctx> {
-    pub fn into_var(self) -> Option<Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn into_var(self) -> Option<Value<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
-    pub fn as_var(&self) -> Option<&Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn as_var(&self) -> Option<&Value<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
     pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
-    pub fn as_var_mut(&mut self) -> Option<&mut Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn as_var_mut(&mut self) -> Option<&mut Value<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
     pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
     pub fn is_var(&self) -> bool {if let Symbol::Variable(_) = self {true} else {false}}
     pub fn is_mod(&self) -> bool {if let Symbol::Module(..) = self {true} else {false}}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
             Symbol::Variable(v) => if v.export {
-                out.write_all(&[1])?; // Variable
+                out.write_all(&[1])?; // Value
                 out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
                 out.write_all(&[0])?;
                 if let Some(v) = v.inter_val.as_ref() {v.save(out)?}
@@ -175,7 +175,7 @@ impl<'ctx> Symbol<'ctx> {
         buf.read_exact(std::slice::from_mut(&mut c))?;
         match c {
             1 => {
-                let mut var = Variable::error();
+                let mut var = Value::error();
                 var.export = true;
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
@@ -237,7 +237,7 @@ impl<'ctx> Symbol<'ctx> {
     }
     pub fn dump(&self, mut depth: usize) {
         match self {
-            Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
+            Symbol::Variable(Value {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
             Symbol::Module(m, i) => {
                 eprintln!("module");
                 depth += 4;
