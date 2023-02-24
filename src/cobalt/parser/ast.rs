@@ -357,6 +357,23 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
             }
             (Box::new(BlockAST::new(start, asts)), errs)
         },
+        Some(Special('[')) => {
+            let start = toks[0].loc.clone();
+            let end = toks.last().unwrap().loc.clone();
+            if toks.last().unwrap().data == Special(']') {toks = &toks[..(toks.len() - 1)];}
+            let mut errs = vec![];
+            toks = &toks[1..];
+            let len = toks.len();
+            let mut idx = 0;
+            let mut asts: Vec<Box<dyn AST>> = vec![];
+            while idx <= len {
+                let (ast, i, mut es) = parse_expr(&toks[idx..], ",", flags);
+                errs.append(&mut es);
+                asts.push(ast);
+                idx += i;
+            }
+            (Box::new(ArrayLiteralAST::new(start, end, asts)), errs)
+        },
         Some(_) => parse_literals(toks),
         None => (null(), vec![])
     }
@@ -389,6 +406,27 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnost
                 let (target, _, mut es) = parse_expr(target, "", flags);
                 errs.append(&mut es);
                 (Box::new(CallAST::new(target.loc().clone(), unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, target, args)), errs)
+            }
+        },
+        Some(Special(']')) => {
+            let mut depth = 1;
+            let mut idx = toks.len() - 1;
+            while idx > 0 && depth > 0 {
+                idx -= 1;
+                match &toks[idx].data {
+                    Special(']') => depth += 1,
+                    Special('[') => depth -= 1,
+                    _ => {}
+                }
+            }
+            if idx == 0 || depth > 0 {parse_groups(toks, flags)}
+            else {
+                let (target, ts) = toks.split_at(idx);
+                toks = &ts[1..(ts.len() - 1)];
+                let (idx, _, mut errs) = parse_expr(toks, "", flags);
+                let (target, _, mut es) = parse_expr(target, "", flags);
+                errs.append(&mut es);
+                (Box::new(SubAST::new((target.loc().0, target.loc().1.start..ts.last().unwrap().loc.1.end), target, idx)), errs)
             }
         },
         Some(_) => parse_groups(toks, flags),

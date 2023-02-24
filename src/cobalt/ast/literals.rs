@@ -1,5 +1,6 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
+use inkwell::types::BasicType;
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -180,5 +181,124 @@ impl AST for StringLiteralAST {
         write!(f, "string: {:?}", self.val)?;
         if let Some((ref s, _)) = self.suffix {write!(f, ", suffix: {}", s)}
         else {writeln!(f)}
+    }
+}
+pub struct ArrayLiteralAST {
+    pub start: Location,
+    pub end: Location,
+    pub vals: Vec<Box<dyn AST>>,
+}
+impl ArrayLiteralAST {
+    pub fn new(start: Location, end: Location, vals: Vec<Box<dyn AST>>) -> Self {ArrayLiteralAST {start, end, vals}}
+}
+impl AST for ArrayLiteralAST {
+    fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
+            Type::IntLiteral => Type::Int(64, false),
+            Type::Reference(b, m) => match *b {
+                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                x => x
+            },
+            x => x
+        });
+        for val in self.vals.iter() {
+            if let Some(c) = types::utils::common(&elem, &match val.res_type(ctx) {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            }) {elem = c;}
+            else {
+                elem = Type::Error;
+                break;
+            }
+        }
+        Type::Reference(Box::new(Type::Array(Box::new(elem), Some(self.vals.len().try_into().unwrap_or(u32::MAX)))), true)
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+        let mut elems = vec![];
+        let mut ty = Type::Null;
+        let mut first = true;
+        let mut elem_loc: Location = (0, 0..0);
+        let mut errs = vec![];
+        for val in self.vals.iter() {
+            let (v, mut es) = val.codegen(ctx);
+            let dt = match v.data_type.clone() {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            };
+            errs.append(&mut es);
+            if first {
+                first = false;
+                elem_loc = val.loc();
+                ty = dt;
+            }
+            else if ty != dt {
+                if let Some(t) = types::utils::common(&ty, &dt) {
+                    ty = t;
+                    elem_loc = val.loc();
+                }
+                else {
+                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {dt}"))).note(elem_loc.clone(), format!("type set to {ty} here")));
+                }
+            }
+            elems.push(v);
+        }
+        if elems.len() > u32::MAX as usize {
+            errs.push(Diagnostic::error(self.loc(), 300, Some(format!("this array has {} elements, the max is 4294967295", elems.len()))));
+            elems.truncate(u32::MAX as usize);
+        }
+        let elems = elems.into_iter().filter_map(|v| types::utils::impl_convert(v, ty.clone(), ctx)).collect::<Vec<_>>();
+        (Variable {
+            comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
+                let arr_ty = llt.array_type(elems.len() as u32);
+                let alloca = 
+                    if ctx.global.get() {
+                        let gv = ctx.module.add_global(arr_ty, None, "__internals.arr");
+                        gv.set_linkage(inkwell::module::Linkage::Private);
+                        gv.set_initializer(&arr_ty.const_zero());
+                        gv.as_pointer_value()
+                    }
+                    else {ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "")};
+                let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
+                for (n, elem) in elems.iter().enumerate() {
+                    let gep = unsafe {ctx.builder.build_in_bounds_gep(llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
+                    ctx.builder.build_store(gep, elem.value(ctx).unwrap_or_else(|| llt.const_zero()));
+                }
+                Some(llv.into())
+            } else {None},
+            data_type: Type::Reference(Box::new(Type::Array(Box::new(ty), Some(elems.len() as u32))), true),
+            inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
+            export: true
+        }, errs)
+
+    }
+    fn to_code(&self) -> String {
+        let mut out = "[".to_string();
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            out += &val.to_code();
+            if len != 1 {
+                out += ", ";
+                len -= 1;
+            }
+        }
+        out + "]"
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "array")?;
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            print_ast_child(f, pre, &**val, len == 1)?;
+            len -= 1;
+        }
+        Ok(())
     }
 }
