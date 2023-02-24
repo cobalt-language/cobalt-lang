@@ -250,7 +250,8 @@ impl AST for VarDefAST {
                 };
                 let mut errs;
                 match if let Some(t) = dt.llvm_type(ctx) {
-                    if ctx.is_const.get() {
+                    let old_global = ctx.global.replace(true);
+                    let val = if ctx.is_const.get() {
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -372,7 +373,9 @@ impl AST for VarDefAST {
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                         }
-                    }
+                    };
+                    ctx.global.set(old_global);
+                    val
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);
@@ -777,7 +780,8 @@ impl AST for MutDefAST {
                     }
                 };
                 match if let Some(t) = dt.llvm_type(ctx) {
-                    if ctx.is_const.get() {
+                    let old_global = ctx.global.replace(true);
+                    let val = if ctx.is_const.get() {
                         let (val, es) = self.val.codegen(ctx);
                         errs = es;
                         let t2 = val.data_type.clone();
@@ -899,7 +903,9 @@ impl AST for MutDefAST {
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Variable {export: true, ..val})))
                         }
-                    }
+                    };
+                    ctx.global.set(old_global);
+                    val
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);

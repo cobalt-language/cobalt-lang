@@ -258,7 +258,15 @@ impl AST for ArrayLiteralAST {
         let elems = elems.into_iter().filter_map(|v| types::utils::impl_convert(v, ty.clone(), ctx)).collect::<Vec<_>>();
         (Variable {
             comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
-                let alloca = ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "");
+                let arr_ty = llt.array_type(elems.len() as u32);
+                let alloca = 
+                    if ctx.global.get() {
+                        let gv = ctx.module.add_global(arr_ty, None, "__internals.arr");
+                        gv.set_linkage(inkwell::module::Linkage::Private);
+                        gv.set_initializer(&arr_ty.const_zero());
+                        gv.as_pointer_value()
+                    }
+                    else {ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "")};
                 let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
                 for (n, elem) in elems.iter().enumerate() {
                     let gep = unsafe {ctx.builder.build_in_bounds_gep(llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
