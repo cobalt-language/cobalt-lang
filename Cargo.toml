@@ -1,6 +1,6 @@
 [package]
 name = "cobalt-lang"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +10,7 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", feat
 llvm-sys = { version = "140", features = ["strict-versioning"] }
 unicode-ident = "1.0.5"
 walkdir = "2"
-toml = "0.5.9"
+toml = "0.7.2"
 serde = { version = "1.0", features = ["derive"] }
 semver = { version = "1.0", features = ["serde"] }
 either = { version = "1.8.0", features = ["serde"] }
