@@ -1478,7 +1478,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
-                                    if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
+                                    if let Some(ef) = ctx.module.get_function("cobalt.funcs.array_bounds") {
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
@@ -1513,7 +1513,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
-                                    if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
+                                    if let Some(ef) = ctx.module.get_function("cobalt.funcs.array_bounds") {
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
@@ -1550,7 +1550,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
-                                    if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
+                                    if let Some(ef) = ctx.module.get_function("cobalt.funcs.array_bounds") {
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }
@@ -1584,7 +1584,7 @@ pub fn subscript<'ctx>(mut val: Variable<'ctx>, mut idx: Variable<'ctx>, ctx: &C
                                     let val = unsafe {PointerValue(ctx.builder.build_gep(raw, &[iv], ""))};
                                     ctx.builder.build_unconditional_branch(merge);
                                     ctx.builder.position_at_end(bad);
-                                    if let Some(ef) = ctx.module.get_function("__internals.funcs.array_bounds") {
+                                    if let Some(ef) = ctx.module.get_function("cobalt.funcs.array_bounds") {
                                         let i64t = ctx.context.i64_type();
                                         ctx.builder.build_call(ef, &[ctx.builder.build_int_cast(iv, i64t, "").into(), ctx.builder.build_int_cast(len, i64t, "").into()], "");
                                     }

@@ -165,7 +165,7 @@ impl AST for StringLiteralAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
         match &self.suffix {
-            None => (Variable::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "__internals.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Int(8, false)), false)), vec![]),
+            None => (Variable::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "cobalt.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Int(8, false)), false)), vec![]),
             Some((x, loc)) => (Variable::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for string literal")))])
         }
     }
@@ -261,7 +261,7 @@ impl AST for ArrayLiteralAST {
                 let arr_ty = llt.array_type(elems.len() as u32);
                 let alloca = 
                     if ctx.global.get() {
-                        let gv = ctx.module.add_global(arr_ty, None, "__internals.arr");
+                        let gv = ctx.module.add_global(arr_ty, None, "cobalt.arr");
                         gv.set_linkage(inkwell::module::Linkage::Private);
                         gv.set_initializer(&arr_ty.const_zero());
                         gv.as_pointer_value()
