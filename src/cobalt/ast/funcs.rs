@@ -268,7 +268,6 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
-                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
@@ -388,7 +387,6 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
-                    f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("nobuiltin"), 0));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
