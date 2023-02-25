@@ -7,9 +7,9 @@ pub struct BlockAST {
 impl AST for BlockAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
-        let mut out = Variable::null();
+        let mut out = Value::null();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (ast, mut es) = val.codegen(ctx);
@@ -49,8 +49,8 @@ pub struct GroupAST {
 impl AST for GroupAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
-        let mut out = Variable::null();
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let mut out = Value::null();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (ast, mut es) = val.codegen(ctx);
@@ -89,13 +89,13 @@ pub struct TopLevelAST {
 impl AST for TopLevelAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Variable<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         for val in self.vals.iter() {
             let mut es = val.codegen(ctx).1;
             errs.append(&mut es);
         }
-        (Variable::null(), errs)
+        (Value::null(), errs)
     }
     fn to_code(&self) -> String {
         let mut out = String::new();

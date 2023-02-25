@@ -152,7 +152,7 @@ fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &in
     for (_, sym) in this.iter_mut() {
         match sym {
             cobalt::Symbol::Module(m, _) => clear_mod(m, module),
-            cobalt::Symbol::Variable(v) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+            cobalt::Symbol::Variable(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
                 if let Ok(t) = t {
                     v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("Global variable should have a name!")).as_pointer_value()));

@@ -11,7 +11,7 @@ pub enum UndefVariable {
 #[derive(Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
-    AlreadyExists(usize, Symbol<'ctx>)
+    AlreadyExists(usize, Option<Location>, Symbol<'ctx>)
 }
 #[derive(Clone)]
 pub struct FnData {
@@ -117,38 +117,66 @@ impl InterData {
     }
 }
 #[derive(Clone)]
-pub struct Variable<'ctx> {
+pub struct Value<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData>,
-    pub data_type: Type,
-    pub export: bool
+    pub data_type: Type
 }
-impl<'ctx> Variable<'ctx> {
-    pub fn error() -> Self {Variable {comp_val: None, inter_val: None, data_type: Type::Error, export: true}}
-    pub fn null() -> Self {Variable {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null, export: true}}
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: None, data_type, export: true}}
-    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, export: true}}
-    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Variable {comp_val: None, inter_val: Some(inter_val), data_type, export: true}}
+impl<'ctx> Value<'ctx> {
+    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error}}
+    pub fn null() -> Self {Value {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type}}
+    pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
+}
+#[derive(Clone, PartialEq, Eq)]
+pub struct VariableData {
+    pub good: bool,
+    pub export: bool,
+    pub loc: Option<Location>,
+}
+impl VariableData {
+    pub fn new(loc: Location) -> Self {
+        VariableData {
+            good: true,
+            export: true,
+            loc: Some(loc)
+        }
+    }
+}
+impl Default for VariableData {
+    fn default() -> Self {
+        VariableData {
+            good: true,
+            export: true,
+            loc: None
+        }
+    }
+}
+impl<'ctx> From<Value<'ctx>> for Symbol<'ctx> {
+    fn from(val: Value<'ctx>) -> Self {
+        Symbol::Variable(val, VariableData::default())
+    }
 }
 #[derive(Clone)]
 pub enum Symbol<'ctx> {
-    Variable(Variable<'ctx>),
+    Variable(Value<'ctx>, VariableData),
     Module(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)
 }
 impl<'ctx> Symbol<'ctx> {
-    pub fn into_var(self) -> Option<Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn into_var(self) -> Option<Value<'ctx>> {if let Symbol::Variable(x, _) = self {Some(x)} else {None}}
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
-    pub fn as_var(&self) -> Option<&Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn as_var(&self) -> Option<&Value<'ctx>> {if let Symbol::Variable(x, _) = self {Some(x)} else {None}}
     pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
-    pub fn as_var_mut(&mut self) -> Option<&mut Variable<'ctx>> {if let Symbol::Variable(x) = self {Some(x)} else {None}}
+    pub fn as_var_mut(&mut self) -> Option<&mut Value<'ctx>> {if let Symbol::Variable(x, _) = self {Some(x)} else {None}}
     pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<CompoundDottedName>)> {if let Symbol::Module(x, i) = self {Some((x, i))} else {None}}
-    pub fn is_var(&self) -> bool {if let Symbol::Variable(_) = self {true} else {false}}
+    pub fn is_var(&self) -> bool {if let Symbol::Variable(..) = self {true} else {false}}
     pub fn is_mod(&self) -> bool {if let Symbol::Module(..) = self {true} else {false}}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
-            Symbol::Variable(v) => if v.export {
-                out.write_all(&[1])?; // Variable
+            Symbol::Variable(v, d) => if d.export {
+                out.write_all(&[1])?; // Value
                 out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
                 out.write_all(&[0])?;
                 if let Some(v) = v.inter_val.as_ref() {v.save(out)?}
@@ -175,8 +203,7 @@ impl<'ctx> Symbol<'ctx> {
         buf.read_exact(std::slice::from_mut(&mut c))?;
         match c {
             1 => {
-                let mut var = Variable::error();
-                var.export = true;
+                let mut var = Value::error();
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
                 if name.last() == Some(&0) {name.pop();}
@@ -214,7 +241,7 @@ impl<'ctx> Symbol<'ctx> {
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
                 }
-                Ok(Symbol::Variable(var))
+                Ok(var.into())
             },
             2 => {
                 let mut out = HashMap::new();
@@ -237,7 +264,7 @@ impl<'ctx> Symbol<'ctx> {
     }
     pub fn dump(&self, mut depth: usize) {
         match self {
-            Symbol::Variable(Variable {data_type: dt, ..}) => eprintln!("variable of type {dt}"),
+            Symbol::Variable(Value {data_type: dt, ..}, _) => eprintln!("variable of type {dt}"),
             Symbol::Module(m, i) => {
                 eprintln!("module");
                 depth += 4;
@@ -303,7 +330,7 @@ impl<'ctx> VarMap<'ctx> {
                     &name.ids[idx..], &i.ids))
                     .ok_or(UndefVariable::DoesNotExist(idx))
                     .or_else(|e| self.parent.as_ref().map(|p| p.lookup(name)).unwrap_or(Err(e))),
-                Some(Symbol::Variable(_)) => return Err(UndefVariable::NotAModule(idx)),
+                Some(Symbol::Variable(..)) => return Err(UndefVariable::NotAModule(idx)),
                 Some(Symbol::Module(x, i)) => {
                     this = x;
                     imports = i;
@@ -327,7 +354,7 @@ impl<'ctx> VarMap<'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(_) => Err(RedefVariable::AlreadyExists(idx, sym)),
+            Entry::Occupied(x) => Err(RedefVariable::AlreadyExists(idx, if let Symbol::Variable(_, d) = x.get() {d.loc.clone()} else {None}, sym)),
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
     }
@@ -342,7 +369,7 @@ impl<'ctx> VarMap<'ctx> {
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol::Variable(_) => Err(RedefVariable::AlreadyExists(idx, Symbol::Module(sym.0, sym.1))),
+                Symbol::Variable(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc.clone(), Symbol::Module(sym.0, sym.1))),
                 Symbol::Module(ref mut m, ref mut i) => {
                     *m = sym.0;
                     i.append(&mut sym.1);
@@ -363,7 +390,7 @@ impl<'ctx> VarMap<'ctx> {
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol::Variable(_) => Err(UndefVariable::DoesNotExist(idx)), // should be AlreadyExists, but DoesNotExist wouldn't arise here
+                Symbol::Variable(..) => Err(UndefVariable::DoesNotExist(idx)), // should be AlreadyExists, but DoesNotExist wouldn't arise here
                 Symbol::Module(..) => Ok(x.remove().into_mod().unwrap())
             },
             Entry::Vacant(x) => Ok(x.insert(Symbol::Module(HashMap::new(), vec![])).clone().into_mod().unwrap())
