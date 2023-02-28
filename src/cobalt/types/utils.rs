@@ -866,7 +866,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             "-" if l == r => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_sub(v1, v2, "")))
@@ -878,7 +878,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             "<" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(ULT, v1, v2, "")))
@@ -890,7 +890,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             ">" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(UGT, v1, v2, "")))
@@ -902,7 +902,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             "<=" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(ULE, v1, v2, "")))
@@ -914,7 +914,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             ">=" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(UGE, v1, v2, "")))
@@ -926,7 +926,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             "==" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(EQ, v1, v2, "")))
@@ -938,7 +938,7 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
             "!=" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
-                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32);
+                        let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
                         let v2 = ctx.builder.build_ptr_to_int(r, pt, "");
                         Some(IntValue(ctx.builder.build_int_compare(NE, v1, v2, "")))

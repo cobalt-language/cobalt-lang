@@ -77,7 +77,7 @@ impl ParsedType {
                 ctx.is_const.set(old_const);
                 return (Ok(var.data_type), errs);
             },
-            Other(name) => match ctx.with_vars(|v| v.lookup(name)) {
+            Other(name) => match ctx.lookup(name) {
                 Ok(s) => match s {
                     Symbol::Variable(v, _) => if let Some(Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..}) = types::utils::impl_convert(v.clone(), Type::TypeData, ctx) {Ok(*t)} else {
                         let (n, l) = name.ids.last().cloned().unwrap_or((String::new(), (0, 0..0)));

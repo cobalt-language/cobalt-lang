@@ -134,6 +134,7 @@ impl<'ctx> Value<'ctx> {
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type}}
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
+    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -450,6 +451,24 @@ impl<'ctx> VarMap<'ctx> {
         self.symbols.iter().for_each(|(k, v)| {
             eprint!("    {k:?}: ");
             v.dump(4);
+        })
+    }
+}
+impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
+    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+        VarMap {
+            parent: None,
+            symbols,
+            imports: Vec::new()
+        }
+    }
+}
+impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for Box<VarMap<'ctx>> {
+    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+        Box::new(VarMap {
+            parent: None,
+            symbols,
+            imports: Vec::new()
         })
     }
 }

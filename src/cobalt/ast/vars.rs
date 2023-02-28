@@ -1241,11 +1241,11 @@ impl VarGetAST {
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Ok(Symbol::Variable(x, _)) = ctx.with_vars(|v| v.lookup(&self.name)) {x.data_type.clone()}
+        if let Ok(Symbol::Variable(x, _)) = ctx.lookup(&self.name) {x.data_type.clone()}
         else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        match ctx.with_vars(|v| v.lookup(&self.name)) {
+        match ctx.lookup(&self.name) {
             Ok(Symbol::Variable(x, _)) => (x.clone(), vec![]),
             Ok(Symbol::Module(..)) => (Value::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
             Err(UndefVariable::NotAModule(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
