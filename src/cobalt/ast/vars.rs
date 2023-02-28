@@ -109,6 +109,10 @@ impl AST for VarDefAST {
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                            Type::Error
                         }
                     }
                 }) {t} else {
@@ -172,6 +176,10 @@ impl AST for VarDefAST {
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                            Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                             Type::Error
                         }
                     }
@@ -242,6 +250,10 @@ impl AST for VarDefAST {
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                            Type::Error
                         }
                     }
                 }) {t} else {
@@ -280,6 +292,10 @@ impl AST for VarDefAST {
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                    Type::Error
+                                },
+                                Err(IntoTypeError::NotAType(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                     Type::Error
                                 }
                             }
@@ -341,6 +357,10 @@ impl AST for VarDefAST {
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                    Type::Error
+                                },
+                                Err(IntoTypeError::NotAType(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                     Type::Error
                                 }
                             }
@@ -406,6 +426,10 @@ impl AST for VarDefAST {
                             },
                             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                Type::Error
+                            },
+                            Err(IntoTypeError::NotAType(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                 Type::Error
                             }
                         }
@@ -476,6 +500,10 @@ impl AST for VarDefAST {
                     },
                     Err(IntoTypeError::DoesNotExist(name, loc)) => {
                         errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                        Type::Error
+                    },
+                    Err(IntoTypeError::NotAType(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                         Type::Error
                     }
                 }
@@ -649,6 +677,10 @@ impl AST for MutDefAST {
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                            Type::Error
                         }
                     }
                 }) {t} else {
@@ -713,6 +745,10 @@ impl AST for MutDefAST {
                         },
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                            Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                             Type::Error
                         }
                     }
@@ -785,6 +821,10 @@ impl AST for MutDefAST {
                         Err(IntoTypeError::DoesNotExist(name, loc)) => {
                             errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                             Type::Error
+                        },
+                        Err(IntoTypeError::NotAType(name, loc)) => {
+                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                            Type::Error
                         }
                     }
                 }) {t} else {
@@ -822,6 +862,10 @@ impl AST for MutDefAST {
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                    Type::Error
+                                },
+                                Err(IntoTypeError::NotAType(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                     Type::Error
                                 }
                             }
@@ -883,6 +927,10 @@ impl AST for MutDefAST {
                                 },
                                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                    Type::Error
+                                },
+                                Err(IntoTypeError::NotAType(name, loc)) => {
+                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                     Type::Error
                                 }
                             }
@@ -948,6 +996,10 @@ impl AST for MutDefAST {
                             },
                             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                                Type::Error
+                            },
+                            Err(IntoTypeError::NotAType(name, loc)) => {
+                                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                                 Type::Error
                             }
                         }
@@ -1017,6 +1069,10 @@ impl AST for MutDefAST {
                     },
                     Err(IntoTypeError::DoesNotExist(name, loc)) => {
                         errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                        Type::Error
+                    },
+                    Err(IntoTypeError::NotAType(name, loc)) => {
+                        errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                         Type::Error
                     }
                 }
@@ -1119,6 +1175,10 @@ impl AST for ConstDefAST {
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotAType(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                     Type::Error
                 }
             }

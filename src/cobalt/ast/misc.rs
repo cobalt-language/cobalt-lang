@@ -33,6 +33,10 @@ impl AST for CastAST {
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Error
+            },
+            Err(IntoTypeError::NotAType(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                Type::Error
             }
         };
         let l = format!("source type is {}", val.data_type);
@@ -85,6 +89,10 @@ impl AST for BitCastAST {
             },
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                Type::Error
+            },
+            Err(IntoTypeError::NotAType(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                 Type::Error
             }
         };

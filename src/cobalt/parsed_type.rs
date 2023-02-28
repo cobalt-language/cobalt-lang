@@ -4,6 +4,7 @@ use ParsedType::*;
 pub enum IntoTypeError {
     NotAnInt(String, Location),
     NotCompileTime(Location),
+    NotAType(String, Location),
     NotAModule(String, Location),
     DoesNotExist(String, Location)
 }
@@ -76,7 +77,20 @@ impl ParsedType {
                 ctx.is_const.set(old_const);
                 return (Ok(var.data_type), errs);
             },
-            Other(name) => Err(IntoTypeError::DoesNotExist(format!("{}", name), name.ids.get(0).map_or((0, 0..0), |(_, loc)| loc.clone())))
+            Other(name) => match ctx.with_vars(|v| v.lookup(name)) {
+                Ok(s) => match s {
+                    Symbol::Variable(v, _) => if let Some(Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..}) = types::utils::impl_convert(v.clone(), Type::TypeData, ctx) {Ok(*t)} else {
+                        let (n, l) = name.ids.last().cloned().unwrap_or((String::new(), (0, 0..0)));
+                        Err(IntoTypeError::NotAType(n, l))
+                    },
+                    _ => Err({
+                        let (n, l) = name.ids.last().cloned().unwrap_or((String::new(), (0, 0..0)));
+                        IntoTypeError::NotAType(n, l)
+                    })
+                },
+                Err(UndefVariable::DoesNotExist(n)) => Err(IntoTypeError::DoesNotExist(name.ids[n].0.clone(), name.ids[n].1.clone())),
+                Err(UndefVariable::NotAModule(n)) => Err(IntoTypeError::NotAModule(name.ids[n].0.clone(), name.ids[n].1.clone()))
+            }
         }, vec![])
     }
 }

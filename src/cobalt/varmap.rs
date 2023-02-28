@@ -25,7 +25,8 @@ pub enum InterData {
     Str(String),
     Array(Vec<InterData>),
     Function(FnData),
-    InlineAsm(Box<Type>, String, String)
+    InlineAsm(Box<Type>, String, String),
+    Type(Box<Type>)
 }
 impl InterData {
     pub fn into_compiled<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
@@ -65,6 +66,10 @@ impl InterData {
                 out.write_all(b.as_bytes())?;
                 out.write_all(&[0])?;
                 r.save(out)
+            },
+            InterData::Type(t) => {
+                out.write_all(&[8])?;
+                t.save(out)
             }
         }
     }
@@ -112,7 +117,8 @@ impl InterData {
                 buf.read_until(0, &mut body)?;
                 Some(InterData::InlineAsm(Box::new(Type::load(buf)?), std::str::from_utf8(&constraint).expect("Inline assmebly constraint should be valid UTF-8").to_string(), std::str::from_utf8(&body).expect("Inline assembly should be valid UTF-8").to_string()))
             },
-            x => panic!("read interpreted data type expecting number in 1..=7, got {x}")
+            8 => Some(InterData::Type(Box::new(Type::load(buf)?))),
+            x => panic!("read interpreted data type expecting number in 1..=8, got {x}")
         })
     }
 }
