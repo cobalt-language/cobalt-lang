@@ -404,6 +404,14 @@ impl<'ctx> VarMap<'ctx> {
         }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (k, (v, e)) in types::NOMINAL_TYPES.read().expect("Value should not be poisoned!").iter() {
+            if *e {
+                out.write_all(&k.as_bytes())?;
+                out.write_all(&[0])?;
+                v.save(out)?;
+            }
+        }
+        out.write_all(&[0])?;
         for (name, sym) in self.symbols.iter() {
             out.write_all(name.as_bytes())?;
             out.write_all(&[0])?;
@@ -421,6 +429,13 @@ impl<'ctx> VarMap<'ctx> {
             buf.read_until(0, &mut name)?;
             if name.last() == Some(&0) {name.pop();}
             if name.len() == 0 {break}
+            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
+        }
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
             self.symbols.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
         }
         loop {
@@ -430,6 +445,13 @@ impl<'ctx> VarMap<'ctx> {
         Ok(())
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
+            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
+        }
         let mut out = HashMap::new();
         let mut imports = vec![];
         loop {

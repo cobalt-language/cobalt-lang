@@ -1273,7 +1273,7 @@ impl AST for TypeDefAST {
         };
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
             Ok(x) => {
-                types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), ty);
+                types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), (ty, true));
                 (x.as_var().unwrap().clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {

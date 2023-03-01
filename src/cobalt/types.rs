@@ -29,9 +29,9 @@ impl Display for SizeType {
     }
 }
 lazy_static::lazy_static! {
-    pub static ref NOMINAL_TYPES: RwLock<HashMap<String, Type>> = RwLock::new(HashMap::new());
+    pub static ref NOMINAL_TYPES: RwLock<HashMap<String, (Type, bool)>> = RwLock::new(HashMap::new());
 }
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Type {
     IntLiteral, Char,
     Int(u16, bool),
@@ -97,7 +97,7 @@ impl Type {
             Function(..) | Module | TypeData | InlineAsm | Error => Meta,
             Pointer(..) | Reference(..) => Static(8),
             Borrow(b) => b.size(),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].size()
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.size()
         }
     }
     pub fn align(&self) -> u16 {
@@ -118,7 +118,7 @@ impl Type {
             Function(..) | Module | TypeData | InlineAsm | Error => 0,
             Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align(),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].align()
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.align()
         }
     }
     pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
@@ -139,21 +139,21 @@ impl Type {
                 b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16))))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16))))}
             },
             Borrow(b) => b.llvm_type(ctx),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].llvm_type(ctx)
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.llvm_type(ctx)
         }
     }
     pub fn register(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
             Borrow(b) => b.register(),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].register(),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.register(),
             _ => false
         }
     }
     pub fn copyable(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].register(),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.copyable(),
             _ => false
         }
     }
@@ -268,6 +268,7 @@ impl Type {
             18 => {
                 let mut vec = Vec::<u8>::new();
                 buf.read_until(0, &mut vec)?;
+                if vec.last() == Some(&0) {vec.pop();}
                 Type::Nominal(String::from_utf8(vec).expect("Type names should be valid UTF-8!"))
             },
             x => panic!("read type value expecting value in 1..=18, got {x}")
