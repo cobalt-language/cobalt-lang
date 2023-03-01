@@ -551,9 +551,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if linked.len() > 0 {
-                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if notfound.len() > 0 {exit(102)}
+                if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
@@ -802,9 +803,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if linked.len() > 0 {
-                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if notfound.len() > 0 {exit(102)}
+                if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
@@ -973,9 +975,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             if linked.len() > 0 {
-                let notfound = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?.1;
+                let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if notfound.len() > 0 {exit(102)}
+                if failed {exit(99)}
             }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(&head)?);
