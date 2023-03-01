@@ -241,7 +241,7 @@ impl<'ctx> Symbol<'ctx> {
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
                 }
-                Ok(var.into())
+                Ok(Symbol::Variable(var, VariableData {export: false, ..VariableData::default()}))
             },
             2 => {
                 let mut out = HashMap::new();
@@ -408,19 +408,30 @@ impl<'ctx> VarMap<'ctx> {
         }
         out.write_all(&[0])
     }
-    pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<()> {
+    pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Vec<String>> {
+        let mut out = vec![];
         loop {
             let mut name = vec![];
             buf.read_until(0, &mut name)?;
             if name.last() == Some(&0) {name.pop();}
             if name.len() == 0 {break}
-            self.symbols.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+            let name = std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8");
+            match self.symbols.entry(name.to_string()) {
+                Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
+                    (Symbol::Module(bs, bi), Symbol::Module(ns, mut ni)) => {
+                        bi.append(&mut ni);
+                        out.append(&mut merge(bs, ns));
+                    },
+                    _ => out.push(x.key().clone())
+                },
+                Entry::Vacant(x) => std::mem::drop(x.insert(Symbol::load(buf, ctx)?))
+            }
         }
         loop {
             if let Some(val) = CompoundDottedName::load(buf)? {self.imports.push(val);}
             else {break}
         }
-        Ok(())
+        Ok(out)
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
         let mut out = HashMap::new();
@@ -446,4 +457,20 @@ impl<'ctx> VarMap<'ctx> {
             v.dump(4);
         })
     }
+}
+fn merge<'ctx>(base: &mut HashMap<String, Symbol<'ctx>>, new: HashMap<String, Symbol<'ctx>>) -> Vec<String> {
+    let mut out = vec![];
+    for (key, val) in new {
+        match base.entry(key) {
+            Entry::Occupied(mut e) => match (e.get_mut(), val) {
+                (Symbol::Module(bs, bi), Symbol::Module(ns, mut ni)) => {
+                    bi.append(&mut ni);
+                    out.extend(merge(bs, ns).into_iter().map(|x| e.key().to_owned() + &x));
+                },
+                _ => out.push(e.key().clone())
+            },
+            Entry::Vacant(e) => std::mem::drop(e.insert(val))
+        }
+    }
+    out
 }
