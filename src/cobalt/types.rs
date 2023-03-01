@@ -4,6 +4,7 @@ use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
 use std::io::{self, Write, Read, BufRead};
+use std::sync::RwLock;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u32),
@@ -26,6 +27,7 @@ impl Display for SizeType {
         }
     }
 }
+static NOMINAL_TYPES: RwLock<Vec<(Type, DottedName)>> = RwLock::new(vec![]);
 #[derive(PartialEq, Eq, Clone)]
 pub enum Type {
     IntLiteral, Char,
@@ -33,7 +35,7 @@ pub enum Type {
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
     Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u32>),
-    Function(Box<Type>, Vec<(Type, bool)>),
+    Function(Box<Type>, Vec<(Type, bool)>), Nominal(u32),
     Error
 }
 impl Display for Type {
@@ -71,6 +73,7 @@ impl Display for Type {
                 }
                 write!(f, "): {}", *ret)
             },
+            Nominal(n) => write!(f, "{}", NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].1),
             Error => write!(f, "<error>")
         }
     }
@@ -90,7 +93,8 @@ impl Type {
             Array(_, None) => Dynamic,
             Function(..) | Module | TypeData | InlineAsm | Error => Meta,
             Pointer(..) | Reference(..) => Static(8),
-            Borrow(b) => b.size()
+            Borrow(b) => b.size(),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].0.size()
         }
     }
     pub fn align(&self) -> u16 {
@@ -110,7 +114,8 @@ impl Type {
             Array(b, _) => b.align(),
             Function(..) | Module | TypeData | InlineAsm | Error => 0,
             Pointer(..) | Reference(..) => 8,
-            Borrow(b) => b.align()
+            Borrow(b) => b.align(),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].0.align()
         }
     }
     pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
@@ -130,19 +135,22 @@ impl Type {
                 Type::Array(b, Some(_)) => Type::Pointer(b.clone(), *m).llvm_type(ctx),
                 b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16))))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16))))}
             },
-            Borrow(b) => b.llvm_type(ctx)
+            Borrow(b) => b.llvm_type(ctx),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].0.llvm_type(ctx)
         }
     }
     pub fn register(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
             Borrow(b) => b.register(),
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].0.register(),
             _ => false
         }
     }
     pub fn copyable(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
+            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[*n as usize].0.register(),
             _ => false
         }
     }
@@ -204,7 +212,12 @@ impl Type {
                 out.write_all(&data)?;
                 b.save(out)
             },
-            TypeData => out.write_all(&[17])
+            TypeData => out.write_all(&[17]),
+            Nominal(n) => {
+                let mut bytes = [18u8, 0, 0, 0, 0];
+                bytes.copy_from_slice(&n.to_be_bytes());
+                out.write_all(&bytes)
+            }
         }
     }
     pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
@@ -249,7 +262,12 @@ impl Type {
                 Type::Array(Box::new(Type::load(buf)?), Some(u32::from_be_bytes(bytes)))
             },
             17 => Type::TypeData,
-            x => panic!("read type value expecting value in 1..=17, got {x}")
+            18 => {
+                let mut bytes = [0u8; 4];
+                buf.read_exact(&mut bytes)?;
+                Type::Nominal(u32::from_be_bytes(bytes))
+            },
+            x => panic!("read type value expecting value in 1..=18, got {x}")
         })
     }
 }
