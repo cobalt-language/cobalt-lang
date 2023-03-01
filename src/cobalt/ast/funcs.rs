@@ -112,7 +112,6 @@ impl AST for FnDefAST {
                 }
             }
         }, pt == &ParamType::Constant)).collect());
-        let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
