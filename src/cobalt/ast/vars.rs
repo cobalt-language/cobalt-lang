@@ -11,7 +11,7 @@ pub struct VarDefAST {
     pub global: bool
 }
 impl AST for VarDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -134,7 +134,7 @@ impl AST for VarDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 21, None)); None}),
+                    }).or_else(|| {errs.push(Diagnostic::warning(self.val.loc(), 21, None)); None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), false)
                 }, VariableData::new(self.loc.clone())))) {
@@ -579,7 +579,7 @@ pub struct MutDefAST {
     pub global: bool
 }
 impl AST for MutDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -702,7 +702,7 @@ impl AST for MutDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Diagnostic::warning(self.loc.clone(), 23, None)); None}),
+                    }).or_else(|| {errs.push(Diagnostic::warning(self.val.loc(), 23, None)); None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), true)
                 }, VariableData::new(self.loc.clone())))) {
@@ -1147,7 +1147,7 @@ pub struct ConstDefAST {
     pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl AST for ConstDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = self.annotations.iter().map(|(x, _, loc)| Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition")))).collect::<Vec<_>>();
@@ -1230,6 +1230,71 @@ impl AST for ConstDefAST {
 }
 impl ConstDefAST {
     pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ConstDefAST {loc, name, val, type_, annotations}}
+}
+pub struct TypeDefAST {
+    loc: Location,
+    pub name: DottedName,
+    pub val: ParsedType
+}
+impl TypeDefAST {
+    pub fn new(loc: Location, name: DottedName, val: ParsedType) -> Self {TypeDefAST {loc, name, val}}
+}
+impl AST for TypeDefAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        let ty = {
+            let (t, mut es) = self.val.into_type(ctx);
+            errs.append(&mut es);
+            match t {
+                Ok(t) => t,
+                Err(IntoTypeError::NotAnInt(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotCompileTime(loc)) => {
+                    errs.push(Diagnostic::error(loc, 324, None));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotAModule(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::DoesNotExist(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotAType(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                    Type::Error
+                }
+            }
+        };
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
+            Ok(x) => {
+                types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), ty);
+                (x.as_var().unwrap().clone(), errs)
+            },
+            Err(RedefVariable::NotAModule(x, _)) => {
+                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                (Value::error(), errs)
+            },
+            Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                if let Some(loc) = d {
+                    err.add_note(loc, "previously defined here".to_string());
+                }
+                errs.push(err);
+                (Value::error(), errs)
+            }
+        }
+    }
+    fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val)}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "type: {}", self.name)?;
+        writeln!(f, "{pre}├── {}", self.val)
+    }
 }
 pub struct VarGetAST {
     loc: Location,
