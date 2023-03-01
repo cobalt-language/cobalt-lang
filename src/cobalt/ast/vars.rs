@@ -1293,7 +1293,7 @@ impl AST for TypeDefAST {
     fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val)}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "type: {}", self.name)?;
-        writeln!(f, "{pre}├── {}", self.val)
+        writeln!(f, "{pre}└── {}", self.val)
     }
 }
 pub struct VarGetAST {
