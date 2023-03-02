@@ -25,7 +25,8 @@ pub enum InterData {
     Str(String),
     Array(Vec<InterData>),
     Function(FnData),
-    InlineAsm(Box<Type>, String, String)
+    InlineAsm(Box<Type>, String, String),
+    Type(Box<Type>)
 }
 impl InterData {
     pub fn into_compiled<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
@@ -65,6 +66,10 @@ impl InterData {
                 out.write_all(b.as_bytes())?;
                 out.write_all(&[0])?;
                 r.save(out)
+            },
+            InterData::Type(t) => {
+                out.write_all(&[8])?;
+                t.save(out)
             }
         }
     }
@@ -87,7 +92,7 @@ impl InterData {
             4 => {
                 let mut vec = Vec::new();
                 buf.read_until(0, &mut vec)?;
-                Some(InterData::Str(std::str::from_utf8(&vec).expect("Interpreted strings should be valid UTF-8").to_string()))
+                Some(InterData::Str(String::from_utf8(vec).expect("Interpreted strings should be valid UTF-8")))
             },
             5 => {
                 let mut bytes = [0; 4];
@@ -110,9 +115,10 @@ impl InterData {
                 let mut body = Vec::new();
                 buf.read_until(0, &mut constraint)?;
                 buf.read_until(0, &mut body)?;
-                Some(InterData::InlineAsm(Box::new(Type::load(buf)?), std::str::from_utf8(&constraint).expect("Inline assmebly constraint should be valid UTF-8").to_string(), std::str::from_utf8(&body).expect("Inline assembly should be valid UTF-8").to_string()))
+                Some(InterData::InlineAsm(Box::new(Type::load(buf)?), String::from_utf8(constraint).expect("Inline assmebly constraint should be valid UTF-8"), String::from_utf8(body).expect("Inline assembly should be valid UTF-8")))
             },
-            x => panic!("read interpreted data type expecting number in 1..=7, got {x}")
+            8 => Some(InterData::Type(Box::new(Type::load(buf)?))),
+            x => panic!("read interpreted data type expecting number in 1..=8, got {x}")
         })
     }
 }
@@ -128,6 +134,7 @@ impl<'ctx> Value<'ctx> {
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type}}
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
+    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -251,7 +258,7 @@ impl<'ctx> Symbol<'ctx> {
                     buf.read_until(0, &mut name)?;
                     if name.last() == Some(&0) {name.pop();}
                     if name.len() == 0 {break}
-                    out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+                    out.insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), Symbol::load(buf, ctx)?);
                 }
                 loop {
                     if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
@@ -397,6 +404,14 @@ impl<'ctx> VarMap<'ctx> {
         }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (k, (v, e)) in types::NOMINAL_TYPES.read().expect("Value should not be poisoned!").iter() {
+            if *e {
+                out.write_all(&k.as_bytes())?;
+                out.write_all(&[0])?;
+                v.save(out)?;
+            }
+        }
+        out.write_all(&[0])?;
         for (name, sym) in self.symbols.iter() {
             out.write_all(name.as_bytes())?;
             out.write_all(&[0])?;
@@ -415,8 +430,16 @@ impl<'ctx> VarMap<'ctx> {
             buf.read_until(0, &mut name)?;
             if name.last() == Some(&0) {name.pop();}
             if name.len() == 0 {break}
-            let name = std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8");
-            match self.symbols.entry(name.to_string()) {
+            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
+        }
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
+            let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
+            self.symbols.insert(name.clone(), Symbol::load(buf, ctx)?);
+            match self.symbols.entry(name) {
                 Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
                     (Symbol::Module(bs, bi), Symbol::Module(ns, mut ni)) => {
                         bi.append(&mut ni);
@@ -434,6 +457,13 @@ impl<'ctx> VarMap<'ctx> {
         Ok(out)
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        loop {
+            let mut name = vec![];
+            buf.read_until(0, &mut name)?;
+            if name.last() == Some(&0) {name.pop();}
+            if name.len() == 0 {break}
+            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
+        }
         let mut out = HashMap::new();
         let mut imports = vec![];
         loop {
@@ -441,7 +471,7 @@ impl<'ctx> VarMap<'ctx> {
             buf.read_until(0, &mut name)?;
             if name.last() == Some(&0) {name.pop();}
             if name.len() == 0 {break}
-            out.insert(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Symbol::load(buf, ctx)?);
+            out.insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), Symbol::load(buf, ctx)?);
         }
         loop {
             if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
@@ -455,6 +485,24 @@ impl<'ctx> VarMap<'ctx> {
         self.symbols.iter().for_each(|(k, v)| {
             eprint!("    {k:?}: ");
             v.dump(4);
+        })
+    }
+}
+impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
+    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+        VarMap {
+            parent: None,
+            symbols,
+            imports: Vec::new()
+        }
+    }
+}
+impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for Box<VarMap<'ctx>> {
+    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+        Box::new(VarMap {
+            parent: None,
+            symbols,
+            imports: Vec::new()
         })
     }
 }

@@ -42,6 +42,10 @@ impl AST for FnDefAST {
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Error
+            },
+            Err(IntoTypeError::NotAType(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                Type::Error
             }
         };
         Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
@@ -63,6 +67,10 @@ impl AST for FnDefAST {
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotAType(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                     Type::Error
                 }
             }
@@ -87,6 +95,10 @@ impl AST for FnDefAST {
             Err(IntoTypeError::DoesNotExist(name, loc)) => {
                 errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
                 Type::Error
+            },
+            Err(IntoTypeError::NotAType(name, loc)) => {
+                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
+                Type::Error
             }
         };
         let fty = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
@@ -108,6 +120,10 @@ impl AST for FnDefAST {
                 },
                 Err(IntoTypeError::DoesNotExist(name, loc)) => {
                     errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
+                    Type::Error
+                },
+                Err(IntoTypeError::NotAType(name, loc)) => {
+                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
                     Type::Error
                 }
             }
