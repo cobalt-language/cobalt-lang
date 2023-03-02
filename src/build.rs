@@ -130,11 +130,11 @@ impl TargetData {
         libs.sort();
         libs.dedup();
         match libs::find_libs(libs.clone(), link_dirs, None) {
-            Ok((libs, notfound)) => {
+            Ok((libs, notfound, failed)) => {
                 for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
                 if notfound.len() > 0 {return Err(102)}
                 libs.into_iter().for_each(|(path, name)| self.init_lib(&name, &path, targets));
-                Ok(())
+                if failed {Err(99)} else {Ok(())}
             },
             Err(e) => {
                 eprintln!("{ERROR}: {e}");
