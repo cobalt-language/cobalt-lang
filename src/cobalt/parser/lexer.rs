@@ -661,7 +661,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(c.to_string())));
                 }
             },
-            '+' | '-' | '&' | '|' | '^' => { // operator of the form @, @@, @=
+            '+' | '-' => { // operator of the form @, @@, @=
                 if let Some(c2) = it.peek() {
                     let c3 = *c2;
                     if c3 == '=' || c3 == c {
@@ -689,6 +689,13 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     if flags.up {loc.1 += 1;}
                 }
                 outs.push(Token::new((loc.0, (start..(loc.1 + 1))), Operator(s)));
+            },
+            '&' | '|' => { // operator of the form @, @=, @?
+                match it.peek() {
+                    Some(&'=') => outs.push(Token::new((loc.0, loc.1..(loc.1 + 2), Operator(format!("{c}=")))),
+                    Some(&'?') => outs.push(Token::new((loc.0, loc.1..(loc.1 + 2), Operator(format!("{c}?")))),
+                    _ => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(c.to_string())))
+                }
             },
             _ => errs.push(Diagnostic::error((loc.0, loc.1..(loc.1 + 1)), 101, Some(format!("character is {c:?} (U+{:0>4X})", c as u32))))
         }
