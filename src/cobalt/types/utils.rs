@@ -99,6 +99,10 @@ pub fn pre_type(val: Type, op: &str) -> Type {
 pub fn post_type(val: Type, op: &str) -> Type {
     match val {
         Type::Reference(x, _) | Type::Borrow(x) => post_type(*x, op),
+        Type::TypeData => match op {
+            "mut&" | "mut*" | "const&" | "const*" | "^" => Type::TypeData,
+            _ => Type::Error
+        },
         _ => Type::Error
     }
 }
@@ -1349,8 +1353,15 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
         _ => None
     }
 }
-pub fn post_op<'ctx>(val: Value<'ctx>, _op: &str, _ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {
-    match val.data_type { // The only posfix operators are ? and !, and they're for error handling
+pub fn post_op<'ctx>(val: Value<'ctx>, op: &str, _ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {
+    match val.data_type {
+        Type::TypeData => match op {
+            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Reference(t, true)))} else {None},
+            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Pointer(t, true)))} else {None},
+            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Reference(t, false)))} else {None},
+            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Pointer(t, false)))} else {None},
+            _ => None
+        },
         _ => None
     }
 }

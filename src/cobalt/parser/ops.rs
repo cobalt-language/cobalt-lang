@@ -19,4 +19,4 @@ pub const COBALT_BIN_OPS: &[OpType] = &[
     Op("^^"),                                                                                                       Rtl
 ];
 pub const COBALT_PRE_OPS: &[&'static str] = &["++", "--", "+", "-", "~", "*", "&", "!"];
-pub const COBALT_POST_OPS: &[&'static str] = &["?", "!"];
+pub const COBALT_POST_OPS: &[&'static str] = &["?", "!", "^"];
