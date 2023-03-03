@@ -112,6 +112,10 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
                 Type::Array(b, _) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b, m), _ => Type::Error},
                 x => sub_type(x, i)
             },
+            Type::TypeData => match i {
+                Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
+                _ => Type::Error
+            },
             _ => Type::Error
         }
     }
@@ -1524,6 +1528,11 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                         val.data_type = x;
                         subscript(val, idx, ctx)
                     }
+                },
+                Type::TypeData => match idx.data_type {
+                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Array(t, None)))} else {None},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Some(Value::make_type(Type::Array(t, Some(v as u32))))} else {None},
+                    _ => None
                 },
                 _ => None
             }

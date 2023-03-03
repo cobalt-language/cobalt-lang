@@ -423,7 +423,7 @@ fn parse_calls(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnost
             else {
                 let (target, ts) = toks.split_at(idx);
                 toks = &ts[1..(ts.len() - 1)];
-                let (idx, _, mut errs) = parse_expr(toks, "", flags);
+                let (idx, _, mut errs) = if toks.len() == 0 {(Box::new(NullAST::new((ts[0].loc.0, ts[0].loc.1.end..ts[0].loc.1.end))) as Box<dyn AST>, 0usize, vec![])} else {parse_expr(toks, "", flags)};
                 let (target, _, mut es) = parse_expr(target, "", flags);
                 errs.append(&mut es);
                 (Box::new(SubAST::new((target.loc().0, target.loc().1.start..ts.last().unwrap().loc.1.end), target, idx)), errs)
@@ -1208,7 +1208,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
     }
 }
 fn parse_splits(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
-    if toks.len() == 0 {return (null(), vec![Diagnostic::error((0, 0..0), 290, None)])}
+    if toks.len() == 0 {return (null(), vec![Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 290, None)])}
     let mut start = toks[0].loc.clone();
     start.1.end = toks.last().unwrap().loc.1.end;
     let len = toks.len();
