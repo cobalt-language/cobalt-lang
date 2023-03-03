@@ -2,7 +2,7 @@
 use crate::*;
 use crate::parser::ops::*;
 use TokenData::*;
-fn null(toks: &[Token]) -> Box<dyn AST> {Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})}
+fn null(toks: &[Token]) -> Box<dyn AST> {Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}))}
 fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (ParsedType, usize, Vec<Diagnostic>) {
     let mut idx = 1;
     if toks.len() == 0 {
@@ -975,12 +975,14 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic
                         "mut" => {
                             let mut loc = toks.last().unwrap().loc.clone();
                             loc.1.end = tok.loc.1.end;
+                            let toks = &toks[..(toks.len() - 1)];
                             let (ast, errs) = parse_postfix(toks, flags);
                             (Box::new(PostfixAST::new(loc, "mut".to_string() + op, ast)), errs)
                         },
                         "const" => {
                             let mut loc = toks.last().unwrap().loc.clone();
                             loc.1.end = tok.loc.1.end;
+                            let toks = &toks[..(toks.len() - 1)];
                             let (ast, errs) = parse_postfix(toks, flags);
                             (Box::new(PostfixAST::new(loc, "const".to_string() + op, ast)), errs)
                         },
@@ -1146,7 +1148,10 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special(')') => break 'main,
                     Special(']') => break 'main,
                     Special('}') => break 'main,
-                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 => {
+                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && match &toks[idx - 1].data {
+                        Statement(_) => false,
+                        _ => true
+                    } => {
                         let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
@@ -1202,7 +1207,10 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special('(') => break 'main,
                     Special('[') => break 'main,
                     Special('{') => break 'main,
-                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 => {
+                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && match &toks[idx - 1].data {
+                        Statement(_) => false,
+                        _ => true
+                    } => {
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
