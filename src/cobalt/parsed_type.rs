@@ -65,7 +65,7 @@ impl ParsedType {
                 let (var, mut es) = size.codegen(ctx);
                 errs.append(&mut es);
                 let err = format!("{}", var.data_type);
-                let var = types::utils::impl_convert(var, Type::Int(64, false), ctx);
+                let var = types::utils::impl_convert((0, 0..0), (var, None), (Type::Int(64, false), None), ctx).ok();
                 ctx.is_const.set(old_const);
                 return (if var.is_none() {Err(IntoTypeError::NotAnInt(err, size.loc()))}
                 else if let Some(InterData::Int(val)) = var.unwrap().inter_val {Ok(Type::Array(Box::new(base), Some(val as u32)))}
@@ -79,7 +79,7 @@ impl ParsedType {
             },
             Other(name) => match ctx.lookup(name) {
                 Ok(s) => match s {
-                    Symbol::Variable(v, _) => if let Some(Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..}) = types::utils::impl_convert(v.clone(), Type::TypeData, ctx) {Ok(*t)} else {
+                    Symbol::Variable(v, _) => if let Ok(Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..}) = types::utils::impl_convert((0, 0..0), (v.clone(), None), (Type::TypeData, None), ctx) {Ok(*t)} else {
                         let (n, l) = name.ids.last().cloned().unwrap_or((String::new(), (0, 0..0)));
                         Err(IntoTypeError::NotAType(n, l))
                     },

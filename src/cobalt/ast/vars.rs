@@ -309,9 +309,8 @@ impl AST for VarDefAST {
                                 x => x
                             }
                         };
-                        let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
@@ -374,9 +373,8 @@ impl AST for VarDefAST {
                                 x => x
                             }
                         };
-                        let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
@@ -443,9 +441,8 @@ impl AST for VarDefAST {
                             x => x
                         }
                     };
-                    let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                    let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                        errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
@@ -517,9 +514,8 @@ impl AST for VarDefAST {
                     x => x
                 }
             };
-            let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-            let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                errs.push(e);
                 Value::error()
             });
             ctx.restore_scope(old_scope);
@@ -879,9 +875,8 @@ impl AST for MutDefAST {
                                 x => x
                             }
                         };
-                        let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
@@ -944,9 +939,8 @@ impl AST for MutDefAST {
                                 x => x
                             }
                         };
-                        let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
@@ -1013,9 +1007,8 @@ impl AST for MutDefAST {
                             x => x
                         }
                     };
-                    let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-                    let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                        errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
@@ -1086,9 +1079,8 @@ impl AST for MutDefAST {
                     x => x
                 }
             };
-            let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-            let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-                errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                errs.push(e);
                 Value::error()
             });
             ctx.restore_scope(old_scope);
@@ -1192,9 +1184,8 @@ impl AST for ConstDefAST {
                 x => x
             }
         };
-        let err = format!("cannot convert value of type {} into {dt}", val.data_type);
-        let val = types::utils::impl_convert(val, dt.clone(), ctx).unwrap_or_else(|| {
-            errs.push(Diagnostic::error(self.val.loc(), 311, Some(err)));
+        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+            errs.push(e);
             Value::error()
         });
         ctx.restore_scope(old_scope);

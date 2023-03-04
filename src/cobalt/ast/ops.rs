@@ -22,11 +22,8 @@ impl AST for BinOpAST {
         match self.op.as_str() {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let l = format!("source type is {}", lhs.data_type);
-                let r = format!("target type is bool");
-                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
-                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
-                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                    errs.push(e);
                     Value::error()
                 }).into_value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -40,7 +37,7 @@ impl AST for BinOpAST {
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(0), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
                         let llt = val.get_type();
                         let phi = ctx.builder.build_phi(llt, "");
                         phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
@@ -52,11 +49,8 @@ impl AST for BinOpAST {
             },
             "|?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let l = format!("source type is {}", lhs.data_type);
-                let r = format!("target type is bool");
-                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
-                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
-                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                    errs.push(e);
                     Value::error()
                 }).into_value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -70,7 +64,7 @@ impl AST for BinOpAST {
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(1), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
                         let llt = val.get_type();
                         let phi = ctx.builder.build_phi(llt, "");
                         phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
@@ -85,15 +79,10 @@ impl AST for BinOpAST {
                 let (rhs, mut es) = self.rhs.codegen(ctx);
                 errs.append(&mut es);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
-                let ln = format!("{}", lhs.data_type);
-                let rn = format!("{}", rhs.data_type);
-                let val = types::utils::bin_op(lhs, rhs, x, ctx);
-                if val.is_none() {
-                    errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("binary operator {} is not defined for values of types {ln} and {rn}", self.op)))
-                        .note(self.lhs.loc(), format!("left value is of type {ln}"))
-                        .note(self.rhs.loc(), format!("right value is of type {rn}")));
-                }
-                (val.unwrap_or_else(Value::error), errs)
+                (types::utils::bin_op(self.loc.clone(), (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::error()
+                }), errs)
             }
         }
     }
@@ -122,13 +111,10 @@ impl AST for PostfixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        let n = format!("{}", v.data_type);
-        let val = types::utils::post_op(v, self.op.as_str(), ctx);
-        if val.is_none() {
-            errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("postfix operator {} is not defined for value of type {n}", self.op)))
-                .note(self.val.loc(), format!("value is of type {n}")));
-        }
-        (val.unwrap_or_else(Value::error), errs)
+        (types::utils::post_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        }), errs)
     }
     fn to_code(&self) -> String {
         format!("{}{}", self.val.to_code(), self.op)
@@ -154,13 +140,10 @@ impl AST for PrefixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        let n = format!("{}", v.data_type);
-        let val = types::utils::pre_op(v, self.op.as_str(), ctx);
-        if val.is_none() {
-            errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("prefix operator {} is not defined for value of type {n}", self.op)))
-                .note(self.val.loc(), format!("value is of type {n}")));
-        }
-        (val.unwrap_or_else(Value::error), errs)
+        (types::utils::pre_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        }), errs)
     }
     fn to_code(&self) -> String {
         format!("{}{}", self.op, self.val.to_code())
@@ -186,10 +169,8 @@ impl AST for SubAST {
         let (index, mut es) = self.index.codegen(ctx);
         errs.append(&mut es);
         if target.data_type == Type::Error || index.data_type == Type::Error {return (Value::error(), errs)}
-        let t = target.data_type.to_string();
-        let i = index.data_type.to_string();
-        (types::utils::subscript(target, index, ctx).unwrap_or_else(|| {
-            errs.push(Diagnostic::error(self.loc.clone(), 318, None).note(self.target.loc(), format!("target type is {t}")).note(self.index.loc(), format!("index type is {i}")));
+        (types::utils::subscript((target, self.target.loc()), (index, self.index.loc()), ctx).unwrap_or_else(|e| {
+            errs.push(e);
             Value::error()
         }), errs)
     }
