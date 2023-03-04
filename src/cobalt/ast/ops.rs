@@ -22,11 +22,8 @@ impl AST for BinOpAST {
         match self.op.as_str() {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let l = format!("source type is {}", lhs.data_type);
-                let r = format!("target type is bool");
-                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
-                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
-                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                    errs.push(e);
                     Value::error()
                 }).into_value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -40,7 +37,7 @@ impl AST for BinOpAST {
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(0), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
                         let llt = val.get_type();
                         let phi = ctx.builder.build_phi(llt, "");
                         phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
@@ -52,11 +49,8 @@ impl AST for BinOpAST {
             },
             "|?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let l = format!("source type is {}", lhs.data_type);
-                let r = format!("target type is bool");
-                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
-                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
-                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                    errs.push(e);
                     Value::error()
                 }).into_value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -70,7 +64,7 @@ impl AST for BinOpAST {
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(1), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
                         let llt = val.get_type();
                         let phi = ctx.builder.build_phi(llt, "");
                         phi.add_incoming(&[(&val, ab), (&ifv, bb)]);

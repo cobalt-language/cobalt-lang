@@ -19,12 +19,11 @@ impl AST for IfAST {
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
-        let err = format!("cannot convert value of type {} to i1", cond.data_type);
-        let v = if let Some(v) = types::utils::expl_convert(cond, Type::Int(1, false), ctx) {v} else {
-            errs.push(Diagnostic::error(self.cond.loc(), 312, Some(err)));
-            Value::compiled(ctx.context.custom_width_int_type(1).const_int(0, false).into(), Type::Int(1, false))
-        };
-        if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = v.comp_val {
+        let v = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
+        });
+        if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = v.value(ctx) {
             (if let Some(if_false) = self.if_false.as_ref() {
                 if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
                     let itb = ctx.context.append_basic_block(f, "if_true");
@@ -130,11 +129,10 @@ impl AST for WhileAST {
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
-            let err = format!("cannot convert value of type {} to i1", c.data_type);
-            let val = types::utils::expl_convert(c, Type::Int(1, false), ctx).and_then(|v| v.value(ctx)).unwrap_or_else(|| {
-                errs.push(Diagnostic::error(self.cond.loc(), 312, Some(err)));
-                ctx.context.custom_width_int_type(1).const_int(0, false).into()
-            });
+            let val = types::utils::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
+            }).into_value(ctx).unwrap_or(ctx.context.bool_type().const_int(0, false).into());
             ctx.builder.build_conditional_branch(val.into_int_value(), body, exit);
             ctx.builder.position_at_end(body);
             let (_, mut es) = self.body.codegen(ctx);

@@ -39,14 +39,10 @@ impl AST for CastAST {
                 Type::Error
             }
         };
-        let l = format!("source type is {}", val.data_type);
-        let r = format!("target type is {t}");
-        let err = format!("cannot convert value of type {} to {t}", val.data_type);
-        if let Some(val) = types::utils::expl_convert(val, t, ctx) {(val, errs)}
-        else {
-            errs.push(Diagnostic::error(self.loc.clone(), 312, Some(err)).note(self.val.loc(), l).note(self.target_loc.clone(), r));
-            (Value::error(), errs)
-        }
+        (types::utils::expl_convert(self.loc.clone(), (val, Some(self.val.loc())), (t, Some(self.target_loc.clone())), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        }), errs)
     }
     fn to_code(&self) -> String {
         format!("{}: {}", self.val.to_code(), self.target)
