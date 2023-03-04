@@ -169,10 +169,8 @@ impl AST for SubAST {
         let (index, mut es) = self.index.codegen(ctx);
         errs.append(&mut es);
         if target.data_type == Type::Error || index.data_type == Type::Error {return (Value::error(), errs)}
-        let t = target.data_type.to_string();
-        let i = index.data_type.to_string();
-        (types::utils::subscript(target, index, ctx).unwrap_or_else(|| {
-            errs.push(Diagnostic::error(self.loc.clone(), 318, None).note(self.target.loc(), format!("target type is {t}")).note(self.index.loc(), format!("index type is {i}")));
+        (types::utils::subscript((target, self.target.loc()), (index, self.index.loc()), ctx).unwrap_or_else(|e| {
+            errs.push(e);
             Value::error()
         }), errs)
     }

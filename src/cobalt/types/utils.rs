@@ -1429,11 +1429,14 @@ pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &s
         _ => Err(err)
     }
 }
-pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {
+pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc): (Value<'ctx>, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+    let b = val.data_type.to_string();
+    let s = idx.data_type.to_string();
+    let err = Diagnostic::error(vloc.clone(), 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc.clone(), format!("base type is {b}")).note(iloc.clone(), format!("subscript type is {s}"));
     match idx.data_type {
         Type::Borrow(x) => {
             idx.data_type = *x;
-            subscript(val, idx, ctx)
+            subscript((val, vloc), (idx, iloc), ctx)
         },
         Type::Reference(x, _) => {
             if x.register() && !ctx.is_const.get() {
@@ -1442,13 +1445,13 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                 }
             }
             idx.data_type = *x;
-            subscript(val, idx, ctx)
+            subscript((val, vloc), (idx, iloc), ctx)
         },
         a => {
             idx.data_type = a;
             match val.data_type.clone() {
                 Type::Pointer(b, m) => match idx.data_type.clone() {
-                    Type::IntLiteral | Type::Int(..) => Some(Value {
+                    Type::IntLiteral | Type::Int(..) => Ok(Value {
                         comp_val: match (val.comp_val, idx.value(ctx), b.size(), ctx.is_const.get()) {
                             (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                             _ => None
@@ -1456,11 +1459,11 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                         inter_val: None,
                         data_type: Type::Reference(b, m)
                     }),
-                    _ => None
+                    _ => Err(err)
                 },
                 Type::Reference(b, m) => match *b {
                     Type::Array(b, None) => match idx.data_type.clone() {
-                        Type::IntLiteral | Type::Int(_, true) => Some(Value {
+                        Type::IntLiteral | Type::Int(_, true) => Ok(Value {
                             comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
@@ -1494,7 +1497,7 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m)
                         }),
-                        Type::Int(_, false) => Some(Value {
+                        Type::Int(_, false) => Ok(Value {
                             comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
@@ -1528,10 +1531,10 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m)
                         }),
-                        _ => None
+                        _ => Err(err)
                     },
                     Type::Array(b, Some(s)) => match idx.data_type.clone() {
-                        Type::IntLiteral | Type::Int(_, true) => Some(Value {
+                        Type::IntLiteral | Type::Int(_, true) => Ok(Value {
                             comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
@@ -1564,7 +1567,7 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m)
                         }),
-                        Type::Int(_, false) => Some(Value {
+                        Type::Int(_, false) => Ok(Value {
                             comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
@@ -1597,7 +1600,7 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                             inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
                             data_type: Type::Reference(b, m)
                         }),
-                        _ => None
+                        _ => Err(err)
                     },
                     x => {
                         if !ctx.is_const.get() || x.register() {
@@ -1606,15 +1609,15 @@ pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx
                             }
                         }
                         val.data_type = x;
-                        subscript(val, idx, ctx)
+                        subscript((val, vloc), (idx, iloc), ctx)
                     }
                 },
                 Type::TypeData => match idx.data_type {
-                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Array(t, None)))} else {None},
-                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Some(Value::make_type(Type::Array(t, Some(v as u32))))} else {None},
-                    _ => None
+                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    _ => Err(err)
                 },
-                _ => None
+                _ => Err(err)
             }
         }
     }
