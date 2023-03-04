@@ -136,6 +136,7 @@ impl<'ctx> Value<'ctx> {
     pub fn metaval(inter_val: InterData, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
     pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
+    pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.clone().or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 }
 #[derive(Clone, PartialEq, Eq)]
 pub struct VariableData {
