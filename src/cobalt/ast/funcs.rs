@@ -299,20 +299,20 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
-                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
-                                if let Some(val) = val {
-                                    if let Some(val) = val.inter_val {val}
-                                    else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                match val {
+                                    Ok(val) => 
+                                        if let Some(val) = val.inter_val {val}
+                                        else {
+                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            InterData::Null
+                                        }
+                                    Err(e) => {
+                                        errs.push(e);
                                         InterData::Null
                                     }
-                                }
-                                else {
-                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
-                                    InterData::Null
                                 }
                             })).collect()
                         })),
@@ -354,11 +354,7 @@ impl AST for FnDefAST {
                         let (body, mut es) = self.body.codegen(ctx);
                         errs.append(&mut es);
                         ctx.map_vars(|v| v.parent.unwrap());
-                        let err = format!("cannot convert value of type {} to {}", body.data_type, *ret);
-                        ctx.builder.build_return(Some(&types::utils::impl_convert(body, (&**ret).clone(), ctx).and_then(|v| v.comp_val).unwrap_or_else(|| {
-                            errs.push(Diagnostic::error(self.body.loc(), 311, Some(err)));
-                            llt.const_zero()
-                        })));
+                        ctx.builder.build_return(Some(&types::utils::impl_convert(self.body.loc(), (body, None), ((&**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         ctx.restore_scope(old_scope);
                     }
                     var
@@ -371,20 +367,20 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
-                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
-                                if let Some(val) = val {
-                                    if let Some(val) = val.inter_val {val}
-                                    else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                match val {
+                                    Ok(val) => 
+                                        if let Some(val) = val.inter_val {val}
+                                        else {
+                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            InterData::Null
+                                        }
+                                    Err(e) => {
+                                        errs.push(e);
                                         InterData::Null
                                     }
-                                }
-                                else {
-                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
-                                    InterData::Null
                                 }
                             })).collect()
                         })),
@@ -414,20 +410,20 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
-                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
-                                if let Some(val) = val {
-                                    if let Some(val) = val.inter_val {val}
-                                    else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                match val {
+                                    Ok(val) => 
+                                        if let Some(val) = val.inter_val {val}
+                                        else {
+                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            InterData::Null
+                                        }
+                                    Err(e) => {
+                                        errs.push(e);
                                         InterData::Null
                                     }
-                                }
-                                else {
-                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
-                                    InterData::Null
                                 }
                             })).collect()
                         })),
@@ -482,20 +478,20 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let err = format!("cannot convert value of type {} to {t}", val.data_type);
-                                let val = types::utils::impl_convert(val, t.clone(), ctx);
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
-                                if let Some(val) = val {
-                                    if let Some(val) = val.inter_val {val}
-                                    else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                match val {
+                                    Ok(val) => 
+                                        if let Some(val) = val.inter_val {val}
+                                        else {
+                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            InterData::Null
+                                        }
+                                    Err(e) => {
+                                        errs.push(e);
                                         InterData::Null
                                     }
-                                }
-                                else {
-                                    errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
-                                    InterData::Null
                                 }
                             })).collect()
                         })),
@@ -511,20 +507,20 @@ impl AST for FnDefAST {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let (val, mut es) = a.codegen(ctx);
-                            let err = format!("cannot convert value of type {} to {t}", val.data_type);
-                            let val = types::utils::impl_convert(val, t.clone(), ctx);
+                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                             ctx.is_const.set(old_const);
                             errs.append(&mut es);
-                            if let Some(val) = val {
-                                if let Some(val) = val.inter_val {val}
-                                else {
-                                    errs.push(Diagnostic::error(a.loc(), 314, None));
+                            match val {
+                                Ok(val) => 
+                                    if let Some(val) = val.inter_val {val}
+                                    else {
+                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                        InterData::Null
+                                    }
+                                Err(e) => {
+                                    errs.push(e);
                                     InterData::Null
                                 }
-                            }
-                            else {
-                                errs.push(Diagnostic::error(a.loc(), 311, Some(err)));
-                                InterData::Null
                             }
                         })).collect()
                     })),

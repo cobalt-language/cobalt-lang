@@ -255,7 +255,7 @@ impl AST for ArrayLiteralAST {
             errs.push(Diagnostic::error(self.loc(), 300, Some(format!("this array has {} elements, the max is 4294967295", elems.len()))));
             elems.truncate(u32::MAX as usize);
         }
-        let elems = elems.into_iter().filter_map(|v| types::utils::impl_convert(v, ty.clone(), ctx)).collect::<Vec<_>>();
+        let elems = elems.into_iter().enumerate().filter_map(|(n, v)| types::utils::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
         (Value {
             comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
                 let arr_ty = llt.array_type(elems.len() as u32);

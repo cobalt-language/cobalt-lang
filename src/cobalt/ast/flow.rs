@@ -41,18 +41,16 @@ impl AST for IfAST {
                         Type::Error
                     };
                     ctx.builder.position_at_end(itb);
-                    let err = format!("cannot convert value of type {} to {ty}", if_true.data_type);
-                    let if_true = if let Some(v) = types::utils::impl_convert(if_true, ty.clone(), ctx) {v} else {
-                        errs.push(Diagnostic::error(self.cond.loc(), 311, Some(err)));
+                    let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
                         Value::error()
-                    };
+                    });
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(ifb);
-                    let err = format!("cannot convert value of type {} to {ty}", if_false.data_type);
-                    let if_false= if let Some(v) = types::utils::impl_convert(if_false, ty.clone(), ctx) {v} else {
-                        errs.push(Diagnostic::error(self.cond.loc(), 311, Some(err)));
+                    let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
                         Value::error()
-                    };
+                    });
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if let Some(llt) = ty.llvm_type(ctx) {
