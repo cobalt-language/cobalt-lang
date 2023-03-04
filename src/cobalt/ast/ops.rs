@@ -85,15 +85,10 @@ impl AST for BinOpAST {
                 let (rhs, mut es) = self.rhs.codegen(ctx);
                 errs.append(&mut es);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
-                let ln = format!("{}", lhs.data_type);
-                let rn = format!("{}", rhs.data_type);
-                let val = types::utils::bin_op(lhs, rhs, x, ctx);
-                if val.is_none() {
-                    errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("binary operator {} is not defined for values of types {ln} and {rn}", self.op)))
-                        .note(self.lhs.loc(), format!("left value is of type {ln}"))
-                        .note(self.rhs.loc(), format!("right value is of type {rn}")));
-                }
-                (val.unwrap_or_else(Value::error), errs)
+                (types::utils::bin_op(self.loc.clone(), (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::error()
+                }), errs)
             }
         }
     }
