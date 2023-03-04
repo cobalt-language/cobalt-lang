@@ -1224,15 +1224,18 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
         _ => Err(err)
     }
 }
-pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {
+pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+    let n = val.data_type.to_string();
+    let err = Diagnostic::error(loc.clone(), 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
+        .note(vloc.clone(), format!("value is of type {n}"));
     match val.data_type {
         Type::Borrow(x) => {
             val.data_type = *x;
-            pre_op(val, op, ctx)
+            pre_op(loc, (val, vloc), op, ctx)
         },
         Type::Reference(x, false) => if op == "&" {
             val.data_type = Type::Pointer(x, false);
-            Some(val)
+            Ok(val)
         }
         else {
             val.data_type = *x;
@@ -1241,11 +1244,11 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                     val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                 }
             }
-            pre_op(val, op, ctx)
+            pre_op(loc, (val, vloc), op, ctx)
         },
         Type::Reference(x, true) => if op == "&" {
             val.data_type = Type::Pointer(x, true);
-            Some(val)
+            Ok(val)
         }
         else {
             match *x {
@@ -1259,7 +1262,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = x;
-                        Some(val)
+                        Ok(val)
                     },
                     "--" => {
                         if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
@@ -1269,7 +1272,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = x;
-                        Some(val)
+                        Ok(val)
                     },
                     _ => {
                         val.data_type = x;
@@ -1278,7 +1281,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
                         }
-                        pre_op(val, op, ctx)
+                        pre_op(loc, (val, vloc), op, ctx)
                     }
                 },
                 x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
@@ -1290,7 +1293,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = x;
-                        Some(val)
+                        Ok(val)
                     },
                     "--" => {
                         if let (Some(PointerValue(v)), false) = (val.comp_val, ctx.is_const.get()) {
@@ -1300,7 +1303,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = x;
-                        Some(val)
+                        Ok(val)
                     },
                     _ => {
                         val.data_type = x;
@@ -1309,7 +1312,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
                         }
-                        pre_op(val, op, ctx)
+                        pre_op(loc, (val, vloc), op, ctx)
                     }
                 },
                 Type::Pointer(b, m) => match op {
@@ -1321,7 +1324,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
-                        Some(val)
+                        Ok(val)
                     },
                     "--" => {
                         if let (Some(PointerValue(v)), SizeType::Static(_), false) = (val.comp_val, b.size(), ctx.is_const.get()) {
@@ -1331,7 +1334,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                         }
                         val.inter_val = None;
                         val.data_type = Type::Pointer(b, m);
-                        Some(val)
+                        Ok(val)
                     },
                     _ => {
                         val.data_type = Type::Pointer(b, m);
@@ -1340,7 +1343,7 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                                 val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                             }
                         }
-                        pre_op(val, op, ctx)
+                        pre_op(loc, (val, vloc), op, ctx)
                     }
                 },
                 x => {
@@ -1350,77 +1353,80 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
                             val.comp_val = Some(ctx.builder.build_load(v.into_pointer_value(), ""));
                         }
                     }
-                    pre_op(val, op, ctx)
+                    pre_op(loc, (val, vloc), op, ctx)
                 }
             }
         },
         Type::IntLiteral => match op {
             "+" => {
                 val.data_type = Type::IntLiteral;
-                Some(val)
+                Ok(val)
             },
-            "-" => Some(Value {
+            "-" => Ok(Value {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::IntLiteral
             }),
-            "~" => Some(Value {
+            "~" => Ok(Value {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::IntLiteral
             }),
-            _ => None
+            _ => Err(err)
         },
         Type::Int(s, u) => match op {
             "+" => {
                 val.data_type = Type::Int(s, u);
-                Some(val)
+                Ok(val)
             },
-            "-" => Some(Value {
+            "-" => Ok(Value {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
                 data_type: Type::Int(s, u)
             }),
-            "~" => Some(Value {
+            "~" => Ok(Value {
                 comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
                 inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
                 data_type: Type::Int(s, u)
             }),
-            _ => None
+            _ => Err(err)
         },
         x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
             "+" => {
                 val.data_type = x;
-                Some(val)
+                Ok(val)
             },
-            "-" => Some(Value {
+            "-" => Ok(Value {
                 comp_val: if let (Some(FloatValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
                 inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Float(-v))} else {None},
                 data_type: x
             }),
-            _ => None
+            _ => Err(err)
         }
         Type::Pointer(b, m) => match op {
             "*" => {
                 val.data_type = Type::Reference(b, m);
-                Some(val)
+                Ok(val)
             },
-            _ => None
+            _ => Err(err)
         },
-        _ => None
+        _ => Err(err)
     }
 }
-pub fn post_op<'ctx>(val: Value<'ctx>, op: &str, _ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {
+pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+    let n = val.data_type.to_string();
+    let err = Diagnostic::error(loc.clone(), 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
+        .note(vloc.clone(), format!("value is of type {n}"));
     match val.data_type {
         Type::TypeData => match op {
-            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Reference(t, true)))} else {None},
-            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Pointer(t, true)))} else {None},
-            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Reference(t, false)))} else {None},
-            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Pointer(t, false)))} else {None},
-            "^" => if let Some(InterData::Type(t)) = val.inter_val {Some(Value::make_type(Type::Borrow(t)))} else {None},
-            _ => None
+            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
+            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, true)))} else {Err(err)},
+            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, false)))} else {Err(err)},
+            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, false)))} else {Err(err)},
+            "^" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Borrow(t)))} else {Err(err)},
+            _ => Err(err)
         },
-        _ => None
+        _ => Err(err)
     }
 }
 pub fn subscript<'ctx>(mut val: Value<'ctx>, mut idx: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<Value<'ctx>> {

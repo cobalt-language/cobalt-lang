@@ -117,13 +117,10 @@ impl AST for PostfixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        let n = format!("{}", v.data_type);
-        let val = types::utils::post_op(v, self.op.as_str(), ctx);
-        if val.is_none() {
-            errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("postfix operator {} is not defined for value of type {n}", self.op)))
-                .note(self.val.loc(), format!("value is of type {n}")));
-        }
-        (val.unwrap_or_else(Value::error), errs)
+        (types::utils::post_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        }), errs)
     }
     fn to_code(&self) -> String {
         format!("{}{}", self.val.to_code(), self.op)
@@ -149,13 +146,10 @@ impl AST for PrefixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        let n = format!("{}", v.data_type);
-        let val = types::utils::pre_op(v, self.op.as_str(), ctx);
-        if val.is_none() {
-            errs.push(Diagnostic::error(self.loc.clone(), 310, Some(format!("prefix operator {} is not defined for value of type {n}", self.op)))
-                .note(self.val.loc(), format!("value is of type {n}")));
-        }
-        (val.unwrap_or_else(Value::error), errs)
+        (types::utils::pre_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        }), errs)
     }
     fn to_code(&self) -> String {
         format!("{}{}", self.op, self.val.to_code())
