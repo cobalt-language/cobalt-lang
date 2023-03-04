@@ -11,13 +11,75 @@ impl BinOpAST {
 impl AST for BinOpAST {
     fn loc(&self) -> Location {(self.loc.0, self.lhs.loc().1.start..self.rhs.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if self.op == "&&" || self.op == "||" {self.rhs.res_type(ctx)}
+        if self.op == "&?" || self.op == "|?" {
+            let t = self.rhs.res_type(ctx);
+            if t == Type::IntLiteral {return Type::IntLiteral}
+            if types::utils::expl_convertible(Type::Int(1, false), t.clone()) {t} else {Type::Null}
+        }
         else {types::utils::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match self.op.as_str() {
-            "&&" => todo!("short-circuiting operators aren't implemented"),
-            "||" => todo!("short-circuiting operators aren't implemented"),
+            "&?" => {
+                let (lhs, mut errs) = self.lhs.codegen(ctx);
+                let l = format!("source type is {}", lhs.data_type);
+                let r = format!("target type is bool");
+                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
+                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                    Value::error()
+                }).into_value(ctx) {
+                    let bb = ctx.builder.get_insert_block().unwrap();
+                    let f = bb.get_parent().unwrap();
+                    let ab = ctx.context.append_basic_block(f, "active");
+                    let mb = ctx.context.append_basic_block(f, "merge");
+                    ctx.builder.build_conditional_branch(val, ab, mb);
+                    ctx.builder.position_at_end(ab);
+                    let (mut rhs, mut es) = self.rhs.codegen(ctx);
+                    errs.append(&mut es);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
+                    if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(0), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                        let llt = val.get_type();
+                        let phi = ctx.builder.build_phi(llt, "");
+                        phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
+                        (Value::compiled(phi.as_basic_value(), rhs.data_type), errs)
+                    }
+                    else {(Value::null(), errs)}
+                }
+                else {(Value::null(), errs)}
+            },
+            "|?" => {
+                let (lhs, mut errs) = self.lhs.codegen(ctx);
+                let l = format!("source type is {}", lhs.data_type);
+                let r = format!("target type is bool");
+                let err = format!("cannot convert value of type {} to bool", lhs.data_type);
+                if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = types::utils::expl_convert(lhs, Type::Int(1, false), ctx).unwrap_or_else(|| {
+                    errs.push(Diagnostic::error(self.lhs.loc(), 312, Some(err)).info(l).info(r));
+                    Value::error()
+                }).into_value(ctx) {
+                    let bb = ctx.builder.get_insert_block().unwrap();
+                    let f = bb.get_parent().unwrap();
+                    let ab = ctx.context.append_basic_block(f, "active");
+                    let mb = ctx.context.append_basic_block(f, "merge");
+                    ctx.builder.build_conditional_branch(val, mb, ab);
+                    ctx.builder.position_at_end(ab);
+                    let (mut rhs, mut es) = self.rhs.codegen(ctx);
+                    errs.append(&mut es);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
+                    if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
+                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(Value::metaval(InterData::Int(1), Type::Int(1, false)), rhs.data_type.clone(), ctx).and_then(|v| v.into_value(ctx))) {
+                        let llt = val.get_type();
+                        let phi = ctx.builder.build_phi(llt, "");
+                        phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
+                        (Value::compiled(phi.as_basic_value(), rhs.data_type), errs)
+                    }
+                    else {(Value::null(), errs)}
+                }
+                else {(Value::null(), errs)}
+            },
             x => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let (rhs, mut es) = self.rhs.codegen(ctx);
