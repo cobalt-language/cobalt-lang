@@ -102,9 +102,6 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                     "&" => {out = ParsedType::Reference(Box::new(out), true); idx += 2;},
                     "*" => {out = ParsedType::Pointer(Box::new(out), true); idx += 2;},
                     "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 2;},
-                    "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), true)), true); idx += 2;},
-                    "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), true)), true); idx += 2;},
-                    "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 2;},
                     x => {
                         errs.push(Diagnostic::error(toks[idx].loc.clone(), 213, Some(format!("got {x:#}"))));
                         break;
@@ -120,9 +117,6 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                     "&" => {out = ParsedType::Reference(Box::new(out), false); idx += 2;},
                     "*" => {out = ParsedType::Pointer(Box::new(out), false); idx += 2;},
                     "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 2;},
-                    "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), false)), false); idx += 2;},
-                    "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), false)), false); idx += 2;},
-                    "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 2;},
                     x => {
                         errs.push(Diagnostic::error(toks[idx].loc.clone(), 213, Some(format!("got {x:#}"))));
                         break;
@@ -137,9 +131,6 @@ fn parse_type(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Pars
                 "&" => {out = ParsedType::Reference(Box::new(out), false); idx += 1;},
                 "*" => {out = ParsedType::Pointer(Box::new(out), false); idx += 1;},
                 "^" => {out = ParsedType::Borrow(Box::new(out)); idx += 1;},
-                "&&" => {out = ParsedType::Reference(Box::new(ParsedType::Reference(Box::new(out), false)), false); idx += 1;},
-                "**" => {out = ParsedType::Pointer(Box::new(ParsedType::Pointer(Box::new(out), false)), false); idx += 1;},
-                "^^" => {out = ParsedType::Borrow(Box::new(ParsedType::Borrow(Box::new(out)))); idx += 1;},
                 x => {
                     errs.push(Diagnostic::error(toks[idx].loc.clone(), 213, Some(format!("unexpected {x:#} in type"))));
                     break;
@@ -501,7 +492,7 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                             Special(';') => break,
                             Keyword(x) if x == "else" => break,
                             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                                "&" | "*" | "^" => false,
                                 _ => true
                             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
                             Special('(') => {
@@ -1241,7 +1232,7 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
             Special(c) if terminators.contains(*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") && match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                "&" | "*" | "^" => false,
                 _ => true
             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
@@ -1298,7 +1289,7 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
             Special(c) if terminators.contains(*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                "&" | "*" | "^" => false,
                 _ => true
             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
@@ -1356,7 +1347,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
             Special(c) if terminators.contains(*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "&&" | "**" | "^" | "^^" => false,
+                "&" | "*" | "^" => false,
                 _ => true
             } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
