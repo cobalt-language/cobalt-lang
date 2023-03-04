@@ -70,15 +70,15 @@ pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
     match (lhs, rhs) {
         (l, Type::Reference(x, _) | Type::Borrow(x)) => bin_type(l, *x, op),
         (Type::Int(ls, lu), Type::Int(rs, ru)) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => Type::Int(max(ls, rs), lu && ru),
+            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => Type::Int(max(ls, rs), lu && ru),
             _ => Type::Error
         },
         (x @ Type::Int(..), Type::IntLiteral) | (Type::IntLiteral, x @ Type::Int(..)) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => x,
+            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => x,
             _ => Type::Error
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "^^" => Type::IntLiteral,
+            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => Type::IntLiteral,
             _ => Type::Error
         },
         (Type::Int(..) | Type::IntLiteral, x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) | (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), Type::Int(..) | Type::IntLiteral) => match op {
@@ -719,7 +719,6 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
                     _ => None
                 },
                 data_type: Type::Int(1, false)            }),
-            "^^" => None, // TODO: implement exponents
             _ => None
         },
         (x @ Type::Int(..), Type::IntLiteral) => bin_op(Value {data_type: x.clone(), ..lhs}, impl_convert(Value {data_type: Type::IntLiteral, ..rhs}, x, ctx)?, op, ctx),
@@ -829,7 +828,6 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
                     _ => None
                 },
                 data_type: Type::IntLiteral            }),
-            "^^" => None, // TODO: implement exponents
             "<" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(SLT, l, r, ""))),
@@ -1078,16 +1076,6 @@ pub fn bin_op<'ctx>(mut lhs: Value<'ctx>, mut rhs: Value<'ctx>, op: &str, ctx: &
                     _ => None
                 },
                 data_type: l            }),
-            "^^" => Some(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
-                    (Some(FloatValue(_l)), Some(FloatValue(_r)), false) => None, // TODO: implement powf
-                    _ => None
-                },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
-                    (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l.powf(r))),
-                    _ => None
-                },
-                data_type: bin_type(l, r, op)            }),
             "<" => Some(Value {
                 comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OLT, l, r, ""))),
@@ -1185,10 +1173,6 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
             val.data_type = Type::Pointer(x, false);
             Some(val)
         }
-        else if op == "&&" {
-            val.data_type = Type::Pointer(x, false);
-            pre_op(val, "&", ctx)
-        }
         else {
             val.data_type = *x;
             if !ctx.is_const.get() && val.data_type.register() {
@@ -1201,10 +1185,6 @@ pub fn pre_op<'ctx>(mut val: Value<'ctx>, op: &str, ctx: &CompCtx<'ctx>) -> Opti
         Type::Reference(x, true) => if op == "&" {
             val.data_type = Type::Pointer(x, true);
             Some(val)
-        }
-        else if op == "&&" {
-            val.data_type = Type::Pointer(x, true);
-            pre_op(val, "&", ctx)
         }
         else {
             match *x {
