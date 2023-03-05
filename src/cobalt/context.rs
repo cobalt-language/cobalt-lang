@@ -30,7 +30,9 @@ impl<'ctx> CompCtx<'ctx> {
             priority: Counter::max(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
-                ("null", Value::make_type(Type::Null).into()),
+                ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
+                ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
+                ("bool", Value::make_type(Type::Int(1, false)).into()),
                 ("f16", Value::make_type(Type::Float16).into()),
                 ("f32", Value::make_type(Type::Float32).into()),
                 ("f64", Value::make_type(Type::Float64).into()),
@@ -52,7 +54,9 @@ impl<'ctx> CompCtx<'ctx> {
             priority: Counter::max(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
-                ("null", Value::make_type(Type::Null).into()),
+                ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
+                ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
+                ("bool", Value::make_type(Type::Int(1, false)).into()),
                 ("f16", Value::make_type(Type::Float16).into()),
                 ("f32", Value::make_type(Type::Float32).into()),
                 ("f64", Value::make_type(Type::Float64).into()),
