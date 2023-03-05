@@ -159,7 +159,7 @@ pub fn pre_type(val: Type, op: &str) -> Type {
 pub fn post_type(val: Type, op: &str) -> Type {
     match val {
         Type::Reference(x, _) | Type::Borrow(x) => post_type(*x, op),
-        Type::TypeData => match op {
+        Type::TypeData | Type::Null => match op {
             "mut&" | "mut*" | "const&" | "const*" | "^" => Type::TypeData,
             _ => Type::Error
         },
@@ -176,7 +176,7 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
                 Type::Array(b, _) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b, m), _ => Type::Error},
                 x => sub_type(x, i)
             },
-            Type::TypeData => match i {
+            Type::TypeData | Type::Null => match i {
                 Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
                 _ => Type::Error
             },
@@ -1426,6 +1426,14 @@ pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &s
             "^" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Borrow(t)))} else {Err(err)},
             _ => Err(err)
         },
+        Type::Null => match op {
+            "mut&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null), true))),
+            "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), true))),
+            "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null), false))),
+            "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), false))),
+            "^" => Ok(Value::make_type(Type::Borrow(Box::new(Type::Null)))),
+            _ => Err(err)
+        },
         _ => Err(err)
     }
 }
@@ -1615,6 +1623,11 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                 Type::TypeData => match idx.data_type {
                     Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
                     Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    _ => Err(err)
+                },
+                Type::Null => match idx.data_type {
+                    Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Null), None))),
+                    Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
                     _ => Err(err)
                 },
                 _ => Err(err)
