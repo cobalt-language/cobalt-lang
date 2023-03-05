@@ -116,7 +116,9 @@ impl AST for VarDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Diagnostic::warning(self.val.loc(), 21, None)); None}),
+                    }).or_else(|| {if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }; None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), false)
                 }, VariableData::new(self.loc.clone())))) {
@@ -136,7 +138,7 @@ impl AST for VarDefAST {
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
-                let val = self.val.codegen_errs(ctx, &mut errs);
+                let mut val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
@@ -153,6 +155,7 @@ impl AST for VarDefAST {
                         x => x
                     }
                 };
+                val.inter_val = None;
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
@@ -165,12 +168,15 @@ impl AST for VarDefAST {
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
-                            inter_val: val.inter_val,
+                            inter_val: None,
                             data_type: Type::Reference(Box::new(dt), false)
                         }, VariableData::new(self.loc.clone()))))
                     }
                 }
                 else {
+                    if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -225,10 +231,11 @@ impl AST for VarDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
+                        val.inter_val = None;
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
@@ -267,11 +274,12 @@ impl AST for VarDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
+                        val.inter_val = None;
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
@@ -279,7 +287,7 @@ impl AST for VarDefAST {
                             else {ctx.builder.clear_insertion_position();}
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
-                                inter_val: val.inter_val,
+                                inter_val: None,
                                 data_type: Type::Reference(Box::new(dt), false)
                             }, VariableData::new(self.loc.clone()))))
                         }
@@ -287,6 +295,9 @@ impl AST for VarDefAST {
                             unsafe {
                                 gv.delete();
                                 f.as_global_value().delete();
+                            }
+                            if dt != Type::Error {
+                                errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                         }
@@ -296,29 +307,15 @@ impl AST for VarDefAST {
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);
-                    let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
-                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let oic = ctx.is_const.replace(true);
-                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                        ctx.is_const.set(oic);
-                        t
-                    }) {t} else {
-                        match t2 {
-                            Type::IntLiteral => Type::Int(64, false),
-                            Type::Reference(b, m) => match *b {
-                                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                x => x
-                            },
-                            x => x
-                        }
-                    };
-                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                    if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }
+                    let sym = Symbol::Variable(types::utils::impl_convert(self.val.loc(), (self.val.const_codegen_errs(ctx, &mut errs), None), (dt.clone(), self.type_.as_ref().map(|a| a.loc())), ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error()
-                    });
+                    }), VariableData::new(self.loc.clone()));
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, sym))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -333,7 +330,7 @@ impl AST for VarDefAST {
                         errs.push(err);
                         (Value::error(), errs)
                     }
-                }
+                } 
             }
         }
         else {
@@ -382,6 +379,9 @@ impl AST for VarDefAST {
                 }, VariableData::new(self.loc.clone()))))
             }
             else {
+                if dt != Type::Error {
+                    errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                }
                 ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
             } {
                 Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -531,7 +531,9 @@ impl AST for MutDefAST {
                             Some((x, _)) => gv.set_linkage(x)
                         }
                         PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {errs.push(Diagnostic::warning(self.val.loc(), 23, None)); None}),
+                    }).or_else(|| {if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }; None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), true)
                 }, VariableData::new(self.loc.clone())))) {
@@ -552,7 +554,7 @@ impl AST for MutDefAST {
             }
             else if self.val.is_const() && self.type_.is_none() {
                 let old_scope = ctx.push_scope(&self.name);
-                let val = self.val.codegen_errs(ctx, &mut errs);
+                let mut val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
@@ -570,6 +572,7 @@ impl AST for MutDefAST {
                     }
                 };
                 ctx.restore_scope(old_scope);
+                val.inter_val = None;
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
@@ -582,12 +585,15 @@ impl AST for MutDefAST {
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
-                            inter_val: val.inter_val,
+                            inter_val: None,
                             data_type: Type::Reference(Box::new(dt), false)
                         }, VariableData::new(self.loc.clone()))))
                     }
                 }
                 else {
+                    if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }
                     ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
@@ -642,10 +648,11 @@ impl AST for MutDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
+                        val.inter_val = None;
                         ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
@@ -684,10 +691,11 @@ impl AST for MutDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
+                        val.inter_val = None;
                         ctx.restore_scope(old_scope);
                         if let Some(v) = val.comp_val {
                             ctx.builder.build_store(gv.as_pointer_value(), v);
@@ -696,7 +704,7 @@ impl AST for MutDefAST {
                             else {ctx.builder.clear_insertion_position();}
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
-                                inter_val: val.inter_val,
+                                inter_val: None,
                                 data_type: Type::Reference(Box::new(dt), false)
                             }, VariableData::new(self.loc.clone()))))
                         }
@@ -704,6 +712,9 @@ impl AST for MutDefAST {
                             unsafe {
                                 gv.delete();
                                 f.as_global_value().delete();
+                            }
+                            if dt != Type::Error {
+                                errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
                         }
@@ -713,29 +724,15 @@ impl AST for MutDefAST {
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);
-                    let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
-                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let oic = ctx.is_const.replace(true);
-                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                        ctx.is_const.set(oic);
-                        t
-                    }) {t} else {
-                        match t2 {
-                            Type::IntLiteral => Type::Int(64, false),
-                            Type::Reference(b, m) => match *b {
-                                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                x => x
-                            },
-                            x => x
-                        }
-                    };
-                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                    if dt != Type::Error {
+                        errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    }
+                    let sym = Symbol::Variable(types::utils::impl_convert(self.val.loc(), (self.val.const_codegen_errs(ctx, &mut errs), None), (dt.clone(), self.type_.as_ref().map(|a| a.loc())), ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error()
-                    });
+                    }), VariableData::new(self.loc.clone()));
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, sym))
                 } {
                     Ok(x) => (x.as_var().unwrap().clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
