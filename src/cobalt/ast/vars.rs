@@ -212,7 +212,7 @@ impl AST for VarDefAST {
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
                         }) {t} else {
@@ -300,7 +300,7 @@ impl AST for VarDefAST {
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                         ctx.is_const.set(oic);
                         t
                     }) {t} else {
@@ -629,7 +629,7 @@ impl AST for MutDefAST {
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
                         }) {t} else {
@@ -671,7 +671,7 @@ impl AST for MutDefAST {
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
                         }) {t} else {
