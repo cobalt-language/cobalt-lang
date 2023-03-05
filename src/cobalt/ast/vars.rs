@@ -824,9 +824,13 @@ impl AST for MutDefAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "mut: {}", self.name)?;
-        for (name, arg, _) in self.annotations.iter() {
-            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(true);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
+        pre.pop();
+        if let Some(ref ast) = self.type_ {print_ast_child(f, pre, &**ast, false)?}
         print_ast_child(f, pre, &*self.val, true)
     }
 }
@@ -893,9 +897,13 @@ impl AST for ConstDefAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "const: {}", self.name)?;
-        for (name, arg, _) in self.annotations.iter() {
-            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(true);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
+        pre.pop();
+        if let Some(ref ast) = self.type_ {print_ast_child(f, pre, &**ast, false)?}
         print_ast_child(f, pre, &*self.val, true)
     }
 }
