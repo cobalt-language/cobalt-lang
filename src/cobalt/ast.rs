@@ -20,9 +20,27 @@ pub trait AST {
     fn loc(&self) -> Location;
     fn is_const(&self) -> bool {false}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
-    fn codegen<'ctx>(& self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>);
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>);
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
+    fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let old_is_const = ctx.is_const.replace(true);
+        let res = self.codegen(ctx);
+        ctx.is_const.set(old_is_const);
+        res
+    }
+    fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<Diagnostic>) -> Value<'ctx> {
+        let (val, mut es) = self.codegen(ctx);
+        errs.append(&mut es);
+        val
+    }
+    fn const_codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<Diagnostic>) -> Value<'ctx> {
+        let old_is_const = ctx.is_const.replace(true);
+        let (val, mut es) = self.codegen(ctx);
+        errs.append(&mut es);
+        ctx.is_const.set(old_is_const);
+        val
+    }
 }
 impl Display for dyn AST {
     fn fmt(&self, f: &mut Formatter) -> Result {

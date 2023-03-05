@@ -154,8 +154,7 @@ impl AST for VarDefAST {
                 }
             }
             else if self.val.is_const() && self.type_.is_none() {
-                let (val, mut es) = self.val.codegen(ctx);
-                errs.append(&mut es);
+                let val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let (t, mut es) = t.into_type(ctx);
@@ -266,12 +265,10 @@ impl AST for VarDefAST {
                         x => x
                     }
                 };
-                let mut errs;
                 match if let Some(t) = dt.llvm_type(ctx) {
                     let old_global = ctx.global.replace(true);
                     let val = if ctx.is_const.get() {
-                        let (val, es) = self.val.codegen(ctx);
-                        errs = es;
+                        let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let (t, mut es) = t.into_type(ctx);
@@ -334,8 +331,7 @@ impl AST for VarDefAST {
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
                         let old_scope = ctx.push_scope(&self.name);
-                        let (val, es) = self.val.codegen(ctx);
-                        errs = es;
+                        let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let (t, mut es) = t.into_type(ctx);
@@ -402,8 +398,7 @@ impl AST for VarDefAST {
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);
-                    let (val, es) = self.val.codegen(ctx);
-                    errs = es;
+                    let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let (t, mut es) = t.into_type(ctx);
@@ -475,8 +470,7 @@ impl AST for VarDefAST {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
             let old_scope = ctx.push_scope(&self.name);
-            let (val, mut es) = self.val.codegen(ctx);
-            errs.append(&mut es);
+            let val = self.val.codegen_errs(ctx, &mut errs);
             let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                 let (t, mut es) = t.into_type(ctx);
@@ -719,8 +713,7 @@ impl AST for MutDefAST {
             }
             else if self.val.is_const() && self.type_.is_none() {
                 let old_scope = ctx.push_scope(&self.name);
-                let (val, mut es) = self.val.codegen(ctx);
-                errs.append(&mut es);
+                let val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let (t, mut es) = t.into_type(ctx);
@@ -795,7 +788,6 @@ impl AST for MutDefAST {
                 }
             }
             else {
-                let mut errs = vec![];
                 let t = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let (t, mut es) = t.into_type(ctx);
@@ -836,8 +828,7 @@ impl AST for MutDefAST {
                 match if let Some(t) = dt.llvm_type(ctx) {
                     let old_global = ctx.global.replace(true);
                     let val = if ctx.is_const.get() {
-                        let (val, es) = self.val.codegen(ctx);
-                        errs = es;
+                        let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let (t, mut es) = t.into_type(ctx);
@@ -900,8 +891,7 @@ impl AST for MutDefAST {
                         let old_ip = ctx.builder.get_insert_block();
                         ctx.builder.position_at_end(entry);
                         let old_scope = ctx.push_scope(&self.name);
-                        let (val, es) = self.val.codegen(ctx);
-                        errs = es;
+                        let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let (t, mut es) = t.into_type(ctx);
@@ -968,8 +958,7 @@ impl AST for MutDefAST {
                 }
                 else {
                     let old_scope = ctx.push_scope(&self.name);
-                    let (val, es) = self.val.codegen(ctx);
-                    errs = es;
+                    let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let (t, mut es) = t.into_type(ctx);
@@ -1041,7 +1030,7 @@ impl AST for MutDefAST {
                 errs.push(Diagnostic::error(loc, 419, None))
             }
             let old_scope = ctx.push_scope(&self.name);
-            let (val, mut errs) = self.val.codegen(ctx);
+            let val = self.val.codegen_errs(ctx, &mut errs);
             let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                 let (t, mut es) = t.into_type(ctx);
@@ -1145,8 +1134,7 @@ impl AST for ConstDefAST {
         let mut errs = self.annotations.iter().map(|(x, _, loc)| Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition")))).collect::<Vec<_>>();
         let old_is_const = ctx.is_const.replace(true);
         let old_scope = ctx.push_scope(&self.name);
-        let (val, mut es) = self.val.codegen(ctx);
-        errs.append(&mut es);
+        let val = self.val.codegen_errs(ctx, &mut errs);
         let t2 = val.data_type.clone();
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
             let (t, mut es) = t.into_type(ctx);

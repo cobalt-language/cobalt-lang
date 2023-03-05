@@ -32,8 +32,7 @@ impl AST for BinOpAST {
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(val, ab, mb);
                     ctx.builder.position_at_end(ab);
-                    let (mut rhs, mut es) = self.rhs.codegen(ctx);
-                    errs.append(&mut es);
+                    let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
@@ -59,8 +58,7 @@ impl AST for BinOpAST {
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(val, mb, ab);
                     ctx.builder.position_at_end(ab);
-                    let (mut rhs, mut es) = self.rhs.codegen(ctx);
-                    errs.append(&mut es);
+                    let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
@@ -76,8 +74,7 @@ impl AST for BinOpAST {
             },
             x => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let (rhs, mut es) = self.rhs.codegen(ctx);
-                errs.append(&mut es);
+                let rhs = self.rhs.codegen_errs(ctx, &mut errs);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
                 (types::utils::bin_op(self.loc.clone(), (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
                     errs.push(e);
@@ -166,8 +163,7 @@ impl AST for SubAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (target, mut errs) = self.target.codegen(ctx);
-        let (index, mut es) = self.index.codegen(ctx);
-        errs.append(&mut es);
+        let index = self.index.codegen_errs(ctx, &mut errs);
         if target.data_type == Type::Error || index.data_type == Type::Error {return (Value::error(), errs)}
         (types::utils::subscript((target, self.target.loc()), (index, self.index.loc()), ctx).unwrap_or_else(|e| {
             errs.push(e);

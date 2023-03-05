@@ -11,11 +11,7 @@ impl AST for BlockAST {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         let mut out = Value::null();
         let mut errs = vec![];
-        for val in self.vals.iter() {
-            let (ast, mut es) = val.codegen(ctx);
-            out = ast;
-            errs.append(&mut es);
-        }
+        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }
@@ -52,11 +48,7 @@ impl AST for GroupAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut out = Value::null();
         let mut errs = vec![];
-        for val in self.vals.iter() {
-            let (ast, mut es) = val.codegen(ctx);
-            out = ast;
-            errs.append(&mut es);
-        }
+        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
         (out, errs)
     }
     fn to_code(&self) -> String {
@@ -91,10 +83,7 @@ impl AST for TopLevelAST {
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
-        for val in self.vals.iter() {
-            let mut es = val.codegen(ctx).1;
-            errs.append(&mut es);
-        }
+        self.vals.iter().for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
         (Value::null(), errs)
     }
     fn to_code(&self) -> String {
