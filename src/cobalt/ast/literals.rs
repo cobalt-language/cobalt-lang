@@ -159,13 +159,20 @@ impl AST for StringLiteralAST {
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix {
-            None => Type::Pointer(Box::new(Type::Int(8, false)), false),
+            None => Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))), false),
             Some(_) => Type::Null
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match &self.suffix {
-            None => (Value::interpreted(PointerValue(ctx.builder.build_global_string_ptr(self.val.as_str(), "cobalt.str").as_pointer_value()), InterData::Str(self.val.clone()), Type::Pointer(Box::new(Type::Int(8, false)), false)), vec![]),
+            None => {
+                let cs = ctx.context.const_string(self.val.as_bytes(), true);
+                let gv = ctx.module.add_global(cs.get_type(), None, "cobalt.str");
+                gv.set_initializer(&cs);
+                gv.set_constant(true);
+                gv.set_linkage(inkwell::module::Linkage::Private);
+                (Value::interpreted(gv.as_pointer_value().const_cast(ctx.context.i8_type().ptr_type(inkwell::AddressSpace::from(0u16))).into(), InterData::Str(self.val.clone()), Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, false)), Some(self.val.len() as u32))), false)), vec![])
+            },
             Some((x, loc)) => (Value::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for string literal")))])
         }
     }

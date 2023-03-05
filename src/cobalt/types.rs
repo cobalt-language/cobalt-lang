@@ -131,8 +131,8 @@ impl Type {
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
             Null | Function(..) | Module | TypeData | InlineAsm | Error => None,
-            Array(_, Some(_)) => todo!("arrays aren't implemented yet"),
-            Array(_, None) => todo!("arrays aren't implemented yet"),
+            Array(_, Some(_)) => None,
+            Array(_, None) => None,
             Pointer(b, m) | Reference(b, m) => match &**b {
                 Type::Array(b, None) => Some(ctx.context.struct_type(&[Type::Pointer(b.clone(), *m).llvm_type(ctx)?, ctx.context.i64_type().into()], false).into()),
                 Type::Array(b, Some(_)) => Type::Pointer(b.clone(), *m).llvm_type(ctx),

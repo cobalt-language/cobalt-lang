@@ -1625,7 +1625,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
 pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<Location>), (target, tloc): (Type, Option<Location>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let li = format!("source type is {}", val.data_type);
     let ri = format!("target type is {target}");
-    let mut err = Diagnostic::error(loc.clone(), 312, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
+    let mut err = Diagnostic::error(loc.clone(), 311, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
     if let Some(l) = vloc.clone() {err.add_note(l, li)} else {err.add_info(li)};
     if let Some(r) = tloc.clone() {err.add_note(r, ri)} else {err.add_info(ri)};
     if val.data_type == target {Ok(val)}
