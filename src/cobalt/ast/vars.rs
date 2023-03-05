@@ -854,9 +854,7 @@ impl AST for ConstDefAST {
         let val = self.val.codegen_errs(ctx, &mut errs);
         let t2 = val.data_type.clone();
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            let oic = ctx.is_const.replace(true);
             let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-            ctx.is_const.set(oic);
             t
         }) {t} else {
             match t2 {
@@ -910,43 +908,17 @@ impl AST for ConstDefAST {
 pub struct TypeDefAST {
     loc: Location,
     pub name: DottedName,
-    pub val: ParsedType
+    pub val: Box<dyn AST>
 }
 impl TypeDefAST {
-    pub fn new(loc: Location, name: DottedName, val: ParsedType) -> Self {TypeDefAST {loc, name, val}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>) -> Self {TypeDefAST {loc, name, val}}
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
-        let ty = {
-            let (t, mut es) = self.val.into_type(ctx);
-            errs.append(&mut es);
-            match t {
-                Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotCompileTime(loc)) => {
-                    errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAModule(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAType(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                    Type::Error
-                }
-            }
-        };
+        let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
             Ok(x) => {
                 types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), (ty, true));
@@ -966,10 +938,10 @@ impl AST for TypeDefAST {
             }
         }
     }
-    fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val)}
+    fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "type: {}", self.name)?;
-        writeln!(f, "{pre}└── {}", self.val)
+        print_ast_child(f, pre, &*self.val, true)
     }
 }
 pub struct VarGetAST {

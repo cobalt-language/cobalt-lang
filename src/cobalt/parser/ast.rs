@@ -920,7 +920,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                     match &toks[0].data {
                         Operator(x) if x == "=" => {
-                            let (ty, idx, mut es) = parse_type(&toks[1..], ";", flags);
+                            let (ty, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                             toks = &toks[idx..];
                             errs.append(&mut es);
                             if toks.len() == 0 {
@@ -1838,7 +1838,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     }
                     match &toks[0].data {
                         Operator(x) if x == "=" => {
-                            let (ty, idx, mut es) = parse_type(&toks[1..], ";", flags);
+                            let (ty, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                             toks = &toks[idx..];
                             i += idx;
                             errs.append(&mut es);
