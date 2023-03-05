@@ -45,6 +45,7 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             IntLiteral => write!(f, "<int literal>"),
+            Int(1, _) => write!(f, "bool"),
             Int(size, false) => write!(f, "i{size}"),
             Int(size, true) => write!(f, "u{size}"),
             Char => write!(f, "char"),
