@@ -1064,20 +1064,16 @@ fn parse_casts(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>)
                         Operator(x) if x == "?" => {
                             let (lhs, mut es) = parse_casts(&toks[..idx], flags);
                             errs.append(&mut es);
-                            let (rhs, i, mut es) = parse_type(&toks[(idx + 2)..], "", flags);
+                            let (rhs, _, mut es) = parse_expr(&toks[(idx + 2)..], "", flags);
                             errs.append(&mut es);
-                            let mut target_loc = toks[idx + 2].loc.clone();
-                            target_loc.1.end = toks[idx + i].loc.1.end;
-                            return (Box::new(BitCastAST::new(tok.loc.clone(), lhs, rhs, target_loc)), errs);
+                            return (Box::new(BitCastAST::new(tok.loc.clone(), lhs, rhs)), errs);
                         },
                         _ => {
                             let (lhs, mut es) = parse_casts(&toks[..idx], flags);
                             errs.append(&mut es);
-                            let (rhs, i, mut es) = parse_type(&toks[(idx + 1)..], "", flags);
+                            let (rhs, _, mut es) = parse_expr(&toks[(idx + 1)..], "", flags);
                             errs.append(&mut es);
-                            let mut target_loc = toks[idx + 1].loc.clone();
-                            target_loc.1.end = toks[idx + i - 1].loc.1.end;
-                            return (Box::new(CastAST::new(tok.loc.clone(), lhs, rhs, target_loc)), errs);
+                            return (Box::new(CastAST::new(tok.loc.clone(), lhs, rhs)), errs);
                         }
                     }
                 },
