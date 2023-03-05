@@ -83,12 +83,22 @@ impl NullAST {
 }
 impl AST for NullAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::null(), vec![])}
-    fn to_code(&self) -> String {
-        "null".to_string()
-    }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "null")
-    }
+    fn to_code(&self) -> String {"null".to_string()}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "null")}
 }
+pub struct ErrorTypeAST {
+    loc: Location
+}
+impl ErrorTypeAST {
+    pub fn new(loc: Location) -> Self {ErrorTypeAST {loc}}
+}
+impl AST for ErrorTypeAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::make_type(Type::Error), vec![])}
+    fn to_code(&self) -> String {"<error type>".to_string()}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "error type")}
+}
+

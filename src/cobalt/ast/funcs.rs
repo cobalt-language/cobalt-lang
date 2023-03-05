@@ -13,121 +13,35 @@ pub enum ParamType {
 pub struct FnDefAST {
     loc: Location,
     pub name: DottedName,
-    pub ret: ParsedType,
-    pub params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, // parameter, mutable, type, default
+    pub ret: Box<dyn AST>,
+    pub params: Vec<(String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>)>, // parameter, mut/const, type, default
     pub body: Box<dyn AST>,
     pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: ParsedType, params: Vec<(String, ParamType, ParsedType, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
+    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<(String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        let (ret, mut errs) = self.ret.into_type(ctx);
-        let ret = match ret {
-            Ok(t) => t,
-            Err(IntoTypeError::NotAnInt(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                Type::Error
-            },
-            Err(IntoTypeError::NotCompileTime(loc)) => {
-                errs.push(Diagnostic::error(loc, 324, None));
-                Type::Error
-            },
-            Err(IntoTypeError::NotAModule(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                Type::Error
-            },
-            Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                Type::Error
-            },
-            Err(IntoTypeError::NotAType(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                Type::Error
-            }
-        };
-        Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
-            let (ty, mut es) = ty.into_type(ctx);
-            errs.append(&mut es);
-            match ty {
-                Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotCompileTime(loc)) => {
-                    errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAModule(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAType(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                    Type::Error
-                }
-            }
-        }, pt == &ParamType::Constant)).collect())
+        let oic = ctx.is_const.replace(true);
+        let ret = if let Ok(Value {inter_val: Some(InterData::Type(t)), data_type: Type::TypeData, ..}) = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx) {*t} else {Type::Error};
+        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (if let Ok(Value {inter_val: Some(InterData::Type(t)), data_type: Type::TypeData, ..}) = types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx) {*t} else {Type::Error}, pt == &ParamType::Constant)).collect());
+        ctx.is_const.set(oic);
+        out
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        let (ret, mut errs) = self.ret.into_type(ctx);
-        let ret = match ret {
-            Ok(t) => t,
-            Err(IntoTypeError::NotAnInt(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                Type::Error
-            },
-            Err(IntoTypeError::NotCompileTime(loc)) => {
-                errs.push(Diagnostic::error(loc, 324, None));
-                Type::Error
-            },
-            Err(IntoTypeError::NotAModule(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                Type::Error
-            },
-            Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                Type::Error
-            },
-            Err(IntoTypeError::NotAType(name, loc)) => {
-                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                Type::Error
-            }
-        };
-        let fty = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| ({
-            let (ty, mut es) = ty.into_type(ctx);
-            errs.append(&mut es);
-            match ty {
-                Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotCompileTime(loc)) => {
-                    errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAModule(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAType(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                    Type::Error
-                }
-            }
-        }, pt == &ParamType::Constant)).collect());
+        let mut errs = vec![];
+        let oic = ctx.is_const.replace(true);
+        let ret = types::utils::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+            errs.push(e);
+            Type::Error
+        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+        let fty = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+            errs.push(e);
+            Type::Error
+        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error}), pt == &ParamType::Constant)).collect());
+        ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
@@ -571,27 +485,45 @@ impl AST for FnDefAST {
         out + format!("): {} = {}", self.ret, self.body.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        write!(f, "function: {}(", self.name)?;
-        let mut len = self.params.len(); 
-        for (param, param_ty, ty, default) in self.params.iter() {
-            write!(f, "{}", match param_ty {
+        writeln!(f, "function: {}", self.name)?;
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(false);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        }
+        pre.pop();
+        writeln!(f, "{pre}├── parameters:")?;
+        pre.push(false);
+        for (n, (param, param_ty, ty, default)) in self.params.iter().enumerate() {
+            writeln!(f, "{pre}{}{}{}", if n + 1 < self.params.len() {"├── "} else {"└── "}, match param_ty {
                 ParamType::Normal => "",
                 ParamType::Mutable => "mut ",
                 ParamType::Constant => "const "
-            })?;
-            write!(f, "{}: {}", param, ty)?;
+            }, param)?;
+            pre.push(n + 1 == self.params.len());
             if let Some(val) = default {
-                write!(f, " = {}", val.to_code())?;
+                write!(f, "{pre}├── type: ")?;
+                pre.push(false);
+                ty.print_impl(f, pre)?;
+                pre.pop();
+                write!(f, "{pre}└── default: ")?;
+                pre.push(true);
+                val.print_impl(f, pre)?;
+                pre.pop();
             }
-            if len > 1 {
-                write!(f, ", ")?;
+            else {
+                write!(f, "{pre}└── type: ")?;
+                pre.push(true);
+                ty.print_impl(f, pre)?;
+                pre.pop();
             }
-            len -= 1;
+            pre.pop();
         }
-        writeln!(f, "): {}", self.ret)?;
-        for (name, arg, _) in self.annotations.iter() {
-            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
-        }
+        pre.pop();
+        write!(f, "{pre}├── return: ")?;
+        pre.push(false);
+        self.ret.print_impl(f, pre)?;
+        pre.pop();
         print_ast_child(f, pre, &*self.body, true)
     }
 }

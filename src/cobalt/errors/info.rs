@@ -140,8 +140,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*432*/ ErrorInfo::new("invalid call to inline assembly", ""),
     /*433*/ ErrorInfo::new("invalid return specification for @asm intrinsic", "")]),
     (900, &[
-    /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", ""),
-    /*901*/ ErrorInfo::new("function assignment is not yet supported", "")])
+    /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];
 pub fn lookup(code: u64) -> Option<ErrorInfo> {
     let (start, slice) = ERR_REGISTRY.iter().rev().skip_while(|(x, _)| x > &code).next()?;
