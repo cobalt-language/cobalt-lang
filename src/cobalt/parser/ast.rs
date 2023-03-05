@@ -797,7 +797,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             errs.append(&mut es);
                             let ast = if toks[0].data == Operator("=".to_string()) {
@@ -837,7 +837,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             errs.append(&mut es);
                             let ast = if toks[0].data == Operator("=".to_string()) {
@@ -877,17 +877,13 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             errs.append(&mut es);
                             let ast = if toks[0].data == Operator("=".to_string()) {
                                 let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                                 toks = &toks[idx..];
                                 errs.append(&mut es);
-                                if toks.len() == 0 {
-                                    errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
-                                    break 'main null(toks);
-                                }
                                 ast
                             }
                             else {Box::new(NullAST::new(toks[0].loc.clone()))};
@@ -1254,6 +1250,7 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Operator(c) if c.len() == 1 && terminators.contains(&*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") && match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "^" => false,
@@ -1311,6 +1308,7 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Operator(c) if c.len() == 1 && terminators.contains(&*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "^" => false,
@@ -1369,6 +1367,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     while i < toks.len() {
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
+            Operator(c) if c.len() == 1 && terminators.contains(&*c) => break,
             Statement(_) if i == 0 => i += 1,
             Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
                 "&" | "*" | "^" => false,
@@ -1681,7 +1680,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
                             errs.append(&mut es);
@@ -1732,7 +1731,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
                             errs.append(&mut es);
@@ -1783,7 +1782,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     }
                     match &toks[0].data {
                         Special(':') => {
-                            let (t, idx, mut es) = parse_type(&toks[1..], "=;", flags);
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
                             toks = &toks[idx..];
                             i += idx;
                             errs.append(&mut es);

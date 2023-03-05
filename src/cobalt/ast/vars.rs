@@ -6,9 +6,12 @@ pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub type_: Option<ParsedType>,
+    pub type_: Option<Box<dyn AST>>,
     pub annotations: Vec<(String, Option<String>, Location)>,
     pub global: bool
+}
+impl VarDefAST {
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>, global: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global}}
 }
 impl AST for VarDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
@@ -90,31 +93,10 @@ impl AST for VarDefAST {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t2 {
                         Type::IntLiteral => Type::Int(64, false),
@@ -157,31 +139,10 @@ impl AST for VarDefAST {
                 let val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t2 {
                         Type::IntLiteral => Type::Int(64, false),
@@ -230,31 +191,10 @@ impl AST for VarDefAST {
             else {
                 let t = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t {
                         Type::IntLiteral => Type::Int(64, false),
@@ -271,31 +211,10 @@ impl AST for VarDefAST {
                         let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let (t, mut es) = t.into_type(ctx);
-                            errs.append(&mut es);
-                            match t {
-                                Ok(t) => t,
-                                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotCompileTime(loc)) => {
-                                    errs.push(Diagnostic::error(loc, 324, None));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAType(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                    Type::Error
-                                }
-                            }
+                            let oic = ctx.is_const.replace(true);
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            ctx.is_const.set(oic);
+                            t
                         }) {t} else {
                             match t2 {
                                 Type::IntLiteral => Type::Int(64, false),
@@ -334,31 +253,10 @@ impl AST for VarDefAST {
                         let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let (t, mut es) = t.into_type(ctx);
-                            errs.append(&mut es);
-                            match t {
-                                Ok(t) => t,
-                                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotCompileTime(loc)) => {
-                                    errs.push(Diagnostic::error(loc, 324, None));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAType(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                    Type::Error
-                                }
-                            }
+                            let oic = ctx.is_const.replace(true);
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            ctx.is_const.set(oic);
+                            t
                         }) {t} else {
                             match t2 {
                                 Type::IntLiteral => Type::Int(64, false),
@@ -401,31 +299,10 @@ impl AST for VarDefAST {
                     let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let (t, mut es) = t.into_type(ctx);
-                        errs.append(&mut es);
-                        match t {
-                            Ok(t) => t,
-                            Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotCompileTime(loc)) => {
-                                errs.push(Diagnostic::error(loc, 324, None));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotAModule(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotAType(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                Type::Error
-                            }
-                        }
+                        let oic = ctx.is_const.replace(true);
+                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        ctx.is_const.set(oic);
+                        t
                     }) {t} else {
                         match t2 {
                             Type::IntLiteral => Type::Int(64, false),
@@ -473,31 +350,10 @@ impl AST for VarDefAST {
             let val = self.val.codegen_errs(ctx, &mut errs);
             let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                let (t, mut es) = t.into_type(ctx);
-                errs.append(&mut es);
-                match t {
-                    Ok(t) => t,
-                    Err(IntoTypeError::NotAnInt(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotCompileTime(loc)) => {
-                        errs.push(Diagnostic::error(loc, 324, None));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotAModule(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotAType(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                        Type::Error
-                    }
-                }
+                let oic = ctx.is_const.replace(true);
+                let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                ctx.is_const.set(oic);
+                t
             }) {t} else {
                 match t2 {
                     Type::IntLiteral => Type::Int(64, false),
@@ -547,26 +403,30 @@ impl AST for VarDefAST {
     fn to_code(&self) -> String {
         let mut out = "".to_string();
         for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
-        out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
+        out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "let: {}", self.name)?;
-        for (name, arg, _) in self.annotations.iter() {
-            writeln!(f, "{pre}├── @{name}{}", arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(true);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
         }
+        pre.pop();
+        if let Some(ref ast) = self.type_ {print_ast_child(f, pre, &**ast, false)?}
         print_ast_child(f, pre, &*self.val, true)
     }
-}
-impl VarDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>, Location)>, global: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global}}
 }
 pub struct MutDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub type_: Option<ParsedType>,
+    pub type_: Option<Box<dyn AST>>,
     pub annotations: Vec<(String, Option<String>, Location)>,
     pub global: bool
+}
+impl MutDefAST {
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>, global: bool) -> Self {MutDefAST {loc, name, val, type_, annotations, global}}
 }
 impl AST for MutDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
@@ -648,31 +508,10 @@ impl AST for MutDefAST {
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t2 {
                         Type::IntLiteral => Type::Int(64, false),
@@ -716,31 +555,10 @@ impl AST for MutDefAST {
                 let val = self.val.codegen_errs(ctx, &mut errs);
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t2 {
                         Type::IntLiteral => Type::Int(64, false),
@@ -790,31 +608,10 @@ impl AST for MutDefAST {
             else {
                 let t = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let (t, mut es) = t.into_type(ctx);
-                    errs.append(&mut es);
-                    match t {
-                        Ok(t) => t,
-                        Err(IntoTypeError::NotAnInt(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotCompileTime(loc)) => {
-                            errs.push(Diagnostic::error(loc, 324, None));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAModule(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                            Type::Error
-                        },
-                        Err(IntoTypeError::NotAType(name, loc)) => {
-                            errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                            Type::Error
-                        }
-                    }
+                    let oic = ctx.is_const.replace(true);
+                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    ctx.is_const.set(oic);
+                    t
                 }) {t} else {
                     match t {
                         Type::IntLiteral => Type::Int(64, false),
@@ -831,31 +628,10 @@ impl AST for MutDefAST {
                         let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let (t, mut es) = t.into_type(ctx);
-                            errs.append(&mut es);
-                            match t {
-                                Ok(t) => t,
-                                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotCompileTime(loc)) => {
-                                    errs.push(Diagnostic::error(loc, 324, None));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAType(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                    Type::Error
-                                }
-                            }
+                            let oic = ctx.is_const.replace(true);
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            ctx.is_const.set(oic);
+                            t
                         }) {t} else {
                             match t2 {
                                 Type::IntLiteral => Type::Int(64, false),
@@ -894,31 +670,10 @@ impl AST for MutDefAST {
                         let val = self.val.codegen_errs(ctx, &mut errs);
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let (t, mut es) = t.into_type(ctx);
-                            errs.append(&mut es);
-                            match t {
-                                Ok(t) => t,
-                                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotCompileTime(loc)) => {
-                                    errs.push(Diagnostic::error(loc, 324, None));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAModule(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                    Type::Error
-                                },
-                                Err(IntoTypeError::NotAType(name, loc)) => {
-                                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                    Type::Error
-                                }
-                            }
+                            let oic = ctx.is_const.replace(true);
+                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            ctx.is_const.set(oic);
+                            t
                         }) {t} else {
                             match t2 {
                                 Type::IntLiteral => Type::Int(64, false),
@@ -961,31 +716,10 @@ impl AST for MutDefAST {
                     let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let (t, mut es) = t.into_type(ctx);
-                        errs.append(&mut es);
-                        match t {
-                            Ok(t) => t,
-                            Err(IntoTypeError::NotAnInt(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotCompileTime(loc)) => {
-                                errs.push(Diagnostic::error(loc, 324, None));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotAModule(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                                Type::Error
-                            },
-                            Err(IntoTypeError::NotAType(name, loc)) => {
-                                errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                                Type::Error
-                            }
-                        }
+                        let oic = ctx.is_const.replace(true);
+                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        ctx.is_const.set(oic);
+                        t
                     }) {t} else {
                         match t2 {
                             Type::IntLiteral => Type::Int(64, false),
@@ -1033,31 +767,10 @@ impl AST for MutDefAST {
             let val = self.val.codegen_errs(ctx, &mut errs);
             let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                let (t, mut es) = t.into_type(ctx);
-                errs.append(&mut es);
-                match t {
-                    Ok(t) => t,
-                    Err(IntoTypeError::NotAnInt(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotCompileTime(loc)) => {
-                        errs.push(Diagnostic::error(loc, 324, None));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotAModule(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                        Type::Error
-                    },
-                    Err(IntoTypeError::NotAType(name, loc)) => {
-                        errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                        Type::Error
-                    }
-                }
+                let oic = ctx.is_const.replace(true);
+                let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                ctx.is_const.set(oic);
+                t
             }) {t} else {
                 match t2 {
                     Type::IntLiteral => Type::Int(64, false),
@@ -1117,15 +830,15 @@ impl AST for MutDefAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
-impl MutDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>, Location)>, global: bool) -> Self {MutDefAST {loc, name, val, type_, annotations, global}}
-}
 pub struct ConstDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub type_: Option<ParsedType>,
+    pub type_: Option<Box<dyn AST>>,
     pub annotations: Vec<(String, Option<String>, Location)>
+}
+impl ConstDefAST {
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ConstDefAST {loc, name, val, type_, annotations}}
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
@@ -1137,31 +850,10 @@ impl AST for ConstDefAST {
         let val = self.val.codegen_errs(ctx, &mut errs);
         let t2 = val.data_type.clone();
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            let (t, mut es) = t.into_type(ctx);
-            errs.append(&mut es);
-            match t {
-                Ok(t) => t,
-                Err(IntoTypeError::NotAnInt(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {name} to u64"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotCompileTime(loc)) => {
-                    errs.push(Diagnostic::error(loc, 324, None));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAModule(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 321, Some(format!("{name} is not a module"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::DoesNotExist(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 320, Some(format!("{name} does not exist"))));
-                    Type::Error
-                },
-                Err(IntoTypeError::NotAType(name, loc)) => {
-                    errs.push(Diagnostic::error(loc, 326, Some(format!("{name} is not a type"))));
-                    Type::Error
-                }
-            }
+            let oic = ctx.is_const.replace(true);
+            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+            ctx.is_const.set(oic);
+            t
         }) {t} else {
             match t2 {
                 Type::IntLiteral => Type::Int(64, false),
@@ -1206,9 +898,6 @@ impl AST for ConstDefAST {
         }
         print_ast_child(f, pre, &*self.val, true)
     }
-}
-impl ConstDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<ParsedType>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ConstDefAST {loc, name, val, type_, annotations}}
 }
 pub struct TypeDefAST {
     loc: Location,
