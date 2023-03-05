@@ -1768,6 +1768,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 },
                 _ => Err(err)
             },
+            Type::Null => if target == Type::TypeData {Ok(Value::make_type(Type::Null))} else {Err(err)},
             Type::Error => Ok(Value::error()),
             _ => Err(err)
         }
@@ -1971,7 +1972,13 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 Type::Pointer(x, false) if x == *lb => Ok(Value {data_type: Type::Pointer(x, false), ..val}),
                 _ => Err(err)
             },
-            Type::Null => Ok(Value {comp_val: target.llvm_type(ctx).map(|t| t.const_zero()), inter_val: None, data_type: target}),
+            Type::Null => match target {
+                Type::TypeData => Ok(Value::make_type(Type::Null)),
+                x @ (Type::IntLiteral | Type::Int(..)) => Ok(Value::interpreted(x.llvm_type(ctx).unwrap().into_int_type().const_int(0, false).into(), InterData::Int(0), x)),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::interpreted(x.llvm_type(ctx).unwrap().into_float_type().const_float(0.0).into(), InterData::Float(0.0), x)),
+                x @ Type::Pointer(..) => Ok(Value::compiled(x.llvm_type(ctx).unwrap().into_pointer_type().const_zero().into(), x)),
+                _ => Err(err)
+            },
             Type::Error => Ok(Value::error()),
             _ => Err(err)
         }
