@@ -439,7 +439,6 @@ impl<'ctx> VarMap<'ctx> {
             if name.last() == Some(&0) {name.pop();}
             if name.len() == 0 {break}
             let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
-            self.symbols.insert(name.clone(), Symbol::load(buf, ctx)?);
             match self.symbols.entry(name) {
                 Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
                     (Symbol::Module(bs, bi), Symbol::Module(ns, mut ni)) => {
