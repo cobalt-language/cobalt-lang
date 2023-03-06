@@ -188,6 +188,7 @@ impl AST for FnDefAST {
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
+        let cc = cconv.map_or(8, |(cc, _)| cc);
         if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
@@ -202,7 +203,7 @@ impl AST for FnDefAST {
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
                         _ => {}
                     }
-                    f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
+                    f.set_call_conventions(cc);
                     if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
@@ -228,7 +229,8 @@ impl AST for FnDefAST {
                                         InterData::Null
                                     }
                                 }
-                            })).collect()
+                            })).collect(),
+                            cconv: cc
                         })),
                         data_type: fty.clone(),
                     }, VariableData::new(self.loc.clone())))).clone();
@@ -296,7 +298,8 @@ impl AST for FnDefAST {
                                         InterData::Null
                                     }
                                 }
-                            })).collect()
+                            })).collect(),
+                            cconv: cc
                         })),
                         data_type: fty
                     }, VariableData::new(self.loc.clone())))).clone()
@@ -313,7 +316,7 @@ impl AST for FnDefAST {
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
                         _ => {}
                     }
-                    f.set_call_conventions(cconv.map_or(8, |(cc, _)| cc));
+                    f.set_call_conventions(cc);
                     if let Some((link, _)) = link_type {
                         f.as_global_value().set_linkage(link)
                     }
@@ -339,7 +342,8 @@ impl AST for FnDefAST {
                                         InterData::Null
                                     }
                                 }
-                            })).collect()
+                            })).collect(),
+                            cconv: cc
                         })),
                         data_type: fty.clone()
                     }, VariableData::new(self.loc.clone())))).clone();
@@ -407,7 +411,8 @@ impl AST for FnDefAST {
                                         InterData::Null
                                     }
                                 }
-                            })).collect()
+                            })).collect(),
+                            cconv: cc
                         })),
                         data_type: fty
                     }, VariableData::new(self.loc.clone())))).clone()
@@ -436,7 +441,8 @@ impl AST for FnDefAST {
                                     InterData::Null
                                 }
                             }
-                        })).collect()
+                        })).collect(),
+                        cconv: cc
                     })),
                     data_type: fty
                 }, VariableData::new(self.loc.clone())))).clone()
