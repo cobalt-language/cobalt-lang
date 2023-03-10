@@ -179,3 +179,24 @@ impl AST for SubAST {
         print_ast_child(f, pre, &*self.index, true)
     }
 }
+pub struct DotAST {
+    loc: Location,
+    pub prev: Box<dyn AST>,
+    pub name: (String, Location)
+}
+impl DotAST {
+    pub fn new(loc: Location, prev: Box<dyn AST>, name: (String, Location)) -> Self {DotAST {loc, prev, name}}
+}
+impl AST for DotAST {
+    fn loc(&self) -> Location {(self.name.1.0, self.prev.loc().1.start..self.name.1.1.end)}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Error}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        std::mem::drop(ctx);
+        (Value::error(), vec![])
+    }
+    fn to_code(&self) -> String {format!("{}.{}", self.prev.to_code(), self.name.0)}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "dot: {}", self.name.0)?;
+        print_ast_child(f, pre, &*self.prev, true)
+    }
+}

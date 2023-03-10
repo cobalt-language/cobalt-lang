@@ -795,6 +795,16 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
     errs.extend(toks.iter().map(|x| Diagnostic::error(x.loc.clone(), 203, Some(format!("expected ';', got {:#}", x.data)))));
     (ast, errs)
 }
+fn parse_dots(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+    if toks.len() < 3 {return parse_flow(toks, flags);}
+    if let (toks, [Token {loc: loc1, data: Special('.')}, Token {loc: loc2, data: Identifier(id)}]) = toks.split_at(toks.len() - 2) {
+        let (ast, errs) = parse_postfix(toks, flags);
+        (Box::new(DotAST::new(loc1.clone(), ast, (id.clone(), loc2.clone()))), errs)
+    }
+    else {
+        parse_flow(toks, flags)
+    }
+}
 fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_last() {
         if let Operator(op) = &tok.data {
@@ -837,7 +847,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic
             };
         }
     }
-    parse_flow(toks, flags)
+    parse_dots(toks, flags)
 }
 fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_first() {
