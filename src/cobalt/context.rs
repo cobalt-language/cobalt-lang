@@ -140,6 +140,13 @@ impl<'ctx> CompCtx<'ctx> {
             } else {Err(e)}
         } else {Err(e)})
     }
+    pub fn lookup_one(&self, name: &str, loc: &Location, global: bool) -> Option<&Symbol<'ctx>> {
+        self.with_vars(|v| v.lookup_one(name, loc, global)).or_else(|| match name {
+            x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
+            x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
+            _ => None
+        })
+    }
 }
 impl<'ctx> Drop for CompCtx<'ctx> {
     fn drop(&mut self) {

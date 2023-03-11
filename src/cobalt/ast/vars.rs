@@ -946,29 +946,29 @@ impl AST for TypeDefAST {
 }
 pub struct VarGetAST {
     loc: Location,
-    pub name: DottedName
+    pub name: String,
+    pub global: bool
 }
 impl VarGetAST {
-    pub fn new(loc: Location, name: DottedName) -> Self {VarGetAST {loc, name}}
+    pub fn new(loc: Location, name: String, global: bool) -> Self {VarGetAST {loc, name, global}}
 }
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Ok(Symbol::Variable(x, _)) = ctx.lookup(&self.name) {x.data_type.clone()}
+        if let Some(Symbol::Variable(x, _)) = ctx.lookup_one(&self.name, &self.loc, self.global) {x.data_type.clone()}
         else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        match ctx.lookup(&self.name) {
-            Ok(Symbol::Variable(x, _)) => (x.clone(), vec![]),
-            Ok(Symbol::Module(..)) => (Value::error(), vec![Diagnostic::error(self.name.ids.last().unwrap().1.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
-            Err(UndefVariable::NotAModule(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 321, Some(format!("{} is not a module", self.name.start(idx))))]),
-            Err(UndefVariable::DoesNotExist(idx)) => (Value::error(), vec![Diagnostic::error(self.name.ids[idx].1.clone(), 320, Some(format!("{} does not exist", self.name.start(idx))))])
+        match ctx.lookup_one(&self.name, &self.loc, self.global) {
+            Some(Symbol::Variable(x, _)) => (x.clone(), vec![]),
+            Some(Symbol::Module(..)) => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
+            None => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 320, Some(format!("{} does not exist", self.name)))])
         }
     }
     fn to_code(&self) -> String {
-        format!("{}", self.name)
+        format!("{}{}", if self.global {"."} else {""}, self.name)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "var: {}", self.name)
+        writeln!(f, "var: {}{}", if self.global {"."} else {""}, self.name)
     }
 }

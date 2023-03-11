@@ -487,6 +487,11 @@ impl<'ctx> VarMap<'ctx> {
             v.dump(4);
         })
     }
+    pub fn lookup_one(&self, name: &str, loc: &Location, global: bool) -> Option<&Symbol<'ctx>> {
+        self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|v| v.lookup_one(name, loc, global))).or_else(|| self.imports.iter().find_map(|i| {
+            Self::satisfy((&self.symbols, &self.imports), &self.parent, self.root(), &[(name.to_string(), loc.clone())], &i.ids)
+        }))
+    }
 }
 impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
     fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
