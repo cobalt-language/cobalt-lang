@@ -142,10 +142,7 @@ impl<'ctx> InterData<'ctx> {
                     if name.is_empty() {break}
                     out.insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), Symbol::load(buf, ctx)?);
                 }
-                loop {
-                    if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
-                    else {break}
-                }
+                while let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
                 Some(InterData::Module(out, imports))
             },
             x => panic!("read interpreted data type expecting number in 1..=9, got {x}")
@@ -258,7 +255,7 @@ impl<'ctx> Symbol<'ctx> {
     pub fn dump(&self, depth: usize) {
         match self {
             Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) => {
-                let pre = std::iter::repeat(' ').collect::<String>();
+                let pre = " ".repeat(depth);
                 eprintln!("module");
                 for i in i {eprintln!("{pre}    import: {i}")}
                 for (k, s) in s {
@@ -406,13 +403,10 @@ impl<'ctx> VarMap<'ctx> {
                     },
                     _ => out.push(x.key().clone())
                 },
-                Entry::Vacant(x) => std::mem::drop(x.insert(Symbol::load(buf, ctx)?))
+                Entry::Vacant(x) => {x.insert(Symbol::load(buf, ctx)?);}
             }
         }
-        loop {
-            if let Some(val) = CompoundDottedName::load(buf)? {self.imports.push(val);}
-            else {break}
-        }
+        while let Some(val) = CompoundDottedName::load(buf)? {self.imports.push(val);}
         Ok(out)
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
@@ -432,10 +426,7 @@ impl<'ctx> VarMap<'ctx> {
             if name.is_empty() {break}
             out.insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), Symbol::load(buf, ctx)?);
         }
-        loop {
-            if let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
-            else {break}
-        }
+        while let Some(val) = CompoundDottedName::load(buf)? {imports.push(val);}
         Ok(VarMap {parent: None, symbols: out, imports})
     }
     pub fn dump(&self) {
@@ -447,9 +438,12 @@ impl<'ctx> VarMap<'ctx> {
         })
     }
     pub fn lookup_one(&self, name: &str, loc: &Location, global: bool) -> Option<&Symbol<'ctx>> {
-        self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|v| v.lookup_one(name, loc, global))).or_else(|| self.imports.iter().find_map(|i| {
-            Self::satisfy((&self.symbols, &self.imports), &self.parent, self.root(), &[(name.to_string(), loc.clone())], &i.ids)
-        }))
+        if global {self.root().lookup_one(name, loc, false)}
+        else {
+            self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|v| v.lookup_one(name, loc, global))).or_else(|| self.imports.iter().find_map(|i| {
+                Self::satisfy((&self.symbols, &self.imports), &self.parent, self.root(), &[(name.to_string(), loc.clone())], &i.ids)
+            }))
+        }
     }
 }
 impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
@@ -481,7 +475,7 @@ fn merge<'ctx>(base: &mut HashMap<String, Symbol<'ctx>>, new: HashMap<String, Sy
                 },
                 _ => out.push(e.key().clone())
             },
-            Entry::Vacant(e) => std::mem::drop(e.insert(val))
+            Entry::Vacant(e) => {e.insert(val);}
         }
     }
     out

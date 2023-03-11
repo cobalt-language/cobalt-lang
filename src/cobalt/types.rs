@@ -13,7 +13,7 @@ pub enum SizeType {
     Meta
 }
 impl SizeType {
-    pub fn is_static(self) -> bool {if let Static(_) = self {true} else {false}}
+    pub fn is_static(self) -> bool {matches!(self, Static(_))}
     pub fn is_dynamic(self) -> bool {self == Dynamic}
     pub fn is_meta(self) -> bool {self == Meta}
     pub fn as_static(self) -> Option<u32> {if let Static(x) = self {Some(x)} else {None}}
@@ -199,7 +199,7 @@ impl Type {
                 b.save(out)?;
                 for (par, c) in p {
                     par.save(out)?;
-                    out.write_all(&[if *c {1} else {0}])?; // param is const
+                    out.write_all(&[u8::from(*c)])?; // param is const
                 }
                 Ok(())
             },
