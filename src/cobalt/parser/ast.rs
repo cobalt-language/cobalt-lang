@@ -793,9 +793,9 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
 }
 fn parse_dots(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.len() < 3 {return parse_flow(toks, flags);}
-    if let (toks, [Token {loc: loc1, data: Special('.')}, Token {loc: loc2, data: Identifier(id)}]) = toks.split_at(toks.len() - 2) {
+    if let (toks, [Token {loc: _, data: Special('.')}, Token {loc: loc2, data: Identifier(id)}]) = toks.split_at(toks.len() - 2) {
         let (ast, errs) = parse_postfix(toks, flags);
-        (Box::new(DotAST::new(loc1.clone(), ast, (id.clone(), loc2.clone()))), errs)
+        (Box::new(DotAST::new(ast, (id.clone(), loc2.clone()))), errs)
     }
     else {
         parse_flow(toks, flags)

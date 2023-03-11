@@ -321,7 +321,7 @@ impl<'ctx> VarMap<'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(x) => Err(RedefVariable::AlreadyExists(idx, if let Symbol(_, d) = x.get() {d.loc.clone()} else {None}, sym)),
+            Entry::Occupied(x) => Err(RedefVariable::AlreadyExists(idx, x.get().1.loc.clone(), sym)),
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
     }
