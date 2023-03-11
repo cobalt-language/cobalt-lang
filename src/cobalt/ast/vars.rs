@@ -107,7 +107,7 @@ impl AST for VarDefAST {
                         x => x
                     }
                 };
-                match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                     comp_val: dt.llvm_type(ctx).map(|t| {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
@@ -120,7 +120,7 @@ impl AST for VarDefAST {
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), false)
                 }, VariableData::new(self.loc.clone())))) {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -155,7 +155,7 @@ impl AST for VarDefAST {
                 };
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -163,7 +163,7 @@ impl AST for VarDefAST {
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: Type::Reference(Box::new(dt), false)
@@ -171,9 +171,9 @@ impl AST for VarDefAST {
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                 } {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -229,7 +229,7 @@ impl AST for VarDefAST {
                             errs.push(e);
                             Value::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -277,7 +277,7 @@ impl AST for VarDefAST {
                             ctx.builder.build_return(None);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
                             else {ctx.builder.clear_insertion_position();}
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
                                 data_type: Type::Reference(Box::new(dt), false)
@@ -288,7 +288,7 @@ impl AST for VarDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -318,9 +318,9 @@ impl AST for VarDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                 } {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -370,21 +370,21 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || val.data_type.register() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                 ctx.builder.build_store(a, v);
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), false)
                 }, VariableData::new(self.loc.clone()))))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
             } {
-                Ok(x) => (x.as_var().unwrap().clone(), errs),
+                Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
@@ -522,7 +522,7 @@ impl AST for MutDefAST {
                         x => x
                     }
                 };
-                match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                     comp_val: dt.llvm_type(ctx).map(|t| {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
                         match link_type {
@@ -535,7 +535,7 @@ impl AST for MutDefAST {
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), true)
                 }, VariableData::new(self.loc.clone())))) {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -572,7 +572,7 @@ impl AST for MutDefAST {
                 ctx.restore_scope(old_scope);
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -580,7 +580,7 @@ impl AST for MutDefAST {
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: val.inter_val,
                             data_type: Type::Reference(Box::new(dt), false)
@@ -588,9 +588,9 @@ impl AST for MutDefAST {
                     }
                 }
                 else {
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                 } {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -646,7 +646,7 @@ impl AST for MutDefAST {
                             errs.push(e);
                             Value::error()
                         });
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -694,7 +694,7 @@ impl AST for MutDefAST {
                             ctx.builder.build_return(None);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
                             else {ctx.builder.clear_insertion_position();}
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: val.inter_val,
                                 data_type: Type::Reference(Box::new(dt), false)
@@ -705,7 +705,7 @@ impl AST for MutDefAST {
                                 gv.delete();
                                 f.as_global_value().delete();
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -735,9 +735,9 @@ impl AST for MutDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
                 } {
-                    Ok(x) => (x.as_var().unwrap().clone(), errs),
+                    Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                         (Value::error(), errs)
@@ -787,21 +787,21 @@ impl AST for MutDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                 ctx.builder.build_store(a, v);
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), true)
                 }, VariableData::new(self.loc.clone()))))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
             } {
-                Ok(x) => (x.as_var().unwrap().clone(), errs),
+                Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)
@@ -872,8 +872,8 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(val, VariableData::new(self.loc.clone())))) {
-            Ok(x) => (x.as_var().unwrap().clone(), errs),
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone())))) {
+            Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Value::error(), errs)
@@ -919,10 +919,10 @@ impl AST for TypeDefAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
             Ok(x) => {
                 types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), (ty, true));
-                (x.as_var().unwrap().clone(), errs)
+                (x.0.clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -955,13 +955,12 @@ impl VarGetAST {
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Some(Symbol::Variable(x, _)) = ctx.lookup_one(&self.name, &self.loc, self.global) {x.data_type.clone()}
+        if let Some(Symbol(x, _)) = ctx.lookup_one(&self.name, &self.loc, self.global) {x.data_type.clone()}
         else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match ctx.lookup_one(&self.name, &self.loc, self.global) {
-            Some(Symbol::Variable(x, _)) => (x.clone(), vec![]),
-            Some(Symbol::Module(..)) => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 322, Some(format!("{} is not a variable", self.name)))]),
+            Some(Symbol(x, _)) => (x.clone(), vec![]),
             None => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 320, Some(format!("{} does not exist", self.name)))])
         }
     }

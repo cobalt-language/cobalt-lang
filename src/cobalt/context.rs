@@ -129,17 +129,6 @@ impl<'ctx> CompCtx<'ctx> {
             out
         }
     }
-    pub fn lookup(&self, name: &DottedName) -> Result<&Symbol<'ctx>, UndefVariable> {
-        self.with_vars(|v| v.lookup(name)).or_else(|e| if let UndefVariable::DoesNotExist(_) = e {
-            if name.ids.len() == 1 {
-                match name.ids[0].0.as_str() {
-                    x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Ok(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
-                    x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Ok(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
-                    _ => Err(e)
-                }
-            } else {Err(e)}
-        } else {Err(e)})
-    }
     pub fn lookup_one(&self, name: &str, loc: &Location, global: bool) -> Option<&Symbol<'ctx>> {
         self.with_vars(|v| v.lookup_one(name, loc, global)).or_else(|| match name {
             x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
