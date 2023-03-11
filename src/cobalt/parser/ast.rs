@@ -177,7 +177,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
                     errs.append(&mut es);
                     asts.push(ast);
                     idx += i;
-                    if idx >= 1 && match toks.get(idx - 1).map(|x| &x.data) {Some(Statement(_)) => true, _ => false} {idx -= 1;}
+                    if idx >= 1 && matches!(toks.get(idx - 1).map(|x| &x.data), Some(Statement(_))) {idx -= 1;}
                 }
             }
             (Box::new(BlockAST::new(start, asts)), errs)
@@ -325,10 +325,7 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                         match &toks[i].data {
                             Special(';') => break,
                             Keyword(x) if x == "else" => break,
-                            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                                "&" | "*" | "^" => false,
-                                _ => true
-                            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
+                            Statement(k) if (k != "const" && k != "mut") || !matches!(toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or(""), "&" | "*" | "^") => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, None)); break},
                             Special('(') => {
                                 let mut depth = 1;
                                 i += 1;
@@ -457,7 +454,7 @@ fn parse_flow(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
 }
 fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     let mut errs = vec![];
-    let start_idx = toks.iter().position(|x| if let Macro(..) = &x.data {false} else {true}).unwrap_or(toks.len());
+    let start_idx = toks.iter().position(|x| !matches!(&x.data, Macro(..))).unwrap_or(toks.len());
     let val = toks.get(start_idx);
     if val.is_none() {
         return (null(toks), vec![]);
@@ -983,10 +980,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special(')') => break 'main,
                     Special(']') => break 'main,
                     Special('}') => break 'main,
-                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && match &toks[idx - 1].data {
-                        Statement(_) => false,
-                        _ => true
-                    } => {
+                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && !matches!(&toks[idx - 1].data, Statement(_)) => {
                         let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
@@ -1042,10 +1036,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special('(') => break 'main,
                     Special('[') => break 'main,
                     Special('{') => break 'main,
-                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && match &toks[idx - 1].data {
-                        Statement(_) => false,
-                        _ => true
-                    } => {
+                    Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && !matches!(&toks[idx - 1].data, Statement(_)) => {
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
@@ -1104,10 +1095,7 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
             Special(c) if terminators.contains(*c) => break,
             Operator(c) if c.len() == 1 && terminators.contains(c) => break,
             Statement(_) if i == 0 => i += 1,
-            Statement(k) if (k != "const" && k != "mut") && match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "^" => false,
-                _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
+            Statement(k) if (k != "const" && k != "mut") && !matches!(toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or(""), "&" | "*" | "^") => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let mut depth = 1;
                 i += 1;
@@ -1162,10 +1150,7 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
             Special(c) if terminators.contains(*c) => break,
             Operator(c) if c.len() == 1 && terminators.contains(c) => break,
             Statement(_) if i == 0 => i += 1,
-            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "^" => false,
-                _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
+            Statement(k) if (k != "const" && k != "mut") || !matches!(toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or(""), "&" | "*" | "^") => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let mut depth = 1;
                 i += 1;
@@ -1221,10 +1206,7 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
             Special(c) if terminators.contains(*c) => break,
             Operator(c) if c.len() == 1 && terminators.contains(c) => break,
             Statement(_) if i == 0 => i += 1,
-            Statement(k) if (k != "const" && k != "mut") || match toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or("") {
-                "&" | "*" | "^" => false,
-                _ => true
-            } => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
+            Statement(k) if (k != "const" && k != "mut") || !matches!(toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or(""), "&" | "*" | "^") => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let start = toks[i].loc.clone();
                 let mut depth = 1;
