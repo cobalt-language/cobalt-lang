@@ -207,7 +207,7 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -247,7 +247,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -255,7 +255,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone(),
@@ -275,7 +275,7 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                         comp_val: None,
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -318,7 +318,7 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                         comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -358,7 +358,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
                                         comp_val: Some(param),
                                         inter_val: None,
                                         data_type: ty.clone()
@@ -366,7 +366,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol::Variable(Value {
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
                                         comp_val: None,
                                         inter_val: None,
                                         data_type: ty.clone()
@@ -386,7 +386,7 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                         comp_val: None,
                         inter_val: Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -415,7 +415,7 @@ impl AST for FnDefAST {
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                ctx.with_vars(|v| v.insert(&self.name, Symbol::Variable(Value {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
                     comp_val: None,
                     inter_val: Some(InterData::Function(FnData {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -441,7 +441,7 @@ impl AST for FnDefAST {
                     data_type: fty
                 }, VariableData::new(self.loc.clone())))).clone()
             } {
-                Ok(x) => (x.as_var().unwrap().clone(), errs),
+                Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     (Value::error(), errs)

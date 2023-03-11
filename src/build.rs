@@ -10,7 +10,7 @@ use colored::Colorize;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
-use cobalt::context::CompCtx;
+use cobalt::{CompCtx, Value, Type, InterData};
 use super::{libs, opt, package};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -151,8 +151,8 @@ impl TargetData {
 fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
     for (_, sym) in this.iter_mut() {
         match sym {
-            cobalt::Symbol::Module(m, _) => clear_mod(m, module),
-            cobalt::Symbol::Variable(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+            cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, _)), ..}, _) => clear_mod(m, module),
+            cobalt::Symbol(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
                 if let Ok(t) = t {
                     v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("Global variable should have a name!")).as_pointer_value()));

@@ -141,14 +141,10 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
             (Box::new(StringLiteralAST::new(toks[0].loc.clone(), x.clone(), suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Identifier(x) if x == "null" => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("unexpected {:#} after null", tok.data)))).collect()),
-        Identifier(_) | Special('.') => {
-            let (name, mut idx, mut errs) = parse_path(toks, "");
-            while idx < toks.len() {
-                errs.push(Diagnostic::error(toks[idx].loc.clone(), 271, Some(format!("unexpected {:#} after variable name", toks[idx].data))));
-                idx += 1;
-            }
-            (Box::new(VarGetAST::new(toks[0].loc.clone(), name)), errs)
-        },
+        Identifier(name) => (Box::new(VarGetAST::new(toks[0].loc.clone(), name.clone(), false)), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect()),
+        Special('.') =>
+            if let Some(Token {loc, data: Identifier(name)}) = toks.get(1) {(Box::new(VarGetAST::new(loc.clone(), name.clone(), true)), toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
+            else {(Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
         Macro(name, args) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), args.clone())), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())
     }
@@ -795,6 +791,16 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
     errs.extend(toks.iter().map(|x| Diagnostic::error(x.loc.clone(), 203, Some(format!("expected ';', got {:#}", x.data)))));
     (ast, errs)
 }
+fn parse_dots(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+    if toks.len() < 3 {return parse_flow(toks, flags);}
+    if let (toks, [Token {loc: _, data: Special('.')}, Token {loc: loc2, data: Identifier(id)}]) = toks.split_at(toks.len() - 2) {
+        let (ast, errs) = parse_postfix(toks, flags);
+        (Box::new(DotAST::new(ast, (id.clone(), loc2.clone()))), errs)
+    }
+    else {
+        parse_flow(toks, flags)
+    }
+}
 fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_last() {
         if let Operator(op) = &tok.data {
@@ -837,7 +843,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic
             };
         }
     }
-    parse_flow(toks, flags)
+    parse_dots(toks, flags)
 }
 fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if let Some((tok, toks)) = toks.split_first() {

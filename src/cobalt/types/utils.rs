@@ -184,6 +184,12 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
         }
     }
 }
+pub fn attr_type(target: Type, attr: &str) -> Type {
+    match target {
+        Type::Borrow(b) | Type::Reference(b, _) => attr_type(*b, attr),
+        _ => Type::Error
+    }
+}
 pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mut rhs, rloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let ln = lhs.data_type.to_string();
     let rn = rhs.data_type.to_string();
@@ -1995,6 +2001,25 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             Type::Error => Ok(Value::error()),
             _ => Err(err)
         }
+    }
+}
+pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+    let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 327, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
+    match val.data_type {
+        Type::Borrow(b) => {
+            val.data_type = *b;
+            attr((val, vloc), (id, iloc), ctx)
+        },
+        Type::Reference(b, _) => {
+            val.data_type = *b;
+            if val.data_type.register() {
+                if let Some(PointerValue(v)) = val.value(ctx) {
+                    val.comp_val = Some(ctx.builder.build_load(v, ""));
+                }
+            }
+            attr((val, vloc), (id, iloc), ctx)
+        },
+        _ => Err(err)
     }
 }
 fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMetadataTypeEnum<'ctx>, BasicMetadataValueEnum<'ctx>)> {
