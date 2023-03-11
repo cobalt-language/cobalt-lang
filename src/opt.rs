@@ -23,8 +23,7 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
         .replace("alignment", "align")
         .replace("variable", "var")
         .replace("instruction", "inst")
-        .replace("_", " ")
-        .replace("-", " ")
+        .replace(['_', '-'], " ")
         .to_lowercase();
     match name.as_str() {
         "arg promotion" => pm.add_argument_promotion_pass(),
@@ -105,14 +104,14 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
 #[allow(non_snake_case)]
 pub fn from_file(data: &str, pm: &PassManager<Module>) {
     let WARNING = "warning".bright_yellow().bold();
-    for (n, mut line) in data.split("\n").enumerate() {
+    for (n, mut line) in data.split('\n').enumerate() {
         let n = n + 1;
         if let Some(idx) = line.find('#') {line = &line[..idx];}
-        if line.trim().len() == 0 {continue}
+        if line.trim().is_empty() {continue}
         if let Some(idx) = line.find('=') {
             let pass = line[..idx].trim();
             let val = line[(idx + 1)..].trim().to_lowercase();
-            if val.len() == 0 {
+            if val.is_empty() {
                 if !add_pass(pm, pass, Null) {
                     eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
                 }
@@ -178,17 +177,17 @@ pub fn load_profile(name: Option<&str>, pm: &PassManager<Module>) {
         "less" | "1" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Less);
-            pmb.populate_module_pass_manager(&pm);
+            pmb.populate_module_pass_manager(pm);
         },
         "some" | "2" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Default);
-            pmb.populate_module_pass_manager(&pm);
+            pmb.populate_module_pass_manager(pm);
         },
         "aggressive" | "3" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Aggressive);
-            pmb.populate_module_pass_manager(&pm);
+            pmb.populate_module_pass_manager(pm);
         },
         _ => {
             eprintln!("{}: couldn't find profile {name}", "error".bright_red().bold());

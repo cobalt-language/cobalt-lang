@@ -9,7 +9,7 @@ pub fn find_libs<'a>(mut libs: Vec<String>, dirs: &Vec<&str>, ctx: Option<&cobal
         let path = x.into_path();
         if let Some(ext) = path.file_name().and_then(OsStr::to_str).map(|x| x.find('.').map(|i| &x[i..]).unwrap_or(x)) {if !(ext.contains(".so") || ext.contains(".dylib") || ext.contains(".dll")) {continue}} else {continue}
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
-            for lib in libs.iter_mut().filter(|x| x.len() > 0) {
+            for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
                 if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
                     let mut val = String::new();
                     std::mem::swap(&mut val, lib);
@@ -34,7 +34,7 @@ pub fn find_libs<'a>(mut libs: Vec<String>, dirs: &Vec<&str>, ctx: Option<&cobal
             _ => continue
         }
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
-            for lib in libs.iter_mut().filter(|x| x.len() > 0) {
+            for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
                 if lib == &stem || (stem.starts_with("lib") && lib == &&stem[3..]) {
                     let mut val = String::new();
                     std::mem::swap(&mut val, lib);
@@ -43,5 +43,5 @@ pub fn find_libs<'a>(mut libs: Vec<String>, dirs: &Vec<&str>, ctx: Option<&cobal
             }
         }
     }
-    Ok((out, libs.into_iter().filter(|x| x.len() > 0).map(|x| x.to_string()).collect(), failed))
+    Ok((out, libs.into_iter().filter(|x| !x.is_empty()).collect(), failed))
 }

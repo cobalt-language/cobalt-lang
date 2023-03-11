@@ -38,7 +38,7 @@ impl CompoundDottedNameSegment {
         match self {
             Identifier(id, _) => {
                 out.write_all(&[1])?;
-                out.write_all(&id.as_bytes())?;
+                out.write_all(id.as_bytes())?;
                 out.write_all(&[0])
             },
             Glob(_) => out.write_all(&[2]),
@@ -70,7 +70,7 @@ impl CompoundDottedNameSegment {
                 loop {
                     let mut group = vec![];
                     while let Some(val) = Self::load(buf)? {group.push(val);}
-                    if group.len() == 0 {break}
+                    if group.is_empty() {break}
                     else {out.push(group);}
                 }
                 Ok(Some(Group(out)))

@@ -175,7 +175,7 @@ impl AST for FnDefAST {
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
-                        let negate = if arg.as_bytes().get(0) == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
                             Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
@@ -196,7 +196,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0).as_str(), ft, None);
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
@@ -238,7 +238,7 @@ impl AST for FnDefAST {
                         {
                             let mut param_count = 0;
                             for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
-                                if name.len() == 0 {
+                                if name.is_empty() {
                                     if !is_const {
                                         param_count += 1;
                                     }
@@ -268,7 +268,7 @@ impl AST for FnDefAST {
                         let (body, mut es) = self.body.codegen(ctx);
                         errs.append(&mut es);
                         ctx.map_vars(|v| v.parent.unwrap());
-                        ctx.builder.build_return(Some(&types::utils::impl_convert(self.body.loc(), (body, None), ((&**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
+                        ctx.builder.build_return(Some(&types::utils::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         ctx.restore_scope(old_scope);
                     }
                     var
@@ -307,7 +307,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0.clone()).as_str(), ft, None);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| ctx.mangle(&self.name), |v| v.0).as_str(), ft, None);
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
@@ -349,7 +349,7 @@ impl AST for FnDefAST {
                         {
                             let mut param_count = 0;
                             for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
-                                if name.len() == 0 {
+                                if name.is_empty() {
                                     if !is_const {
                                         param_count += 1;
                                     }
@@ -464,7 +464,7 @@ impl AST for FnDefAST {
     }
     fn to_code(&self) -> String {
         let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ").to_string()) {out += s.as_str();}
+        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ")) {out += s.as_str();}
         out += format!("fn {}(", self.name).as_str();
         let mut len = self.params.len();
         for (param, param_ty, ty, default) in self.params.iter() {
@@ -665,7 +665,7 @@ impl AST for IntrinsicAST {
             x => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }
-    fn to_code(&self) -> String {self.name.clone() + self.args.as_ref().map(|x| x.as_str()).unwrap_or("")}
+    fn to_code(&self) -> String {self.name.clone() + self.args.as_deref().unwrap_or("")}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "intrinsic: {}", self.name)?;
         let mut is_first = true;

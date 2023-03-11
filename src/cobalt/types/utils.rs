@@ -1421,8 +1421,8 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
 }
 pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc.clone(), 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
-        .note(vloc.clone(), format!("value is of type {n}"));
+    let err = Diagnostic::error(loc, 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
+        .note(vloc, format!("value is of type {n}"));
     match val.data_type {
         Type::TypeData => match op {
             "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
@@ -2074,7 +2074,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
         },
         Type::Function(ret, params) => {
             let mut err = Diagnostic::error(loc.clone(), 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc.clone(), {
-                let mut out = format!("argument types are (");
+                let mut out = "argument types are (".to_string();
                 args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
                 out.truncate(out.len() - 2);
                 out.push(')');
@@ -2100,18 +2100,18 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 (if let Ok(val) = impl_convert((0, 0..0), (v.clone(), None), (t.clone(), None), ctx) {
                     if *c && val.inter_val.is_none() {
                         good = false;
-                        err.add_note(l.clone(), format!("{}{} argument must be const, but argument is not", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}));
+                        err.add_note(l, format!("{}{} argument must be const, but argument is not", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}));
                     }
                     val
                 }
                 else {
                     good = false;
-                    err.add_note(l.clone(), e);
+                    err.add_note(l, e);
                     Value::error()
                 }, c)
             }).partition::<Vec<_>, _>(|(_, c)| **c);
             if !good {return Err(err)}
-            if c.len() > 0 {return Err(Diagnostic::error(loc.clone(), 900, None))}
+            if !c.is_empty() {return Err(Diagnostic::error(loc, 900, None))}
             good = true;
             let val: Option<inkwell::values::CallableValue> = if let Some(PointerValue(v)) = target.comp_val {v.try_into().ok()} else {None};
             let args: Vec<inkwell::values::BasicMetadataValueEnum> = r.into_iter().filter_map(|(Value {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
@@ -2154,8 +2154,8 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 Ok(Value::null())
             }
         } else {Ok(Value::error())},
-        t => Err(Diagnostic::error(loc.clone(), 313, Some(format!("target type is {t}"))).info({
-            let mut out = format!("argument types are (");
+        t => Err(Diagnostic::error(loc, 313, Some(format!("target type is {t}"))).info({
+            let mut out = "argument types are (".to_string();
             args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
             out.truncate(out.len() - 2);
             out.push(')');

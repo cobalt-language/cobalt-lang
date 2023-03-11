@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "help" | "--help" | "-h" => {
             match args.get(2) {
                 None => println!("{HELP}"),
-                Some(x) if x.len() == 5 && (x.as_bytes()[0] == 'E' as u8 || x.as_bytes()[0] == 'W' as u8) && x.bytes().skip(1).all(|x| x >= '0' as u8 && x <= '9' as u8) => {
+                Some(x) if x.len() == 5 && (x.as_bytes()[0] == b'E' || x.as_bytes()[0] == b'W') && x.bytes().skip(1).all(|x| (b'0'..=b'9').contains(&x)) => {
                     match cobalt::errors::info::lookup(x[1..].parse().unwrap()).map(|x| x.help) {
                         None | Some("") => eprintln!("no help message available for {x}"),
                         Some(x) => println!("{x}")
@@ -70,8 +70,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
-                if arg.len() == 0 {continue;}
-                if arg.as_bytes()[0] == ('-' as u8) {
+                if arg.is_empty() {continue;}
+                if arg.as_bytes()[0] == b'-' {
                     for c in arg.chars().skip(1) {
                         match c {
                             'c' => {
@@ -112,8 +112,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
-                if arg.len() == 0 {continue;}
-                if arg.as_bytes()[0] == ('-' as u8) {
+                if arg.is_empty() {continue;}
+                if arg.as_bytes()[0] == b'-' {
                     for c in arg.chars().skip(1) {
                         match c {
                             'c' => {
@@ -162,10 +162,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "llvm" if cfg!(debug_assertions) => {
             let mut in_file: Option<&str> = None;
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
-                while let Some(arg) = it.next() {
-                    if arg.len() == 0 {continue;}
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                let it = args.iter().skip(2).skip_while(|x| x.is_empty());
+                for arg in it {
+                    if arg.is_empty() {continue;}
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
@@ -236,10 +236,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "lib-header" if cfg!(debug_assertions) => {
             let mut in_file: Option<&str> = None;
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
-                while let Some(arg) = it.next() {
-                    if arg.len() == 0 {continue;}
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                let it = args.iter().skip(2).skip_while(|x| x.is_empty());
+                for arg in it {
+                    if arg.is_empty() {continue;}
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
@@ -247,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 x => {
                                     eprintln!("{ERROR}: unknown flag --{x}");
@@ -334,10 +334,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut headers: Vec<&str> = vec![];
             let mut linker_args: Vec<&str> = vec![];
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                let mut it = args.iter().skip(2).skip_while(|x| x.is_empty());
                 while let Some(arg) = it.next() {
-                    if arg.len() == 0 {continue;}
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                    if arg.is_empty() {continue;}
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
@@ -345,7 +345,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 "continue" => {
                                     if continue_if_err {
@@ -480,7 +480,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     },
                                     'X' => {
-                                        linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(","));
+                                        linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(','));
                                     },
                                     'h' => {
                                         if let Some(x) = it.next() {
@@ -550,15 +550,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
-            let libs = if linked.len() > 0 {
+            let libs = if !linked.is_empty() {
                 let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
-                if notfound.len() > 0 {exit(102)}
+                if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
-                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.with_vars(|v| v.load(&mut file, &ctx))?;
             }
             let mut fail = false;
@@ -667,7 +667,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .arg("--add-section")
                                     .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
                                     .arg("--set-section-flags")
-                                    .arg(format!(".colib=readonly,data"));
+                                    .arg(".colib=readonly,data");
                                 exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
                             }
                             else {eprintln!("{ERROR}: cannot output library to stdout!"); exit(4)}
@@ -689,10 +689,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut headers: Vec<&str> = vec![];
             let mut profile: Option<&str> = None;
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                let mut it = args.iter().skip(2).skip_while(|x| x.is_empty());
                 while let Some(arg) = it.next() {
-                    if arg.len() == 0 {continue;}
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                    if arg.is_empty() {continue;}
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
@@ -700,7 +700,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 "continue" => {
                                     if continue_if_err {
@@ -802,15 +802,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let libs = if linked.len() > 0 {
+            let libs = if !linked.is_empty() {
                 let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
-                if notfound.len() > 0 {exit(102)}
+                if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
-                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.with_vars(|v| v.load(&mut file, &ctx))?;
             }
             let mut fail = false;
@@ -874,9 +874,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut headers: Vec<&str> = vec![];
             let mut no_default_link = false;
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                let mut it = args.iter().skip(2).skip_while(|x| x.is_empty());
                 while let Some(arg) = it.next() {
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
                                 eprintln!("{ERROR}: respecification of input file");
@@ -884,7 +884,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             in_file = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 "no-default-link" => {
                                     if no_default_link {
@@ -974,14 +974,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
-            if linked.len() > 0 {
+            if !linked.is_empty() {
                 let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
-                if notfound.len() > 0 {exit(102)}
+                if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
             }
             for head in headers {
-                let mut file = BufReader::new(std::fs::File::open(&head)?);
+                let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.with_vars(|v| v.load(&mut file, &ctx))?;
             }
             let mut fail = false;
@@ -1011,9 +1011,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut triple: Option<TargetTriple> = None;
             let mut targets: Vec<&str> = vec![];
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.len() == 0);
+                let mut it = args.iter().skip(2).skip_while(|x| x.is_empty());
                 while let Some(arg) = it.next() {
-                    if arg.as_bytes()[0] == ('-' as u8) {
+                    if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if project_dir.is_some() {
                                 eprintln!("{ERROR}: respecification of project directory");
@@ -1021,7 +1021,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             project_dir = Some("-");
                         }
-                        else if arg.as_bytes()[1] == ('-' as u8) {
+                        else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
                                 "no-default-link" => {
                                     if no_default_link {
@@ -1225,7 +1225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }, PathBuf::from);
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED)?}
-            exit(build::build(project_data, if targets.len() == 0 {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
+            exit(build::build(project_data, if targets.is_empty() {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
                 source_dir,
                 build_dir: build_dir.as_path(),
                 profile: profile.unwrap_or("default"),
@@ -1253,7 +1253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let mut good = 0;
             let registry = package::Package::registry();
-            for pkg in args.iter().skip(2).skip_while(|x| x.len() == 0) {
+            for pkg in args.iter().skip(2).skip_while(|x| x.is_empty()) {
                 if let Some(p) = registry.get(pkg) {
                     match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap(), None, package::InstallOptions::default()) {
                         Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),

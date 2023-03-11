@@ -73,7 +73,7 @@ impl Package {
             },
             Err(_) => {Repository::clone("https://github.com/matt-cornell/cobalt-registry.git", &cobalt_path)?;} // eventually, this might be under a cobalt-lang org, or somewhere else
         }
-        Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| Some(toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()?)).map(|pkg| (pkg.name.clone(), pkg)).collect())
+        Ok(std::fs::read_dir(cobalt_path)?.filter_map(|entry| toml::from_str::<Package>(&std::fs::read_to_string(entry.as_ref().ok()?.file_name()).ok()?).ok()).map(|pkg| (pkg.name.clone(), pkg)).collect())
     }
     pub fn init_registry() -> Result<(), PackageUpdateError> {REGISTRY.try_get_or_create(Self::init_pkgs).map(std::mem::drop)}
     pub fn registry() -> &'static HashMap<String, Package> {REGISTRY.get().expect("Package::init_registry() must be successfully called before Package::registry() can be used")}
@@ -108,7 +108,7 @@ impl Package {
             match url {
                 Source::Git(url) => {
                     if opts.output.verbose() {eprintln!("cloning from git repository from {url}");}
-                    Repository::clone(&url, &install_dir)?;
+                    Repository::clone(url, &install_dir)?;
                 },
                 Source::Tarball(url) => {
                     if opts.output.verbose() {eprintln!("downloading prebuilt tarball from {url}");}
@@ -138,11 +138,11 @@ impl Package {
                 }
             }
             install_loc.push(".download");
-            let triple = inkwell::targets::TargetTriple::create(&triple);
+            let triple = inkwell::targets::TargetTriple::create(triple);
             match &rel.src {
                 Source::Git(url) => {
                     if opts.output.verbose() {eprintln!("cloning from git repository from {url}");}
-                    Repository::clone(&url, &install_loc)?;
+                    Repository::clone(url, &install_loc)?;
                 },
                 Source::Tarball(url) => {
                     if opts.output.verbose() {eprintln!("downloading source tarball from {url}");}

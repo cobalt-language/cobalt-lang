@@ -232,7 +232,7 @@ impl Type {
                 let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
                 let v = i16::from_be_bytes(bytes);
-                Type::Int(v.abs() as u16, v < 0)
+                Type::Int(v.unsigned_abs(), v < 0)
             },
             2 => Type::Char,
             3 => Type::Float16,
