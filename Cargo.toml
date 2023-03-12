@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 colored = "2.0.0"
 bitvec = "1.0.1"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
+inkwell = { version = "0.1.1", features = ["llvm14-0"] }
 llvm-sys = { version = "140", features = ["strict-versioning"] }
 unicode-ident = "1.0.5"
 walkdir = "2"
