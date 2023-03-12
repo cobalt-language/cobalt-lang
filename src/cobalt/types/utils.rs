@@ -1952,7 +1952,7 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
     }
 }
 pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 327, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
+    let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
     match val.data_type {
         Type::Borrow(b) => {
             val.data_type = *b;
