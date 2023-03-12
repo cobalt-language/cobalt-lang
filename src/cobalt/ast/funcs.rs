@@ -10,16 +10,17 @@ pub enum ParamType {
     Mutable,
     Constant
 }
+type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
 pub struct FnDefAST {
     loc: Location,
     pub name: DottedName,
     pub ret: Box<dyn AST>,
-    pub params: Vec<(String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>)>, // parameter, mut/const, type, default
+    pub params: Vec<Parameter>,
     pub body: Box<dyn AST>,
     pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<(String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>)>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
+    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -177,7 +178,7 @@ impl AST for FnDefAST {
                         let mut arg = arg.as_str();
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
-                            Ok(pat) => if target_match != 1 {target_match = if negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()) {1} else {0}},
+                            Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
                             Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
                         }
                     }
@@ -464,7 +465,7 @@ impl AST for FnDefAST {
     }
     fn to_code(&self) -> String {
         let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()).as_str() + " ")) {out += s.as_str();}
+        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
         out += format!("fn {}(", self.name).as_str();
         let mut len = self.params.len();
         for (param, param_ty, ty, default) in self.params.iter() {
@@ -489,7 +490,7 @@ impl AST for FnDefAST {
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
-            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or("".to_string()))?;
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or_default())?;
         }
         pre.pop();
         writeln!(f, "{pre}├── parameters:")?;
