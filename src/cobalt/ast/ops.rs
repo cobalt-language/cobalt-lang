@@ -179,3 +179,37 @@ impl AST for SubAST {
         print_ast_child(f, pre, &*self.index, true)
     }
 }
+pub struct DotAST {
+    pub obj: Box<dyn AST>,
+    pub name: (String, Location)
+}
+impl DotAST {
+    pub fn new(obj: Box<dyn AST>, name: (String, Location)) -> Self {DotAST {obj, name}}
+}
+impl AST for DotAST {
+    fn loc(&self) -> Location {(self.name.1.0, self.obj.loc().1.start..self.name.1.1.end)}
+    fn res_type(&self, ctx: &CompCtx) -> Type {
+        match self.obj.res_type(ctx) {
+            Type::Module => if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, _i)), ..} = self.obj.const_codegen(ctx).0 {s.get(&self.name.0).map_or(Type::Error, |v| v.0.data_type.clone())} else {Type::Error},
+            x => types::utils::attr_type(x, &self.name.0)
+        }
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        (match self.obj.codegen_errs(ctx, &mut errs) {
+            Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, _i)), ..} => s.get(&self.name.0).map_or_else(|| {
+                errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
+                Value::error()
+            }, |x| x.0.clone()),
+            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1.clone()), ctx).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            })
+        }, errs)
+    }
+    fn to_code(&self) -> String {format!("{}.{}", self.obj.to_code(), self.name.0)}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "attr: {}", self.name.0)?;
+        print_ast_child(f, pre, &*self.obj, true)
+    }
+}

@@ -10,7 +10,7 @@ use colored::Colorize;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
-use cobalt::context::CompCtx;
+use cobalt::{CompCtx, Value, Type, InterData};
 use super::{libs, opt, package};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -32,10 +32,10 @@ pub struct Project {
 }
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
-        self.targets.unwrap_or(vec![]).into_iter()
-        .chain(self.executable.unwrap_or(vec![]).into_iter().map(|Executable {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
-        .chain(self.library.unwrap_or(vec![]).into_iter().map(|Library {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
-        .chain(self.meta.unwrap_or(vec![]).into_iter().map(|Meta {name, deps}| Target {target_type: TargetType::Library, files: None, name, deps}))
+        self.targets.unwrap_or_default().into_iter()
+        .chain(self.executable.unwrap_or_default().into_iter().map(|Executable {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
+        .chain(self.library.unwrap_or_default().into_iter().map(|Library {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
+        .chain(self.meta.unwrap_or_default().into_iter().map(|Meta {name, deps}| Target {target_type: TargetType::Library, files: None, name, deps}))
     }
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -132,7 +132,7 @@ impl TargetData {
         match libs::find_libs(libs.clone(), link_dirs, None) {
             Ok((libs, notfound, failed)) => {
                 for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
-                if notfound.len() > 0 {return Err(102)}
+                if !notfound.is_empty() {return Err(102)}
                 libs.into_iter().for_each(|(path, name)| self.init_lib(&name, &path, targets));
                 if failed {Err(99)} else {Ok(())}
             },
@@ -151,8 +151,8 @@ impl TargetData {
 fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
     for (_, sym) in this.iter_mut() {
         match sym {
-            cobalt::Symbol::Module(m, _) => clear_mod(m, module),
-            cobalt::Symbol::Variable(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+            cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, _)), ..}, _) => clear_mod(m, module),
+            cobalt::Symbol(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
                 if let Ok(t) = t {
                     v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("Global variable should have a name!")).as_pointer_value()));
@@ -166,7 +166,7 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     out_path.push(".artifacts");
     out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     out_path.set_extension("o");
-    let pname = match path.related_to(&opts.source_dir) {
+    let pname = match path.related_to(opts.source_dir) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error occured when finding relative path: {e}");
@@ -205,7 +205,7 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {println!(); return Err(101)}
-    let (_, errs) = ast.codegen(&ctx);
+    let (_, errs) = ast.codegen(ctx);
     overall_fail |= fail;
     fail = false;
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
@@ -588,7 +588,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("lib{}.so", t.name));
             let mut cmd = Command::new("ld");
-            cmd.args(&["--shared", "-o"]).arg(&output);
+            cmd.args(["--shared", "-o"]).arg(&output);
             cmd.args(paths);
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {println!("Failed to build {name} because of link errors"); return code}
@@ -604,7 +604,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 .arg("--add-section")
                 .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
                 .arg("--set-section-flags")
-                .arg(format!(".colib=readonly,data"));
+                .arg(".colib=readonly,data");
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code == 0 {println!("Built {name}");}
             else {println!("Failed to build {name} because of link errors");}

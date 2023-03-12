@@ -63,29 +63,27 @@ impl AST for IfAST {
                 }
                 else {Value::error()}
             }
-            else {
-                if let Some(ip) = ctx.builder.get_insert_block() {
-                    if let Some(f) = ip.get_parent() {
-                        let itb = ctx.context.append_basic_block(f, "if_true");
-                        let mb = ctx.context.append_basic_block(f, "merge");
-                        ctx.builder.build_conditional_branch(v, itb, mb);
-                        ctx.builder.position_at_end(itb);
-                        let (if_true, mut es) = self.if_true.codegen(ctx);
-                        errs.append(&mut es);
-                        ctx.builder.build_unconditional_branch(mb);
-                        ctx.builder.position_at_end(mb);
-                        if let Some(llt) = if_true.data_type.llvm_type(ctx) {
-                            let phi = ctx.builder.build_phi(llt, "");
-                            if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
-                            phi.add_incoming(&[(&llt.const_zero(), ip)]);
-                            Value::compiled(phi.as_basic_value(), if_true.data_type)
-                        }
-                        else {Value::error()}
+            else if let Some(ip) = ctx.builder.get_insert_block() {
+                if let Some(f) = ip.get_parent() {
+                    let itb = ctx.context.append_basic_block(f, "if_true");
+                    let mb = ctx.context.append_basic_block(f, "merge");
+                    ctx.builder.build_conditional_branch(v, itb, mb);
+                    ctx.builder.position_at_end(itb);
+                    let (if_true, mut es) = self.if_true.codegen(ctx);
+                    errs.append(&mut es);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
+                    if let Some(llt) = if_true.data_type.llvm_type(ctx) {
+                        let phi = ctx.builder.build_phi(llt, "");
+                        if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
+                        phi.add_incoming(&[(&llt.const_zero(), ip)]);
+                        Value::compiled(phi.as_basic_value(), if_true.data_type)
                     }
                     else {Value::error()}
                 }
                 else {Value::error()}
-            }, errs)
+            }
+            else {Value::error()}, errs)
         }
         else {(Value::error(), vec![])}
     }

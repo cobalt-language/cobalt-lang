@@ -70,16 +70,16 @@ fn parse_num(it: &mut std::iter::Peekable<std::str::Chars>, c: char, loc: &mut (
         '+' => {
             if up {loc.1 += 1;}
             let c = it.next().unwrap();
-            return parse_num(it, c, loc, up).map(|x| Token::new((loc.0, start..x.loc.1.end), x.data));
+            parse_num(it, c, loc, up).map(|x| Token::new((loc.0, start..x.loc.1.end), x.data))
         },
         '-' => {
             if up {loc.1 += 1;}
             let c = it.next().unwrap();
-            return parse_num(it, c, loc, up).map(|x| Token::new((loc.0, start..x.loc.1.end), match x.data {
+            parse_num(it, c, loc, up).map(|x| Token::new((loc.0, start..x.loc.1.end), match x.data {
                 Int(x) => Int(-x),
                 Float(x) => Float(-x),
                 _ => unreachable!("parse_num returns Int, Float, or Error")
-            }));
+            }))
         },
         '0'..='9' => {
             let mut val = c.to_digit(10).unwrap() as i128;
@@ -141,7 +141,7 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut (FileId,
         name.push(*c);
         it.next();
     }
-    if name.len() == 0 {return (vec![], vec![Diagnostic::error((loc.0, start..(start + 1)), 104, None)])}
+    if name.is_empty() {return (vec![], vec![Diagnostic::error((loc.0, start..(start + 1)), 104, None)])}
     let mut errs = vec![];
     let mut param_start = None;
     let params = if parse_params {
@@ -166,7 +166,7 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut (FileId,
     }
     else {None};
     (match name.as_str() {
-        "version" => match params.as_ref().map(|x| x.as_str()) {
+        "version" => match params.as_deref() {
             Some("major") => vec![Token::new((loc.0, (start..(loc.1 + 1))), Int(env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0)))],
             Some("minor") => vec![Token::new((loc.0, (start..(loc.1 + 1))), Int(env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0)))],
             Some("patch") => vec![Token::new((loc.0, (start..(loc.1 + 1))), Int(env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0)))],
@@ -225,7 +225,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                             while let Some(c) = it.next_if(|&x| x != '=') { // skip characters that aren't '='
                                 if flags.up {loc.1 += c.len_utf8();}
                             }
-                            if it.peek() == None {
+                            if it.peek().is_none() {
                                 errs.push(Diagnostic::error((loc.0, start..(loc.1 + 1)), 102, None));
                                 break 'main;
                             }

@@ -13,7 +13,7 @@ pub enum SizeType {
     Meta
 }
 impl SizeType {
-    pub fn is_static(self) -> bool {if let Static(_) = self {true} else {false}}
+    pub fn is_static(self) -> bool {matches!(self, Static(_))}
     pub fn is_dynamic(self) -> bool {self == Dynamic}
     pub fn is_meta(self) -> bool {self == Meta}
     pub fn as_static(self) -> Option<u32> {if let Static(x) = self {Some(x)} else {None}}
@@ -199,13 +199,13 @@ impl Type {
                 b.save(out)?;
                 for (par, c) in p {
                     par.save(out)?;
-                    out.write_all(&[if *c {1} else {0}])?; // param is const
+                    out.write_all(&[u8::from(*c)])?; // param is const
                 }
                 Ok(())
             },
             InlineAsm => out.write_all(&[14]),
             Error => panic!("error values shouldn't be serialized!"),
-            Module => todo!("Modules can't be stored in variables yet!"),
+            Module => out.write_all(&[19]),
             Array(b, None) => {
                 out.write_all(&[15])?;
                 b.save(out)
@@ -232,7 +232,7 @@ impl Type {
                 let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
                 let v = i16::from_be_bytes(bytes);
-                Type::Int(v.abs() as u16, v < 0)
+                Type::Int(v.unsigned_abs(), v < 0)
             },
             2 => Type::Char,
             3 => Type::Float16,
@@ -272,7 +272,8 @@ impl Type {
                 if vec.last() == Some(&0) {vec.pop();}
                 Type::Nominal(String::from_utf8(vec).expect("Type names should be valid UTF-8!"))
             },
-            x => panic!("read type value expecting value in 1..=18, got {x}")
+            19 => Type::Module,
+            x => panic!("read type value expecting value in 1..=19, got {x}")
         })
     }
 }
