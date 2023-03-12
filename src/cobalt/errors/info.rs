@@ -111,7 +111,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*324*/ ErrorInfo::new("value cannot be determined at compile-time", ""),
     /*325*/ ErrorInfo::new("redefinition of values in module", ""),
     /*326*/ ErrorInfo::new("value is not a type", ""),
-    /*327*/ ErrorInfo::new("value does not have this attribute", "")]),
+    /*327*/ ErrorInfo::new("variable must not have a const-only type", ""),
+    /*328*/ ErrorInfo::new("value does not have this attribute", "")]),
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", ""),
     /*391*/ ErrorInfo::new("unknown intrinisc", ""),

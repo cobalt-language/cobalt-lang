@@ -15,7 +15,8 @@ pub enum RedefVariable<'ctx> {
 }
 #[derive(Clone)]
 pub struct FnData<'ctx> {
-    pub defaults: Vec<InterData<'ctx>>
+    pub defaults: Vec<InterData<'ctx>>,
+    pub cconv: u32
 }
 #[derive(Clone)]
 pub enum InterData<'ctx> {
@@ -122,7 +123,8 @@ impl<'ctx> InterData<'ctx> {
                 let len = u32::from_be_bytes(bytes);
                 let mut vec = Vec::with_capacity(len as usize);
                 for _ in 0..len {vec.push(Self::load(buf, ctx)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
-                Some(InterData::Function(FnData{defaults: vec}))
+                buf.read_exact(&mut bytes)?;
+                Some(InterData::Function(FnData{defaults: vec, cconv: u32::from_be_bytes(bytes)}))
             },
             7 => {
                 let mut constraint = Vec::new();
@@ -227,6 +229,7 @@ impl<'ctx> Symbol<'ctx> {
                     if good {
                         let ft = llt.fn_type(&ps, false);
                         let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
                         let gv = fv.as_global_value();
                         gv.set_linkage(DLLImport);
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
@@ -238,6 +241,7 @@ impl<'ctx> Symbol<'ctx> {
                     if good {
                         let ft = ctx.context.void_type().fn_type(&ps, false);
                         let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
                         let gv = fv.as_global_value();
                         gv.set_linkage(DLLImport);
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
