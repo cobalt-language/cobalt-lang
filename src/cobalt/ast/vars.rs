@@ -231,7 +231,7 @@ impl AST for VarDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
@@ -378,7 +378,7 @@ impl AST for VarDefAST {
                     x => x
                 }
             };
-            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             });
@@ -663,7 +663,7 @@ impl AST for MutDefAST {
                                 x => x
                             }
                         };
-                        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
