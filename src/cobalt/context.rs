@@ -91,7 +91,7 @@ impl<'ctx> CompCtx<'ctx> {
             unsafe {
                 let base = self.name.replace(MaybeUninit::uninit()).assume_init();
                 let out = format!("{base}{name}");
-                self.name.set(MaybeUninit::new(base.to_string()));
+                self.name.set(MaybeUninit::new(base));
                 out
             }
         }
