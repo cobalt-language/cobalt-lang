@@ -20,7 +20,7 @@ enum OutputType {
     Library,
     Object,
     Assembly,
-    LLVM,
+    Llvm,
     Bitcode,
     Header
 }
@@ -174,21 +174,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             in_file = Some("-");
                         }
                         else if arg.as_bytes()[1] == b'-' {
-                            match &arg[2..] {
-                                x => {
-                                    eprintln!("{ERROR}: unknown flag --{x}");
-                                    exit(1)
-                                }
-                            }
+                            eprintln!("{ERROR}: unknown flag --{}", &arg[2..]);
+                            exit(1)
                         }
                         else {
                             for c in arg.chars().skip(1) {
-                                match c {
-                                    x => {
-                                        eprintln!("{ERROR}: unknown flag -{x}");
-                                        exit(1)
-                                    }
-                                }
+                                eprintln!("{ERROR}: unknown flag -{c}");
+                                exit(1)
                             }
                         }
                     }
@@ -295,7 +287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         eprintln!("{ERROR}: respecification of output type");
                                         exit(1)
                                     }
-                                    output_type = Some(OutputType::LLVM);
+                                    output_type = Some(OutputType::Llvm);
                                 },
                                 "emit-bc" | "emit-bitcode" => {
                                     if output_type.is_some() {
@@ -455,7 +447,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::LLVM => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Llvm => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
             });
@@ -474,7 +466,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if !linked.is_empty() {
-                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
@@ -520,7 +512,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ctx.with_vars(|v| v.save(&mut file))?;
                     }
                     else {ctx.with_vars(|v| v.save(&mut std::io::stdout()))?}
-                OutputType::LLVM =>
+                OutputType::Llvm =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
                 OutputType::Bitcode =>
@@ -713,20 +705,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = if in_file.is_none() {
+            let (in_file, code) = if let Some(f) = in_file {(f, std::fs::read_to_string(f)?)}
+            else {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 ("<stdin>", s)
-            }
-            else {
-                let f = in_file.unwrap();
-                (f, std::fs::read_to_string(f)?)
             };
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
-                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
@@ -873,14 +862,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = if in_file.is_none() {
+            let (in_file, code) = if let Some(f) = in_file {(f, std::fs::read_to_string(f)?)}
+            else {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 ("<stdin>", s)
-            }
-            else {
-                let f = in_file.unwrap();
-                (f, std::fs::read_to_string(f)?)
             };
             Target::initialize_native(&INIT_NEEDED)?;
             let triple = TargetMachine::get_default_triple();
@@ -898,7 +884,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             if !linked.is_empty() {
-                let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect(), Some(&ctx))?;
+                let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
