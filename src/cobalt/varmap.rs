@@ -59,6 +59,7 @@ impl<'ctx> InterData<'ctx> {
                 out.write_all(&[6])?;
                 out.write_all(&(v.defaults.len() as u32).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
+                out.write_all(&v.cconv.to_be_bytes())?;
                 Ok(())
             },
             InterData::InlineAsm(r, c, b) => {
