@@ -22,6 +22,7 @@ impl AST for VarDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -85,9 +86,40 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::error(loc.clone(), 426, None));
                     }
                 },
+                "export" => {
+                    if self.global {
+                        errs.push(Diagnostic::error(loc.clone(), 429, None));
+                    }
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                "private" => {
+                    if self.global {
+                        errs.push(Diagnostic::error(loc.clone(), 429, None));
+                    }
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
@@ -121,7 +153,7 @@ impl AST for VarDefAST {
                     }; None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), false)
-                }, VariableData::new(self.loc.clone())))) {
+                }, VariableData::with_vis(self.loc.clone(), vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -158,7 +190,7 @@ impl AST for VarDefAST {
                 val.inter_val = None;
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -170,14 +202,14 @@ impl AST for VarDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: None,
                             data_type: Type::Reference(Box::new(dt), false)
-                        }, VariableData::new(self.loc.clone()))))
+                        }, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                 }
                 else {
                     if dt != Type::Error {
                         errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                     }
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -236,7 +268,7 @@ impl AST for VarDefAST {
                             Value::error()
                         });
                         val.inter_val = None;
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -289,7 +321,7 @@ impl AST for VarDefAST {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: None,
                                 data_type: Type::Reference(Box::new(dt), false)
-                            }, VariableData::new(self.loc.clone()))))
+                            }, VariableData::with_vis(self.loc.clone(), vs))))
                         }
                         else {
                             unsafe {
@@ -299,7 +331,7 @@ impl AST for VarDefAST {
                             if dt != Type::Error {
                                 errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -332,7 +364,7 @@ impl AST for VarDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -384,7 +416,7 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || val.data_type.register() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -393,13 +425,13 @@ impl AST for VarDefAST {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), false)
-                }, VariableData::new(self.loc.clone()))))
+                }, VariableData::with_vis(self.loc.clone(), false))))
             }
             else {
                 if dt != Type::Error {
                     errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                 }
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -454,6 +486,7 @@ impl AST for MutDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut is_extern = None;
+        let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -517,9 +550,40 @@ impl AST for MutDefAST {
                         errs.push(Diagnostic::error(loc.clone(), 426, None));
                     }
                 },
+                "export" => {
+                    if self.global {
+                        errs.push(Diagnostic::error(loc.clone(), 429, None));
+                    }
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                "private" => {
+                    if self.global {
+                        errs.push(Diagnostic::error(loc.clone(), 429, None));
+                    }
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
@@ -553,7 +617,7 @@ impl AST for MutDefAST {
                     }; None}),
                     inter_val: None,
                     data_type: Type::Reference(Box::new(dt), false)
-                }, VariableData::new(self.loc.clone())))) {
+                }, VariableData::with_vis(self.loc.clone(), vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -590,7 +654,7 @@ impl AST for MutDefAST {
                 val.inter_val = None;
                 match if let Some(v) = val.comp_val {
                     if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
@@ -602,14 +666,14 @@ impl AST for MutDefAST {
                             comp_val: Some(PointerValue(gv.as_pointer_value())),
                             inter_val: None,
                             data_type: Type::Reference(Box::new(dt), false)
-                        }, VariableData::new(self.loc.clone()))))
+                        }, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                 }
                 else {
                     if dt != Type::Error {
                         errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                     }
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -668,7 +732,7 @@ impl AST for MutDefAST {
                             Value::error()
                         });
                         val.inter_val = None;
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
                         let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
@@ -721,7 +785,7 @@ impl AST for MutDefAST {
                                 comp_val: Some(PointerValue(gv.as_pointer_value())),
                                 inter_val: None,
                                 data_type: Type::Reference(Box::new(dt), false)
-                            }, VariableData::new(self.loc.clone()))))
+                            }, VariableData::with_vis(self.loc.clone(), vs))))
                         }
                         else {
                             unsafe {
@@ -731,7 +795,7 @@ impl AST for MutDefAST {
                             if dt != Type::Error {
                                 errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                             }
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
                         }
                     };
                     ctx.global.set(old_global);
@@ -764,7 +828,7 @@ impl AST for MutDefAST {
                         Value::error()
                     });
                     ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -816,7 +880,7 @@ impl AST for MutDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
@@ -825,10 +889,10 @@ impl AST for MutDefAST {
                     comp_val: Some(PointerValue(a)),
                     inter_val: val.inter_val,
                     data_type: Type::Reference(Box::new(val.data_type), true)
-                }, VariableData::new(self.loc.clone()))))
+                }, VariableData::with_vis(self.loc.clone(), false))))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone()))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -878,6 +942,7 @@ impl AST for ConstDefAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
+        let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -894,9 +959,34 @@ impl AST for ConstDefAST {
                         errs.push(Diagnostic::error(loc.clone(), 426, None));
                     }
                 },
+                "export" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                "private" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
+        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         let old_is_const = ctx.is_const.replace(true);
         let old_scope = ctx.push_scope(&self.name);
@@ -921,7 +1011,7 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::new(self.loc.clone())))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs)))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -957,18 +1047,65 @@ impl AST for ConstDefAST {
 pub struct TypeDefAST {
     loc: Location,
     pub name: DottedName,
-    pub val: Box<dyn AST>
+    pub val: Box<dyn AST>,
+    pub annotations: Vec<(String, Option<String>, Location)>
 }
 impl TypeDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>) -> Self {TypeDefAST {loc, name, val}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {TypeDefAST {loc, name, val, annotations}}
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
+        let mut vis_spec = None;
+        let mut target_match = 2u8;
+        for (ann, arg, loc) in self.annotations.iter() {
+            match ann.as_str() {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        match Pattern::new(arg) {
+                            Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
+                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                        }
+                    }
+                    else {
+                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                    }
+                },
+                "export" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                "private" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+            }
+        }
+        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
+        if target_match == 0 {return (Value::null(), errs)}
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::new(self.loc.clone())))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::with_vis(self.loc.clone(), vs)))) {
             Ok(x) => {
                 types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), (ty, true));
                 (x.0.clone(), errs)

@@ -77,9 +77,11 @@ impl<'ctx> InterData<'ctx> {
             InterData::Module(v, i) => {
                 out.write_all(&[9])?;
                 for (name, sym) in v.iter() {
-                    out.write_all(name.as_bytes())?; // name, null-terminated
-                    out.write_all(&[0])?;
-                    sym.save(out)?;
+                    if sym.1.export {
+                        out.write_all(name.as_bytes())?; // name, null-terminated
+                        out.write_all(&[0])?;
+                        sym.save(out)?;
+                    }
                 }
                 out.write_all(&[0])?; // null terminator for symbol list
                 for import in i.iter() {
@@ -181,6 +183,13 @@ impl VariableData {
         VariableData {
             good: true,
             export: true,
+            loc: Some(loc)
+        }
+    }
+    pub fn with_vis(loc: Location, export: bool) -> Self {
+        VariableData {
+            good: true,
+            export,
             loc: Some(loc)
         }
     }
@@ -375,9 +384,11 @@ impl<'ctx> VarMap<'ctx> {
         }
         out.write_all(&[0])?;
         for (name, sym) in self.symbols.iter() {
-            out.write_all(name.as_bytes())?;
-            out.write_all(&[0])?;
-            sym.save(out)?;
+            if sym.1.export {
+                out.write_all(name.as_bytes())?;
+                out.write_all(&[0])?;
+                sym.save(out)?;
+            }
         }
         out.write_all(&[0])?;
         for import in self.imports.iter() {
