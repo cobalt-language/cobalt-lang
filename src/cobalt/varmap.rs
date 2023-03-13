@@ -273,7 +273,7 @@ impl<'ctx> Symbol<'ctx> {
                 eprintln!("module");
                 for i in i {eprintln!("{pre}    import: {i}")}
                 for (k, s) in s {
-                    eprintln!("{pre}    {k}: ");
+                    eprint!("{pre}    {k}: ");
                     s.dump(depth + 4)
                 }
             },
