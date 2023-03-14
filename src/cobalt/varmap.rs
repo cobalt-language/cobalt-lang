@@ -296,32 +296,6 @@ impl<'ctx> VarMap<'ctx> {
         if self.parent.is_some() {self.parent.as_mut().unwrap().root_mut()}
         else {self}
     }
-    pub fn find_sym(&self, name: &str) -> Option<&Symbol<'ctx>> {self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|p| p.find_sym(name)))}
-    fn satisfy<'a>((symbols, imports): (&'a HashMap<String, Symbol<'ctx>>, &'a Vec<(CompoundDottedName, bool)>), parent: &'a Option<Box<VarMap<'ctx>>>, root: &VarMap, name: &[(String, Location)], pat: &[CompoundDottedNameSegment]) -> Option<&'a Symbol<'ctx>> {
-        use CompoundDottedNameSegment::*;
-        match pat.get(0)? {
-            Identifier(id, _) =>
-                if pat.len() == 1 {
-                    if name.len() == 1 && &name[0].0 == id {
-                        symbols.get(id).or_else(|| parent.as_ref().and_then(|p| p.find_sym(id)))
-                    } else {None}
-                }
-                else {
-                    Self::satisfy(symbols.get(id).and_then(|s| s.as_mod()).or_else(|| parent.as_ref().and_then(|p| p.find_sym(id))?.as_mod())?, parent, root, name, &pat[1..])
-                },
-            Group(ids) => ids.iter().cloned().find_map(|mut v| {
-                v.extend_from_slice(&pat[1..]);
-                Self::satisfy((symbols, imports), parent, root, name, &v)
-            }),
-            Glob(_) =>
-                if pat.len() == 1 {
-                    if name.len() == 1 {
-                        symbols.get(&name[0].0).or_else(|| parent.as_ref().and_then(|p| p.find_sym(&name[0].0)))
-                    } else {None}
-                }
-                else {symbols.values().find_map(|v| Self::satisfy(v.as_mod()?, parent, root, name, &pat[1..]))}
-        }
-    }
     pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
         let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
         let mut idx = 0;
@@ -453,12 +427,49 @@ impl<'ctx> VarMap<'ctx> {
             v.dump(4);
         })
     }
-    pub fn lookup_one(&self, name: &str, loc: &Location, global: bool) -> Option<&Symbol<'ctx>> {
-        if global {self.root().lookup_one(name, loc, false)}
+    pub fn satisfy<'vm>((symbols, imports): (&'vm HashMap<String, Symbol<'ctx>>, &'vm Vec<(CompoundDottedName, bool)>), name: &str, pattern: &[CompoundDottedNameSegment], root: &'vm VarMap<'ctx>) -> Option<&'vm Symbol<'ctx>> {
+        use CompoundDottedNameSegment::*;
+        match pattern.first()? {
+            Identifier(x, _) =>
+                if pattern.len() == 1 {if x == name {symbols.get(name).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
+                    Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
+                }))} else {None}}
+                else {
+                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()) {
+                        Self::satisfy((s, i), name, &pattern[1..], root)
+                    } else {None}
+                },
+            Glob(_) =>
+                if pattern.len() == 1 {symbols.get(name).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
+                    Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
+                }))}
+                else {
+                    symbols.values().find_map(|v| {
+                        if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = v {
+                            Self::satisfy((s, i), name, &pattern[1..], root)
+                        } else {None}
+                    })
+                },
+            Group(x) => x.iter().find_map(|v| {
+                let mut v = v.clone();
+                v.extend_from_slice(&pattern[1..]);
+                Self::satisfy((symbols, imports), name, &v, root)
+            })
+        }
+    }
+    pub fn lookup_in_mod<'vm>((symbols, imports): (&'vm HashMap<String, Symbol<'ctx>>, &'vm Vec<(CompoundDottedName, bool)>), name: &str, root: &'vm VarMap<'ctx>) -> Option<&'vm Symbol<'ctx>> {
+        symbols.get(name).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
+            Self::satisfy((symbols, imports), name, &i.ids, root)
+        }))
+    }
+    pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'ctx>> {
+        let root = self.root();
+        if global {root.lookup(name, false)}
         else {
-            self.symbols.get(name).or_else(|| self.parent.as_ref().and_then(|v| v.lookup_one(name, loc, global))).or_else(|| self.imports.iter().find_map(|(i, _)| {
-                Self::satisfy((&self.symbols, &self.imports), &self.parent, self.root(), &[(name.to_string(), loc.clone())], &i.ids)
-            }))
+            self.symbols.get(name).or_else(|| self.imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
+                let this = if i.global {self.root()} else {self};
+                Self::satisfy((&this.symbols, &this.imports), name, &i.ids, root)
+            })).or_else(|| self.parent.as_ref().and_then(|p| p.lookup(name, global)))
         }
     }
 }

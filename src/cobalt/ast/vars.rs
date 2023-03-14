@@ -1141,11 +1141,11 @@ impl VarGetAST {
 impl AST for VarGetAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Some(Symbol(x, _)) = ctx.lookup_one(&self.name, &self.loc, self.global) {x.data_type.clone()}
+        if let Some(Symbol(x, _)) = ctx.lookup(&self.name, self.global) {x.data_type.clone()}
         else {Type::Error}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        match ctx.lookup_one(&self.name, &self.loc, self.global) {
+        match ctx.lookup(&self.name, self.global) {
             Some(Symbol(x, _)) => (x.clone(), vec![]),
             None => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 320, Some(format!("{} does not exist", self.name)))])
         }
