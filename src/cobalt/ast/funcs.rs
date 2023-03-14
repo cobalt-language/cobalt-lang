@@ -48,6 +48,7 @@ impl AST for FnDefAST {
         let mut is_extern = None;
         let mut cconv = None;
         let mut inline = None;
+        let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -186,9 +187,34 @@ impl AST for FnDefAST {
                         errs.push(Diagnostic::error(loc.clone(), 426, None));
                     }
                 },
+                "export" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
+                "private" => {
+                    if let Some((_, vs)) = vis_spec.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    }
+                    else {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
+                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                        }
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
+        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         let cc = cconv.map_or(8, |(cc, _)| cc);
         if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
@@ -234,7 +260,7 @@ impl AST for FnDefAST {
                             cconv: cc
                         })),
                         data_type: fty.clone(),
-                    }, VariableData::new(self.loc.clone())))).clone();
+                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -303,7 +329,7 @@ impl AST for FnDefAST {
                             cconv: cc
                         })),
                         data_type: fty
-                    }, VariableData::new(self.loc.clone())))).clone()
+                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
                 }
             }
             else if **ret == Type::Null {
@@ -347,7 +373,7 @@ impl AST for FnDefAST {
                             cconv: cc
                         })),
                         data_type: fty.clone()
-                    }, VariableData::new(self.loc.clone())))).clone();
+                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -416,7 +442,7 @@ impl AST for FnDefAST {
                             cconv: cc
                         })),
                         data_type: fty
-                    }, VariableData::new(self.loc.clone())))).clone()
+                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
                 }
             }
             else {
@@ -446,7 +472,7 @@ impl AST for FnDefAST {
                         cconv: cc
                     })),
                     data_type: fty
-                }, VariableData::new(self.loc.clone())))).clone()
+                }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {

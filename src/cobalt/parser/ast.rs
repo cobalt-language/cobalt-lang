@@ -465,11 +465,12 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
             Statement(ref x) => match x.as_str() {
                 "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, None)); null(toks)},
                 "import" => {
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
                     let loc = toks[0].loc.clone();
                     toks = &toks[idx..];
                     errs.append(&mut es);
-                    Box::new(ImportAST::new(loc, name))
+                    Box::new(ImportAST::new(loc, name, annotations))
                 },
                 "fn" => {
                     let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
@@ -740,7 +741,6 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                 },
                 "type" => {
                     let anns = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
-                    std::mem::drop(anns);
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], "=");
@@ -764,7 +764,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                 errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
                                 break 'main null(toks);
                             }
-                            Box::new(TypeDefAST::new(start, name, ty)) as Box<dyn AST>
+                            Box::new(TypeDefAST::new(start, name, ty, anns)) as Box<dyn AST>
                         },
                         Special(';') => {errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)); Box::new(NullAST::new(toks[0].loc.clone())) as Box<dyn AST>},
                         _ => {errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data)))); Box::new(NullAST::new(toks[0].loc.clone())) as Box<dyn AST>}
@@ -1325,7 +1325,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                             }
                             let mut cname: CompoundDottedName = oname.into();
                             cname.ids.push(CompoundDottedNameSegment::Glob(toks[0].loc.clone()));
-                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname))], anns)));
+                            outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![Box::new(ImportAST::new(toks[0].loc.clone(), cname, vec![]))], anns)));
                         },
                         Special(';') => {
                             outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![], anns)));
@@ -1334,12 +1334,10 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     }
                 },
                 "import" => {
-                    if !annotations.is_empty() {
-                        errs.push(Diagnostic::error(val.loc.clone(), 283, None));
-                        annotations = vec![];
-                    }
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
-                    outs.push(Box::new(ImportAST::new(toks[0].loc.clone(), name)));
+                    outs.push(Box::new(ImportAST::new(toks[0].loc.clone(), name, anns)));
                     errs.append(&mut es);
                     i += idx + 1;
                     toks = &toks[(idx + 1)..];
@@ -1663,7 +1661,6 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                     errs.append(&mut es);
                     let mut anns = vec![];
                     std::mem::swap(&mut annotations, &mut anns);
-                    std::mem::drop(anns); // quietly drop these
                     if toks.is_empty() {
                         errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, None));
                         break;
@@ -1678,7 +1675,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                 errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
                                 break;
                             }
-                            outs.push(Box::new(TypeDefAST::new(start, name, ty)));
+                            outs.push(Box::new(TypeDefAST::new(start, name, ty, anns)));
                         },
                         Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
                         _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
