@@ -291,9 +291,11 @@ impl<'ctx> VarMap<'ctx> {
     pub fn new(parent: Option<Box<VarMap<'ctx>>>) -> Self {VarMap {parent, ..Self::default()}}
     pub fn orphan(self) -> Self {VarMap {parent: None, ..self}}
     pub fn reparent(self, parent: Box<VarMap<'ctx>>) -> Self {VarMap {parent: Some(parent), ..self}}
-    pub fn root(&self) -> &Self {self.parent.as_ref().map(|x| x.root()).unwrap_or(self)}
+    pub fn root(&self) -> &Self {self.parent.as_ref().map(|x| if x.parent.is_some() {x.root()} else {self}).unwrap_or(self)}
     pub fn root_mut(&mut self) -> &mut Self {
-        if self.parent.is_some() {self.parent.as_mut().unwrap().root_mut()}
+        if self.parent.is_some() && self.parent.as_ref().unwrap().parent.is_some(){
+            self.parent.as_mut().unwrap().root_mut()
+        }
         else {self}
     }
     pub fn insert(&mut self, name: &DottedName, sym: Symbol<'ctx>) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
@@ -435,7 +437,9 @@ impl<'ctx> VarMap<'ctx> {
                     Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
                 }))} else {None}}
                 else {
-                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()) {
+                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(x.as_str()) {Some(i)} else {None}).find_map(|i| {
+                        Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, x.as_str(), &i.ids, root)
+                    })) {
                         Self::satisfy((s, i), name, &pattern[1..], root)
                     } else {None}
                 },
