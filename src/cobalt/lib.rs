@@ -17,6 +17,3 @@ pub use types::{Type, SizeType};
 pub use varmap::*;
 pub use errors::{Diagnostic, Location};
 pub(crate) use ast::*;
-
-// #[cfg(test)]
-// mod tests;
