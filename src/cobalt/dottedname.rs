@@ -33,6 +33,13 @@ pub enum CompoundDottedNameSegment {
     Group(Vec<Vec<CompoundDottedNameSegment>>)
 }
 impl CompoundDottedNameSegment {
+    pub fn ends_with(&self, name: &str) -> bool {
+        match self {
+            Self::Identifier(n, _) => n == name,
+            Self::Glob(_) => true,
+            Self::Group(v) => v.iter().any(|v| if let Some(s) = v.last() {s.ends_with(name)} else {false})
+        }
+    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use CompoundDottedNameSegment::*;
         match self {
@@ -112,6 +119,7 @@ impl CompoundDottedName {
     pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, true)}
     pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, false)}
     pub fn local(id: CompoundDottedNameSegment) -> Self {Self::new(vec![id], false)}
+    pub fn ends_with(&self, name: &str) -> bool {if let Some(s) = self.ids.last() {s.ends_with(name)} else {false}}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         out.write_all(&[if self.global {2} else {1}])?;
         self.ids.iter().try_for_each(|i| i.save(out))?;

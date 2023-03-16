@@ -190,14 +190,14 @@ impl AST for DotAST {
     fn loc(&self) -> Location {(self.name.1.0, self.obj.loc().1.start..self.name.1.1.end)}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         match self.obj.res_type(ctx) {
-            Type::Module => if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, _i)), ..} = self.obj.const_codegen(ctx).0 {s.get(&self.name.0).map_or(Type::Error, |v| v.0.data_type.clone())} else {Type::Error},
+            Type::Module => if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..} = self.obj.const_codegen(ctx).0 {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
             x => types::utils::attr_type(x, &self.name.0)
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         (match self.obj.codegen_errs(ctx, &mut errs) {
-            Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, _i)), ..} => s.get(&self.name.0).map_or_else(|| {
+            Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..} => ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or_else(|| {
                 errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
                 Value::error()
             }, |x| x.0.clone()),
