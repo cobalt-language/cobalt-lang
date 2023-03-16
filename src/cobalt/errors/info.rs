@@ -17,7 +17,7 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*031*/ ErrorInfo::new("respecifying @static does nothing", ""),
     /*032*/ ErrorInfo::new("respecifying @extern does nothing", "")]),
     (90, &[
-    /*090*/ ErrorInfo::new("value has been moved from and is in an indeterminate state", "")]),
+    /*090*/ ErrorInfo::new("import does not refer to anything", "")]),
     (101, &[
     /*101*/ ErrorInfo::new("invalid character in source file", ""),
     /*102*/ ErrorInfo::new("unterminated multiline comment", include_str!("help/E0102.md")),

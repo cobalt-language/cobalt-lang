@@ -1,7 +1,7 @@
 use crate::*;
 use inkwell::values::BasicValueEnum;
 use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
-use std::collections::hash_map::{HashMap, Entry};
+use std::collections::{LinkedList, hash_map::{HashMap, Entry}};
 use std::io::{self, Write, Read, BufRead};
 #[derive(Debug, Clone, Copy)]
 pub enum UndefVariable {
@@ -437,9 +437,7 @@ impl<'ctx> VarMap<'ctx> {
                     Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
                 }))} else {None}}
                 else {
-                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(x.as_str()) {Some(i)} else {None}).find_map(|i| {
-                        Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, x.as_str(), &i.ids, root)
-                    })) {
+                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()) {
                         Self::satisfy((s, i), name, &pattern[1..], root)
                     } else {None}
                 },
@@ -474,6 +472,54 @@ impl<'ctx> VarMap<'ctx> {
                 let this = if i.global {self.root()} else {self};
                 Self::satisfy((&this.symbols, &this.imports), name, &i.ids, root)
             })).or_else(|| self.parent.as_ref().and_then(|p| p.lookup(name, global)))
+        }
+    }
+    pub fn verify_in_mod<'vm>((symbols, imports): (&'vm HashMap<String, Symbol<'ctx>>, &'vm Vec<(CompoundDottedName, bool)>), pattern: &[CompoundDottedNameSegment], root: &'vm VarMap<'ctx>) -> Vec<Location> {
+        use CompoundDottedNameSegment::*;
+        match pattern.first() {
+            None => vec![],
+            Some(Identifier(x, l)) => match Self::lookup_in_mod((symbols, imports), &x, root) {
+                Some(_) if pattern.len() == 1 => vec![],
+                Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) => Self::verify_in_mod((s, i), &pattern[1..], root),
+                _ => vec![l.clone()]
+            },
+            Some(Glob(l)) =>
+                if pattern.len() == 1 {
+                    if symbols.is_empty() && imports.is_empty() {vec![l.clone()]}
+                    else {vec![]}
+                }
+                else {
+                    let mut ll = symbols.values().filter_map(|x| if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = x {Some((s, i))} else {None}).map(|(s, i)| {Self::verify_in_mod((s, i), &pattern[1..], root)}).collect::<LinkedList<_>>();
+                    if let Some(mut out) = ll.pop_front() {
+                        ll.into_iter().for_each(|v| out.retain(|l| v.contains(l)));
+                        out
+                    }
+                    else {vec![]}
+                },
+            Some(Group(x)) => {
+                let mut ll = x.iter().map(|v| {
+                    let mut vec = v.clone();
+                    vec.extend_from_slice(&pattern[1..]);
+                    Self::verify_in_mod((symbols, imports), &vec, root)
+                }).collect::<LinkedList<_>>();
+                if let Some(mut out) = ll.pop_front() {
+                    ll.into_iter().for_each(|v| out.retain(|l| v.contains(l)));
+                    out
+                }
+                else {vec![]}
+            }
+        }
+    }
+    pub fn verify(&self, pattern: &CompoundDottedName) -> Vec<Location> {
+        let root = self.root();
+        if pattern.global && self.parent.as_ref().and_then(|p| p.parent.as_ref()).is_some() {root.verify(pattern)}
+        else {
+            let mut vec = Self::verify_in_mod((&self.symbols, &self.imports), &pattern.ids, root);
+            if let Some(p) = &self.parent {
+                let v2 = p.verify(pattern);
+                vec.retain(|l| v2.contains(l));
+            }
+            vec
         }
     }
 }

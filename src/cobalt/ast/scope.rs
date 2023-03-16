@@ -160,7 +160,11 @@ impl AST for ImportAST {
             }
         }
         if target_match == 0 {return (Value::null(), errs)}
-        ctx.with_vars(|v| v.imports.push((self.name.clone(), vis_spec.map_or(ctx.export.get(), |(v, _)| v))));
+        ctx.with_vars(|v| {
+            let vec = v.verify(&self.name);
+            errs.extend(vec.into_iter().map(|l| Diagnostic::warning(l, 90, None)));
+            v.imports.push((self.name.clone(), vis_spec.map_or(ctx.export.get(), |(v, _)| v)))
+        });
         (Value::null(), errs)
     }
     fn to_code(&self) -> String {
