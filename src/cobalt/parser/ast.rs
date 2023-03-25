@@ -145,7 +145,8 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
         Special('.') =>
             if let Some(Token {loc, data: Identifier(name)}) = toks.get(1) {(Box::new(VarGetAST::new(loc.clone(), name.clone(), true)), toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
             else {(Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
-        Macro(name, args) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), args.clone())), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
+        Macro(name, None) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), None)), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
+        Macro(name, Some((_, atoks))) => todo!(),
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())
     }
 }
@@ -465,7 +466,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
             Statement(ref x) => match x.as_str() {
                 "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, None)); null(toks)},
                 "import" => {
-                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
                     let loc = toks[0].loc.clone();
                     toks = &toks[idx..];
@@ -473,7 +474,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     Box::new(ImportAST::new(loc, name, annotations))
                 },
                 "fn" => {
-                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], "(=;");
@@ -620,7 +621,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                 },
                 "let" => {
-                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
@@ -660,7 +661,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                 },
                 "mut" => {
-                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
@@ -700,7 +701,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                 },
                 "const" => {
-                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
@@ -740,7 +741,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     }
                 },
                 "type" => {
-                    let anns = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.clone(), x.loc.clone()))} else {None}).collect::<Vec<_>>();
+                    let anns = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     toks = &toks[start_idx..];
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], "=");
@@ -1273,7 +1274,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
     'main: while !toks.is_empty() {
         let val = &toks[0];
         match &val.data {
-            Macro(name, params) => {i += 1; toks = &toks[1..]; annotations.push((name.clone(), params.clone(), toks[0].loc.clone()))}
+            Macro(name, params) => {i += 1; toks = &toks[1..]; annotations.push((name.clone(), params.as_ref().map(|(x, _)| x.clone()), toks[0].loc.clone()))}
             Special(';') => {
                 if !annotations.is_empty() {
                     errs.push(Diagnostic::error(val.loc.clone(), 281, None));
