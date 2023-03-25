@@ -875,8 +875,9 @@ fn parse_casts(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>)
     let mut errs = vec![];
     {
         let mut it = toks.iter().rev();
-        let mut idx = toks.len() - 1;
+        let mut idx = toks.len();
         'main: while let Some(tok) = it.next() {
+            idx -= 1;
             match &tok.data {
                 Special(')') => {
                     let mut depth = 1;
@@ -918,8 +919,8 @@ fn parse_casts(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>)
                 Special('[') => break 'main,
                 Special('{') => break 'main,
                 Special(':')  => {
-                    match &toks[idx + 1].data {
-                        Operator(x) if x == "?" => {
+                    match toks.get(idx + 1).map(|x| &x.data) {
+                        Some(Operator(x)) if x == "?" => {
                             let (lhs, mut es) = parse_casts(&toks[..idx], flags);
                             errs.append(&mut es);
                             let (rhs, _, mut es) = parse_expr(&toks[(idx + 2)..], "", flags);
@@ -935,7 +936,7 @@ fn parse_casts(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>)
                         }
                     }
                 },
-                _ => if idx == 0 {break} else {idx -= 1}
+                _ => if idx == 0 {break}
             }
         }
     }
