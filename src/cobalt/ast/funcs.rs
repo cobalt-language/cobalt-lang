@@ -647,7 +647,7 @@ impl AST for IntrinsicAST {
                                     Value {inter_val: Some(InterData::Str(b)), ..}
                                 ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))), errs),
                                 (a0, a1) => {
-                                    errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                    errs.push(Diagnostic::error(self.loc.clone(), 430, None)
                                         .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                         .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                         .info("both arguments should be constant strings (i8 const*)".to_string()));
@@ -656,7 +656,7 @@ impl AST for IntrinsicAST {
                             }
                         }
                         else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                            errs.push(Diagnostic::error(self.loc.clone(), 430, None)
                                 .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .info("both arguments should be constant strings (i8 const*)".to_string()));
@@ -675,7 +675,7 @@ impl AST for IntrinsicAST {
                                         Value {inter_val: Some(InterData::Str(b)), ..}
                                     ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)), errs),
                                     (a1, a2) => {
-                                        errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                        errs.push(Diagnostic::error(self.loc.clone(), 430, None)
                                             .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                             .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                             .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
@@ -684,7 +684,7 @@ impl AST for IntrinsicAST {
                                 }
                             }
                             else {
-                                errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                errs.push(Diagnostic::error(self.loc.clone(), 430, None)
                                     .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                     .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                     .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
@@ -692,7 +692,7 @@ impl AST for IntrinsicAST {
                             }
                         }
                         else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                            errs.push(Diagnostic::error(self.loc.clone(), 430, None)
                                 .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
@@ -701,7 +701,7 @@ impl AST for IntrinsicAST {
                         }
                     },
                     x => {
-                        errs.push(Diagnostic::error(self.loc.clone(), 1000, Some(format!("expected 2 or 3 arguments, got {x}")))
+                        errs.push(Diagnostic::error(self.loc.clone(), 430, Some(format!("expected 2 or 3 arguments, got {x}")))
                             .info("acceptable forms are:".to_string())
                             .info("constraint, body".to_string())
                             .info("return, constraint, body".to_string()));
@@ -712,7 +712,7 @@ impl AST for IntrinsicAST {
             "alloca" => {
                 let mut errs = vec![];
                 let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
-                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc.clone(), 1004, None)]);}
+                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc.clone(), 435, None)]);}
                 let ty = if args.front().unwrap().data_type == Type::TypeData {if let Some(InterData::Type(t)) = args.pop_front().unwrap().inter_val {Some(t)} else {None}} else {None};
                 if args.is_empty() {
                     if let Some(ty) = ty {
@@ -720,11 +720,11 @@ impl AST for IntrinsicAST {
                             (Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(ty, true)), vec![])
                         }
                         else {
-                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(Box::new(Type::Null), true)}, vec![Diagnostic::error(self.loc.clone(), 1002, Some(format!("type is {}", *ty)))])
+                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(Box::new(Type::Null), true)}, vec![Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty)))])
                         }
                     }
                     else {
-                        (Value::compiled(ctx.builder.build_alloca(ctx.context.i8_type(), "").into(), Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc.clone(), 1001, None)])
+                        unreachable!()
                     }
                 }
                 else {
@@ -756,7 +756,7 @@ impl AST for IntrinsicAST {
                                     break;
                                 },
                                 x => {
-                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 1003, Some(format!("argument type is {x}"))));
+                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 434, Some(format!("argument type is {x}"))));
                                     break;
                                 }
                             }
@@ -767,7 +767,7 @@ impl AST for IntrinsicAST {
                             (Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(ty, true)), errs)
                         }
                         else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 1002, Some(format!("type is {}", *ty))));
+                            errs.push(Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty))));
                             (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(ty, true)}, errs)
                         }
                     }

@@ -138,10 +138,12 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*427*/ ErrorInfo::new("error in target glob", ""),
     /*428*/ ErrorInfo::new("invalid visibility specifier", ""),
     /*429*/ ErrorInfo::new("visibility cannot be specified for local variables", ""),
-    /*430*/ ErrorInfo::new("@asm intrinsic requires arguments", ""),
-    /*431*/ ErrorInfo::new("@asm intrinsic requires a constraint, delimited by a semicolon, and a body", ""),
+    /*430*/ ErrorInfo::new("invalid arguments to @asm intrinsic", ""),
+    /*431*/ ErrorInfo::new("@alloca must create runtime type", ""),
     /*432*/ ErrorInfo::new("invalid call to inline assembly", ""),
-    /*433*/ ErrorInfo::new("invalid return specification for @asm intrinsic", "")]),
+    /*433*/ ErrorInfo::new("invalid return specification for @asm intrinsic", ""),
+    /*434*/ ErrorInfo::new("@alloca requires all arguments except for the first to be integral", ""),
+    /*435*/ ErrorInfo::new("@alloca intrinsic requires arguments", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];
