@@ -97,7 +97,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     }
     (name, idx + 1, errs)
 }
-fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
+fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.is_empty() {return (Box::new(NullAST::new((0, 0..0))), vec![])}
     match &toks[0].data {
         Int(x) => {
@@ -145,8 +145,19 @@ fn parse_literals(toks: &[Token]) -> (Box<dyn AST>, Vec<Diagnostic>) {
         Special('.') =>
             if let Some(Token {loc, data: Identifier(name)}) = toks.get(1) {(Box::new(VarGetAST::new(loc.clone(), name.clone(), true)), toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
             else {(Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
-        Macro(name, None) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), None)), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
-        Macro(name, Some((_, atoks))) => todo!(),
+        Macro(name, None) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), vec![])), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
+        Macro(name, Some((_, atoks))) => {
+            let mut atoks = atoks.as_slice();
+            let mut errs = toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect::<Vec<_>>();
+            let mut args = vec![];
+            while !atoks.is_empty() {
+                let (ast, i, mut es) = parse_expr(atoks, ",", flags);
+                atoks = &atoks[(i - 1)..];
+                errs.append(&mut es);
+                args.push(ast);
+            }
+            (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), args)), errs)
+        },
         _ => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())
     }
 }
@@ -200,7 +211,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
             }
             (Box::new(ArrayLiteralAST::new(start, end, asts)), errs)
         },
-        Some(_) => parse_literals(toks),
+        Some(_) => parse_literals(toks, flags),
         None => (null(toks), vec![])
     }
 }
