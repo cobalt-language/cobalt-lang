@@ -2068,7 +2068,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 inter_val: None,
                 data_type: *ret            })
         },
-        Type::InlineAsm => if let (Some(InterData::InlineAsm(r, c, b)), false) = (target.inter_val, ctx.is_const.get()) {
+        Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
             let mut comp_args = Vec::with_capacity(args.len());
             let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th

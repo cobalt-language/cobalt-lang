@@ -14,7 +14,7 @@ pub enum TokenData {
     Identifier(String),
     Keyword(String),
     Statement(String),
-    Macro(String, Option<String>)
+    Macro(String, Option<(String, Vec<Token>)>)
 }
 impl Display for TokenData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -27,7 +27,7 @@ impl Display for TokenData {
                 Special(val) => write!(f, "'{val}'"),
                 Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "'{val}'"),
                 Macro(val, None) => write!(f, "'@{val}'"),
-                Macro(val, Some(ref args)) => write!(f, "'@{val}({args})'")
+                Macro(val, Some((ref args, _))) => write!(f, "'@{val}({args})'")
             }
         }
         else {
@@ -39,7 +39,7 @@ impl Display for TokenData {
                 Special(val) => write!(f, "{val}"),
                 Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "{val}"),
                 Macro(val, None) => write!(f, "@{val}"),
-                Macro(val, Some(ref args)) => write!(f, "@{val}({args})")
+                Macro(val, Some((ref args, _))) => write!(f, "@{val}({args})")
             }
         }
     }
@@ -185,7 +185,11 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut (FileId,
                 vec![]
             }
         },
-        _ => vec![Token::new((loc.0, start..(loc.1 + 1)), Macro(name, params))]
+        _ => if let Some(params) = params {
+            let (toks, mut es) = lex(&params, (loc.0, param_start.clone().unwrap() + usize::from(flags.up)), flags);
+            errs.append(&mut es);
+            vec![Token::new((loc.0, start..(loc.1 + 1)), Macro(name, Some((params.to_string(), toks))))]
+        } else {vec![Token::new((loc.0, start..(loc.1 + 1)), Macro(name, None))]}
     }, errs)
 }
 pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, Vec<Diagnostic>) {

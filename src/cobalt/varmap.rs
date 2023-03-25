@@ -26,7 +26,7 @@ pub enum InterData<'ctx> {
     Str(String),
     Array(Vec<InterData<'ctx>>),
     Function(FnData<'ctx>),
-    InlineAsm(Box<Type>, String, String),
+    InlineAsm(String, String),
     Type(Box<Type>),
     Module(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)
 }
@@ -62,13 +62,12 @@ impl<'ctx> InterData<'ctx> {
                 out.write_all(&v.cconv.to_be_bytes())?;
                 Ok(())
             },
-            InterData::InlineAsm(r, c, b) => {
+            InterData::InlineAsm(c, b) => {
                 out.write_all(&[7])?;
                 out.write_all(c.as_bytes())?;
                 out.write_all(&[0])?;
                 out.write_all(b.as_bytes())?;
-                out.write_all(&[0])?;
-                r.save(out)
+                out.write_all(&[0])
             },
             InterData::Type(t) => {
                 out.write_all(&[8])?;
@@ -134,7 +133,7 @@ impl<'ctx> InterData<'ctx> {
                 let mut body = Vec::new();
                 buf.read_until(0, &mut constraint)?;
                 buf.read_until(0, &mut body)?;
-                Some(InterData::InlineAsm(Box::new(Type::load(buf)?), String::from_utf8(constraint).expect("Inline assmebly constraint should be valid UTF-8"), String::from_utf8(body).expect("Inline assembly should be valid UTF-8")))
+                Some(InterData::InlineAsm(String::from_utf8(constraint).expect("Inline assmebly constraint should be valid UTF-8"), String::from_utf8(body).expect("Inline assembly should be valid UTF-8")))
             },
             8 => Some(InterData::Type(Box::new(Type::load(buf)?))),
             9 => {
