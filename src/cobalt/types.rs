@@ -37,7 +37,7 @@ pub enum Type {
     Int(u16, bool),
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
-    Null, Module, TypeData, InlineAsm, Array(Box<Type>, Option<u32>),
+    Null, Module, TypeData, InlineAsm(Box<Type>), Array(Box<Type>, Option<u32>),
     Function(Box<Type>, Vec<(Type, bool)>), Nominal(String),
     Error
 }
@@ -61,7 +61,7 @@ impl Display for Type {
             Null => write!(f, "null"),
             Module => write!(f, "module"),
             TypeData => write!(f, "type"),
-            InlineAsm => write!(f, "inline assembly"),
+            InlineAsm(x) => write!(f, "inline assembly (returing {})", *x),
             Array(x, None) => write!(f, "{}[]", *x),
             Array(x, Some(s)) => write!(f, "{}[{s}]", *x),
             Function(ret, args) => {
@@ -95,7 +95,7 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(..) | Module | TypeData | InlineAsm | Error => Meta,
+            Function(..) | Module | TypeData | InlineAsm(_) | Error => Meta,
             Pointer(..) | Reference(..) => Static(8),
             Borrow(b) => b.size(),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.size()
@@ -116,7 +116,7 @@ impl Type {
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(),
-            Function(..) | Module | TypeData | InlineAsm | Error => 0,
+            Function(..) | Module | TypeData | InlineAsm(_) | Error => 0,
             Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align(),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.align()
@@ -131,7 +131,7 @@ impl Type {
             Float32 => Some(FloatType(ctx.context.f32_type())),
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(..) | Module | TypeData | InlineAsm | Error => None,
+            Null | Function(..) | Module | TypeData | InlineAsm(_) | Error => None,
             Array(_, Some(_)) => None,
             Array(_, None) => None,
             Pointer(b, m) | Reference(b, m) => match &**b {
@@ -203,7 +203,10 @@ impl Type {
                 }
                 Ok(())
             },
-            InlineAsm => out.write_all(&[14]),
+            InlineAsm(b) => {
+                out.write_all(&[14])?;
+                b.save(out)
+            },
             Error => panic!("error values shouldn't be serialized!"),
             Module => out.write_all(&[19]),
             Array(b, None) => {
@@ -258,7 +261,7 @@ impl Type {
                 }
                 Type::Function(Box::new(ret), vec)
             }
-            14 => Type::InlineAsm,
+            14 => Type::InlineAsm(Box::new(Type::load(buf)?)),
             15 => Type::Array(Box::new(Type::load(buf)?), None),
             16 => {
                 let mut bytes = [0; 4];

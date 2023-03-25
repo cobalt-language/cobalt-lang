@@ -3,6 +3,7 @@ use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
+use std::collections::LinkedList;
 use glob::Pattern;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
@@ -574,7 +575,7 @@ impl AST for CallAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         match self.target.res_type(ctx) {
             Type::Function(ret, _) => *ret,
-            Type::InlineAsm => Type::Null,
+            Type::InlineAsm(b) => *b,
             _ => Type::Error
         }
     }
@@ -619,14 +620,95 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
-        match self.name {
-            "asm" => Type::InlineAsm,
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        match self.name.as_str() {
+            "asm" => Type::InlineAsm(self.args.first().map_or(Box::new(Type::Null), |v| {
+                if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = v.const_codegen(ctx).0 {t}
+                else {Box::new(Type::Null)}
+            })),
             _ => Type::Error
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match self.name.as_str() {
+            "asm" => {
+                let oic = ctx.is_const.replace(true);
+                let mut errs = vec![];
+                let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
+                ctx.is_const.set(oic);
+                match args.len() {
+                    2 => {
+                        let a0 = args.pop_front().unwrap();
+                        let a1 = args.pop_front().unwrap();
+                        if is_str(&a0.data_type) && is_str(&a1.data_type) {
+                            match (a0, a1) {
+                                (
+                                    Value {inter_val: Some(InterData::Str(c)), ..},
+                                    Value {inter_val: Some(InterData::Str(b)), ..}
+                                ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))), errs),
+                                (a0, a1) => {
+                                    errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                        .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                        .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                        .info("both arguments should be constant strings (i8 const*)".to_string()));
+                                    (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
+                                }
+                            }
+                        }
+                        else {
+                            errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                .info("both arguments should be constant strings (i8 const*)".to_string()));
+                            (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
+                        }
+                    },
+                    3 => {
+                        let a0 = args.pop_front().unwrap();
+                        let a1 = args.pop_front().unwrap();
+                        let a2 = args.pop_front().unwrap();
+                        if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(r)), ..} = a0 {
+                            if is_str(&a1.data_type) && is_str(&a2.data_type) {
+                                match (a1, a2) {
+                                    (
+                                        Value {inter_val: Some(InterData::Str(c)), ..},
+                                        Value {inter_val: Some(InterData::Str(b)), ..}
+                                    ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)), errs),
+                                    (a1, a2) => {
+                                        errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                            .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                            .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                            .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                                        (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
+                                    }
+                                }
+                            }
+                            else {
+                                errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                    .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                    .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                    .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                                (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
+                            }
+                        }
+                        else {
+                            errs.push(Diagnostic::error(self.loc.clone(), 1000, None)
+                                .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
+                                .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                            (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
+                        }
+                    },
+                    x => {
+                        errs.push(Diagnostic::error(self.loc.clone(), 1000, Some(format!("expected 2 or 3 arguments, got {x}")))
+                            .info("acceptable forms are:".to_string())
+                            .info("constraint, body".to_string())
+                            .info("return, constraint, body".to_string()));
+                        (Value::error(), errs)
+                    }
+                }
+            },
             x => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }
@@ -650,5 +732,12 @@ impl AST for IntrinsicAST {
             count -= 1;
         }
         Ok(())
+    }
+}
+fn is_str(ty: &Type) -> bool {
+    match ty {
+        Type::Pointer(b, _) => **b == Type::Int(8, false),
+        Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, false)} else {false}
+        _ => false
     }
 }
