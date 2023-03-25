@@ -159,4 +159,9 @@ impl<'ctx> Value<'ctx> {
     pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps)), data_type: Type::Module}}
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
     pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
+
+    pub fn into_type(self) -> Option<Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(*t)} else {None}}
+    pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}
+    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
+    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
 }
