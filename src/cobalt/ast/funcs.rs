@@ -709,6 +709,73 @@ impl AST for IntrinsicAST {
                     }
                 }
             },
+            "alloca" => {
+                let mut errs = vec![];
+                let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
+                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc.clone(), 1004, None)]);}
+                let ty = if args.front().unwrap().data_type == Type::TypeData {if let Some(InterData::Type(t)) = args.pop_front().unwrap().inter_val {Some(t)} else {None}} else {None};
+                if args.is_empty() {
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            (Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(ty, true)), vec![])
+                        }
+                        else {
+                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(Box::new(Type::Null), true)}, vec![Diagnostic::error(self.loc.clone(), 1002, Some(format!("type is {}", *ty)))])
+                        }
+                    }
+                    else {
+                        (Value::compiled(ctx.builder.build_alloca(ctx.context.i8_type(), "").into(), Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc.clone(), 1001, None)])
+                    }
+                }
+                else {
+                    let mut val = None;
+                    for (n, mut arg) in args.into_iter().enumerate() {
+                        loop {
+                            match arg.data_type {
+                                Type::Borrow(b) => arg.data_type = *b,
+                                Type::Reference(b, _) => {
+                                    if b.register() && !ctx.is_const.get() {
+                                        if let Some(PointerValue(v)) = arg.comp_val {
+                                            arg.comp_val = Some(ctx.builder.build_load(v, ""));
+                                        }
+                                    }
+                                    arg.data_type = *b;
+                                },
+                                x @ (Type::Int(..) | Type::IntLiteral) => {
+                                    arg.data_type = x;
+                                    if !ctx.is_const.get() {
+                                        if let Some(IntValue(v)) = arg.value(ctx) {
+                                            if let Some(v2) = val {
+                                                val = Some(ctx.builder.build_int_mul(v, v2, ""));
+                                            }
+                                            else {
+                                                val = Some(v);
+                                            }
+                                        }
+                                    }
+                                    break;
+                                },
+                                x => {
+                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 1003, Some(format!("argument type is {x}"))));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            (Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(ty, true)), errs)
+                        }
+                        else {
+                            errs.push(Diagnostic::error(self.loc.clone(), 1002, Some(format!("type is {}", *ty))));
+                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(ty, true)}, errs)
+                        }
+                    }
+                    else {
+                        (Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Null), true)), errs)
+                    }
+                }
+            },
             x => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
         }
     }
