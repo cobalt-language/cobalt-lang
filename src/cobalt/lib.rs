@@ -6,6 +6,7 @@ pub mod errors;
 pub mod misc;
 pub mod types;
 pub mod varmap;
+pub mod value;
 
 pub use parser::lexer::{lex, Token, TokenData};
 pub use parser::ast::parse;
@@ -15,5 +16,6 @@ pub use context::*;
 pub use ast::AST;
 pub use types::{Type, SizeType};
 pub use varmap::*;
+pub use value::*;
 pub use errors::{Diagnostic, Location};
 pub(crate) use ast::*;
