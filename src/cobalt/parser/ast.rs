@@ -152,9 +152,10 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
             let mut args = vec![];
             while !atoks.is_empty() {
                 let (ast, i, mut es) = parse_expr(atoks, ",", flags);
-                atoks = &atoks[(i - 1)..];
                 errs.append(&mut es);
                 args.push(ast);
+                if i > atoks.len() {break}
+                atoks = &atoks[i..];
             }
             (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), args)), errs)
         },
