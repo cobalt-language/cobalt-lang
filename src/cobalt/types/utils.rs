@@ -521,182 +521,182 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         },
         (Type::Int(ls, lu), Type::Int(rs, ru)) if ls == rs => match op {
-            "+" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+            "+" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l + r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu && ru)
-            }),
-            "-" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu && ru)
+            )),
+            "-" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l - r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu && ru)
-            }),
-            "*" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu && ru)
+            )),
+            "*" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l * r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu && ru)
-            }),
-            "/" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu && ru)
+            )),
+            "/" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_div(l, r, "")} else {ctx.builder.build_int_signed_div(l, r, "")})),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l / r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), ru)
-            }),
-            "%" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), ru)
+            )),
+            "%" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(if ru {ctx.builder.build_int_unsigned_rem(l, r, "")} else {ctx.builder.build_int_signed_rem(l, r, "")})),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l % r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), ru)
-            }),
-            "&" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), ru)
+            )),
+            "&" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l & r)),
                     _ => None
                 },
-                data_type: Type::Int(min(ls, rs), lu || ru)
-            }),
-            "|" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(min(ls, rs), lu || ru)
+            )),
+            "|" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l | r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu || ru)
-            }),
-            "^" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu || ru)
+            )),
+            "^" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l ^ r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu || ru)
-            }),
-            ">>" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu || ru)
+            )),
+            "<<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l << r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu || ru)
-            }),
-            "<<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu || ru)
+            )),
+            ">>" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l >> r)),
                     _ => None
                 },
-                data_type: Type::Int(max(ls, rs), lu || ru)
-            }),
-            "<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(max(ls, rs), lu || ru)
+            )),
+            "<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(if lu && ru {ULT} else {SLT}, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l < r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(if lu && ru {UGT} else {SGT}, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l > r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "<=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "<=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(if lu && ru {ULE} else {SLE}, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l <= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(if lu && ru {UGE} else {SGE}, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l >= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "==" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "==" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(EQ, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l == r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "!=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "!=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(NE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l != r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
+                Type::Int(1, false)
+            )),
             _ => Err(err)
         },
         (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert((0, 0..0), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
@@ -706,220 +706,220 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
             bin_op(loc, (impl_convert((0, 0..0), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
-            "+" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+            "+" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_add(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l + r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "-" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "-" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_sub(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l - r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "*" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "*" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_mul(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l * r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "/" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "/" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_signed_div(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l / r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "%" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "%" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_signed_rem(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l % r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "&" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "&" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_and(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l & r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "|" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "|" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_or(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l | r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "^" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "^" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_xor(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l ^ r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            ">>" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "<<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_left_shift(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l << r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "<<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            ">>" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_right_shift(l, r, false, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(l >> r)),
                     _ => None
                 },
-                data_type: Type::IntLiteral
-            }),
-            "<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::IntLiteral
+            )),
+            "<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(SLT, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l < r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(SGT, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l > r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "<=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "<=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(SLE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l <= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(SGE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l >= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "==" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "==" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(EQ, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l == r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "!=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "!=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(IntValue(l)), Some(IntValue(r)), false) => Some(IntValue(ctx.builder.build_int_compare(NE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Int(l)), Some(InterData::Int(r))) => Some(InterData::Int(i128::from(l != r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
+                Type::Int(1, false)
+            )),
             _ => Err(err)
         },
         (Type::Pointer(b, s), Type::Int(..) | Type::IntLiteral) => match op {
-            "+" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+            "+" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Pointer(b, s)
-            }),
-            "-" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
+                None,
+                Type::Pointer(b, s)
+            )),
+            "-" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, b.size(), ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {
                         let v = ctx.builder.build_int_neg(r, "");
                         ctx.builder.build_gep(l, &[v], "").into()
                     }),
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Pointer(b, s)
-            }),
+                None,
+                Type::Pointer(b, s)
+            )),
             _ => Err(err)
         },
         (Type::Int(..) | Type::IntLiteral, Type::Pointer(b, s)) => match op {
-            "+" => Ok(Value {
-                comp_val: match (rhs.comp_val, lhs.comp_val, b.size(), ctx.is_const.get()) { // I just swapped the sides here
+            "+" => Ok(Value::new(
+                match (rhs.comp_val, lhs.comp_val, b.size(), ctx.is_const.get()) { // I just swapped the sides here
                     (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Pointer(b, s)
-            }),
+                None,
+                Type::Pointer(b, s)
+            )),
             _ => Err(err)
         },
         (l @ Type::Pointer(..), r @ Type::Pointer(..)) => match op {
-            "-" if l == r => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+            "-" if l == r => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -928,11 +928,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(64, false)
-            }),
-            "<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(64, false)
+            )),
+            "<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -941,11 +941,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
-            ">" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(1, false)
+            )),
+            ">" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -954,11 +954,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
-            "<=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(1, false)
+            )),
+            "<=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -967,11 +967,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
-            ">=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(1, false)
+            )),
+            ">=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -980,11 +980,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
-            "==" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(1, false)
+            )),
+            "==" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -993,11 +993,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
-            "!=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                None,
+                Type::Int(1, false)
+            )),
+            "!=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(PointerValue(l)), Some(PointerValue(r)), false) => {
                         let pt = ctx.context.custom_width_int_type(ctx.flags.word_size as u32 * 8);
                         let v1 = ctx.builder.build_ptr_to_int(l, pt, "");
@@ -1006,9 +1006,9 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     },
                     _ => None
                 },
-                inter_val: None,
-                data_type: Type::Int(1, false)
-            }),
+                None,
+                Type::Int(1, false)
+            )),
             _ => Err(err)
         },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l.size() < r.size() => {
@@ -1030,127 +1030,127 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l == r => match op {
-            "+" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+            "+" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_add(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l + r)),
                     _ => None
                 },
-                data_type: l
-            }),
-            "-" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                l
+            )),
+            "-" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_sub(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l - r)),
                     _ => None
                 },
-                data_type: l
-            }),
-            "*" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                l
+            )),
+            "*" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_mul(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l * r)),
                     _ => None
                 },
-                data_type: l
-            }),
-            "/" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                l
+            )),
+            "/" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_div(l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l / r)),
                     _ => None
                 },
-                data_type: l
-            }),
-            "%" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                l
+            )),
+            "%" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(_l)), Some(FloatValue(_r)), false) => None, // TODO: implement fmod
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Float(l.rem_euclid(r))),
                     _ => None
                 },
-                data_type: l
-            }),
-            "<" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                l
+            )),
+            "<" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OLT, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l < r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OGT, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l > r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "<=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "<=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OLE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l <= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            ">=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            ">=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OGE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l >= r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "==" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "==" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(OEQ, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l == r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
-            "!=" => Ok(Value {
-                comp_val: match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
+                Type::Int(1, false)
+            )),
+            "!=" => Ok(Value::new(
+                match (lhs.comp_val, rhs.comp_val, ctx.is_const.get()) {
                     (Some(FloatValue(l)), Some(FloatValue(r)), false) => Some(IntValue(ctx.builder.build_float_compare(ONE, l, r, ""))),
                     _ => None
                 },
-                inter_val: match (lhs.inter_val, rhs.inter_val) {
+                match (lhs.inter_val, rhs.inter_val) {
                     (Some(InterData::Float(l)), Some(InterData::Float(r))) => Some(InterData::Int(i128::from(l != r))),
                     _ => None
                 },
-                data_type: Type::Int(1, false)
-            }),
+                Type::Int(1, false)
+            )),
             _ => Err(err)
         },
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..))) => {
@@ -1316,16 +1316,16 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
                 val.data_type = Type::IntLiteral;
                 Ok(val)
             },
-            "-" => Ok(Value {
-                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
-                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
-                data_type: Type::IntLiteral
-            }),
-            "~" => Ok(Value {
-                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
-                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
-                data_type: Type::IntLiteral
-            }),
+            "-" => Ok(Value::new(
+                if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
+                if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
+                Type::IntLiteral
+            )),
+            "~" => Ok(Value::new(
+                if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.i64_type().const_all_ones(), "")))} else {None},
+                if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
+                Type::IntLiteral
+            )),
             _ => Err(err)
         },
         Type::Int(s, u) => match op {
@@ -1333,16 +1333,16 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
                 val.data_type = Type::Int(s, u);
                 Ok(val)
             },
-            "-" => Ok(Value {
-                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
-                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
-                data_type: Type::Int(s, u)
-            }),
-            "~" => Ok(Value {
-                comp_val: if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
-                inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
-                data_type: Type::Int(s, u)
-            }),
+            "-" => Ok(Value::new(
+                if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_int_neg(v, "")))} else {None},
+                if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(-v))} else {None},
+                Type::Int(s, u)
+            )),
+            "~" => Ok(Value::new(
+                if let (Some(IntValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(IntValue(ctx.builder.build_xor(v, ctx.context.custom_width_int_type(s as u32).const_all_ones(), "")))} else {None},
+                if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(!v))} else {None},
+                Type::Int(s, u)
+            )),
             _ => Err(err)
         },
         x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
@@ -1350,11 +1350,11 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
                 val.data_type = x;
                 Ok(val)
             },
-            "-" => Ok(Value {
-                comp_val: if let (Some(FloatValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
-                inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Float(-v))} else {None},
-                data_type: x
-            }),
+            "-" => Ok(Value::new(
+                if let (Some(FloatValue(v)), false) = (val.comp_val, ctx.is_const.get()) {Some(FloatValue(ctx.builder.build_float_neg(v, "")))} else {None},
+                if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Float(-v))} else {None},
+                x
+            )),
             _ => Err(err)
         }
         Type::Pointer(b, m) => match op {
@@ -1413,20 +1413,20 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
             idx.data_type = a;
             match val.data_type.clone() {
                 Type::Pointer(b, m) => match idx.data_type.clone() {
-                    Type::IntLiteral | Type::Int(..) => Ok(Value {
-                        comp_val: match (val.comp_val, idx.value(ctx), b.size(), ctx.is_const.get()) {
+                    Type::IntLiteral | Type::Int(..) => Ok(Value::new(
+                        match (val.comp_val, idx.value(ctx), b.size(), ctx.is_const.get()) {
                             (Some(PointerValue(l)), Some(IntValue(r)), SizeType::Static(_), false) => Some(unsafe {ctx.builder.build_gep(l, &[r], "").into()}),
                             _ => None
                         },
-                        inter_val: None,
-                        data_type: Type::Reference(b, m)
-                    }),
+                        None,
+                        Type::Reference(b, m)
+                    )),
                     _ => Err(err)
                 },
                 Type::Reference(b, m) => match *b {
                     Type::Array(b, None) => match idx.data_type.clone() {
-                        Type::IntLiteral | Type::Int(_, true) => Ok(Value {
-                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                        Type::IntLiteral | Type::Int(_, true) => Ok(Value::new(
+                            if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
                                     let len = ctx.builder.build_extract_value(sv, 1, "").unwrap().into_int_value();
@@ -1456,11 +1456,11 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                                 }
                                 else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
-                            inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
-                            data_type: Type::Reference(b, m)
-                        }),
-                        Type::Int(_, false) => Ok(Value {
-                            comp_val: if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                            if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
+                            Type::Reference(b, m)
+                        )),
+                        Type::Int(_, false) => Ok(Value::new(
+                            if let (Some(StructValue(sv)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 let raw = ctx.builder.build_extract_value(sv, 0, "").unwrap().into_pointer_value();
                                 if ctx.flags.bounds_checks {
                                     let len = ctx.builder.build_extract_value(sv, 1, "").unwrap().into_int_value();
@@ -1490,14 +1490,14 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                                 }
                                 else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
-                            inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
-                            data_type: Type::Reference(b, m)
-                        }),
+                            if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
+                            Type::Reference(b, m)
+                        )),
                         _ => Err(err)
                     },
                     Type::Array(b, Some(s)) => match idx.data_type.clone() {
-                        Type::IntLiteral | Type::Int(_, true) => Ok(Value {
-                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                        Type::IntLiteral | Type::Int(_, true) => Ok(Value::new(
+                            if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
                                     let f = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -1526,11 +1526,11 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                                 }
                                 else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
-                            inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
-                            data_type: Type::Reference(b, m)
-                        }),
-                        Type::Int(_, false) => Ok(Value {
-                            comp_val: if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
+                            if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
+                            Type::Reference(b, m)
+                        )),
+                        Type::Int(_, false) => Ok(Value::new(
+                            if let (Some(PointerValue(raw)), Some(IntValue(iv)), SizeType::Static(_), false) = (val.value(ctx), idx.value(ctx), b.size(), ctx.is_const.get()) {
                                 if ctx.flags.bounds_checks {
                                     let len = idx.data_type.llvm_type(ctx).unwrap().into_int_type().const_int(s as u64, false);
                                     let f = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -1559,9 +1559,9 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                                 }
                                 else {Some(unsafe {ctx.builder.build_gep(raw, &[iv], "").into()})}
                             } else {None},
-                            inter_val: if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
-                            data_type: Type::Reference(b, m)
-                        }),
+                            if let (Some(InterData::Array(vals)), Some(InterData::Int(val))) = (val.inter_val, idx.inter_val) {vals.get(val as usize).cloned()} else {None},
+                            Type::Reference(b, m)
+                        )),
                         _ => Err(err)
                     },
                     x => {
@@ -1605,23 +1605,23 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 impl_convert(loc, (val, vloc), (target, tloc), ctx)
             },
             Type::Reference(b, true) => {
-                if target == Type::Reference(b.clone(), false) {return Ok(Value {data_type: Type::Reference(b, false), ..val});}
+                if target == Type::Reference(b.clone(), false) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b, false)));}
                 match *b {
                     Type::Array(b, Some(l)) => match target {
-                        Type::Pointer(b2, m) if b == b2 => Ok(Value {data_type: Type::Pointer(b, m), ..val}),
+                        Type::Pointer(b2, m) if b == b2 => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, m))),
                         Type::Reference(b2, m) => if let Type::Array(b2, None) = *b2 {
                             if b == b2 {
                                 let at = Type::Reference(Box::new(Type::Array(b2, None)), m);
-                                Ok(Value {
-                                    comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                                Ok(Value::new(
+                                    if let Some(PointerValue(v)) = val.comp_val {
                                         let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
                                         ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
                                         ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
                                         Some(ctx.builder.build_load(alloca, ""))
                                     } else {None},
-                                    data_type: at,
-                                    ..val
-                                })
+                                    val.inter_val,
+                                    at
+                                ))
                             }
                             else {Err(err)}
                         } else {Err(err)},
@@ -1633,7 +1633,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                             if let Some(StructValue(sv)) = val.value(ctx) {
                                 val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
                             }
-                            Ok(Value {data_type: Type::Pointer(b, m), ..val})
+                            Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, m)))
                         },
                         _ => Err(err)
                     },
@@ -1650,20 +1650,20 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             },
             Type::Reference(b, false) => match *b {
                 Type::Array(b, Some(l)) => match target {
-                    Type::Pointer(b2, false) if b == b2 => Ok(Value {data_type: Type::Pointer(b, false), ..val}),
+                    Type::Pointer(b2, false) if b == b2 => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, false))),
                     Type::Reference(b2, false) => if let Type::Array(b2, None) = *b2 {
                         if b == b2 {
                             let at = Type::Reference(Box::new(Type::Array(b2, None)), false);
-                            Ok(Value {
-                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                            Ok(Value::new(
+                                if let Some(PointerValue(v)) = val.comp_val {
                                     let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
                                     Some(ctx.builder.build_load(alloca, ""))
                                 } else {None},
-                                data_type: at,
-                                ..val
-                            })
+                                val.inter_val,
+                                at
+                            ))
                         }
                         else {Err(err)}
                     } else {Err(err)},
@@ -1675,7 +1675,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                         if let Some(StructValue(sv)) = val.value(ctx) {
                             val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
                         }
-                        Ok(Value {data_type: Type::Pointer(b, false), ..val})
+                        Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, false)))
                     },
                     _ => Err(err)
                 },
@@ -1690,79 +1690,79 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 }
             },
             Type::IntLiteral => match target {
-                x @ Type::Int(..) => Ok(Value {
-                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
+                x @ Type::Int(..) => Ok(Value::new(
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
                               else if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_z_extend(v, x.llvm_type(ctx).unwrap().into_int_type(), "")))}
                               else {None},
-                    data_type: x,
-                    ..val
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
+                    val.inter_val,
+                    x
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
                               else if let Some(IntValue(v)) = val.comp_val {Some(FloatValue(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "")))}
                               else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
                 _ => Err(err)
             },
             Type::Int(ls, true) => match target {
-                Type::Int(1, false) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
-                    data_type: Type::Int(1, false)
-                }),
-                Type::Int(rs, true) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, true)
-                }),
-                Type::Int(rs, false) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, false)
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
+                Type::Int(1, false) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    Type::Int(1, false)
+                )),
+                Type::Int(rs, true) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, true)
+                )),
+                Type::Int(rs, false) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, false)
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
                 _ => Err(err)
             },
             Type::Int(ls, false) => match target {
-                Type::Int(1, false) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
-                    data_type: Type::Int(1, false)
-                }),
-                Type::Int(rs, ru) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, ru)
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
+                Type::Int(1, false) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    Type::Int(1, false)
+                )),
+                Type::Int(rs, ru) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, ru)
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
                 _ => Err(err)
             },
             Type::Pointer(_, false) => match target {
-                Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
-                    inter_val: None,
-                    data_type: Type::Pointer(Box::new(Type::Null), false)
-                }),
+                Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value::new(
+                    val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
+                    None,
+                    Type::Pointer(Box::new(Type::Null), false)
+                )),
                 _ => Err(err)
             },
             Type::Pointer(ref lb, true) => match target {
                 Type::Pointer(rb, false) => match *rb {
-                    Type::Null => Ok(Value {
-                        comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
-                        inter_val: None,
-                        data_type: Type::Pointer(Box::new(Type::Null), false)
-                    }),
-                    x if x == **lb => Ok(Value {data_type: Type::Pointer(Box::new(x), false), ..val}),
+                    Type::Null => Ok(Value::new(
+                        val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
+                        None,
+                        Type::Pointer(Box::new(Type::Null), false)
+                    )),
+                    x if x == **lb => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(Box::new(x), false))),
                     _ => Err(err)
                 },
                 _ => Err(err)
@@ -1789,23 +1789,23 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 expl_convert(loc, (val, vloc), (target, tloc), ctx)
             },
             Type::Reference(b, true) => {
-                if target == Type::Reference(b.clone(), false) {return Ok(Value {data_type: Type::Reference(b, false), ..val});}
+                if target == Type::Reference(b.clone(), false) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b, false)));}
                 match *b {
                     Type::Array(b, Some(l)) => match target {
-                        Type::Pointer(b2, m) if b == b2 => Ok(Value {data_type: Type::Pointer(b, m), ..val}),
+                        Type::Pointer(b2, m) if b == b2 => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, m))),
                         Type::Reference(b2, m) => if let Type::Array(b2, None) = *b2 {
                         if b == b2 {
                             let at = Type::Reference(Box::new(Type::Array(b2, None)), m);
-                            Ok(Value {
-                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                            Ok(Value::new(
+                                if let Some(PointerValue(v)) = val.comp_val {
                                     let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
                                     Some(ctx.builder.build_load(alloca, ""))
                                 } else {None},
-                                data_type: at,
-                                ..val
-                            })
+                                val.inter_val,
+                                at
+                            ))
                         }
                         else {Err(err)}
                     } else {Err(err)},
@@ -1817,7 +1817,7 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                             if let Some(StructValue(sv)) = val.value(ctx) {
                                 val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
                             }
-                            Ok(Value {data_type: Type::Pointer(b, m), ..val})
+                            Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, m)))
                         },
                         _ => Err(err)
                     },
@@ -1834,20 +1834,20 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             },
             Type::Reference(b, false) => match *b {
                 Type::Array(b, Some(l)) => match target {
-                    Type::Pointer(b2, false) if b == b2 => Ok(Value {data_type: Type::Pointer(b, false), ..val}),
+                    Type::Pointer(b2, false) if b == b2 => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, false))),
                     Type::Reference(b2, false) => if let Type::Array(b2, None) = *b2 {
                         if b == b2 {
                             let at = Type::Reference(Box::new(Type::Array(b2, None)), false);
-                            Ok(Value {
-                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                            Ok(Value::new(
+                                if let Some(PointerValue(v)) = val.comp_val {
                                     let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
                                     ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
                                     Some(ctx.builder.build_load(alloca, ""))
                                 } else {None},
-                                data_type: at,
-                                ..val
-                            })
+                                val.inter_val,
+                                at
+                            ))
                         }
                         else {Err(err)}
                     } else {Err(err)},
@@ -1859,7 +1859,7 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                         if let Some(StructValue(sv)) = val.value(ctx) {
                             val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
                         }
-                        Ok(Value {data_type: Type::Pointer(b, false), ..val})
+                        Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b, false)))
                     },
                     _ => Err(err)
                 },
@@ -1874,139 +1874,139 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 }
             },
             Type::IntLiteral => match target {
-                x @ Type::Int(..) => Ok(Value {
-                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
+                x @ Type::Int(..) => Ok(Value::new(
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
                               else if let Some(IntValue(v)) = val.comp_val {Some(IntValue(ctx.builder.build_int_z_extend(v, x.llvm_type(ctx).unwrap().into_int_type(), "")))}
                               else {None},
-                    data_type: x,
-                    ..val
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
+                    val.inter_val,
+                    x
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(FloatValue(x.llvm_type(ctx).unwrap().into_float_type().const_float(v as f64)))}
                               else if let Some(IntValue(v)) = val.comp_val {Some(FloatValue(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "")))}
                               else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
                 _ => Err(err)
             },
             Type::Int(ls, true) => match target {
-                Type::Int(rs, ru) if ls == rs => Ok(Value {data_type: Type::Int(rs, ru), ..val}),
-                Type::Int(1, false) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
-                    data_type: Type::Int(1, false)
-                }),
-                Type::Int(rs, true) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, true)
-                }),
-                Type::Int(rs, false) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, false)
-                }),
-                Type::Int(rs, ru) if ls > rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, ru)
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
-                Type::Pointer(b, m) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
-                    inter_val: None,
-                    data_type: Type::Pointer(b, m)
-                }),
+                Type::Int(rs, ru) if ls == rs => Ok(Value::new(val.comp_val, val.inter_val, Type::Int(rs, ru))),
+                Type::Int(1, false) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    Type::Int(1, false)
+                )),
+                Type::Int(rs, true) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_z_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, true)
+                )),
+                Type::Int(rs, false) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, false)
+                )),
+                Type::Int(rs, ru) if ls > rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, ru)
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_unsigned_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
+                Type::Pointer(b, m) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
+                    None,
+                    Type::Pointer(b, m)
+                )),
                 _ => Err(err)
             },
             Type::Int(ls, false) => match target {
-                Type::Int(rs, ru) if ls == rs => Ok(Value {data_type: Type::Int(rs, ru), ..val}),
-                Type::Int(1, false) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
-                    data_type: Type::Int(1, false)
-                }),
-                Type::Int(rs, ru) if ls < rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, ru)
-                }),
-                Type::Int(rs, ru) if ls > rs => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
-                    inter_val: val.inter_val,
-                    data_type: Type::Int(rs, ru)
-                }),
-                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
-                    data_type: x
-                }),
-                Type::Pointer(b, m) => Ok(Value {
-                    comp_val: if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
-                    inter_val: None,
-                    data_type: Type::Pointer(b, m)
-                }),
+                Type::Int(rs, ru) if ls == rs => Ok(Value::new(val.comp_val, val.inter_val, Type::Int(rs, ru))),
+                Type::Int(1, false) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_compare(NE, v, ctx.context.custom_width_int_type(ls as u32).const_zero(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    Type::Int(1, false)
+                )),
+                Type::Int(rs, ru) if ls < rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_s_extend(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, ru)
+                )),
+                Type::Int(rs, ru) if ls > rs => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_truncate(v, ctx.context.custom_width_int_type(rs as u32), "").into())} else {None},
+                    val.inter_val,
+                    Type::Int(rs, ru)
+                )),
+                x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_signed_int_to_float(v, x.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Float(v as f64))} else {None},
+                    x
+                )),
+                Type::Pointer(b, m) => Ok(Value::new(
+                    if let (Some(IntValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_int_to_ptr(v, Type::Pointer(b.clone(), m).llvm_type(ctx).unwrap().into_pointer_type(), "").into())} else {None},
+                    None,
+                    Type::Pointer(b, m)
+                )),
                 _ => Err(err)
             },
             ref x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match target {
-                Type::Int(1, false) => Ok(Value {
-                    comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_compare(ONE, v, x.llvm_type(ctx).unwrap().into_float_type().const_zero(), "").into())} else {None},
-                    inter_val: if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
-                    data_type: Type::Int(1, false)
-                }),
-                Type::Int(s, false) => Ok(Value {
-                    comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_signed_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
-                    inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
-                    data_type: Type::Int(s, false)
-                }),
-                Type::Int(s, true) => Ok(Value {
-                    comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_unsigned_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
-                    inter_val: if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
-                    data_type: Type::Int(s, false)
-                }),
-                r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value {
-                    comp_val: if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_cast(v, r.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
-                    data_type: x.clone(),
-                    ..val
-                }),
+                Type::Int(1, false) => Ok(Value::new(
+                    if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_compare(ONE, v, x.llvm_type(ctx).unwrap().into_float_type().const_zero(), "").into())} else {None},
+                    if let Some(InterData::Int(v)) = val.inter_val {Some(InterData::Int(if v == 0 {0} else {1}))} else {None},
+                    Type::Int(1, false)
+                )),
+                Type::Int(s, false) => Ok(Value::new(
+                    if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_signed_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
+                    if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
+                    Type::Int(s, false)
+                )),
+                Type::Int(s, true) => Ok(Value::new(
+                    if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_to_unsigned_int(v, ctx.context.custom_width_int_type(s as u32), "").into())} else {None},
+                    if let Some(InterData::Float(v)) = val.inter_val {Some(InterData::Int(v as i128))} else {None},
+                    Type::Int(s, false)
+                )),
+                r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => Ok(Value::new(
+                    if let (Some(FloatValue(v)), false) = (val.value(ctx), ctx.is_const.get()) {Some(ctx.builder.build_float_cast(v, r.llvm_type(ctx).unwrap().into_float_type(), "").into())} else {None},
+                    val.inter_val,
+                    x.clone()
+                )),
                 _ => Err(err)
             },
             Type::Pointer(ref lb, false) => match target {
-                Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
-                    inter_val: None,
-                    data_type: Type::Pointer(Box::new(Type::Null), false)
-                }),
+                Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value::new(
+                    val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
+                    None,
+                    Type::Pointer(Box::new(Type::Null), false)
+                )),
                 Type::Pointer(rb, false) if **lb == Type::Null && !matches!(*rb, Type::Array(_, None)) => {
                     let pt = Type::Pointer(rb, false);
-                    Ok(Value {
-                        comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
-                        inter_val: None,
-                        data_type: pt
-                    })
+                    Ok(Value::new(
+                        val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
+                        None,
+                        pt
+                    ))
                 },
                 _ => Err(err)
             },
             Type::Pointer(ref lb, true) => match target {
-                Type::Pointer(rb, m) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
-                    inter_val: None,
-                    data_type: Type::Pointer(Box::new(Type::Null), m)
-                }),
+                Type::Pointer(rb, m) if *rb == Type::Null => Ok(Value::new(
+                    val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
+                    None,
+                    Type::Pointer(Box::new(Type::Null), m)
+                )),
                 Type::Pointer(rb, m) if **lb == Type::Null && !matches!(*rb, Type::Array(_, None)) => {
                     let pt = Type::Pointer(rb, m);
-                    Ok(Value {
-                        comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
-                        inter_val: None,
-                        data_type: pt
-                    })
+                    Ok(Value::new(
+                        val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
+                        None,
+                        pt
+                    ))
                 },
-                Type::Pointer(x, false) if x == *lb => Ok(Value {data_type: Type::Pointer(x, false), ..val}),
+                Type::Pointer(x, false) if x == *lb => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(x, false))),
                 _ => Err(err)
             },
             Type::Null => match target {
@@ -2109,10 +2109,11 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
             }
             let (c, r) = args.into_iter().chain(if let Some(InterData::Function(FnData {defaults, ..})) = target.inter_val {
                 let d = defaults.len();
-                defaults.iter().zip(params.iter().skip(p - d)).skip(a + d - p).map(|(v, (t, c))| (Value {
-                    comp_val: if *c {None} else {v.into_compiled(ctx)},
-                    inter_val: Some(v.clone()),
-                    data_type: t.clone()                }, cparen.clone())).collect()
+                defaults.iter().zip(params.iter().skip(p - d)).skip(a + d - p).map(|(v, (t, c))| (Value::new(
+                    if *c {None} else {v.into_compiled(ctx)},
+                    Some(v.clone()),
+                    t.clone()
+                ), cparen.clone())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
                 let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}, v.data_type);
                 (if let Ok(val) = impl_convert((0, 0..0), (v.clone(), None), (t.clone(), None), ctx) {
@@ -2133,10 +2134,11 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
             good = true;
             let val: Option<inkwell::values::CallableValue> = if let Some(PointerValue(v)) = target.comp_val {v.try_into().ok()} else {None};
             let args: Vec<inkwell::values::BasicMetadataValueEnum> = r.into_iter().filter_map(|(Value {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
-            Ok(Value {
-                comp_val: val.and_then(|v| ctx.builder.build_call(v, args.as_slice(), "").try_as_basic_value().left()),
-                inter_val: None,
-                data_type: *ret            })
+            Ok(Value::new(
+                val.and_then(|v| ctx.builder.build_call(v, args.as_slice(), "").try_as_basic_value().left()),
+                None,
+                *ret
+            ))
         },
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
@@ -2160,10 +2162,11 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 let fty = llt.fn_type(&params, false);
                 let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
                 let ret = ctx.builder.build_call(CallableValue::try_from(asm).unwrap(), &comp_args, "");
-                Ok(Value {
-                    comp_val: ret.try_as_basic_value().left(),
-                    inter_val: None,
-                    data_type: *r                })
+                Ok(Value::new(
+                    ret.try_as_basic_value().left(),
+                    None,
+                    *r
+                ))
             }
             else {
                 let fty = ctx.context.void_type().fn_type(&params, false);

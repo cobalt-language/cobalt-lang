@@ -150,7 +150,8 @@ pub struct Value<'ctx> {
 }
 impl<'ctx> Value<'ctx> {
     pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error}}
-    pub fn null() -> Self {Value {comp_val: None, inter_val: Some(InterData::Null), data_type: Type::Null}}
+    pub fn null() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Null}}
+    pub fn new(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type) -> Self {Value {comp_val, inter_val, data_type}}
     pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type}}
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type}}
     pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
