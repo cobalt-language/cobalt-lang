@@ -1607,8 +1607,24 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             Type::Reference(b, true) => {
                 if target == Type::Reference(b.clone(), false) {return Ok(Value {data_type: Type::Reference(b, false), ..val});}
                 match *b {
-                    Type::Array(b, Some(_)) => match target {
+                    Type::Array(b, Some(l)) => match target {
                         Type::Pointer(b2, m) if b == b2 => Ok(Value {data_type: Type::Pointer(b, m), ..val}),
+                        Type::Reference(b2, m) => if let Type::Array(b2, None) = *b2 {
+                            if b == b2 {
+                                let at = Type::Reference(Box::new(Type::Array(b2, None)), m);
+                                Ok(Value {
+                                    comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                                        let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
+                                        ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
+                                        ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
+                                        Some(ctx.builder.build_load(alloca, ""))
+                                    } else {None},
+                                    data_type: at,
+                                    ..val
+                                })
+                            }
+                            else {Err(err)}
+                        } else {Err(err)},
                         _ => Err(err)
                     },
                     Type::Array(b, None) => match target {
@@ -1633,8 +1649,24 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 }
             },
             Type::Reference(b, false) => match *b {
-                Type::Array(b, Some(_)) => match target {
+                Type::Array(b, Some(l)) => match target {
                     Type::Pointer(b2, false) if b == b2 => Ok(Value {data_type: Type::Pointer(b, false), ..val}),
+                    Type::Reference(b2, false) => if let Type::Array(b2, None) = *b2 {
+                        if b == b2 {
+                            let at = Type::Reference(Box::new(Type::Array(b2, None)), false);
+                            Ok(Value {
+                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                                    let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
+                                    Some(ctx.builder.build_load(alloca, ""))
+                                } else {None},
+                                data_type: at,
+                                ..val
+                            })
+                        }
+                        else {Err(err)}
+                    } else {Err(err)},
                     _ => Err(err)
                 },
                 Type::Array(b, None) => match target {
@@ -1717,7 +1749,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             },
             Type::Pointer(_, false) => match target {
                 Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
                     inter_val: None,
                     data_type: Type::Pointer(Box::new(Type::Null), false)
                 }),
@@ -1726,7 +1758,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             Type::Pointer(ref lb, true) => match target {
                 Type::Pointer(rb, false) => match *rb {
                     Type::Null => Ok(Value {
-                        comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                        comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
                         inter_val: None,
                         data_type: Type::Pointer(Box::new(Type::Null), false)
                     }),
@@ -1759,8 +1791,24 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             Type::Reference(b, true) => {
                 if target == Type::Reference(b.clone(), false) {return Ok(Value {data_type: Type::Reference(b, false), ..val});}
                 match *b {
-                    Type::Array(b, Some(_)) => match target {
+                    Type::Array(b, Some(l)) => match target {
                         Type::Pointer(b2, m) if b == b2 => Ok(Value {data_type: Type::Pointer(b, m), ..val}),
+                        Type::Reference(b2, m) => if let Type::Array(b2, None) = *b2 {
+                        if b == b2 {
+                            let at = Type::Reference(Box::new(Type::Array(b2, None)), m);
+                            Ok(Value {
+                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                                    let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
+                                    Some(ctx.builder.build_load(alloca, ""))
+                                } else {None},
+                                data_type: at,
+                                ..val
+                            })
+                        }
+                        else {Err(err)}
+                    } else {Err(err)},
                         _ => Err(err)
                     },
                     Type::Array(b, None) => match target {
@@ -1785,8 +1833,24 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 }
             },
             Type::Reference(b, false) => match *b {
-                Type::Array(b, Some(_)) => match target {
+                Type::Array(b, Some(l)) => match target {
                     Type::Pointer(b2, false) if b == b2 => Ok(Value {data_type: Type::Pointer(b, false), ..val}),
+                    Type::Reference(b2, false) => if let Type::Array(b2, None) = *b2 {
+                        if b == b2 {
+                            let at = Type::Reference(Box::new(Type::Array(b2, None)), false);
+                            Ok(Value {
+                                comp_val: if let Some(PointerValue(v)) = val.comp_val {
+                                    let alloca = ctx.builder.build_alloca(at.llvm_type(ctx).unwrap(), "");
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 0, "").unwrap(), v);
+                                    ctx.builder.build_store(ctx.builder.build_struct_gep(alloca, 1, "").unwrap(), ctx.context.i64_type().const_int(l as u64, false));
+                                    Some(ctx.builder.build_load(alloca, ""))
+                                } else {None},
+                                data_type: at,
+                                ..val
+                            })
+                        }
+                        else {Err(err)}
+                    } else {Err(err)},
                     _ => Err(err)
                 },
                 Type::Array(b, None) => match target {
@@ -1914,28 +1978,34 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
             },
             Type::Pointer(ref lb, false) => match target {
                 Type::Pointer(rb, false) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
                     inter_val: None,
                     data_type: Type::Pointer(Box::new(Type::Null), false)
                 }),
-                Type::Pointer(rb, false) if **lb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, rb.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)), ""))),
-                    inter_val: None,
-                    data_type: Type::Pointer(rb, false)
-                }),
+                Type::Pointer(rb, false) if **lb == Type::Null && !matches!(*rb, Type::Array(_, None)) => {
+                    let pt = Type::Pointer(rb, false);
+                    Ok(Value {
+                        comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
+                        inter_val: None,
+                        data_type: pt
+                    })
+                },
                 _ => Err(err)
             },
             Type::Pointer(ref lb, true) => match target {
                 Type::Pointer(rb, m) if *rb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16)), "")),
+                    comp_val: val.value(ctx).map(|v| ctx.builder.build_bitcast(v, ctx.null_type.ptr_type(Default::default()), "")),
                     inter_val: None,
                     data_type: Type::Pointer(Box::new(Type::Null), m)
                 }),
-                Type::Pointer(rb, m) if **lb == Type::Null => Ok(Value {
-                    comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, rb.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16)), ""))),
-                    inter_val: None,
-                    data_type: Type::Pointer(rb, m)
-                }),
+                Type::Pointer(rb, m) if **lb == Type::Null && !matches!(*rb, Type::Array(_, None)) => {
+                    let pt = Type::Pointer(rb, m);
+                    Ok(Value {
+                        comp_val: val.value(ctx).and_then(|v| Some(ctx.builder.build_bitcast(v, pt.llvm_type(ctx)?, ""))),
+                        inter_val: None,
+                        data_type: pt
+                    })
+                },
                 Type::Pointer(x, false) if x == *lb => Ok(Value {data_type: Type::Pointer(x, false), ..val}),
                 _ => Err(err)
             },

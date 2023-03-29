@@ -134,10 +134,10 @@ impl Type {
             Null | Function(..) | Module | TypeData | InlineAsm(_) | Error => None,
             Array(_, Some(_)) => None,
             Array(_, None) => None,
-            Pointer(b, m) | Reference(b, m) => match &**b {
-                Type::Array(b, None) => Some(ctx.context.struct_type(&[Type::Pointer(b.clone(), *m).llvm_type(ctx)?, ctx.context.i64_type().into()], false).into()),
-                Type::Array(b, Some(_)) => Type::Pointer(b.clone(), *m).llvm_type(ctx),
-                b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(inkwell::AddressSpace::from(0u16))))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(inkwell::AddressSpace::from(0u16))))}
+            Pointer(b, _) | Reference(b, _) => match &**b {
+                Type::Array(b, None) => Some(ctx.context.struct_type(&[b.llvm_type(ctx)?.ptr_type(Default::default()).into(), ctx.context.i64_type().into()], false).into()),
+                Type::Array(b, Some(_)) => Some(b.llvm_type(ctx)?.ptr_type(Default::default()).into()),
+                b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
             },
             Borrow(b) => b.llvm_type(ctx),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.llvm_type(ctx)
