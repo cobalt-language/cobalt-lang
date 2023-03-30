@@ -1,7 +1,9 @@
 use crate::*;
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicValueEnum, PointerValue};
 use std::collections::HashMap;
 use std::io::{self, Write, Read, BufRead};
+use std::rc::Rc;
+use std::cell::Cell;
 #[derive(Clone)]
 pub struct FnData<'ctx> {
     pub defaults: Vec<InterData<'ctx>>,
@@ -146,18 +148,31 @@ impl<'ctx> InterData<'ctx> {
 pub struct Value<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'ctx>>,
-    pub data_type: Type
+    pub data_type: Type,
+    pub address: Rc<Cell<Option<PointerValue<'ctx>>>>
 }
 impl<'ctx> Value<'ctx> {
-    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error}}
-    pub fn null() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Null}}
-    pub fn new(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type) -> Self {Value {comp_val, inter_val, data_type}}
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type}}
-    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type}}
-    pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type}}
-    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData}}
-    pub fn empty_mod() -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![])), data_type: Type::Module}}
-    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps)), data_type: Type::Module}}
+    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error, address: Rc::default()}}
+    pub fn null() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Null, address: Rc::default()}}
+    pub fn new(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type) -> Self {Value {comp_val, inter_val, data_type, address: Rc::default()}}
+    pub fn with_addr(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type, addr: PointerValue<'ctx>) -> Self {Value {comp_val, inter_val, data_type, address: Rc::new(Cell::new(Some(addr)))}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type, address: Rc::default()}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, address: Rc::default()}}
+    pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type, address: Rc::default()}}
+    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData, address: Rc::default()}}
+    pub fn empty_mod() -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![])), data_type: Type::Module, address: Rc::default()}}
+    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps)), data_type: Type::Module, address: Rc::default()}}
+    
+    pub fn addr(&self, ctx: &CompCtx<'ctx>) -> Option<PointerValue<'ctx>> {
+        self.address.get().or_else(|| {
+            let ctv = self.value(ctx)?;
+            let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
+            ctx.builder.build_store(alloca, ctv);
+            self.address.set(Some(alloca));
+            Some(alloca)
+        })
+    }
+
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
     pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
 

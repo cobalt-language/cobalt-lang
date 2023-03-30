@@ -1641,6 +1641,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                         if !ctx.is_const.get() && b.register() {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(v, ""));
+                                val.address.set(Some(v));
                             }
                         }
                         val.data_type = b;
@@ -1683,6 +1684,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                     if !ctx.is_const.get() && b.register() {
                         if let Some(PointerValue(v)) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(v, ""));
+                            val.address.set(Some(v));
                         }
                     }
                     val.data_type = b;
