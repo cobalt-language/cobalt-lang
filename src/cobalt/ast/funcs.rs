@@ -236,9 +236,9 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
-                        comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        inter_val: Some(InterData::Function(FnData {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
@@ -260,8 +260,8 @@ impl AST for FnDefAST {
                             })).collect(),
                             cconv: cc
                         })),
-                        data_type: fty.clone(),
-                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone();
+                        fty.clone(),
+                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -277,19 +277,19 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
-                                        comp_val: Some(param),
-                                        inter_val: None,
-                                        data_type: ty.clone(),
-                                    }, VariableData::default()))).map_or((), |_| ());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                        Some(param),
+                                        None,
+                                        ty.clone(),
+                                    ), VariableData::default()))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
-                                        comp_val: None,
-                                        inter_val: None,
-                                        data_type: ty.clone(),
-                                    }, VariableData::default()))).map_or((), |_| ());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                        None,
+                                        None,
+                                        ty.clone(),
+                                    ), VariableData::default()))).map_or((), |_| ());
                                 }
                             }
                         }
@@ -305,9 +305,9 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
-                        comp_val: None,
-                        inter_val: Some(InterData::Function(FnData {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        None,
+                        Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
@@ -329,8 +329,8 @@ impl AST for FnDefAST {
                             })).collect(),
                             cconv: cc
                         })),
-                        data_type: fty
-                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                        fty
+                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
                 }
             }
             else if **ret == Type::Null {
@@ -349,9 +349,9 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
-                        comp_val: Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        inter_val: Some(InterData::Function(FnData {
+                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
@@ -373,8 +373,8 @@ impl AST for FnDefAST {
                             })).collect(),
                             cconv: cc
                         })),
-                        data_type: fty.clone()
-                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone();
+                        fty.clone()
+                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -390,19 +390,19 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
-                                        comp_val: Some(param),
-                                        inter_val: None,
-                                        data_type: ty.clone()
-                                    }, VariableData::default()))).map_or((), |_| ());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                        Some(param),
+                                        None,
+                                        ty.clone()
+                                    ), VariableData::default()))).map_or((), |_| ());
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value {
-                                        comp_val: None,
-                                        inter_val: None,
-                                        data_type: ty.clone()
-                                    }, VariableData::default()))).map_or((), |_| ());
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                        None,
+                                        None,
+                                        ty.clone()
+                                    ), VariableData::default()))).map_or((), |_| ());
                                 }
                             }
                         }
@@ -418,9 +418,9 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
-                        comp_val: None,
-                        inter_val: Some(InterData::Function(FnData {
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        None,
+                        Some(InterData::Function(FnData {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
@@ -442,15 +442,15 @@ impl AST for FnDefAST {
                             })).collect(),
                             cconv: cc
                         })),
-                        data_type: fty
-                    }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                        fty
+                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
                 }
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value {
-                    comp_val: None,
-                    inter_val: Some(InterData::Function(FnData {
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                    None,
+                    Some(InterData::Function(FnData {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let (val, mut es) = a.codegen(ctx);
@@ -472,8 +472,8 @@ impl AST for FnDefAST {
                         })).collect(),
                         cconv: cc
                     })),
-                    data_type: fty
-                }, VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                    fty
+                ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -720,7 +720,7 @@ impl AST for IntrinsicAST {
                             (Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(ty, true)), vec![])
                         }
                         else {
-                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(Box::new(Type::Null), true)}, vec![Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty)))])
+                            (Value::new(None, None, Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty)))])
                         }
                     }
                     else {
@@ -768,7 +768,7 @@ impl AST for IntrinsicAST {
                         }
                         else {
                             errs.push(Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty))));
-                            (Value {comp_val: None, inter_val: None, data_type: Type::Pointer(ty, true)}, errs)
+                            (Value::new(None, None, Type::Pointer(ty, true)), errs)
                         }
                     }
                     else {

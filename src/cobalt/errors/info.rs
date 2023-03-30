@@ -15,7 +15,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     (30, &[
     /*030*/ ErrorInfo::new("@static on a global variable does nothing", ""),
     /*031*/ ErrorInfo::new("respecifying @static does nothing", ""),
-    /*032*/ ErrorInfo::new("respecifying @extern does nothing", "")]),
+    /*032*/ ErrorInfo::new("respecifying @extern does nothing", ""),
+    /*033*/ ErrorInfo::new("respecifying @stack does nothing", "")]),
     (90, &[
     /*090*/ ErrorInfo::new("import does not refer to anything", "")]),
     (101, &[
@@ -143,7 +144,9 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*432*/ ErrorInfo::new("invalid call to inline assembly", ""),
     /*433*/ ErrorInfo::new("invalid return specification for @asm intrinsic", ""),
     /*434*/ ErrorInfo::new("@alloca requires all arguments except for the first to be integral", ""),
-    /*435*/ ErrorInfo::new("@alloca intrinsic requires arguments", "")]),
+    /*435*/ ErrorInfo::new("@alloca intrinsic requires arguments", ""),
+    /*436*/ ErrorInfo::new("@stack must be specified on local variables", ""),
+    /*437*/ ErrorInfo::new("@stack annotation does not take arguments", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];

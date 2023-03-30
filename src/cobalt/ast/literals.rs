@@ -263,8 +263,9 @@ impl AST for ArrayLiteralAST {
             elems.truncate(u32::MAX as usize);
         }
         let elems = elems.into_iter().enumerate().filter_map(|(n, v)| types::utils::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
-        (Value {
-            comp_val: if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
+        let len = elems.len();
+        (Value::new(
+            if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
                 let arr_ty = llt.array_type(elems.len() as u32);
                 let alloca = 
                     if ctx.global.get() {
@@ -281,9 +282,9 @@ impl AST for ArrayLiteralAST {
                 }
                 Some(llv.into())
             } else {None},
-            data_type: Type::Reference(Box::new(Type::Array(Box::new(ty), Some(elems.len() as u32))), true),
-            inter_val: Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect()))
-        }, errs)
+            Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
+            Type::Reference(Box::new(Type::Array(Box::new(ty), Some(len as u32))), true)
+        ), errs)
 
     }
     fn to_code(&self) -> String {
