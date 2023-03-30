@@ -1598,6 +1598,7 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
+    else if if let Type::Reference(ref b, false) = target {**b == val.data_type} else {false} {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
     else {
         match val.data_type {
             Type::Borrow(b) => {
@@ -1784,6 +1785,7 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
+    else if if let Type::Reference(ref b, false) = target {**b == val.data_type} else {false} {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
     else {
         match val.data_type {
             Type::Borrow(b) => {
