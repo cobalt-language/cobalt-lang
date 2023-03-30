@@ -23,6 +23,7 @@ impl AST for VarDefAST {
         let mut linkas = None;
         let mut is_extern = None;
         let mut vis_spec = None;
+        let mut stack = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -87,7 +88,7 @@ impl AST for VarDefAST {
                     }
                 },
                 "export" => {
-                    if self.global {
+                    if !self.global {
                         errs.push(Diagnostic::error(loc.clone(), 429, None));
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
@@ -102,7 +103,7 @@ impl AST for VarDefAST {
                     }
                 },
                 "private" => {
-                    if self.global {
+                    if !self.global {
                         errs.push(Diagnostic::error(loc.clone(), 429, None));
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
@@ -116,12 +117,26 @@ impl AST for VarDefAST {
                         }
                     }
                 },
+                "stack" => {
+                    if let Some(l) = stack.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 33, None).note(l, "previously defined here".to_string()));
+                    }
+                    else {
+                        stack = Some(loc.clone());
+                        if let Some(arg) = arg.as_deref() {
+                            errs.push(Diagnostic::error(loc.clone(), 437, Some(format!("unexpected argument {arg:?}"))));
+                        }
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
+            if let Some(loc) = stack {
+                errs.push(Diagnostic::error(loc, 436, None));
+            }
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
@@ -415,7 +430,7 @@ impl AST for VarDefAST {
                 Value::error()
             });
             ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() || val.data_type.register() {
+            match if ctx.is_const.get() || (val.data_type.register() && stack.is_none()) {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {

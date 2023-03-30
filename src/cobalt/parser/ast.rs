@@ -1104,11 +1104,13 @@ fn parse_splits(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>
 fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<dyn AST>, usize, Vec<Diagnostic>) {
     let mut i = 0;
     let mut errs = vec![];
+    let mut anns_only = true;
     while i < toks.len() {
+        let ii = i;
         match &toks[i].data {
             Special(c) if terminators.contains(*c) => break,
             Operator(c) if c.len() == 1 && terminators.contains(c) => break,
-            Statement(_) if i == 0 => i += 1,
+            Statement(_) if anns_only => i += 1,
             Statement(k) if (k != "const" && k != "mut") && !matches!(toks.get(i + 1).and_then(|x| if let Operator(ref x) = x.data {Some(x.as_str())} else {None}).unwrap_or(""), "&" | "*" | "^") => {errs.push(Diagnostic::error(toks[i].loc.clone(), 280, Some(format!("expected ';', got {k:?}")))); break},
             Special('(') => {
                 let mut depth = 1;
@@ -1151,6 +1153,7 @@ fn parse_stmts(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box
             Special('}') => break,
             _ => i += 1
         }
+        if anns_only {anns_only = matches!(toks[ii].data, Macro(..))};
     }
     let (ast, mut es) = parse_statement(&toks[..i], flags);
     errs.append(&mut es);
@@ -1287,7 +1290,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
     'main: while !toks.is_empty() {
         let val = &toks[0];
         match &val.data {
-            Macro(name, params) => {i += 1; toks = &toks[1..]; annotations.push((name.clone(), params.as_ref().map(|(x, _)| x.clone()), toks[0].loc.clone()))}
+            Macro(name, params) => {i += 1; annotations.push((name.clone(), params.as_ref().map(|(x, _)| x.clone()), toks[0].loc.clone())); toks = &toks[1..];}
             Special(';') => {
                 if !annotations.is_empty() {
                     errs.push(Diagnostic::error(val.loc.clone(), 281, None));
