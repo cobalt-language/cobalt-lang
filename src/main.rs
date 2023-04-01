@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use colored::Colorize;
 use inkwell::targets::*;
 use inkwell::execution_engine::FunctionLookupError;
@@ -32,8 +33,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
-#[allow(non_snake_case)]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn driver() -> Result<(), Box<dyn std::error::Error>> {
     let ERROR = &"error".bright_red().bold();
     let WARNING = &"warning".bright_yellow().bold();
     let MODULE = &"module".blue().bold();
@@ -1217,4 +1217,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     Ok(())
+}
+fn main() {
+    if let Err(err) = driver() {
+        let ERROR = &"error".bright_red().bold();
+        eprintln!("{ERROR}: {err}");
+    }
 }
