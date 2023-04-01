@@ -89,16 +89,16 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     let file = cobalt::errors::files::add_file("<command line>".to_string(), arg.clone());
                     let files = &*cobalt::errors::files::FILES.read().unwrap();
                     let (toks, errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
-                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)])).unwrap();}
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
                 else {
                     let code = std::fs::read_to_string(arg.as_str())?;
                     let file = cobalt::errors::files::add_file(arg.clone(), code.clone());
                     let files = &*cobalt::errors::files::FILES.read().unwrap();
                     let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
-                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)])).unwrap();}
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
             }
             if nfcl {
@@ -139,7 +139,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     let (toks, mut errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
@@ -150,7 +150,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
@@ -210,14 +210,14 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 fail = true;
@@ -483,19 +483,19 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {exit(101)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {exit(101)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
@@ -733,19 +733,19 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {exit(101)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {exit(101)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
@@ -899,11 +899,11 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if let Err(msg) = ctx.module.verify() {
                 eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
                 exit(101)
