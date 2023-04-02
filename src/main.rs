@@ -1222,5 +1222,6 @@ fn main() {
     if let Err(err) = driver() {
         let ERROR = &"error".bright_red().bold();
         eprintln!("{ERROR}: {err}");
+        exit(100);
     }
 }
