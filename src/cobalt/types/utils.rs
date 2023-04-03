@@ -184,6 +184,26 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
         }
     }
 }
+pub fn call_type<'ctx>(target: Type, args: Vec<Value<'ctx>>) -> Type {
+    match target {
+        Type::Function(ret, _) => *ret,
+        Type::InlineAsm(b) => *b,
+        Type::Borrow(b) => if matches!(*b, Type::Tuple(..)) {Type::Borrow(Box::new(call_type(*b, args)))} else {call_type(*b, args)},
+        Type::Reference(b, m) => if matches!(*b, Type::Tuple(..)) {Type::Reference(Box::new(call_type(*b, args)), m)} else {call_type(*b, args)},
+        Type::Tuple(v) => if args.len() == 1 {
+            let mut val = args.into_iter().next().unwrap();
+            match val.data_type {
+                Type::Borrow(b) | Type::Reference(b, _) => {
+                    val.data_type = *b;
+                    call_type(Type::Tuple(v), vec![val])
+                },
+                Type::IntLiteral | Type::Int(..) => if let Some(InterData::Int(i)) = val.inter_val {v.get(i as usize).cloned().unwrap_or(Type::Error)} else {Type::Error},
+                _ => Type::Error
+            }
+        } else {Type::Error},
+        _ => Type::Error
+    }
+}
 pub fn attr_type(target: Type, attr: &str) -> Type {
     match target {
         Type::Borrow(b) | Type::Reference(b, _) => attr_type(*b, attr),
@@ -2151,17 +2171,91 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Borrow(b) => {
-            target.data_type = *b;
-            call(target, loc, cparen, args, ctx)
-        },
-        Type::Reference(b, _) => {
-            if !ctx.is_const.get() && b.register() {
-                if let Some(PointerValue(v)) = target.comp_val {
-                    target.comp_val = Some(ctx.builder.build_load(v, ""));
+            match *b {
+                Type::Tuple(v) => {
+                    let err = Diagnostic::error(loc.clone(), 313, Some({
+                        let mut out = "target type is (".to_string();
+                        for t in &v {out += &format!("{t}, ");}
+                        out.truncate(out.len() - 2);
+                        out += ")^";
+                        out
+                    })).info({
+                        let mut out = "argument types are (".to_string();
+                        args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
+                        out.truncate(out.len() - 2);
+                        out.push(')');
+                        out
+                    });
+                    match args.as_slice() {
+                        [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
+                            if let Some(InterData::Int(idx)) = inter_val {
+                                let idx = *idx as usize;
+                                if let Some(t) = v.get(idx) {
+                                    Ok(Value::new(
+                                        target.comp_val.and_then(|v| ctx.builder.build_extract_value(v.into_struct_value(), idx as u32, "")),
+                                        if let Some(InterData::Array(v)) = target.inter_val {v.get(idx).cloned()} else {None},
+                                        Type::Borrow(Box::new(t.clone()))
+                                    ))
+                                }
+                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                            }
+                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                        },
+                        _ => Err(err)
+                    }
+                },
+                b => {
+                    target.data_type = b;
+                    call(target, loc, cparen, args, ctx)
                 }
             }
-            target.data_type = *b;
-            call(target, loc, cparen, args, ctx)
+        },
+        Type::Reference(b, m) => {
+            match *b {
+                Type::Tuple(v) => {
+                    let err = Diagnostic::error(loc.clone(), 313, Some({
+                        let mut out = "target type is (".to_string();
+                        for t in &v {out += &format!("{t}, ");}
+                        out.truncate(out.len() - 2);
+                        out += ") ";
+                        out += if m {"mut"} else {"const"};
+                        out.push('&');
+                        out
+                    })).info({
+                        let mut out = "argument types are (".to_string();
+                        args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
+                        out.truncate(out.len() - 2);
+                        out.push(')');
+                        out
+                    });
+                    match args.as_slice() {
+                        [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
+                            if let Some(InterData::Int(idx)) = inter_val {
+                                let idx = *idx as usize;
+                                if let Some(t) = v.get(idx) {
+                                    Ok(Value::new(
+                                        target.comp_val.and_then(|v| ctx.builder.build_struct_gep(v.into_pointer_value(), idx as u32, "").ok().map(From::from)),
+                                        if let Some(InterData::Array(v)) = target.inter_val {v.get(idx).cloned()} else {None},
+                                        Type::Reference(Box::new(t.clone()), m)
+                                    ))
+                                }
+                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                            }
+                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                        },
+                        _ => Err(err)
+                    }
+                },
+                b => {
+                    if !ctx.is_const.get() && b.register() {
+                        if let Some(PointerValue(v)) = target.comp_val {
+                            target.comp_val = Some(ctx.builder.build_load(v, ""));
+                        }
+                    }
+                    target.data_type = b;
+                    call(target, loc, cparen, args, ctx)
+                }
+            }
         },
         Type::Function(ret, params) => {
             let mut err = Diagnostic::error(loc.clone(), 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc.clone(), {
@@ -2248,6 +2342,38 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 Ok(Value::null())
             }
         } else {Ok(Value::error())},
+        Type::Tuple(v) => {
+            let err = Diagnostic::error(loc.clone(), 313, Some({
+                let mut out = "target type is (".to_string();
+                for t in &v {out += &format!("{t}, ");}
+                out.truncate(out.len() - 2);
+                out.push(')');
+                out
+            })).info({
+                let mut out = "argument types are (".to_string();
+                args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
+                out.truncate(out.len() - 2);
+                out.push(')');
+                out
+            });
+            match args.as_slice() {
+                [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
+                    if let Some(InterData::Int(idx)) = inter_val {
+                        let idx = *idx as usize;
+                        if let Some(t) = v.get(idx) {
+                            Ok(Value::new(
+                                target.comp_val.and_then(|v| ctx.builder.build_extract_value(v.into_struct_value(), idx as u32, "")),
+                                if let Some(InterData::Array(v)) = target.inter_val {v.get(idx).cloned()} else {None},
+                                t.clone()
+                            ))
+                        }
+                        else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                    }
+                    else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                },
+                _ => Err(err)
+            }
+        },
         t => Err(Diagnostic::error(loc, 313, Some(format!("target type is {t}"))).info({
             let mut out = "argument types are (".to_string();
             args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());

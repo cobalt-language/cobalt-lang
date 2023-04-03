@@ -114,6 +114,9 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*326*/ ErrorInfo::new("value is not a type", ""),
     /*327*/ ErrorInfo::new("variable must not have a const-only type", ""),
     /*328*/ ErrorInfo::new("value does not have this attribute", "")]),
+    (380, &[
+    /*380*/ ErrorInfo::new("tuple element access requires a constant index", ""),
+    /*381*/ ErrorInfo::new("tuple index out of bounds", "")]),
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", ""),
     /*391*/ ErrorInfo::new("unknown intrinisc", ""),
