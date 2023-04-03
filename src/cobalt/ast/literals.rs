@@ -1,6 +1,6 @@
 use crate::*;
-use inkwell::values::BasicValueEnum::*;
-use inkwell::types::BasicType;
+use inkwell::values::BasicValueEnum::{self, *};
+use inkwell::types::{BasicType, BasicTypeEnum};
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -301,6 +301,55 @@ impl AST for ArrayLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "array")?;
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            print_ast_child(f, pre, &**val, len == 1)?;
+            len -= 1;
+        }
+        Ok(())
+    }
+}
+pub struct TupleLiteralAST {
+    pub start: Location,
+    pub end: Location,
+    pub vals: Vec<Box<dyn AST>>,
+}
+impl TupleLiteralAST {
+    pub fn new(start: Location, end: Location, vals: Vec<Box<dyn AST>>) -> Self {TupleLiteralAST {start, end, vals}}
+}
+impl AST for TupleLiteralAST {
+    fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        Type::Tuple(self.vals.iter().map(|x| x.res_type(ctx)).collect())
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| x.codegen_errs(ctx, &mut errs)).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();
+        (Value::new(
+            if comps.iter().all(Option::is_some) {
+                let comps = comps.into_iter().map(Option::unwrap).collect::<Vec<_>>();
+                let tup = ctx.context.const_struct(&comps.iter().map(BasicValueEnum::get_type).map(BasicTypeEnum::const_zero).collect::<Vec<_>>(), false);
+                comps.into_iter().enumerate().for_each(|(n, v)| {ctx.builder.build_insert_value(tup, v, n as u32, "").unwrap();});
+                Some(tup.into())
+            } else {None},
+            if inters.iter().all(Option::is_some) {Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()))} else {None},
+            Type::Tuple(types)
+        ), errs)
+    }
+    fn to_code(&self) -> String {
+        let mut out = "(".to_string();
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            out += &val.to_code();
+            if len != 1 {
+                out += ", ";
+                len -= 1;
+            }
+        }
+        out + ")"
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "tuple")?;
         let mut len = self.vals.len();
         for val in self.vals.iter() {
             print_ast_child(f, pre, &**val, len == 1)?;
