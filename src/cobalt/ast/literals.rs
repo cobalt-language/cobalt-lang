@@ -310,15 +310,20 @@ impl AST for ArrayLiteralAST {
     }
 }
 pub struct TupleLiteralAST {
-    pub start: Location,
-    pub end: Location,
-    pub vals: Vec<Box<dyn AST>>,
+    pub vals: Vec<Box<dyn AST>>
 }
 impl TupleLiteralAST {
-    pub fn new(start: Location, end: Location, vals: Vec<Box<dyn AST>>) -> Self {TupleLiteralAST {start, end, vals}}
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
+        assert_ne!(vals.len(), 0);
+        TupleLiteralAST {vals}
+    }
 }
 impl AST for TupleLiteralAST {
-    fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
+    fn loc(&self) -> Location {
+        let start = self.vals.first().unwrap().loc();
+        let end = self.vals.last().unwrap().loc();
+        (start.0, start.1.start..end.1.end)
+    }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         Type::Tuple(self.vals.iter().map(|x| x.res_type(ctx)).collect())
     }

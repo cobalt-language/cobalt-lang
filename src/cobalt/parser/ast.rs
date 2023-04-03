@@ -1075,6 +1075,82 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
         (ast, errs)
     }
 }
+fn parse_tuple(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+    let mut errs = vec![];
+    let mut comma = false;
+    let mut vals = vec![];
+    let mut it = toks.iter();
+    let mut idx = 0;
+    'main: while let Some(tok) = it.next() {
+        match &tok.data {
+            Special('(') => {
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('(')) => depth += 1,
+                        Some(Special(')')) => depth -= 1,
+                        None => break 'main,
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special('[') => {
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('[')) => depth += 1,
+                        Some(Special(']')) => depth -= 1,
+                        None => break 'main,
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special('{') => {
+                let mut depth = 1;
+                while depth > 0 {
+                    match it.next().map(|x| &x.data) {
+                        Some(Special('{')) => depth += 1,
+                        Some(Special('}')) => depth -= 1,
+                        None => break 'main,
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                idx += 1;
+            },
+            Special(')') => break 'main,
+            Special(']') => break 'main,
+            Special('}') => break 'main,
+            Special(',') => {
+                comma = true;
+                let (p, n) = toks.split_at(idx);
+                vals.push(p);
+                toks = &n[1..];
+                idx = 0;
+            },
+            _ => {idx += 1; if idx == toks.len() {break}}
+        }
+    }
+    if toks.len() > 0 {vals.push(toks);}
+    let vals = vals.iter().map(|toks| if vals.len() == 1 {
+        let mut it = COBALT_BIN_OPS.split_inclusive(|&x| x == Ltr || x == Rtl);
+        let (ast, mut es) = parse_binary(toks, it.next().unwrap(), it, flags);
+        errs.append(&mut es);
+        ast
+    } else {
+        let (ast, _, mut es) = parse_expr_nosplit(toks, "", flags);
+        errs.append(&mut es);
+        ast
+    }).collect();
+    (if comma {Box::new(TupleLiteralAST::new(vals))} else {
+        assert_eq!(vals.len(), 1);
+        vals.into_iter().next().unwrap()
+    }, errs)
+}
 fn parse_splits(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if toks.is_empty() {return (null(toks), vec![Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 290, None)])}
     let mut start = toks[0].loc.clone();
@@ -1210,8 +1286,7 @@ fn parse_expr_nosplit(toks: &[Token], terminators: &'static str, flags: &Flags) 
             _ => i += 1
         }
     }
-    let mut it = COBALT_BIN_OPS.split_inclusive(|&x| x == Ltr || x == Rtl);
-    let (ast, mut es) = parse_binary(&toks[..i], it.next().unwrap(), it, flags);
+    let (ast, mut es) = parse_tuple(&toks[..i], flags);
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
