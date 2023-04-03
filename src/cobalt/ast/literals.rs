@@ -1,6 +1,6 @@
 use crate::*;
-use inkwell::values::BasicValueEnum::{self, *};
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::values::BasicValueEnum::*;
+use inkwell::types::BasicType;
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -330,16 +330,21 @@ impl AST for TupleLiteralAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| x.codegen_errs(ctx, &mut errs)).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();
-        (Value::new(
-            if comps.iter().all(Option::is_some) {
-                let comps = comps.into_iter().map(Option::unwrap).collect::<Vec<_>>();
-                let tup = ctx.context.const_struct(&comps.iter().map(BasicValueEnum::get_type).map(BasicTypeEnum::const_zero).collect::<Vec<_>>(), false);
-                comps.into_iter().enumerate().for_each(|(n, v)| {ctx.builder.build_insert_value(tup, v, n as u32, "").unwrap();});
-                Some(tup.into())
-            } else {None},
-            if inters.iter().all(Option::is_some) {Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()))} else {None},
-            Type::Tuple(types)
-        ), errs)
+        let mut val = Value::null();
+        val.data_type = Type::Tuple(types);
+        if comps.iter().all(Option::is_some) {
+            let llt = val.data_type.llvm_type(ctx).unwrap();
+            let alloca = ctx.builder.build_alloca(llt, "");
+            let comps = comps.into_iter().map(Option::unwrap).collect::<Vec<_>>();
+            comps.into_iter().enumerate().for_each(|(n, v)| {
+                let gep = ctx.builder.build_struct_gep(alloca, n as u32, "").unwrap();
+                ctx.builder.build_store(gep, v);
+            });
+            val.comp_val = Some(ctx.builder.build_load(alloca, ""));
+            val.address.set(Some(alloca));
+        };
+        if inters.iter().all(Option::is_some) {val.inter_val = Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()));};
+        (val, errs)
     }
     fn to_code(&self) -> String {
         let mut out = "(".to_string();
