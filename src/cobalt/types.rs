@@ -116,14 +116,17 @@ impl Type {
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
             Function(..) | Module | TypeData | InlineAsm(_) | Error => Meta,
-            Pointer(..) | Reference(..) => Static(8),
+            Pointer(b, _) | Reference(b, _) => match **b {
+                Type::Array(_, None) => Static(16),
+                _ => Static(8)
+            },
             Borrow(b) => b.size(),
             Tuple(v) => v.iter().fold(Static(0), |v, t| if let Static(bs) = v {
                 let n = t.size();
                 if let Static(ns) = n {
                     let a = t.align() as u32;
                     if a == 0 || a == 1 {Static(bs + ns)}
-                    else {Static((bs + a - 1) / a + ns)}
+                    else {Static(((bs + a - 1) / a) * a + ns)}
                 } else {n}
             } else {v}),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.size()
