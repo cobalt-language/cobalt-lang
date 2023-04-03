@@ -572,6 +572,7 @@ impl CallAST {
 }
 impl AST for CallAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.cparen.1.end)}
+    fn expl_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
