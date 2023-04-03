@@ -155,6 +155,10 @@ pub fn post_type(val: Type, op: &str) -> Type {
             "mut&" | "mut*" | "const&" | "const*" | "^" => Type::TypeData,
             _ => Type::Error
         },
+        Type::Tuple(v) if v.iter().all(|v| v == &Type::TypeData) => match op {
+            "mut&" | "mut*" | "const&" | "const*" | "^" => Type::TypeData,
+            _ => Type::Error
+        },
         _ => Type::Error
     }
 }
@@ -169,6 +173,10 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
                 x => sub_type(x, i)
             },
             Type::TypeData | Type::Null => match i {
+                Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
+                _ => Type::Error
+            },
+            Type::Tuple(v) if v.iter().all(|v| v == &Type::TypeData) => match i {
                 Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
                 _ => Type::Error
             },
@@ -1388,6 +1396,24 @@ pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &s
             "^" => Ok(Value::make_type(Type::Borrow(Box::new(Type::Null)))),
             _ => Err(err)
         },
+        Type::Tuple(v) => {
+            if let Some(InterData::Array(a)) = val.inter_val {
+                let mut vec = Vec::with_capacity(v.len());
+                for t in a.into_iter().zip(v) {
+                    if let (InterData::Type(t), Type::TypeData) = t {vec.push(*t);}
+                    else {return Err(err);}
+                }
+                match op {
+                    "mut&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec)), true))),
+                    "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), true))),
+                    "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec)), false))),
+                    "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), false))),
+                    "^" => Ok(Value::make_type(Type::Borrow(Box::new(Type::Tuple(vec))))),
+                    _ => Err(err)
+                }
+            }
+            else {Err(err)}
+        },
         _ => Err(err)
     }
 }
@@ -1584,6 +1610,21 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                     Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
                     _ => Err(err)
                 },
+                Type::Tuple(v) => {
+                    if let Some(InterData::Array(a)) = val.inter_val {
+                        let mut vec = Vec::with_capacity(v.len());
+                        for t in a.into_iter().zip(v) {
+                            if let (InterData::Type(t), Type::TypeData) = t {vec.push(*t);}
+                            else {return Err(err);}
+                        }
+                        match idx.data_type {
+                            Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), None))),
+                            Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                            _ => Err(err)
+                        }
+                    }
+                    else {Err(err)}
+                },
                 _ => Err(err)
             }
         }
@@ -1769,6 +1810,20 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                     _ => Err(err)
                 },
                 _ => Err(err)
+            },
+            Type::Tuple(v) => {
+                if target == Type::TypeData {
+                    if let Some(InterData::Array(a)) = val.inter_val {
+                        let mut vec = Vec::with_capacity(v.len());
+                        for t in a.into_iter().zip(v) {
+                            if let (InterData::Type(t), Type::TypeData) = t {vec.push(*t);}
+                            else {return Err(err);}
+                        }
+                        Ok(Value::make_type(Type::Tuple(vec)))
+                    }
+                    else {Err(err)}
+                }
+                else {Err(err)}
             },
             Type::Null => if target == Type::TypeData {Ok(Value::make_type(Type::Null))} else {Err(err)},
             Type::Error => Ok(Value::error()),
@@ -2012,6 +2067,20 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
                 },
                 Type::Pointer(x, false) if x == *lb => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(x, false))),
                 _ => Err(err)
+            },
+            Type::Tuple(v) => {
+                if target == Type::TypeData {
+                    if let Some(InterData::Array(a)) = val.inter_val {
+                        let mut vec = Vec::with_capacity(v.len());
+                        for t in a.into_iter().zip(v) {
+                            if let (InterData::Type(t), Type::TypeData) = t {vec.push(*t);}
+                            else {return Err(err);}
+                        }
+                        Ok(Value::make_type(Type::Tuple(vec)))
+                    }
+                    else {Err(err)}
+                }
+                else {Err(err)}
             },
             Type::Null => match target {
                 Type::TypeData => Ok(Value::make_type(Type::Null)),
