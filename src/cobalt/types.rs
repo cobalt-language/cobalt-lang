@@ -184,6 +184,7 @@ impl Type {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
             Borrow(b) => b.register(),
+            Tuple(v) => v.iter().all(Type::register),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.register(),
             _ => false
         }
@@ -191,6 +192,7 @@ impl Type {
     pub fn copyable(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
+            Tuple(v) => v.iter().all(Type::copyable),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.copyable(),
             _ => false
         }
