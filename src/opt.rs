@@ -13,9 +13,9 @@ pub enum AdditionalArg {
 use AdditionalArg::*;
 pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> bool { // I wish there was a better way to do this
     let name = name
-        .replace("attr", "attribute")
-        .replace("fn", "function")
-        .replace("func", "function")
+        .replace("attribute", "attr")
+        .replace("function", "func")
+        .replace("fn", "func")
         .replace("argument", "arg")
         .replace("constant", "const")
         .replace("optimizer", "opt")
@@ -28,10 +28,10 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
     match name.as_str() {
         "arg promotion" => pm.add_argument_promotion_pass(),
         "const merge" => pm.add_constant_merge_pass(),
-        "merge function" | "merge functions" => pm.add_merge_functions_pass(),
+        "merge func" | "merge funcs" => pm.add_merge_functions_pass(),
         "dead arg" | "dead args" | "dead arg elimination" | "dead args elimination" => pm.add_dead_arg_elimination_pass(),
-        "function attr" | "function attrs" => pm.add_function_attrs_pass(),
-        "function inline" | "function inlining" => pm.add_function_inlining_pass(),
+        "func attr" | "func attrs" => pm.add_function_attrs_pass(),
+        "func inline" | "func inlining" => pm.add_function_inlining_pass(),
         "always inline" | "always inliner" => pm.add_always_inliner_pass(),
         "global dce" => pm.add_global_dce_pass(),
         "global opt" => pm.add_global_optimizer_pass(),
