@@ -115,6 +115,7 @@ pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
                 "=" => Type::Reference(Box::new(x), true),
                 _ => bin_type(x, y, op)
             },
+            (Type::Tuple(xv), Type::Tuple(yv)) if xv == yv && op == "=" => Type::Reference(Box::new(Type::Tuple(xv)), true),
             (x, r) => bin_type(x, r, op)
         },
         (Type::Reference(x, false) | Type::Borrow(x), r) => bin_type(*x, r, op),
@@ -518,6 +519,17 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     }
                     bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
                 }
+            },
+            (Type::Tuple(xv), Type::Tuple(yv)) if xv == yv && op == "=" => {
+                lhs.data_type = Type::Tuple(xv);
+                rhs.data_type = Type::Tuple(yv);
+                if let (Some(PointerValue(lv)), Some(rv)) = (lhs.value(ctx), rhs.value(ctx)) {
+                    if !ctx.is_const.get() {
+                        ctx.builder.build_store(lv, rv);
+                    }
+                }
+                lhs.inter_val = None;
+                Ok(lhs)
             },
             (l, r) => {
                 lhs.data_type = l;
