@@ -19,11 +19,11 @@ impl AST for IfAST {
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
-        let v = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+        let cv = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
         });
-        if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = v.value(ctx) {
+        if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
             (if let Some(if_false) = self.if_false.as_ref() {
                 if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
                     let itb = ctx.context.append_basic_block(f, "if_true");
@@ -50,13 +50,19 @@ impl AST for IfAST {
                         });
                         ctx.builder.build_unconditional_branch(mb);
                         ctx.builder.position_at_end(mb);
-                        if let Some(llt) = ty.llvm_type(ctx) {
-                            let phi = ctx.builder.build_phi(llt, "");
-                            if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
-                            if let Some(v) = if_false.value(ctx) {phi.add_incoming(&[(&v, ifb)]);}
-                            Value::compiled(phi.as_basic_value(), ty)
-                        }
-                        else {Value::null()}
+                        Value::new(
+                            if let Some(llt) = ty.llvm_type(ctx) {
+                                let phi = ctx.builder.build_phi(llt, "");
+                                if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
+                                if let Some(v) = if_false.value(ctx) {phi.add_incoming(&[(&v, ifb)]);}
+                                Some(phi.as_basic_value())
+                            } else {None},
+                            if let Some(InterData::Int(v)) = cv.inter_val {
+                                if v == 0 {if_false.inter_val}
+                                else {if_true.inter_val}
+                            } else {None},
+                            ty
+                        )
                     }
                     else {
                         ctx.builder.position_at_end(itb);
@@ -79,13 +85,19 @@ impl AST for IfAST {
                     errs.append(&mut es);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
-                    if let Some(llt) = if_true.data_type.llvm_type(ctx) {
-                        let phi = ctx.builder.build_phi(llt, "");
-                        if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
-                        phi.add_incoming(&[(&llt.const_zero(), ip)]);
-                        Value::compiled(phi.as_basic_value(), if_true.data_type)
-                    }
-                    else {Value::error()}
+                    Value::new(
+                        if let Some(llt) = if_true.data_type.llvm_type(ctx) {
+                            let phi = ctx.builder.build_phi(llt, "");
+                            if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
+                            phi.add_incoming(&[(&llt.const_zero(), ip)]);
+                            Some(phi.as_basic_value())
+                        } else {None},
+                        if let Some(InterData::Int(v)) = cv.inter_val {
+                            if v == 0 {Some(InterData::Null)}
+                            else {if_true.inter_val}
+                        } else {None},
+                        if_true.data_type
+                    )
                 }
                 else {Value::error()}
             }
