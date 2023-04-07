@@ -11,7 +11,7 @@ impl IfAST {
 impl AST for IfAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Error)}
+        if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
         else {self.if_true.res_type(ctx)}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
@@ -36,30 +36,36 @@ impl AST for IfAST {
                     ctx.builder.position_at_end(ifb);
                     let (if_false, mut es) = if_false.codegen(ctx);
                     errs.append(&mut es);
-                    let ty = if let Some(t) = types::utils::common(&if_true.data_type, &if_false.data_type) {t} else {
-                        errs.push(Diagnostic::error(self.cond.loc(), 315, Some(format!("no common type for values of types {} and {}", if_true.data_type, if_false.data_type))));
-                        Type::Error
-                    };
-                    ctx.builder.position_at_end(itb);
-                    let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::error()
-                    });
-                    ctx.builder.build_unconditional_branch(mb);
-                    ctx.builder.position_at_end(ifb);
-                    let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::error()
-                    });
-                    ctx.builder.build_unconditional_branch(mb);
-                    ctx.builder.position_at_end(mb);
-                    if let Some(llt) = ty.llvm_type(ctx) {
-                        let phi = ctx.builder.build_phi(llt, "");
-                        if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
-                        if let Some(v) = if_false.value(ctx) {phi.add_incoming(&[(&v, ifb)]);}
-                        Value::compiled(phi.as_basic_value(), ty)
+                    if let Some(ty) = types::utils::common(&if_true.data_type, &if_false.data_type) {
+                        ctx.builder.position_at_end(itb);
+                        let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error()
+                        });
+                        ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(ifb);
+                        let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error()
+                        });
+                        ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(mb);
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            let phi = ctx.builder.build_phi(llt, "");
+                            if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
+                            if let Some(v) = if_false.value(ctx) {phi.add_incoming(&[(&v, ifb)]);}
+                            Value::compiled(phi.as_basic_value(), ty)
+                        }
+                        else {Value::null()}
                     }
-                    else {Value::error()}
+                    else {
+                        ctx.builder.position_at_end(itb);
+                        ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(ifb);
+                        ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(mb);
+                        Value::null()
+                    }
                 }
                 else {Value::error()}
             }
