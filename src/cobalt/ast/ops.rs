@@ -33,16 +33,33 @@ impl AST for BinOpAST {
                     ctx.builder.build_conditional_branch(val, ab, mb);
                     ctx.builder.position_at_end(ab);
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
+                    let rdt = rhs.data_type.clone();
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
-                        let llt = val.get_type();
-                        let phi = ctx.builder.build_phi(llt, "");
-                        phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
-                        (Value::compiled(phi.as_basic_value(), rhs.data_type), errs)
+                    if let Ok(rhv) = types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
+                        if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
+                            let llt = val.get_type();
+                            let phi = ctx.builder.build_phi(llt, "");
+                            phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
+                            (Value::compiled(phi.as_basic_value(), rdt), errs)
+                        }
+                        else {(Value::null(), errs)}
                     }
-                    else {(Value::null(), errs)}
+                    else {
+                        match types::utils::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
+                            Ok(rhv) => if let Some(val) = rhv.value(ctx) {
+                                let llt = ctx.context.bool_type();
+                                let phi = ctx.builder.build_phi(llt, "");
+                                phi.add_incoming(&[(&val, ab), (&llt.const_zero(), bb)]);
+                                (Value::compiled(phi.as_basic_value(), rdt), errs)
+                            } else {(Value::null(), errs)},
+                            Err(err) => {
+                                errs.push(err);
+                                (Value::error(), errs)
+                            }
+                        }
+                    }
                 }
                 else {(Value::null(), errs)}
             },
@@ -59,16 +76,33 @@ impl AST for BinOpAST {
                     ctx.builder.build_conditional_branch(val, mb, ab);
                     ctx.builder.position_at_end(ab);
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
+                    let rdt = rhs.data_type.clone();
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
-                    if let (Some(val), Some(ifv)) = (rhs.value(ctx), types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.into_value(ctx))) {
-                        let llt = val.get_type();
-                        let phi = ctx.builder.build_phi(llt, "");
-                        phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
-                        (Value::compiled(phi.as_basic_value(), rhs.data_type), errs)
+                    if let Ok(rhv) = types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
+                        if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
+                            let llt = val.get_type();
+                            let phi = ctx.builder.build_phi(llt, "");
+                            phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
+                            (Value::compiled(phi.as_basic_value(), rdt), errs)
+                        }
+                        else {(Value::null(), errs)}
                     }
-                    else {(Value::null(), errs)}
+                    else {
+                        match types::utils::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
+                            Ok(rhv) => if let Some(val) = rhv.value(ctx) {
+                                let llt = ctx.context.bool_type();
+                                let phi = ctx.builder.build_phi(llt, "");
+                                phi.add_incoming(&[(&val, ab), (&llt.const_int(1, false), bb)]);
+                                (Value::compiled(phi.as_basic_value(), rdt), errs)
+                            } else {(Value::null(), errs)},
+                            Err(err) => {
+                                errs.push(err);
+                                (Value::error(), errs)
+                            }
+                        }
+                    }
                 }
                 else {(Value::null(), errs)}
             },
