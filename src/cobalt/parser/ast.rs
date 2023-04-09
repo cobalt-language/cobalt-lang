@@ -185,11 +185,13 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
 fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     match toks.get(0).map(|x| &x.data) {
         Some(Special('(')) => {
+            let mut loc = toks[0].loc.clone();
+            loc.1.end = toks.last().unwrap().loc.1.end;
             if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)];}
             toks = &toks[1..];
             if toks.is_empty() {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), vec![])}
             let (ast, _, errs) = parse_expr(toks, "", flags);
-            (ast, errs)
+            (Box::new(ParenAST::new(loc, ast)), errs)
         },
         Some(Special('{')) => {
             let mut start = toks[0].loc.clone();
