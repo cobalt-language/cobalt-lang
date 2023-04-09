@@ -644,7 +644,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                 Ok(val) => outs.push(val),
                 Err(val) => errs.push(val)
             },
-            '(' | ')' | '[' | ']' | '{' | '}' | ';' | ':' | ',' => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Special(c))),
+            '(' | ')' | '[' | ']' | '{' | '}' | ';' | ',' => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Special(c))),
             '.' => match it.peek() {
                 Some(x) if *x >= '0' && *x <= '9' => match parse_num(&mut it, c, &mut loc, flags.up) {
                     Ok(val) => outs.push(val),
@@ -698,10 +698,18 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
             },
             '&' | '|' => { // operator of the form @, @=, @?
                 match it.peek() {
-                    Some(&'=') => {it.next(); if flags.up {loc.1 += 1;} outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}="))))},
-                    Some(&'?') => {it.next(); if flags.up {loc.1 += 1;} outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}?"))))},
+                    Some(&'=') => {it.next(); outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}=")))); if flags.up {loc.1 += 1;}},
+                    Some(&'?') => {it.next(); outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}?")))); if flags.up {loc.1 += 1;}},
                     _ => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(c.to_string())))
                 }
+            },
+            ':' => {
+                if it.peek() == Some(&'?') {
+                    it.next();
+                    outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(":?".to_string())));
+                    if flags.up {loc.1 += 1;}
+                }
+                else {outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Special(':')))}
             },
             _ => errs.push(Diagnostic::error((loc.0, loc.1..(loc.1 + 1)), 101, Some(format!("character is {c:?} (U+{:0>4X})", c as u32))))
         }

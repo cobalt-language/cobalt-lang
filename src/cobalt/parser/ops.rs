@@ -8,6 +8,7 @@ pub const COBALT_BIN_OPS: &[OpType] = &[
     Op("="), Op("+="), Op("-="), Op("*="), Op("/="), Op("%="), Op("&="), Op("|="), Op("^="), Op("<<="), Op(">>="),  Rtl,
     Op("|?"),                                                                                                       Ltr,
     Op("&?"),                                                                                                       Ltr,
+    Op(":"), Op(":?"),                                                                                              Ltr,
     Op("|"),                                                                                                        Ltr,
     Op("^"),                                                                                                        Ltr,
     Op("&"),                                                                                                        Ltr,
