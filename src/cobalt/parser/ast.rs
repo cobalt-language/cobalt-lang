@@ -1073,6 +1073,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special('[') => break 'main,
                     Special('{') => break 'main,
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && !matches!(&toks[idx - 1].data, Statement(_)) => {
+                        idx -= 1;
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
