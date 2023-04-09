@@ -88,6 +88,14 @@ impl<'ctx> CompCtx<'ctx> {
         self.vars.set(MaybeUninit::new(v));
         out
     }
+    pub fn is_cfunc(&self, name: &DottedName) -> bool {
+        name.ids.len() == 1 && (name.global || unsafe {
+            let base = self.name.replace(MaybeUninit::uninit()).assume_init();
+            let b = base == ".";
+            self.name.set(MaybeUninit::new(base));
+            b
+        }) && matches!(name.ids.last().unwrap().0.as_str(), "main") // this match will become larger if more intrinisic stuff is needed
+    }
     pub fn mangle(&self, name: &DottedName) -> String {
         if name.global {format!("{name}")}
         else {
