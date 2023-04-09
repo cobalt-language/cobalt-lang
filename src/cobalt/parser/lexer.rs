@@ -686,18 +686,20 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                 let mut s = c.to_string();
                 if it.peek() == Some(&c) {
                     s.push(c);
+                    it.next();
                     if flags.up {loc.1 += 1;}
                 }
                 if it.peek() == Some(&'=') {
                     s.push('=');
+                    it.next();
                     if flags.up {loc.1 += 1;}
                 }
                 outs.push(Token::new((loc.0, (start..(loc.1 + 1))), Operator(s)));
             },
             '&' | '|' => { // operator of the form @, @=, @?
                 match it.peek() {
-                    Some(&'=') => {it.next(); outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}="))))},
-                    Some(&'?') => {it.next(); outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}?"))))},
+                    Some(&'=') => {it.next(); if flags.up {loc.1 += 1;} outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}="))))},
+                    Some(&'?') => {it.next(); if flags.up {loc.1 += 1;} outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(format!("{c}?"))))},
                     _ => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(c.to_string())))
                 }
             },

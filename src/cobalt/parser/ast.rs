@@ -103,42 +103,62 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
         Int(x) => {
             if toks.len() == 1 {return (Box::new(IntLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
             let mut errs = vec![];
-            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+            let mut loc = toks[0].loc.clone();
+            let suf = if let Identifier(s) = &toks[1].data {
+                loc.1.end = toks[1].loc.1.end;
+                Some(s)
+            }
+            else {
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", toks[1].data))));
                 None
             };
             errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", tok.data)))));
-            (Box::new(IntLiteralAST::new(toks[0].loc.clone(), *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
+            (Box::new(IntLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Float(x) => {
             if toks.len() == 1 {return (Box::new(FloatLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
             let mut errs = vec![];
-            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+            let mut loc = toks[0].loc.clone();
+            let suf = if let Identifier(s) = &toks[1].data {
+                loc.1.end = toks[1].loc.1.end;
+                Some(s)
+            }
+            else {
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after floating-point literal", toks[1].data))));
                 None
             };
             errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after floating-point literal", tok.data)))));
-            (Box::new(FloatLiteralAST::new(toks[0].loc.clone(), *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
+            (Box::new(FloatLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Char(x) => {
             if toks.len() == 1 {return (Box::new(CharLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
             let mut errs = vec![];
-            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
-                errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", toks[1].data))));
+            let mut loc = toks[0].loc.clone();
+            let suf = if let Identifier(s) = &toks[1].data {
+                loc.1.end = toks[1].loc.1.end;
+                Some(s)
+            }
+            else {
+                errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after character literal", toks[1].data))));
                 None
             };
             errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after character literal", tok.data)))));
-            (Box::new(CharLiteralAST::new(toks[0].loc.clone(), *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
+            (Box::new(CharLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Str(x) => {
             if toks.len() == 1 {return (Box::new(StringLiteralAST::new(toks[0].loc.clone(), x.clone(), None)), vec![])}
             let mut errs = vec![];
-            let suf = if let Identifier(s) = &toks[1].data {Some(s)} else {
+            let mut loc = toks[0].loc.clone();
+            let suf = if let Identifier(s) = &toks[1].data {
+                loc.1.end = toks[1].loc.1.end;
+                Some(s)
+            }
+            else {
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", toks[1].data))));
                 None
             };
             errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after string literal", tok.data)))));
-            (Box::new(StringLiteralAST::new(toks[0].loc.clone(), x.clone(), suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
+            (Box::new(StringLiteralAST::new(loc, x.clone(), suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Identifier(x) if x == "null" => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("unexpected {:#} after null", tok.data)))).collect()),
         Identifier(name) => (Box::new(VarGetAST::new(toks[0].loc.clone(), name.clone(), false)), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect()),
@@ -165,11 +185,13 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
 fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     match toks.get(0).map(|x| &x.data) {
         Some(Special('(')) => {
+            let mut loc = toks[0].loc.clone();
+            loc.1.end = toks.last().unwrap().loc.1.end;
             if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)];}
             toks = &toks[1..];
             if toks.is_empty() {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), vec![])}
             let (ast, _, errs) = parse_expr(toks, "", flags);
-            (ast, errs)
+            (Box::new(ParenAST::new(loc, ast)), errs)
         },
         Some(Special('{')) => {
             let mut start = toks[0].loc.clone();
