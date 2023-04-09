@@ -28,6 +28,16 @@ impl Display for SizeType {
         }
     }
 }
+impl std::ops::Add for SizeType {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (SizeType::Meta, _) | (_, SizeType::Meta) => SizeType::Meta,
+            (SizeType::Dynamic, _) | (_, SizeType::Dynamic) => SizeType::Dynamic,
+            (SizeType::Static(l), SizeType::Static(r)) => SizeType::Static(l + r)
+        }
+    }
+}
 lazy_static::lazy_static! {
     pub static ref NOMINAL_TYPES: RwLock<HashMap<String, (Type, bool)>> = RwLock::new(HashMap::new());
 }
@@ -39,6 +49,7 @@ pub enum Type {
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
     Null, Module, TypeData, InlineAsm(Box<Type>), Array(Box<Type>, Option<u32>),
     Function(Box<Type>, Vec<(Type, bool)>), Nominal(String),
+    Tuple(Vec<Type>),
     Error
 }
 impl Display for Type {
@@ -78,6 +89,15 @@ impl Display for Type {
                 write!(f, "): {}", *ret)
             },
             Nominal(n) => write!(f, "{n}"),
+            Tuple(v) => {
+                write!(f, "(")?;
+                let mut it = v.iter().peekable();
+                while let Some(v) = it.next() {
+                    write!(f, "{v}")?;
+                    if it.peek().is_some() {write!(f, ", ")?;}
+                }
+                write!(f, ")")
+            }
             Error => write!(f, "<error>")
         }
     }
@@ -96,8 +116,19 @@ impl Type {
             Array(b, Some(s)) => b.size().map_static(|x| x * s),
             Array(_, None) => Dynamic,
             Function(..) | Module | TypeData | InlineAsm(_) | Error => Meta,
-            Pointer(..) | Reference(..) => Static(8),
+            Pointer(b, _) | Reference(b, _) => match **b {
+                Type::Array(_, None) => Static(16),
+                _ => Static(8)
+            },
             Borrow(b) => b.size(),
+            Tuple(v) => v.iter().fold(Static(0), |v, t| if let Static(bs) = v {
+                let n = t.size();
+                if let Static(ns) = n {
+                    let a = t.align() as u32;
+                    if a == 0 || a == 1 {Static(bs + ns)}
+                    else {Static(((bs + a - 1) / a) * a + ns)}
+                } else {n}
+            } else {v}),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.size()
         }
     }
@@ -119,6 +150,7 @@ impl Type {
             Function(..) | Module | TypeData | InlineAsm(_) | Error => 0,
             Pointer(..) | Reference(..) => 8,
             Borrow(b) => b.align(),
+            Tuple(v) => v.iter().map(Type::align).max().unwrap_or(1),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.align()
         }
     }
@@ -140,6 +172,11 @@ impl Type {
                 b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
             },
             Borrow(b) => b.llvm_type(ctx),
+            Tuple(v) => {
+                let mut vec = Vec::with_capacity(v.len());
+                for t in v {vec.push(t.llvm_type(ctx)?);}
+                Some(ctx.context.struct_type(&vec, false).into())
+            },
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.llvm_type(ctx)
         }
     }
@@ -147,6 +184,7 @@ impl Type {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
             Borrow(b) => b.register(),
+            Tuple(v) => v.iter().all(Type::register),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.register(),
             _ => false
         }
@@ -154,6 +192,7 @@ impl Type {
     pub fn copyable(&self) -> bool {
         match self {
             IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
+            Tuple(v) => v.iter().all(Type::copyable),
             Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.copyable(),
             _ => false
         }
@@ -208,7 +247,6 @@ impl Type {
                 b.save(out)
             },
             Error => panic!("error values shouldn't be serialized!"),
-            Module => out.write_all(&[19]),
             Array(b, None) => {
                 out.write_all(&[15])?;
                 b.save(out)
@@ -224,6 +262,13 @@ impl Type {
                 out.write_all(&[18])?;
                 out.write_all(n.as_bytes())?;
                 out.write_all(&[0])
+            },
+            Module => out.write_all(&[19]),
+            Tuple(v) => {
+                let mut buf = [20u8, 0, 0, 0, 0];
+                buf[1..].copy_from_slice(&(v.len() as u32).to_be_bytes());
+                out.write_all(&buf)?;
+                v.iter().try_for_each(|t| t.save(out))
             }
         }
     }
@@ -276,6 +321,17 @@ impl Type {
                 Type::Nominal(String::from_utf8(vec).expect("Type names should be valid UTF-8!"))
             },
             19 => Type::Module,
+            20 => {
+                let mut bytes = [0; 4];
+                buf.read_exact(&mut bytes)?;
+                let mut count = u32::from_be_bytes(bytes);
+                let mut vec = Vec::with_capacity(count as usize);
+                while count > 0 {
+                    vec.push(Type::load(buf)?);
+                    count -= 1;
+                }
+                Type::Tuple(vec)
+            },
             x => panic!("read type value expecting value in 1..=19, got {x}")
         })
     }

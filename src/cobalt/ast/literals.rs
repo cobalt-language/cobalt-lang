@@ -309,3 +309,87 @@ impl AST for ArrayLiteralAST {
         Ok(())
     }
 }
+pub struct TupleLiteralAST {
+    pub vals: Vec<Box<dyn AST>>
+}
+impl TupleLiteralAST {
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
+        assert_ne!(vals.len(), 0);
+        TupleLiteralAST {vals}
+    }
+}
+impl AST for TupleLiteralAST {
+    fn loc(&self) -> Location {
+        let start = self.vals.first().unwrap().loc();
+        let end = self.vals.last().unwrap().loc();
+        (start.0, start.1.start..end.1.end)
+    }
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+        Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
+            Type::IntLiteral => Type::Int(64, false),
+            Type::Reference(b, m) => if b.register() {
+                if x.expl_type(ctx) {Type::Reference(b, m)}
+                else {*b}
+            } else {Type::Reference(b, m)}
+            x => x
+        }).collect())
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        let mut errs = vec![];
+        let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| {
+            let mut v = x.codegen_errs(ctx, &mut errs);
+            match v.data_type {
+                Type::IntLiteral => Value {data_type: Type::Int(64, false), ..v},
+                Type::Reference(b, m) => if b.register() {
+                    if x.expl_type(ctx) {Value {data_type: Type::Reference(b, m), ..v}}
+                    else {
+                        if !ctx.is_const.get() {
+                            if let Some(PointerValue(pv)) = v.comp_val {
+                                v.comp_val = Some(ctx.builder.build_load(pv, ""));
+                            }
+                        }
+                        v.data_type = *b;
+                        v
+                    }
+                } else {Value {data_type: Type::Reference(b, m), ..v}}
+                x => Value {data_type: x, ..v}
+            }
+        }).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();
+        let mut val = Value::null();
+        val.data_type = Type::Tuple(types);
+        if comps.iter().all(Option::is_some) {
+            let llt = val.data_type.llvm_type(ctx).unwrap();
+            let alloca = ctx.builder.build_alloca(llt, "");
+            let comps = comps.into_iter().map(Option::unwrap).collect::<Vec<_>>();
+            comps.into_iter().enumerate().for_each(|(n, v)| {
+                let gep = ctx.builder.build_struct_gep(alloca, n as u32, "").unwrap();
+                ctx.builder.build_store(gep, v);
+            });
+            val.comp_val = Some(ctx.builder.build_load(alloca, ""));
+            val.address.set(Some(alloca));
+        };
+        if inters.iter().all(Option::is_some) {val.inter_val = Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()));};
+        (val, errs)
+    }
+    fn to_code(&self) -> String {
+        let mut out = "(".to_string();
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            out += &val.to_code();
+            if len != 1 {
+                out += ", ";
+                len -= 1;
+            }
+        }
+        out + ")"
+    }
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+        writeln!(f, "tuple")?;
+        let mut len = self.vals.len();
+        for val in self.vals.iter() {
+            print_ast_child(f, pre, &**val, len == 1)?;
+            len -= 1;
+        }
+        Ok(())
+    }
+}

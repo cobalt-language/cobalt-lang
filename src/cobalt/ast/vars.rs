@@ -434,8 +434,11 @@ impl AST for VarDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
-                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
-                ctx.builder.build_store(a, v);
+                let a = val.addr(ctx).unwrap_or_else(|| {
+                    let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
+                    ctx.builder.build_store(a, v);
+                    a
+                });
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
@@ -898,8 +901,11 @@ impl AST for MutDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
-                let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
-                ctx.builder.build_store(a, v);
+                let a = val.addr(ctx).unwrap_or_else(|| {
+                    let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
+                    ctx.builder.build_store(a, v);
+                    a
+                });
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,

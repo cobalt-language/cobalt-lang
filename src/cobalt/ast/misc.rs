@@ -9,6 +9,7 @@ impl CastAST {
 }
 impl AST for CastAST {
     fn loc(&self) -> Location {(self.target.loc().0, self.val.loc().1.start..self.target.loc().1.end)}
+    fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert((0, 0..0), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.val.codegen(ctx);
@@ -40,6 +41,7 @@ impl BitCastAST {
 }
 impl AST for BitCastAST {
     fn loc(&self) -> Location {(self.target.loc().0, self.val.loc().1.start..self.target.loc().1.end)}
+    fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert((0, 0..0), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
