@@ -1127,9 +1127,15 @@ impl AST for TypeDefAST {
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        let old_scope = ctx.push_scope(&self.name);
+        ctx.with_vars(|v| v.symbols.insert("self_t".to_string(), Value::make_type(ty.clone()).into()));
+        self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});
+        ctx.restore_scope(old_scope);
+        let vals = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
         match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::with_vis(self.loc.clone(), vs)))) {
             Ok(x) => {
-                ctx.nominals.borrow_mut().insert(ctx.mangle(&self.name), (ty, true, Default::default()));
+                ctx.nominals.borrow_mut().insert(ctx.mangle(&self.name), (ty, true, vals));
                 (x.0.clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {
