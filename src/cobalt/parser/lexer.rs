@@ -24,7 +24,7 @@ impl Display for TokenData {
                 Float(val) => write!(f, "float '{val}'"),
                 Char(val) => write!(f, "char {val:?}"),
                 Str(val) => write!(f, "str {val:?}"),
-                Special(val) => write!(f, "'{val}'"),
+                Special(val) => if val == &'#' {write!(f, "'::'")} else {write!(f, "'{val}'")},
                 Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "'{val}'"),
                 Macro(val, None) => write!(f, "'@{val}'"),
                 Macro(val, Some((ref args, _))) => write!(f, "'@{val}({args})'")
@@ -36,7 +36,7 @@ impl Display for TokenData {
                 Float(val) => write!(f, "{val}"),
                 Char(val) => write!(f, "{val:?}"),
                 Str(val) => write!(f, "{val:?}"),
-                Special(val) => write!(f, "{val}"),
+                Special(val) => if val == &'#' {write!(f, "::")} else {write!(f, "{val}")},
                 Operator(val) | Identifier(val) | Statement(val) | Keyword(val) => write!(f, "{val}"),
                 Macro(val, None) => write!(f, "@{val}"),
                 Macro(val, Some((ref args, _))) => write!(f, "@{val}({args})")
@@ -704,12 +704,19 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                 }
             },
             ':' => {
-                if it.peek() == Some(&'?') {
-                    it.next();
-                    outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(":?".to_string())));
-                    if flags.up {loc.1 += 1;}
+                match it.peek() {
+                    Some(&'?') => {
+                        it.next();
+                        outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator(":?".to_string())));
+                        if flags.up {loc.1 += 1;}
+                    },
+                    Some(&':') => {
+                        it.next();
+                        outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Special('#')));
+                        if flags.up {loc.1 += 1;}
+                    },
+                    _ => outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Special(':')))
                 }
-                else {outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Special(':')))}
             },
             _ => errs.push(Diagnostic::error((loc.0, loc.1..(loc.1 + 1)), 101, Some(format!("character is {c:?} (U+{:0>4X})", c as u32))))
         }
