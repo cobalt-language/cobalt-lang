@@ -1069,10 +1069,11 @@ pub struct TypeDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, Location)>,
+    pub methods: Vec<Box<dyn AST>>
 }
 impl TypeDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {TypeDefAST {loc, name, val, annotations}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, methods: Vec<Box<dyn AST>>) -> Self {TypeDefAST {loc, name, val, annotations, methods}}
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -1148,7 +1149,24 @@ impl AST for TypeDefAST {
     fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "type: {}", self.name)?;
-        print_ast_child(f, pre, &*self.val, true)
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(false);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or_default())?;
+        }
+        pre.pop();
+        print_ast_child(f, pre, &*self.val, self.methods.is_empty())?;
+        if !self.methods.is_empty() {
+            writeln!(f, "{pre}└── statics:")?;
+            pre.push(true);
+            let mut count = self.methods.len();
+            for m in self.methods.iter() {
+                print_ast_child(f, pre, &**m, count == 1)?;
+                count -= 1;
+            }
+            pre.pop();
+        }
+        Ok(())
     }
 }
 pub struct VarGetAST {

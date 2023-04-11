@@ -799,7 +799,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                 errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
                                 break 'main null(toks);
                             }
-                            Box::new(TypeDefAST::new(start, name, ty, anns)) as Box<dyn AST>
+                            Box::new(TypeDefAST::new(start, name, ty, anns, vec![])) as Box<dyn AST>
                         },
                         Special(';') => {errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)); Box::new(NullAST::new(toks[0].loc.clone())) as Box<dyn AST>},
                         _ => {errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data)))); Box::new(NullAST::new(toks[0].loc.clone())) as Box<dyn AST>}
@@ -1735,7 +1735,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                 errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
                                 break;
                             }
-                            outs.push(Box::new(TypeDefAST::new(start, name, ty, anns)));
+                            outs.push(Box::new(TypeDefAST::new(start, name, ty, anns, vec![])));
                         },
                         Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
                         _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
