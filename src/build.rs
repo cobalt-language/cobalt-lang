@@ -593,7 +593,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {println!("Failed to build {name} because of link errors"); return code}
             let mut buf = Vec::<u8>::new();
-            if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
+            if let Err(e) = ctx.save(&mut buf) {
                 eprintln!("{ERROR}: {e}");
                 return 4
             }

@@ -732,7 +732,7 @@ impl AST for IntrinsicAST {
                             match arg.data_type {
                                 Type::Borrow(b) => arg.data_type = *b,
                                 Type::Reference(b, _) => {
-                                    if b.register() && !ctx.is_const.get() {
+                                    if b.register(ctx) && !ctx.is_const.get() {
                                         if let Some(PointerValue(v)) = arg.comp_val {
                                             arg.comp_val = Some(ctx.builder.build_load(v, ""));
                                         }

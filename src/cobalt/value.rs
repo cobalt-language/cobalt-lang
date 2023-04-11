@@ -1,4 +1,5 @@
 use crate::*;
+use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use inkwell::values::{BasicValueEnum, PointerValue};
 use std::collections::HashMap;
 use std::io::{self, Write, Read, BufRead};
@@ -180,4 +181,55 @@ impl<'ctx> Value<'ctx> {
     pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
     pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
+
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_all(self.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
+        out.write_all(&[0])?;
+        if let Some(v) = self.inter_val.as_ref() {v.save(out)?}
+        else {out.write_all(&[0])?} // Interpreted value, self-punctuating
+        self.data_type.save(out) // Type
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        let mut var = Value::error();
+        let mut name = vec![];
+        buf.read_until(0, &mut name)?;
+        if name.last() == Some(&0) {name.pop();}
+        var.inter_val = InterData::load(buf, ctx)?;
+        var.data_type = Type::load(buf)?;
+        if !name.is_empty() {
+            use inkwell::module::Linkage::DLLImport;
+            if let Type::Function(ret, params) = &var.data_type {
+                if let Some(llt) = ret.llvm_type(ctx) {
+                    let mut good = true;
+                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                    if good {
+                        let ft = llt.fn_type(&ps, false);
+                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    }
+                }
+                else if **ret == Type::Null {
+                    let mut good = true;
+                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                    if good {
+                        let ft = ctx.context.void_type().fn_type(&ps, false);
+                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    }
+                }
+            }
+            else if let Some(t) = if let Type::Reference(ref b, _) = var.data_type {b.llvm_type(ctx)} else {None} {
+                let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
+                gv.set_linkage(DLLImport);
+                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+            }
+        }
+        Ok(var)
+    }
 }
