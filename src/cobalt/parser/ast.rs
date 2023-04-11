@@ -95,7 +95,10 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
                 name.ids.push((str.clone(), toks[idx].loc.clone()));
                 idx += 1;
             }
-            _ => break
+            x => {
+                errs.push(Diagnostic::error(toks[idx].loc.clone(), 210, Some(format!("expected identifier or '.', got {x:#}"))));
+                break
+            }
         }
     }
     (name, idx + 1, errs)
@@ -501,7 +504,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
     let ast = 'main: {
         match val.data {
             Statement(ref x) => match x.as_str() {
-                "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, None)); null(toks)},
+                "module" => {errs.push(Diagnostic::error(toks[0].loc.clone(), 275, Some("modules cannot be defined at local scope".to_string()))); null(toks)},
                 "import" => {
                     let annotations = toks.iter().take(start_idx).filter_map(|x| if let Macro(name, args) = &x.data {Some((name.clone(), args.as_ref().map(|(x, _)| x.clone()), x.loc.clone()))} else {None}).collect::<Vec<_>>();
                     let (name, idx, mut es) = parse_paths(&toks[1..], false);
@@ -516,7 +519,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                     let start = toks[0].loc.clone();
                     let (mut name, idx, mut es) = parse_path(&toks[1..], "(=;");
                     if name.global || name.ids.len() > 1 {
-                        errs.push(Diagnostic::error(toks[0].loc.clone(), 276, None));
+                        errs.push(Diagnostic::error(toks[0].loc.clone(), 277, None));
                         name.global = false;
                         name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
                     }
@@ -805,7 +808,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                             }
                             let f = if fields {
                                 if toks[0].data == Special('{') {
-                                    let (vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
+                                    let (vals, idx, mut e) = parse_metd(&toks[1..], flags);
                                     if let Some(idx) = idx {
                                         errs.append(&mut e);
                                         toks = &toks[(idx + 1)..];
@@ -818,7 +821,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                     vals
                                 }
                                 else {
-                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 1000, Some(format!("expect '{{', got {:?}", toks[0].data))));
+                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 278, Some(format!("expect '{{', got {:?}", toks[0].data))));
                                     vec![]
                                 }
                             } else {vec![]};
@@ -893,7 +896,7 @@ fn parse_postfix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic
             }
             else {
                 let (ast, mut errs) = parse_postfix(toks, flags);
-                errs.insert(0, Diagnostic::error(tok.loc.clone(), 260, Some(format!("{op} is not a postfix operator"))));
+                errs.insert(0, Diagnostic::error(tok.loc.clone(), 264, Some(format!("{op} is not a postfix operator"))));
                 (ast, errs)
             };
         }
@@ -1348,6 +1351,469 @@ fn parse_expr(toks: &[Token], terminators: &'static str, flags: &Flags) -> (Box<
     errs.append(&mut es);
     (ast, i + 1, errs)
 }
+fn parse_metd(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
+    let mut outs: Vec<Box<dyn AST>> = vec![];
+    let mut errs = vec![];
+    let mut i = 0;
+    let mut annotations = vec![];
+    'main: while !toks.is_empty() {
+        let val = &toks[0];
+        match &val.data {
+            Macro(name, params) => {i += 1; annotations.push((name.clone(), params.as_ref().map(|(x, _)| x.clone()), toks[0].loc.clone())); toks = &toks[1..];}
+            Special(';') => {
+                if !annotations.is_empty() {
+                    errs.push(Diagnostic::error(val.loc.clone(), 281, None));
+                    annotations = vec![];
+                }
+                i += 1;
+                toks = &toks[1..];
+            },
+            Special('}') => break 'main,
+            Statement(ref x) => match x.as_str() {
+                "module" => {
+                    errs.push(Diagnostic::error(val.loc.clone(), 275, Some("modules cannot be defined in type methods".to_string())));
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    let (_name, idx, mut es) = parse_path(&toks[1..], "=;{");
+                    i += idx;
+                    toks = &toks[idx..];
+                    errs.append(&mut es);
+                    if toks.is_empty() {break}
+                    match &toks[0].data {
+                        Special('{') => {
+                            let (_vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
+                            errs.append(&mut e);
+                            if let Some(idx) = idx {
+                                toks = &toks[(idx + 1)..];
+                                i += idx + 1;
+                            }
+                            else {
+                                toks = &[];
+                                break;
+                            }
+                        },
+                        Operator(s) if s == "=" => {
+                            let (_oname, idx, mut es) = parse_path(toks, ";");
+                            errs.append(&mut es);
+                            i += idx;
+                            toks = &toks[idx..];
+                        },
+                        Special(';') => {},
+                        _ => {
+                            i += 1;
+                            toks = &toks[idx..]
+                        },
+                    }
+                },
+                "import" => {
+                    errs.push(Diagnostic::error(toks[0].loc.clone(), 276, Some("symbols cannot be imported in type methods".to_string())));
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    let (_name, idx, mut es) = parse_paths(&toks[1..], false);
+                    errs.append(&mut es);
+                    i += idx + 1;
+                    toks = &toks[(idx + 1)..];
+                },
+                "fn" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], "(=;");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Diagnostic::error(toks[1].loc.clone(), 277, None));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    if toks.is_empty() {
+                        errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 234, None));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special('(') => {
+                            let mut params = vec![];
+                            let mut defaults = None;
+                            loop {
+                                if toks.len() < 2 {
+                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 238, None));
+                                    break 'main;
+                                }
+                                if toks[1].data == Special(')') {
+                                    toks = &toks[2..];
+                                    i += 2;
+                                    break;
+                                }
+                                let param_type = if let Statement(ref x) = toks[1].data {
+                                    match x.as_str() {
+                                        "mut" => {
+                                            toks = &toks[2..];
+                                            i += 2;
+                                            ParamType::Mutable
+                                        },
+                                        "const" => {
+                                            toks = &toks[2..];
+                                            i += 2;
+                                            ParamType::Constant
+                                        },
+                                        _ => {
+                                            toks = &toks[1..];
+                                            i += 1;
+                                            ParamType::Normal
+                                        }
+                                    }
+                                }
+                                else {
+                                    toks = &toks[1..];
+                                    i += 1;
+                                    ParamType::Normal
+                                };
+                                let id_start = toks[0].loc.clone();
+                                let (mut name, idx, mut es) = parse_path(toks, ":,)");
+                                toks = &toks[(idx - 1)..];
+                                i += idx - 1;
+                                errs.append(&mut es);
+                                if name.global || name.ids.len() > 1 {
+                                    errs.push(Diagnostic::error(id_start, 239, None));
+                                }
+                                let name = name.ids.pop().map_or_else(String::new, |(name, _)| name);
+                                let ty = if !toks.is_empty() && toks[0].data == Special(':') {
+                                    let (ty, idx, mut es) = parse_expr(&toks[1..], ",)=", flags);
+                                    toks = &toks[idx..];
+                                    i += idx;
+                                    errs.append(&mut es);
+                                    ty
+                                }
+                                else {
+                                    let loc = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
+                                    errs.push(Diagnostic::error(loc.clone(), 242, None));
+                                    Box::new(ErrorTypeAST::new(loc))
+                                };
+                                let default = if !toks.is_empty() && toks[0].data == Operator("=".to_string()) {
+                                    if defaults.is_none() {defaults = Some(toks[0].loc.clone());}
+                                    let (val, idx, mut es) = parse_expr(&toks[1..], ",)", flags);
+                                    toks = &toks[idx..];
+                                    i += idx;
+                                    errs.append(&mut es);
+                                    Some(val)
+                                }
+                                else {
+                                    if defaults.is_some() {
+                                        errs.push(Diagnostic::error(toks[0].loc.clone(), 246, None));
+                                    }
+                                    None
+                                };
+                                params.push((name, param_type, ty, default));
+                                if toks.is_empty() {
+                                    errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 238, None));
+                                    break 'main;
+                                }
+                                match &toks[0].data {
+                                    Special(')') => {
+                                        toks = &toks[1..];
+                                        i += 1;
+                                        break;
+                                    },
+                                    Special(',') => {},
+                                    x => errs.push(Diagnostic::error(toks[0].loc.clone(), 242, Some(format!("expected ',' or ')' after parameter, got {x:#}"))))
+                                }
+                            }
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 238, None));
+                                break;
+                            }
+                            match &toks[0].data {
+                                Special(';') => {
+                                    let loc = toks[0].loc.clone();
+                                    errs.push(Diagnostic::error(loc.clone(), 243, None));
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), anns)));
+                                    toks = &toks[1..];
+                                    i += 1;
+                                },
+                                Special(':') => {
+                                    let (ty, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
+                                    toks = &toks[idx..];
+                                    i += idx;
+                                    errs.append(&mut es);
+                                    if toks.is_empty() {
+                                        let last = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
+                                        errs.push(Diagnostic::error(last.clone(), 244, None));
+                                        outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), anns)));
+                                        break;
+                                    }
+                                    match &toks[0].data {
+                                        Special(';') => outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), anns))),
+                                        Special('{') => {
+                                            errs.push(Diagnostic::error(toks[0].loc.clone(), 245, None));
+                                            let (ast, idx, mut es) = parse_expr(toks, ";", flags);
+                                            toks = &toks[idx..];
+                                            i += idx;
+                                            errs.append(&mut es);
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                        },
+                                        Operator(x) if x == "=" => {
+                                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                            toks = &toks[(idx + 1)..];
+                                            i += idx + 1;
+                                            errs.append(&mut es);
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                        },
+                                        x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected '=' or ';', got {x:#}"))))
+                                    }
+                                },
+                                Operator(x) if x == "=" => {
+                                    let loc = toks[0].loc.clone();
+                                    let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                    toks = &toks[(idx + 1)..];
+                                    i += idx + 1;
+                                    errs.append(&mut es);
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, anns)));
+                                },
+                                x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected ':' or '=', got {x:#}"))))
+                            }
+                        },
+                        Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 235, None)),
+                        x => errs.push(Diagnostic::error(toks[0].loc.clone(), 234, Some(format!("expected '(' or '=', got {x:#}"))))
+                    }
+                },
+                "let" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Diagnostic::error(toks[1].loc.clone(), 277, None));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    if toks.is_empty() {
+                        errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, None));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, None));
+                                break;
+                            }
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                i += idx;
+                                errs.append(&mut es);
+                                if toks.is_empty() {
+                                    errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                    break;
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            outs.push(Box::new(VarDefAST::new(start, name, ast, Some(t), anns, true)));
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                break;
+                            }
+                            outs.push(Box::new(VarDefAST::new(start, name, ast, None, anns, true)));
+                        },
+                        Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
+                        _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
+                    }
+                },
+                "mut" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Diagnostic::error(toks[1].loc.clone(), 277, None));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    if toks.is_empty() {
+                        errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, None));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, None));
+                                break;
+                            }
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                i += idx;
+                                errs.append(&mut es);
+                                if toks.is_empty() {
+                                    errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                    break;
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            outs.push(Box::new(MutDefAST::new(start, name, ast, Some(t), anns, true)));
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                break;
+                            }
+                            outs.push(Box::new(MutDefAST::new(start, name, ast, None, anns, true)));
+                        },
+                        Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
+                        _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
+                    }
+                },
+                "const" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], ":=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Diagnostic::error(toks[1].loc.clone(), 277, None));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    if toks.is_empty() {
+                        errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, None));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Special(':') => {
+                            let (t, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 232, None));
+                                break;
+                            }
+                            let ast = if toks[0].data == Operator("=".to_string()) {
+                                let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                                toks = &toks[idx..];
+                                i += idx;
+                                errs.append(&mut es);
+                                if toks.is_empty() {
+                                    errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                    break;
+                                }
+                                ast
+                            }
+                            else {Box::new(NullAST::new(toks[0].loc.clone()))};
+                            outs.push(Box::new(ConstDefAST::new(start, name, ast, Some(t), anns)));
+                        },
+                        Operator(x) if x == "=" => {
+                            let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
+                            toks = &toks[idx..];
+                            i += idx;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                break;
+                            }
+                            outs.push(Box::new(ConstDefAST::new(start, name, ast, None, anns)));
+                        },
+                        Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
+                        _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
+                    }
+                },
+                "type" => {
+                    let start = toks[0].loc.clone();
+                    let (mut name, idx, mut es) = parse_path(&toks[1..], "=");
+                    if name.global || name.ids.len() > 1 {
+                        errs.push(Diagnostic::error(toks[1].loc.clone(), 277, None));
+                        name.global = false;
+                        name.ids = name.ids.pop().map_or(vec![], |x| vec![x]);
+                    }
+                    toks = &toks[idx..];
+                    i += idx;
+                    errs.append(&mut es);
+                    let mut anns = vec![];
+                    std::mem::swap(&mut annotations, &mut anns);
+                    if toks.is_empty() {
+                        errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 230, None));
+                        break;
+                    }
+                    match &toks[0].data {
+                        Operator(x) if x == "=" => {
+                            let (ty, idx, mut es) = parse_expr(&toks[1..], "#;", flags);
+                            let fields = toks.get(idx).map(|x| &x.data) == Some(&Special('#'));
+                            toks = &toks[(idx + 1)..];
+                            i += idx + 1;
+                            errs.append(&mut es);
+                            if toks.is_empty() {
+                                errs.push(Diagnostic::error(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()}, 231, None));
+                                break;
+                            }
+                            let f = if fields {
+                                if toks[0].data == Special('{') {
+                                    let (vals, idx, mut e) = parse_metd(&toks[1..], flags);
+                                    if let Some(idx) = idx {
+                                        errs.append(&mut e);
+                                        toks = &toks[(idx + 1)..];
+                                        i += idx + 1;
+                                    }
+                                    else {
+                                        errs.push(Diagnostic::error(toks[0].loc.clone(), 254, None));
+                                        toks = &[];
+                                        break;
+                                    }
+                                    vals
+                                }
+                                else {
+                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 278, Some(format!("expect '{{', got {:?}", toks[0].data))));
+                                    vec![]
+                                }
+                            } else {vec![]};
+                            outs.push(Box::new(TypeDefAST::new(start, name, ty, anns, f)));
+                        },
+                        Special(';') => errs.push(Diagnostic::error(toks[0].loc.clone(), 233, None)),
+                        _ => errs.push(Diagnostic::error(toks[0].loc.clone(), 230, Some(format!("got {:#}", toks[0].data))))
+                    }
+                },
+                x => {
+                    errs.push(Diagnostic::error(val.loc.clone(), 200, Some(format!("unexpected {x:#}"))));
+                    i += 1;
+                    toks = &toks[1..];
+                }
+            },
+            x => {
+                errs.push(Diagnostic::error(val.loc.clone(), 200, Some(format!("unexpected {x:#}"))));
+                i += 1;
+                toks = &toks[1..];
+            }
+        }
+    }
+    (outs, if toks.is_empty() {None} else {Some(i + 1)}, errs)
+}
 fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>>, Option<usize>, Vec<Diagnostic>) {
     let mut outs: Vec<Box<dyn AST>> = vec![];
     let mut errs = vec![];
@@ -1413,7 +1879,10 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                         Special(';') => {
                             outs.push(Box::new(ModuleAST::new(toks[0].loc.clone(), name, vec![], anns)));
                         },
-                        x => unreachable!("unexpected value after module: {:#}", x)
+                        _ => {
+                            i += 1;
+                            toks = &toks[1..];
+                        }
                     }
                 },
                 "import" => {
@@ -1761,7 +2230,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                             }
                             let f = if fields {
                                 if toks[0].data == Special('{') {
-                                    let (vals, idx, mut e) = parse_tl(&toks[1..], flags, false);
+                                    let (vals, idx, mut e) = parse_metd(&toks[1..], flags);
                                     if let Some(idx) = idx {
                                         errs.append(&mut e);
                                         toks = &toks[(idx + 1)..];
@@ -1775,7 +2244,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                     vals
                                 }
                                 else {
-                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 1000, Some(format!("expect '{{', got {:?}", toks[0].data))));
+                                    errs.push(Diagnostic::error(toks[0].loc.clone(), 278, Some(format!("expect '{{', got {:?}", toks[0].data))));
                                     vec![]
                                 }
                             } else {vec![]};
