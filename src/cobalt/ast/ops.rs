@@ -228,7 +228,8 @@ impl AST for DotAST {
     fn loc(&self) -> Location {(self.name.1.0, self.obj.loc().1.start..self.name.1.1.end)}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         match self.obj.res_type(ctx) {
-            Type::Module => if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..} = self.obj.const_codegen(ctx).0 {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
+            Type::Module => if let Some((s, i)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
+            Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
             x => types::utils::attr_type(x, &self.name.0)
         }
     }
@@ -239,6 +240,15 @@ impl AST for DotAST {
                 errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
                 Value::error()
             }, |x| x.0.clone()),
+            Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} => {
+                if let Type::Nominal(n) = *t {
+                    if let Some(v) = ctx.nominals.borrow()[&n].2.get(&self.name.0) {
+                        return (v.clone(), errs);
+                    }
+                }
+                errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
+                Value::error()
+            }
             x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1.clone()), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
