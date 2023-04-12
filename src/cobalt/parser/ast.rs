@@ -617,7 +617,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                     let loc = toks[0].loc.clone();
                                     errs.push(Diagnostic::error(loc.clone(), 243, None));
                                     toks = &toks[1..];
-                                    Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), annotations))
+                                    Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), annotations, false))
                                 },
                                 Special(':') => {
                                     let (ty, idx, mut es) = parse_expr(&toks[1..], "=;", flags);
@@ -626,22 +626,22 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                     if toks.is_empty() {
                                         let last = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
                                         errs.push(Diagnostic::error(last.clone(), 244, None));
-                                        break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), annotations));
+                                        break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), annotations, false));
                                     }
                                     match &toks[0].data {
-                                        Special(';') => break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), annotations)),
+                                        Special(';') => break 'main Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), annotations, false)),
                                         Special('{') => {
                                             errs.push(Diagnostic::error(toks[0].loc.clone(), 245, None));
                                             let (ast, idx, mut es) = parse_expr(toks, ";", flags);
                                             toks = &toks[idx..];
                                             errs.append(&mut es);
-                                            Box::new(FnDefAST::new(start, name, ty, params, ast, annotations)) as Box<dyn AST>
+                                            Box::new(FnDefAST::new(start, name, ty, params, ast, annotations, false)) as Box<dyn AST>
                                         },
                                         Operator(x) if x == "=" => {
                                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                                             toks = &toks[(idx + 1)..];
                                             errs.append(&mut es);
-                                            Box::new(FnDefAST::new(start, name, ty, params, ast, annotations)) as Box<dyn AST>
+                                            Box::new(FnDefAST::new(start, name, ty, params, ast, annotations, false)) as Box<dyn AST>
                                         },
                                         x => {errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected '=' or ';', got {x:#}")))); Box::new(NullAST::new(toks[0].loc.clone())) as Box<dyn AST>}
                                     }
@@ -651,7 +651,7 @@ fn parse_statement(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diag
                                     let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                                     toks = &toks[(idx + 1)..];
                                     errs.append(&mut es);
-                                    Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, annotations))
+                                    Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, annotations, false))
                                 },
                                 x => {errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected ':' or '=', got {x:#}")))); null(toks)}
                             }
@@ -1527,7 +1527,7 @@ fn parse_metd(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<u
                                 Special(';') => {
                                     let loc = toks[0].loc.clone();
                                     errs.push(Diagnostic::error(loc.clone(), 243, None));
-                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), anns)));
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), anns, true)));
                                     toks = &toks[1..];
                                     i += 1;
                                 },
@@ -1539,25 +1539,25 @@ fn parse_metd(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<u
                                     if toks.is_empty() {
                                         let last = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
                                         errs.push(Diagnostic::error(last.clone(), 244, None));
-                                        outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), anns)));
+                                        outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), anns, true)));
                                         break;
                                     }
                                     match &toks[0].data {
-                                        Special(';') => outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), anns))),
+                                        Special(';') => outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), anns, true))),
                                         Special('{') => {
                                             errs.push(Diagnostic::error(toks[0].loc.clone(), 245, None));
                                             let (ast, idx, mut es) = parse_expr(toks, ";", flags);
                                             toks = &toks[idx..];
                                             i += idx;
                                             errs.append(&mut es);
-                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns, true)));
                                         },
                                         Operator(x) if x == "=" => {
                                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                                             toks = &toks[(idx + 1)..];
                                             i += idx + 1;
                                             errs.append(&mut es);
-                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns, true)));
                                         },
                                         x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected '=' or ';', got {x:#}"))))
                                     }
@@ -1568,7 +1568,7 @@ fn parse_metd(mut toks: &[Token], flags: &Flags) -> (Vec<Box<dyn AST>>, Option<u
                                     toks = &toks[(idx + 1)..];
                                     i += idx + 1;
                                     errs.append(&mut es);
-                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, anns)));
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, anns, true)));
                                 },
                                 x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected ':' or '=', got {x:#}"))))
                             }
@@ -2002,7 +2002,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                 Special(';') => {
                                     let loc = toks[0].loc.clone();
                                     errs.push(Diagnostic::error(loc.clone(), 243, None));
-                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), anns)));
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc.clone())), params, Box::new(NullAST::new(loc)), anns, false)));
                                     toks = &toks[1..];
                                     i += 1;
                                 },
@@ -2014,25 +2014,25 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                     if toks.is_empty() {
                                         let last = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
                                         errs.push(Diagnostic::error(last.clone(), 244, None));
-                                        outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), anns)));
+                                        outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(last)), anns, false)));
                                         break;
                                     }
                                     match &toks[0].data {
-                                        Special(';') => outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), anns))),
+                                        Special(';') => outs.push(Box::new(FnDefAST::new(start, name, ty, params, Box::new(NullAST::new(toks[0].loc.clone())), anns, false))),
                                         Special('{') => {
                                             errs.push(Diagnostic::error(toks[0].loc.clone(), 245, None));
                                             let (ast, idx, mut es) = parse_expr(toks, ";", flags);
                                             toks = &toks[idx..];
                                             i += idx;
                                             errs.append(&mut es);
-                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns, false)));
                                         },
                                         Operator(x) if x == "=" => {
                                             let (ast, idx, mut es) = parse_expr(&toks[1..], ";", flags);
                                             toks = &toks[(idx + 1)..];
                                             i += idx + 1;
                                             errs.append(&mut es);
-                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns)));
+                                            outs.push(Box::new(FnDefAST::new(start, name, ty, params, ast, anns, false)));
                                         },
                                         x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected '=' or ';', got {x:#}"))))
                                     }
@@ -2043,7 +2043,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
                                     toks = &toks[(idx + 1)..];
                                     i += idx + 1;
                                     errs.append(&mut es);
-                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, anns)));
+                                    outs.push(Box::new(FnDefAST::new(start, name, Box::new(NullAST::new(loc)), params, ast, anns, false)));
                                 },
                                 x => errs.push(Diagnostic::error(toks[0].loc.clone(), 244, Some(format!("expected ':' or '=', got {x:#}"))))
                             }

@@ -5,10 +5,13 @@ use std::collections::HashMap;
 use std::io::{self, Write, Read, BufRead};
 use std::rc::Rc;
 use std::cell::Cell;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodType {Normal, Static, Getter}
 #[derive(Clone)]
 pub struct FnData<'ctx> {
     pub defaults: Vec<InterData<'ctx>>,
-    pub cconv: u32
+    pub cconv: u32,
+    pub mt: MethodType
 }
 #[derive(Clone)]
 pub enum InterData<'ctx> {
@@ -52,7 +55,11 @@ impl<'ctx> InterData<'ctx> {
                 out.write_all(&(v.defaults.len() as u32).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
                 out.write_all(&v.cconv.to_be_bytes())?;
-                Ok(())
+                out.write_all(std::slice::from_ref(&match v.mt {
+                    MethodType::Normal => 1,
+                    MethodType::Static => 2,
+                    MethodType::Getter => 3
+                }))
             },
             InterData::InlineAsm(c, b) => {
                 out.write_all(&[7])?;
@@ -118,7 +125,15 @@ impl<'ctx> InterData<'ctx> {
                 let mut vec = Vec::with_capacity(len as usize);
                 for _ in 0..len {vec.push(Self::load(buf, ctx)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
                 buf.read_exact(&mut bytes)?;
-                Some(InterData::Function(FnData{defaults: vec, cconv: u32::from_be_bytes(bytes)}))
+                let mut c = 0u8;
+                buf.read_exact(&mut std::slice::from_mut(&mut c))?;
+                let mt = match c {
+                    1 => MethodType::Normal,
+                    2 => MethodType::Static,
+                    3 => MethodType::Getter,
+                    x => panic!("Expected 1, 2, or 3 for method type, got {x}")
+                };
+                Some(InterData::Function(FnData{defaults: vec, cconv: u32::from_be_bytes(bytes), mt}))
             },
             7 => {
                 let mut constraint = Vec::new();

@@ -18,10 +18,11 @@ pub struct FnDefAST {
     pub ret: Box<dyn AST>,
     pub params: Vec<Parameter>,
     pub body: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, Location)>,
+    pub in_struct: bool
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {FnDefAST {loc, name, ret, params, body, annotations}}
+    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, in_struct: bool) -> Self {FnDefAST {loc, name, ret, params, body, annotations, in_struct}}
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -50,6 +51,7 @@ impl AST for FnDefAST {
         let mut cconv = None;
         let mut inline = None;
         let mut vis_spec = None;
+        let mut fn_type = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             match ann.as_str() {
@@ -212,12 +214,35 @@ impl AST for FnDefAST {
                         }
                     }
                 },
+                "static" if self.in_struct => {
+                    if let Some((_, l)) = fn_type.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 1000, None).note(l, "previously defined here".to_string()));
+                    }
+                    else {
+                        if let Some(arg) = arg.as_deref() {
+                            errs.push(Diagnostic::error(loc.clone(), 1001, Some(format!("unexpected argument {arg:?}"))));
+                        }
+                        fn_type = Some((MethodType::Static, loc.clone()));
+                    }
+                },
+                "getter" if self.in_struct => {
+                    if let Some((_, l)) = fn_type.clone() {
+                        errs.push(Diagnostic::error(loc.clone(), 1000, None).note(l, "previously defined here".to_string()));
+                    }
+                    else {
+                        if let Some(arg) = arg.as_deref() {
+                            errs.push(Diagnostic::error(loc.clone(), 1001, Some(format!("unexpected argument {arg:?}"))));
+                        }
+                        fn_type = Some((MethodType::Static, loc.clone()));
+                    }
+                },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         let cf = ctx.is_cfunc(&self.name);
         let cc = cconv.map_or(if cf {0} else {8}, |(cc, _)| cc);
+        let mt = fn_type.map_or(MethodType::Normal, |v| v.0);
         if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
@@ -259,7 +284,8 @@ impl AST for FnDefAST {
                                     }
                                 }
                             })).collect(),
-                            cconv: cc
+                            cconv: cc,
+                            mt
                         })),
                         fty.clone(),
                     ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
@@ -328,7 +354,8 @@ impl AST for FnDefAST {
                                     }
                                 }
                             })).collect(),
-                            cconv: cc
+                            cconv: cc,
+                            mt
                         })),
                         fty
                     ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
@@ -372,7 +399,8 @@ impl AST for FnDefAST {
                                     }
                                 }
                             })).collect(),
-                            cconv: cc
+                            cconv: cc,
+                            mt
                         })),
                         fty.clone()
                     ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
@@ -441,7 +469,8 @@ impl AST for FnDefAST {
                                     }
                                 }
                             })).collect(),
-                            cconv: cc
+                            cconv: cc,
+                            mt
                         })),
                         fty
                     ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
@@ -471,7 +500,8 @@ impl AST for FnDefAST {
                                 }
                             }
                         })).collect(),
-                        cconv: cc
+                        cconv: cc,
+                        mt
                     })),
                     fty
                 ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
