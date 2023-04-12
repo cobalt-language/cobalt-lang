@@ -1129,20 +1129,27 @@ impl AST for TypeDefAST {
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         let old_scope = ctx.push_scope(&self.name);
-        ctx.with_vars(|v| v.symbols.insert("self_t".to_string(), Value::make_type(ty.clone()).into()));
+        let mangled = ctx.mangle(&self.name);
+        ctx.with_vars(|v| {
+            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+        });
+        ctx.nominals.borrow_mut().insert(mangled.clone(), (ty, true, Default::default()));
         self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});
+        let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
-        let vals = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::with_vis(self.loc.clone(), vs)))) {
+        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData::with_vis(self.loc.clone(), vs)))) {
             Ok(x) => {
-                ctx.nominals.borrow_mut().insert(ctx.mangle(&self.name), (ty, true, vals));
                 (x.0.clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {
+                noms.remove(&mangled);
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Value::error(), errs)
             },
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                noms.remove(&mangled);
                 let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
                 if let Some(loc) = d {
                     err.add_note(loc, "previously defined here".to_string());
