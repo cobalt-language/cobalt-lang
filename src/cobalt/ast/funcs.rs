@@ -40,10 +40,10 @@ impl AST for FnDefAST {
             errs.push(e);
             Type::Error
         }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        let fty = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
             errs.push(e);
             Type::Error
-        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error}), pt == &ParamType::Constant)).collect());
+        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error}), pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -214,35 +214,60 @@ impl AST for FnDefAST {
                         }
                     }
                 },
-                "static" if self.in_struct => {
+                "method" if self.in_struct => {
                     if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 1000, None).note(l, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc.clone(), 439, None).note(l, "previously defined here".to_string()));
                     }
                     else {
                         if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc.clone(), 1001, Some(format!("unexpected argument {arg:?}"))));
+                            errs.push(Diagnostic::error(loc.clone(), 438, Some(format!("unexpected argument {arg:?}"))));
                         }
-                        fn_type = Some((MethodType::Static, loc.clone()));
+                        if params.is_empty() {
+                            errs.push(Diagnostic::error(loc.clone(), 393, Some("expected at least one self parameter for method".to_string())));
+                        }
+                        else {
+                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                            let err = format!("{self_t} is not convertible to {}", params[0].0);
+                            if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
+                                errs.push(Diagnostic::error(loc.clone(), 393, Some("invalid type for self parameter for method".to_string())).note(self.params[0].2.loc(), err));
+                            }
+                            else {
+                                fn_type = Some((MethodType::Normal, loc.clone()));
+                            }
+                        }
                     }
                 },
                 "getter" if self.in_struct => {
                     if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 1000, None).note(l, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc.clone(), 439, None).note(l, "previously defined here".to_string()));
                     }
                     else {
                         if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc.clone(), 1001, Some(format!("unexpected argument {arg:?}"))));
+                            errs.push(Diagnostic::error(loc.clone(), 438, Some(format!("unexpected argument {arg:?}"))));
                         }
-                        fn_type = Some((MethodType::Getter, loc.clone()));
+                        if params.is_empty() {
+                            errs.push(Diagnostic::error(loc.clone(), 393, Some("expected at least one self parameter for getter".to_string())));
+                        }
+                        else {
+                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                            let err = format!("{self_t} is not convertible to {}", params[0].0);
+                            if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
+                                errs.push(Diagnostic::error(loc.clone(), 393, Some("invalid type for self parameter for getter".to_string())).note(self.params[0].2.loc(), err));
+                            }
+                            else {
+                                fn_type = Some((MethodType::Getter, loc.clone()));
+                            }
+                        }
                     }
                 },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
             }
         }
+        let fty = Type::Function(Box::new(ret), params);
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         let cf = ctx.is_cfunc(&self.name);
         let cc = cconv.map_or(if cf {0} else {8}, |(cc, _)| cc);
-        let mt = fn_type.map_or(MethodType::Normal, |v| v.0);
+        let mt = fn_type.map_or(MethodType::Static, |v| v.0);
         if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
         let val = if let Type::Function(ref ret, ref params) = fty {
