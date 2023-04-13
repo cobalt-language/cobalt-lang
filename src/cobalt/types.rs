@@ -1,11 +1,9 @@
-use inkwell::types::{BasicType, BasicTypeEnum::{self, *}};
+use inkwell::types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum};
 use crate::*;
 use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
 use std::io::{self, Write, Read, BufRead};
-use std::sync::RwLock;
-use std::collections::HashMap;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u32),
@@ -38,9 +36,6 @@ impl std::ops::Add for SizeType {
         }
     }
 }
-lazy_static::lazy_static! {
-    pub static ref NOMINAL_TYPES: RwLock<HashMap<String, (Type, bool)>> = RwLock::new(HashMap::new());
-}
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Type {
     IntLiteral, Char,
@@ -48,7 +43,7 @@ pub enum Type {
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
     Null, Module, TypeData, InlineAsm(Box<Type>), Array(Box<Type>, Option<u32>),
-    Function(Box<Type>, Vec<(Type, bool)>), Nominal(String),
+    Function(Box<Type>, Vec<(Type, bool)>), BoundMethod(Box<Type>, Box<Type>, Vec<(Type, bool)>, bool), Nominal(String),
     Tuple(Vec<Type>),
     Error
 }
@@ -88,6 +83,19 @@ impl Display for Type {
                 }
                 write!(f, "): {}", *ret)
             },
+            BoundMethod(base, ret, args, m) => {
+                write!(f, "{} {base}.fn (", if *m {"mut"} else {"const"})?;
+                let mut len = args.len();
+                for (arg, ty) in args.iter() {
+                    write!(f, "{}{}", match ty {
+                        true => "const ",
+                        false => ""
+                    }, arg)?;
+                    if len > 1 {write!(f, ", ")?}
+                    len -= 1;
+                }
+                write!(f, "): {}", *ret)
+            },
             Nominal(n) => write!(f, "{n}"),
             Tuple(v) => {
                 write!(f, "(")?;
@@ -103,7 +111,7 @@ impl Display for Type {
     }
 }
 impl Type {
-    pub fn size(&self) -> SizeType {
+    pub fn size<'ctx>(&self, ctx: &CompCtx<'ctx>) -> SizeType {
         match self {
             IntLiteral => Static(8),
             Int(size, _) => Static(((size + 7) / 8) as u32),
@@ -113,26 +121,27 @@ impl Type {
             Float64 => Static(8),
             Float128 => Static(16),
             Null => Static(0),
-            Array(b, Some(s)) => b.size().map_static(|x| x * s),
+            Array(b, Some(s)) => b.size(ctx).map_static(|x| x * s),
             Array(_, None) => Dynamic,
             Function(..) | Module | TypeData | InlineAsm(_) | Error => Meta,
+            BoundMethod(..) => Static(ctx.flags.word_size as u32 * 2),
             Pointer(b, _) | Reference(b, _) => match **b {
-                Type::Array(_, None) => Static(16),
-                _ => Static(8)
+                Type::Array(_, None) => Static(ctx.flags.word_size as u32 * 2),
+                _ => Static(ctx.flags.word_size as u32)
             },
-            Borrow(b) => b.size(),
+            Borrow(b) => b.size(ctx),
             Tuple(v) => v.iter().fold(Static(0), |v, t| if let Static(bs) = v {
-                let n = t.size();
+                let n = t.size(ctx);
                 if let Static(ns) = n {
-                    let a = t.align() as u32;
+                    let a = t.align(ctx) as u32;
                     if a == 0 || a == 1 {Static(bs + ns)}
                     else {Static(((bs + a - 1) / a) * a + ns)}
                 } else {n}
             } else {v}),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.size()
+            Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx)
         }
     }
-    pub fn align(&self) -> u16 {
+    pub fn align<'ctx>(&self, ctx: &CompCtx<'ctx>) -> u16 {
         match self {
             IntLiteral => 8,
             Int(size, _) => match size {
@@ -146,12 +155,12 @@ impl Type {
             Float32 => 4,
             Float64 | Float128 => 8,
             Null => 1,
-            Array(b, _) => b.align(),
+            Array(b, _) => b.align(ctx),
             Function(..) | Module | TypeData | InlineAsm(_) | Error => 0,
-            Pointer(..) | Reference(..) => 8,
-            Borrow(b) => b.align(),
-            Tuple(v) => v.iter().map(Type::align).max().unwrap_or(1),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.align()
+            Pointer(..) | Reference(..) | BoundMethod(..) => ctx.flags.word_size,
+            Borrow(b) => b.align(ctx),
+            Tuple(v) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
+            Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx)
         }
     }
     pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
@@ -164,12 +173,18 @@ impl Type {
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
             Null | Function(..) | Module | TypeData | InlineAsm(_) | Error => None,
+            BoundMethod(base, ret, params, _) => Some(ctx.context.struct_type(&[Type::Pointer(base.clone(), false).llvm_type(ctx)?, Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone())), false).llvm_type(ctx)?], false).into()),
             Array(_, Some(_)) => None,
             Array(_, None) => None,
             Pointer(b, _) | Reference(b, _) => match &**b {
                 Type::Array(b, None) => Some(ctx.context.struct_type(&[b.llvm_type(ctx)?.ptr_type(Default::default()).into(), ctx.context.i64_type().into()], false).into()),
                 Type::Array(b, Some(_)) => Some(b.llvm_type(ctx)?.ptr_type(Default::default()).into()),
-                b => if b.size() == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
+                Type::Function(r, p) => {
+                    let mut args = Vec::<BasicMetadataTypeEnum>::with_capacity(p.len());
+                    for (p, c) in p {if !c {args.push(p.llvm_type(ctx)?.into());}}
+                    Some(if **r == Type::Null {ctx.context.void_type().fn_type(&args, false)} else {r.llvm_type(ctx)?.fn_type(&args, false)}.ptr_type(Default::default()).into())
+                },
+                b => if b.size(ctx) == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
             },
             Borrow(b) => b.llvm_type(ctx),
             Tuple(v) => {
@@ -177,23 +192,23 @@ impl Type {
                 for t in v {vec.push(t.llvm_type(ctx)?);}
                 Some(ctx.context.struct_type(&vec, false).into())
             },
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.llvm_type(ctx)
+            Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx)
         }
     }
-    pub fn register(&self) -> bool {
+    pub fn register<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) => true,
-            Borrow(b) => b.register(),
-            Tuple(v) => v.iter().all(Type::register),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.register(),
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
+            Borrow(b) => b.register(ctx),
+            Tuple(v) => v.iter().all(|x| x.register(ctx)),
+            Nominal(n) => ctx.nominals.borrow()[n].0.register(ctx),
             _ => false
         }
     }
-    pub fn copyable(&self) -> bool {
+    pub fn copyable<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) => true,
-            Tuple(v) => v.iter().all(Type::copyable),
-            Nominal(n) => NOMINAL_TYPES.read().expect("Value should not be poisoned!")[n].0.copyable(),
+            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) | BoundMethod(..) => true,
+            Tuple(v) => v.iter().all(|x| x.copyable(ctx)),
+            Nominal(n) => ctx.nominals.borrow()[n].0.copyable(ctx),
             _ => false
         }
     }
@@ -269,7 +284,19 @@ impl Type {
                 buf[1..].copy_from_slice(&(v.len() as u32).to_be_bytes());
                 out.write_all(&buf)?;
                 v.iter().try_for_each(|t| t.save(out))
-            }
+            },
+            BoundMethod(b, r, p, m) => {
+                out.write_all(&[21])?;
+                out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
+                b.save(out)?;
+                r.save(out)?;
+                out.write_all(&[u8::from(*m)])?;
+                for (par, c) in p {
+                    par.save(out)?;
+                    out.write_all(&[u8::from(*c)])?; // param is const
+                }
+                Ok(())
+            },
         }
     }
     pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
@@ -332,7 +359,22 @@ impl Type {
                 }
                 Type::Tuple(vec)
             },
-            x => panic!("read type value expecting value in 1..=19, got {x}")
+            21 => {
+                let mut bytes = [0; 2];
+                buf.read_exact(&mut bytes)?;
+                let v = u16::from_be_bytes(bytes);
+                let base = Type::load(buf)?;
+                let ret = Type::load(buf)?;
+                buf.read_exact(&mut bytes[..1])?;
+                let mut vec = Vec::with_capacity(v as usize);
+                for _ in 0..v {
+                    let t = Type::load(buf)?;
+                    buf.read_exact(std::slice::from_mut(&mut c))?;
+                    vec.push((t, c != 0));
+                }
+                Type::BoundMethod(Box::new(base), Box::new(ret), vec, bytes[0] != 0)
+            }
+            x => panic!("read type value expecting value in 1..=21, got {x}")
         })
     }
 }

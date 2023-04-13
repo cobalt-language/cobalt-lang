@@ -430,7 +430,7 @@ impl AST for VarDefAST {
                 Value::error()
             });
             ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() || (val.data_type.register() && stack.is_none()) {
+            match if ctx.is_const.get() || (val.data_type.register(ctx) && stack.is_none()) {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
@@ -1069,10 +1069,11 @@ pub struct TypeDefAST {
     loc: Location,
     pub name: DottedName,
     pub val: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, Location)>,
+    pub methods: Vec<Box<dyn AST>>
 }
 impl TypeDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>) -> Self {TypeDefAST {loc, name, val, annotations}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, methods: Vec<Box<dyn AST>>) -> Self {TypeDefAST {loc, name, val, annotations, methods}}
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
@@ -1126,16 +1127,29 @@ impl AST for TypeDefAST {
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(ctx.mangle(&self.name))), VariableData::with_vis(self.loc.clone(), vs)))) {
+        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        let old_scope = ctx.push_scope(&self.name);
+        let mangled = ctx.mangle(&self.name);
+        ctx.with_vars(|v| {
+            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+        });
+        ctx.nominals.borrow_mut().insert(mangled.clone(), (ty, true, Default::default()));
+        self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});
+        let mut noms = ctx.nominals.borrow_mut();
+        ctx.restore_scope(old_scope);
+        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData::with_vis(self.loc.clone(), vs)))) {
             Ok(x) => {
-                types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(ctx.mangle(&self.name), (ty, true));
                 (x.0.clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {
+                noms.remove(&mangled);
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                 (Value::error(), errs)
             },
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
+                noms.remove(&mangled);
                 let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
                 if let Some(loc) = d {
                     err.add_note(loc, "previously defined here".to_string());
@@ -1148,7 +1162,24 @@ impl AST for TypeDefAST {
     fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
         writeln!(f, "type: {}", self.name)?;
-        print_ast_child(f, pre, &*self.val, true)
+        writeln!(f, "{pre}├── annotations:")?;
+        pre.push(false);
+        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
+            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or_default())?;
+        }
+        pre.pop();
+        print_ast_child(f, pre, &*self.val, self.methods.is_empty())?;
+        if !self.methods.is_empty() {
+            writeln!(f, "{pre}└── statics:")?;
+            pre.push(true);
+            let mut count = self.methods.len();
+            for m in self.methods.iter() {
+                print_ast_child(f, pre, &**m, count == 1)?;
+                count -= 1;
+            }
+            pre.pop();
+        }
+        Ok(())
     }
 }
 pub struct VarGetAST {

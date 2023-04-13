@@ -1,6 +1,4 @@
 use crate::*;
-use inkwell::values::BasicValueEnum;
-use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use std::collections::{LinkedList, hash_map::{HashMap, Entry}};
 use std::io::{self, Write, Read, BufRead};
 #[derive(Debug, Clone, Copy)]
@@ -8,12 +6,12 @@ pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
     AlreadyExists(usize, Option<Location>, Symbol<'ctx>)
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableData {
     pub good: bool,
     pub export: bool,
@@ -49,64 +47,15 @@ impl<'ctx> From<Value<'ctx>> for Symbol<'ctx> {
         Symbol(val, VariableData::default())
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'ctx>(pub Value<'ctx>, pub VariableData);
 impl<'ctx> Symbol<'ctx> {
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
     pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
     pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
     pub fn empty_mod() -> Self {Value::empty_mod().into()}
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let v = &self.0;
-        out.write_all(v.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
-        out.write_all(&[0])?;
-        if let Some(v) = v.inter_val.as_ref() {v.save(out)?}
-        else {out.write_all(&[0])?} // Interpreted value, self-punctuating
-        v.data_type.save(out) // Type
-    }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
-        let mut var = Value::error();
-        let mut name = vec![];
-        buf.read_until(0, &mut name)?;
-        if name.last() == Some(&0) {name.pop();}
-        var.inter_val = InterData::load(buf, ctx)?;
-        var.data_type = Type::load(buf)?;
-        if !name.is_empty() {
-            use inkwell::module::Linkage::DLLImport;
-            if let Type::Function(ret, params) = &var.data_type {
-                if let Some(llt) = ret.llvm_type(ctx) {
-                    let mut good = true;
-                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
-                    if good {
-                        let ft = llt.fn_type(&ps, false);
-                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
-                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
-                    }
-                }
-                else if **ret == Type::Null {
-                    let mut good = true;
-                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
-                    if good {
-                        let ft = ctx.context.void_type().fn_type(&ps, false);
-                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
-                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
-                    }
-                }
-            }
-            else if let Some(t) = if let Type::Reference(ref b, _) = var.data_type {b.llvm_type(ctx)} else {None} {
-                let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
-                gv.set_linkage(DLLImport);
-                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
-            }
-        }
-        Ok(Symbol(var, VariableData {export: false, ..VariableData::default()}))
-    }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {self.0.save(out)}
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {Ok(Symbol(Value::load(buf, ctx)?, VariableData {export: false, ..VariableData::default()}))}
     pub fn dump(&self, depth: usize) {
         match self {
             Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) => {
@@ -192,14 +141,6 @@ impl<'ctx> VarMap<'ctx> {
         }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for (k, (v, e)) in types::NOMINAL_TYPES.read().expect("Value should not be poisoned!").iter() {
-            if *e {
-                out.write_all(k.as_bytes())?;
-                out.write_all(&[0])?;
-                v.save(out)?;
-            }
-        }
-        out.write_all(&[0])?;
         for (name, sym) in self.symbols.iter() {
             if sym.1.export {
                 out.write_all(name.as_bytes())?;
@@ -215,13 +156,6 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn load<R: Read + BufRead>(&mut self, buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Vec<String>> {
         let mut out = vec![];
-        loop {
-            let mut name = vec![];
-            buf.read_until(0, &mut name)?;
-            if name.last() == Some(&0) {name.pop();}
-            if name.is_empty() {break}
-            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
-        }
         loop {
             let mut name = vec![];
             buf.read_until(0, &mut name)?;
@@ -243,13 +177,6 @@ impl<'ctx> VarMap<'ctx> {
         Ok(out)
     }
     pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
-        loop {
-            let mut name = vec![];
-            buf.read_until(0, &mut name)?;
-            if name.last() == Some(&0) {name.pop();}
-            if name.is_empty() {break}
-            types::NOMINAL_TYPES.write().expect("Value should not be poisoned!").insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), (Type::load(buf)?, false));
-        }
         let mut out = HashMap::new();
         let mut imports = vec![];
         loop {

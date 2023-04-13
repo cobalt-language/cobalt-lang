@@ -1,8 +1,9 @@
 use inkwell::{context::Context, module::Module, builder::Builder};
 use crate::*;
 use std::mem::MaybeUninit;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::hash_map::{HashMap, Entry};
+use std::io::{self, Write, Read, BufRead};
 use either::Either::{self, *};
 pub struct CompCtx<'ctx> {
     pub flags: Flags,
@@ -14,6 +15,7 @@ pub struct CompCtx<'ctx> {
     pub export: Cell<bool>,
     pub null_type: inkwell::types::BasicTypeEnum<'ctx>,
     pub priority: Counter,
+    pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>)>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
     name: Cell<MaybeUninit<String>>
@@ -30,6 +32,7 @@ impl<'ctx> CompCtx<'ctx> {
             export: Cell::new(false),
             null_type: ctx.opaque_struct_type("null").into(),
             priority: Counter::max(),
+            nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -55,6 +58,7 @@ impl<'ctx> CompCtx<'ctx> {
             export: Cell::new(false),
             null_type: ctx.opaque_struct_type("null").into(),
             priority: Counter::max(),
+            nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -146,6 +150,43 @@ impl<'ctx> CompCtx<'ctx> {
             x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
             _ => None
         })
+    }
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (n, (t, e, m)) in self.nominals.borrow().iter() {
+            if *e {
+                out.write_all(n.as_bytes())?;
+                out.write_all(&[0])?;
+                t.save(out)?;
+                for (n, v) in m.iter() {
+                    out.write_all(n.as_bytes())?;
+                    out.write_all(&[0])?;
+                    v.save(out)?;
+                }
+                out.write_all(&[0])?;
+            }
+        }
+        out.write_all(&[0])?;
+        self.with_vars(|v| v.save(out))
+    }
+    pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<String>> {
+        let mut noms = self.nominals.borrow_mut();
+        loop {
+            let mut vec = vec![];
+            buf.read_until(0, &mut vec)?;
+            if vec.last() == Some(&0) {vec.pop();}
+            if vec.is_empty() {break}
+            let name = String::from_utf8(std::mem::replace(&mut vec, vec![])).expect("Nominal types should be valid UTF-8");
+            let t = Type::load(buf)?;
+            let mut ms = HashMap::new();
+            loop {
+                buf.read_until(0, &mut vec)?;
+                if vec.last() == Some(&0) {vec.pop();}
+                if vec.is_empty() {break}
+                ms.insert(String::from_utf8(std::mem::replace(&mut vec, vec![])).expect("Nominal types should be valid UTF-8"), Value::load(buf, self)?);
+            }
+            noms.insert(name, (t, false, ms));
+        }
+        self.with_vars(|v| v.load(buf, self))
     }
 }
 impl<'ctx> Drop for CompCtx<'ctx> {

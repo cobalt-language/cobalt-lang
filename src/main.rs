@@ -230,8 +230,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = cobalt::CompCtx::new(&ink_ctx, "<anon>");
                 let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
-                match cobalt::varmap::VarMap::load_new(&mut file, &ctx) {
-                    Ok(v) => v.dump(),
+                match ctx.load(&mut file) {
+                    Ok(_) => ctx.with_vars(|v| v.dump()),
                     Err(e) => eprintln!("error loading {fname}: {e}")
                 }
             }
@@ -474,7 +474,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             } else {vec![]};
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
-                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+                ctx.load(&mut file)?;
             }
             let mut fail = false;
             let mut overall_fail = false;
@@ -509,9 +509,9 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Header =>
                     if let Some(out) = out_file {
                         let mut file = std::fs::File::create(out)?;
-                        ctx.with_vars(|v| v.save(&mut file))?;
+                        ctx.save(&mut file)?;
                     }
-                    else {ctx.with_vars(|v| v.save(&mut std::io::stdout()))?}
+                    else {ctx.save(&mut std::io::stdout())?}
                 OutputType::Llvm =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
@@ -571,7 +571,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
                                 if code != 0 {exit(code)}
                                 let mut buf = Vec::<u8>::new();
-                                if let Err(e) = ctx.with_vars(|v| v.save(&mut buf)) {
+                                if let Err(e) = ctx.save(&mut buf) {
                                     eprintln!("{ERROR}: {e}");
                                     exit(4)
                                 }
@@ -723,7 +723,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             } else {vec![]};
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
-                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+                ctx.load(&mut file)?;
             }
             let mut fail = false;
             let mut overall_fail = false;
@@ -891,7 +891,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
-                ctx.with_vars(|v| v.load(&mut file, &ctx))?;
+                ctx.load(&mut file)?;
             }
             let mut fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);

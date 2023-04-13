@@ -1,15 +1,19 @@
 use crate::*;
+use inkwell::types::{BasicTypeEnum::*, BasicMetadataTypeEnum, BasicType};
 use inkwell::values::{BasicValueEnum, PointerValue};
 use std::collections::HashMap;
 use std::io::{self, Write, Read, BufRead};
 use std::rc::Rc;
 use std::cell::Cell;
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodType {Normal, Static, Getter}
+#[derive(Debug, Clone)]
 pub struct FnData<'ctx> {
     pub defaults: Vec<InterData<'ctx>>,
-    pub cconv: u32
+    pub cconv: u32,
+    pub mt: MethodType
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum InterData<'ctx> {
     Null,
     Int(i128),
@@ -51,7 +55,11 @@ impl<'ctx> InterData<'ctx> {
                 out.write_all(&(v.defaults.len() as u32).to_be_bytes())?;
                 for val in v.defaults.iter() {val.save(out)?;}
                 out.write_all(&v.cconv.to_be_bytes())?;
-                Ok(())
+                out.write_all(std::slice::from_ref(&match v.mt {
+                    MethodType::Normal => 1,
+                    MethodType::Static => 2,
+                    MethodType::Getter => 3
+                }))
             },
             InterData::InlineAsm(c, b) => {
                 out.write_all(&[7])?;
@@ -117,7 +125,15 @@ impl<'ctx> InterData<'ctx> {
                 let mut vec = Vec::with_capacity(len as usize);
                 for _ in 0..len {vec.push(Self::load(buf, ctx)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
                 buf.read_exact(&mut bytes)?;
-                Some(InterData::Function(FnData{defaults: vec, cconv: u32::from_be_bytes(bytes)}))
+                let mut c = 0u8;
+                buf.read_exact(&mut std::slice::from_mut(&mut c))?;
+                let mt = match c {
+                    1 => MethodType::Normal,
+                    2 => MethodType::Static,
+                    3 => MethodType::Getter,
+                    x => panic!("Expected 1, 2, or 3 for method type, got {x}")
+                };
+                Some(InterData::Function(FnData{defaults: vec, cconv: u32::from_be_bytes(bytes), mt}))
             },
             7 => {
                 let mut constraint = Vec::new();
@@ -144,7 +160,7 @@ impl<'ctx> InterData<'ctx> {
         })
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Value<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'ctx>>,
@@ -180,4 +196,55 @@ impl<'ctx> Value<'ctx> {
     pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
     pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
+
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_all(self.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated
+        out.write_all(&[0])?;
+        if let Some(v) = self.inter_val.as_ref() {v.save(out)?}
+        else {out.write_all(&[0])?} // Interpreted value, self-punctuating
+        self.data_type.save(out) // Type
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        let mut var = Value::error();
+        let mut name = vec![];
+        buf.read_until(0, &mut name)?;
+        if name.last() == Some(&0) {name.pop();}
+        var.inter_val = InterData::load(buf, ctx)?;
+        var.data_type = Type::load(buf)?;
+        if !name.is_empty() {
+            use inkwell::module::Linkage::DLLImport;
+            if let Type::Function(ret, params) = &var.data_type {
+                if let Some(llt) = ret.llvm_type(ctx) {
+                    let mut good = true;
+                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                    if good {
+                        let ft = llt.fn_type(&ps, false);
+                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    }
+                }
+                else if **ret == Type::Null {
+                    let mut good = true;
+                    let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                    if good {
+                        let ft = ctx.context.void_type().fn_type(&ps, false);
+                        let fv = ctx.module.add_function(std::str::from_utf8(&name).expect("LLVM function names should be valid UTF-8"), ft, None);
+                        if let Some(InterData::Function(FnData {cconv, ..})) = var.inter_val {fv.set_call_conventions(cconv)}
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    }
+                }
+            }
+            else if let Some(t) = if let Type::Reference(ref b, _) = var.data_type {b.llvm_type(ctx)} else {None} {
+                let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
+                gv.set_linkage(DLLImport);
+                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+            }
+        }
+        Ok(var)
+    }
 }

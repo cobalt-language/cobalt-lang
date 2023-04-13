@@ -15,7 +15,7 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
                     std::mem::swap(&mut val, lib);
                     if let Some(ctx) = ctx {
                         match Command::new("objcopy").arg(&path).args(["--dump-section", ".colib=/dev/stdout"]).output() { // TODO: use ELF parser library
-                            Ok(Output {status, stdout, ..}) if status.success() => for conflict in ctx.with_vars(|v| v.load(&mut stdout.as_slice(), ctx))? {
+                            Ok(Output {status, stdout, ..}) if status.success() => for conflict in ctx.load(&mut stdout.as_slice())? {
                                 eprintln!("redefinition of {conflict} in {}", path.display());
                                 failed = true;
                             },

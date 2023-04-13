@@ -81,10 +81,10 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*272*/ ErrorInfo::new("unexpected token after intrinsic", ""),
     /*273*/ ErrorInfo::new("expected an identifier, literal, or intrinisic (should be unreachable)", ""),
     /*274*/ None,
-    /*275*/ ErrorInfo::new("module definitions aren't allowed at local scope", ""),
-    /*276*/ ErrorInfo::new("local function definitions can't have global names", ""),
-    /*277*/ ErrorInfo::new("local variable definitions can't have global names", ""),
-    /*278*/ None,
+    /*275*/ ErrorInfo::new("module definitions aren't allowed here", ""),
+    /*276*/ ErrorInfo::new("import statements aren't allowed here", ""),
+    /*277*/ ErrorInfo::new("local definitions can't have global names", ""),
+    /*278*/ ErrorInfo::new("expected '{' following '::' in type definition", ""),
     /*279*/ None,
     /*280*/ ErrorInfo::new("expected a ';' before the next statement", ""),
     /*281*/ ErrorInfo::new("annotations must be used on a variable or function definition", ""),
@@ -120,7 +120,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     (390, &[
     /*390*/ ErrorInfo::new("unknown literal suffix", ""),
     /*391*/ ErrorInfo::new("unknown intrinisc", ""),
-    /*392*/ ErrorInfo::new("array literal is too long", "")]),
+    /*392*/ ErrorInfo::new("array literal is too long", ""),
+    /*393*/ ErrorInfo::new("methods and getters require the first parameter to be convertible from a reference to self", "")]),
     (410, &[
     /*410*/ ErrorInfo::new("unknown annotation", ""),
     /*411*/ ErrorInfo::new("@static annotation cannot have arguments", ""),
@@ -149,7 +150,9 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*434*/ ErrorInfo::new("@alloca requires all arguments except for the first to be integral", ""),
     /*435*/ ErrorInfo::new("@alloca intrinsic requires arguments", ""),
     /*436*/ ErrorInfo::new("@stack must be specified on local variables", ""),
-    /*437*/ ErrorInfo::new("@stack annotation does not take arguments", "")]),
+    /*437*/ ErrorInfo::new("@stack annotation does not take arguments", ""),
+    /*438*/ ErrorInfo::new("@getter and @method annotations do not take arguments", ""),
+    /*439*/ ErrorInfo::new("redefinition of method type", "")]),
     (900, &[
     /*900*/ ErrorInfo::new("const function parameters aren't implemented yet", "")])
 ];

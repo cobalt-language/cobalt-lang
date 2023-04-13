@@ -49,10 +49,10 @@ impl AST for BitCastAST {
         let oic = ctx.is_const.replace(true);
         let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
-        match (t.size(), val.data_type.size()) {
+        match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
-                    errs.push(Diagnostic::error(self.loc.clone(), 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size())).note(self.target.loc(), format!("target type is {t}, which has a size of {}", t.size())));
+                    errs.push(Diagnostic::error(self.loc.clone(), 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size(ctx))).note(self.target.loc(), format!("target type is {t}, which has a size of {}", t.size(ctx))));
                     return (Value::error(), errs)
                 }
             },
