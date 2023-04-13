@@ -6,12 +6,12 @@ pub enum UndefVariable {
     NotAModule(usize),
     DoesNotExist(usize)
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
     AlreadyExists(usize, Option<Location>, Symbol<'ctx>)
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableData {
     pub good: bool,
     pub export: bool,
@@ -47,7 +47,7 @@ impl<'ctx> From<Value<'ctx>> for Symbol<'ctx> {
         Symbol(val, VariableData::default())
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'ctx>(pub Value<'ctx>, pub VariableData);
 impl<'ctx> Symbol<'ctx> {
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}

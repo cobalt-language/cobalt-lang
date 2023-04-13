@@ -205,9 +205,26 @@ pub fn call_type<'ctx>(target: Type, args: Vec<Value<'ctx>>) -> Type {
         _ => Type::Error
     }
 }
-pub fn attr_type(target: Type, attr: &str) -> Type {
+pub fn attr_type<'ctx>(target: Type, attr: &str, ctx: &CompCtx<'ctx>) -> Type {
     match target {
-        Type::Borrow(b) | Type::Reference(b, _) => attr_type(*b, attr),
+        Type::Borrow(b) => attr_type(*b, attr, ctx),
+        Type::Reference(b, m) =>
+            if let Type::Nominal(ref n) = *b {
+                ctx.nominals.borrow()[n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
+                    match mt {
+                        MethodType::Normal => Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), m),
+                        MethodType::Static => Type::Error,
+                        MethodType::Getter => (**ret).clone()
+                    }
+                } else {Type::Error})
+            } else {attr_type(*b, attr, ctx)},
+        Type::Nominal(n) => ctx.nominals.borrow()[&n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
+            match mt {
+                MethodType::Normal => Type::BoundMethod(Box::new(Type::Nominal(n)), ret.clone(), args.clone(), false),
+                MethodType::Static => Type::Error,
+                MethodType::Getter => (**ret).clone()
+            }
+        } else {Type::Error}),
         _ => Type::Error
     }
 }
@@ -2128,20 +2145,65 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
 }
 pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
-    match val.data_type {
+    match val.data_type.clone() {
         Type::Borrow(b) => {
             val.data_type = *b;
             attr((val, vloc), (id, iloc), ctx)
         },
-        Type::Reference(b, _) => {
-            val.data_type = *b;
-            if val.data_type.register(ctx) {
-                if let Some(PointerValue(v)) = val.value(ctx) {
-                    val.comp_val = Some(ctx.builder.build_load(v, ""));
-                }
+        Type::Reference(ref b, m) => {
+            if let Type::Nominal(ref n) = **b {
+                ctx.nominals.borrow()[n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = &v {
+                    match mt {
+                        MethodType::Normal => {
+                            let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), m);
+                            let mut v = Value::metaval(iv.clone(), bm);
+                            if let (Some(vv), Some(f), Some(llt)) = (val.value(ctx), comp_val, v.data_type.llvm_type(ctx)) {
+                                let a = ctx.builder.build_alloca(llt, "");
+                                ctx.builder.build_store(ctx.builder.build_struct_gep(a, 0, "").unwrap(), vv);
+                                ctx.builder.build_store(ctx.builder.build_struct_gep(a, 1, "").unwrap(), *f);
+                                v.comp_val = Some(ctx.builder.build_load(a, ""));
+                                v.address.set(Some(a));
+                            }
+                            Ok(v)
+                        },
+                        MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                        MethodType::Getter => types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
+                    }
+                } else {Err(err)})
             }
-            attr((val, vloc), (id, iloc), ctx)
+            else {
+                val.data_type = (**b).clone();
+                if val.data_type.register(ctx) {
+                    if let Some(PointerValue(v)) = val.value(ctx) {
+                        val.comp_val = Some(ctx.builder.build_load(v, ""));
+                    }
+                }
+                attr((val, vloc), (id, iloc), ctx)
+            }
         },
+        Type::Nominal(n) => 
+            ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
+                match mt {
+                    MethodType::Normal => {
+                        let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false);
+                        let mut v = Value::metaval(iv.clone(), bm);
+                        if let (Some(vv), Some(f), Some(llt)) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
+                            let a = ctx.builder.build_alloca(llt, "");
+                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 0, "").unwrap(), vv);
+                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 1, "").unwrap(), *f);
+                            v.comp_val = Some(ctx.builder.build_load(a, ""));
+                            v.address.set(Some(a));
+                        }
+                        Ok(v)
+                    },
+                    MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                    MethodType::Getter => {
+                        val.comp_val = val.addr(ctx).map(From::from);
+                        val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
+                        types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                    }
+                }
+            } else {Err(err)}),
         _ => Err(err)
     }
 }
@@ -2179,7 +2241,7 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
         _ => None
     }
 }
-pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut args: Vec<(Value<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Location>, mut args: Vec<(Value<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Borrow(b) => {
@@ -2282,7 +2344,8 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
             let p = params.len();
             let mut a = args.len();
             if a > p {
-                err.add_note(cparen.clone(), format!("expected {p} parameters, got {a}"));
+                if let Some(cparen) = cparen.as_ref() {err.add_note(cparen.clone(), format!("expected {p} parameters, got {a}"));}
+                else {err.add_info(format!("expected {p} paramters, get {a}"));}
                 args.truncate(p);
                 a = p;
             }
@@ -2292,7 +2355,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                     if *c {None} else {v.into_compiled(ctx)},
                     Some(v.clone()),
                     t.clone()
-                ), cparen.clone())).collect()
+                ), cparen.as_ref().unwrap_or(&loc).clone())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
                 let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}, v.data_type);
                 (if let Ok(val) = impl_convert((0, 0..0), (v.clone(), None), (t.clone(), None), ctx) {
@@ -2318,6 +2381,19 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Location, mut 
                 None,
                 *ret
             ))
+        },
+        Type::BoundMethod(base, ret, params, m) => {
+            let mut avec = Vec::with_capacity(args.len() + 1);
+            avec.push((Value::new(None, None, Type::Reference(base, m)), loc.clone()));
+            avec.append(&mut args);
+            if let Some(StructValue(sv)) = target.comp_val {
+                let tv = ctx.builder.build_extract_value(sv, 0, "").unwrap();
+                let fv = ctx.builder.build_extract_value(sv, 1, "").unwrap();
+                avec[0].0.comp_val = Some(tv);
+                target.comp_val = Some(fv);
+            }
+            target.data_type = Type::Function(ret, params);
+            call(target, loc, cparen, avec, ctx)
         },
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());

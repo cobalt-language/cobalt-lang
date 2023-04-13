@@ -233,7 +233,7 @@ impl AST for FnDefAST {
                         if let Some(arg) = arg.as_deref() {
                             errs.push(Diagnostic::error(loc.clone(), 1001, Some(format!("unexpected argument {arg:?}"))));
                         }
-                        fn_type = Some((MethodType::Static, loc.clone()));
+                        fn_type = Some((MethodType::Getter, loc.clone()));
                     }
                 },
                 x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
@@ -609,7 +609,7 @@ impl AST for CallAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.loc.clone(), self.cparen.clone(), self.args.iter().map(|a| {
+        (types::utils::call(val, self.loc.clone(), Some(self.cparen.clone()), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())

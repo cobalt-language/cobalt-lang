@@ -655,7 +655,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
             '?' | '~' => { // operator of the from @
                 outs.push(Token::new((loc.0, loc.1..(loc.1 + 1)), Operator(c.to_string())));
             },
-            '=' | '!' | '%' | '*' => { // operator of the form @, @=
+            '=' | '!' | '%' | '*' | '/' => { // operator of the form @, @=
                 if it.peek() == Some(&'=') {
                     it.next();
                     outs.push(Token::new((loc.0, loc.1..(loc.1 + 2)), Operator([c, '='].iter().collect())));

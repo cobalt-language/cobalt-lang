@@ -7,13 +7,13 @@ use std::rc::Rc;
 use std::cell::Cell;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodType {Normal, Static, Getter}
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FnData<'ctx> {
     pub defaults: Vec<InterData<'ctx>>,
     pub cconv: u32,
     pub mt: MethodType
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum InterData<'ctx> {
     Null,
     Int(i128),
@@ -160,7 +160,7 @@ impl<'ctx> InterData<'ctx> {
         })
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Value<'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'ctx>>,

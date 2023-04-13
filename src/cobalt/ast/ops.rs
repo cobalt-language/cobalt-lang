@@ -230,7 +230,7 @@ impl AST for DotAST {
         match self.obj.res_type(ctx) {
             Type::Module => if let Some((s, i)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
             Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
-            x => types::utils::attr_type(x, &self.name.0)
+            x => types::utils::attr_type(x, &self.name.0, ctx)
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
