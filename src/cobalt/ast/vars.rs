@@ -341,7 +341,7 @@ impl AST for VarDefAST {
                         else {
                             unsafe {
                                 gv.delete();
-                                f.as_global_value().delete();
+                                f.delete();
                             }
                             if dt != Type::Error {
                                 errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
@@ -808,7 +808,7 @@ impl AST for MutDefAST {
                         else {
                             unsafe {
                                 gv.delete();
-                                f.as_global_value().delete();
+                                f.delete();
                             }
                             if dt != Type::Error {
                                 errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));

@@ -1,8 +1,11 @@
 use crate::*;
+use inkwell::basic_block::BasicBlock;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
+use llvm_sys::core::{LLVMGetInsertBlock, LLVMIsABasicBlock};
+use llvm_sys::prelude::LLVMValueRef;
 use std::collections::LinkedList;
 use glob::Pattern;
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -269,7 +272,11 @@ impl AST for FnDefAST {
         let cc = cconv.map_or(if cf {0} else {8}, |(cc, _)| cc);
         let mt = fn_type.map_or(MethodType::Static, |v| v.0);
         if target_match == 0 {return (Value::null(), errs)}
-        let old_ip = ctx.builder.get_insert_block();
+        let old_ip = unsafe {
+            let bb = LLVMGetInsertBlock(ctx.builder.as_mut_ptr());
+            if bb.is_null() || !LLVMIsABasicBlock(bb as LLVMValueRef).is_null() {None}
+            else {Some(std::mem::transmute::<_, BasicBlock>(bb))} // BasicBlock::new is pub(crate)
+        };
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {
                 let mut good = true;
