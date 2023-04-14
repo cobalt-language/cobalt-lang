@@ -972,18 +972,18 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                     Special(']') => break 'main,
                     Special('}') => break 'main,
                     Special(':') if ops_arg.contains(&Op(":")) => {
-                        let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
+                        let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
-                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
-                        else {parse_prefix(&toks[(idx + 1)..], flags)};
+                        let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
+                        else {parse_prefix(&toks[..idx], flags)};
                         errs.append(&mut es);
                         return (Box::new(CastAST::new(tok.loc.clone(), lhs, rhs)), errs);
                     },
                     Operator(x) if x == ":?" && ops_arg.contains(&Op(":?")) => {
-                        let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
+                        let (rhs, mut es) = parse_binary(&toks[(idx + 1)..], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
-                        let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
-                        else {parse_prefix(&toks[(idx + 1)..], flags)};
+                        let (lhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[..idx], op, ops_it, flags)}
+                        else {parse_prefix(&toks[..idx], flags)};
                         errs.append(&mut es);
                         return (Box::new(BitCastAST::new(tok.loc.clone(), lhs, rhs)), errs);
                     },
@@ -1015,6 +1015,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx -= 1;
                         }
+                        if idx > 0 {idx -= 1} else {break}
                     },
                     Special(']') => {
                         let mut depth = 1;
@@ -1027,6 +1028,7 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx -= 1;
                         }
+                        if idx > 0 {idx -= 1} else {break}
                     },
                     Special('}') => {
                         let mut depth = 1;
@@ -1039,12 +1041,12 @@ fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(t
                             }
                             idx -= 1;
                         }
+                        if idx > 0 {idx -= 1} else {break}
                     },
                     Special('(') => break 'main,
                     Special('[') => break 'main,
                     Special('{') => break 'main,
                     Operator(x) if ops.iter().any(|y| if let Op(op) = y {op == x} else {false}) && idx != 0 && idx != toks.len() - 1 && !matches!(&toks[idx - 1].data, Statement(_)) => {
-                        //idx -= 1;
                         let (lhs, mut es) = parse_binary(&toks[..idx], ops_arg, ops_it.clone(), flags);
                         errs.append(&mut es);
                         let (rhs, mut es) = if let Some(op) = ops_it.next() {parse_binary(&toks[(idx + 1)..], op, ops_it, flags)}
