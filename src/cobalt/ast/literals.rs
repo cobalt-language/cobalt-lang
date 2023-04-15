@@ -358,15 +358,8 @@ impl AST for TupleLiteralAST {
         let mut val = Value::null();
         val.data_type = Type::Tuple(types);
         if comps.iter().all(Option::is_some) {
-            let llt = val.data_type.llvm_type(ctx).unwrap();
-            let alloca = ctx.builder.build_alloca(llt, "");
-            let comps = comps.into_iter().map(Option::unwrap).collect::<Vec<_>>();
-            comps.into_iter().enumerate().for_each(|(n, v)| {
-                let gep = ctx.builder.build_struct_gep(alloca, n as u32, "").unwrap();
-                ctx.builder.build_store(gep, v);
-            });
-            val.comp_val = Some(ctx.builder.build_load(alloca, ""));
-            val.address.set(Some(alloca));
+            let llt = val.data_type.llvm_type(ctx).unwrap().into_struct_type();
+            val.comp_val = comps.into_iter().map(Option::unwrap).enumerate().try_fold(llt.get_undef(), |sv, (n, v)| ctx.builder.build_insert_value(sv, v, n as u32, "").map(|x| x.into_struct_value())).map(From::from);
         };
         if inters.iter().all(Option::is_some) {val.inter_val = Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()));};
         (val, errs)
