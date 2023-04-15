@@ -202,8 +202,8 @@ impl AST for VarDefAST {
                         x => x
                     }
                 };
-                val.inter_val = None;
-                match if let Some(v) = val.comp_val {
+                match if let Some(v) = val.value(ctx) {
+                    val.inter_val = None;
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
@@ -221,6 +221,7 @@ impl AST for VarDefAST {
                     }
                 }
                 else {
+                    val.inter_val = None;
                     if dt != Type::Error {
                         errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                     }
@@ -326,8 +327,8 @@ impl AST for VarDefAST {
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
-                        val.inter_val = None;
-                        if let Some(v) = val.comp_val {
+                        if let Some(v) = val.value(ctx) {
+                            val.inter_val = None;
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
@@ -339,6 +340,7 @@ impl AST for VarDefAST {
                             ), VariableData::with_vis(self.loc.clone(), vs))))
                         }
                         else {
+                            val.inter_val = None;
                             unsafe {
                                 gv.delete();
                                 f.delete();
@@ -433,7 +435,7 @@ impl AST for VarDefAST {
             match if ctx.is_const.get() || (val.data_type.register(ctx) && stack.is_none()) {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
-            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                     ctx.builder.build_store(a, v);
@@ -669,8 +671,8 @@ impl AST for MutDefAST {
                         x => x
                     }
                 };
-                val.inter_val = None;
-                match if let Some(v) = val.comp_val {
+                match if let Some(v) = val.value(ctx) {
+                    val.inter_val = None;
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
@@ -688,6 +690,7 @@ impl AST for MutDefAST {
                     }
                 }
                 else {
+                    val.inter_val = None;
                     if dt != Type::Error {
                         errs.push(Diagnostic::error(self.loc.clone(), 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
                     }
@@ -793,8 +796,8 @@ impl AST for MutDefAST {
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
-                        val.inter_val = None;
-                        if let Some(v) = val.comp_val {
+                        if let Some(v) = val.value(ctx) {
+                            val.inter_val = None;
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
@@ -806,6 +809,7 @@ impl AST for MutDefAST {
                             ), VariableData::with_vis(self.loc.clone(), vs))))
                         }
                         else {
+                            val.inter_val = None;
                             unsafe {
                                 gv.delete();
                                 f.delete();
@@ -900,7 +904,7 @@ impl AST for MutDefAST {
             match if ctx.is_const.get() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), false))))
             } 
-            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                     ctx.builder.build_store(a, v);
