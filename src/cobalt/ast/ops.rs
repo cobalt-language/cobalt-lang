@@ -97,7 +97,7 @@ impl AST for BinOpAST {
                             Ok(rhv) => (if let Some(val) = rhv.value(ctx) {
                                 let llt = ctx.context.bool_type();
                                 let phi = ctx.builder.build_phi(llt, "");
-                                phi.add_incoming(&[(&val, ab), (&llt.const_zero(), bb)]);
+                                phi.add_incoming(&[(&val, ab), (&llt.const_int(1, false), bb)]);
                                 Some(phi.as_basic_value())
                             } else {None}, if let Some(InterData::Int(v)) = cond.inter_val {if v != 0 {Some(InterData::Int(1))} else {rhv.inter_val}} else {None}),
                             Err(err) => {

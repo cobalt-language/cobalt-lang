@@ -2331,7 +2331,7 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
         Type::Int(8, _) => Some((i64_ty.into(), arg.value(ctx)?.into())),
         Type::Int(1..=7, true) => Some((i8_ty.into(), ctx.builder.build_int_z_extend(arg.value(ctx)?.into_int_value(), i8_ty, "").into())),
         Type::Int(1..=7, false) => Some((i8_ty.into(), ctx.builder.build_int_s_extend(arg.value(ctx)?.into_int_value(), i8_ty, "").into())),
-        t @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)) => Some((t.llvm_type(ctx).unwrap().into(), arg.comp_val.or_else(|| arg.inter_val.and_then(|x| x.into_compiled(ctx)))?.into())),
+        t @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)) => Some((t.llvm_type(ctx).unwrap().into(), arg.comp_val.or_else(|| arg.inter_val.and_then(|x| t.into_compiled(&x, ctx)))?.into())),
         _ => None
     }
 }
@@ -2446,7 +2446,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
             let (c, r) = args.into_iter().chain(if let Some(InterData::Function(FnData {defaults, ..})) = target.inter_val {
                 let d = defaults.len();
                 defaults.iter().zip(params.iter().skip(p - d)).skip(a + d - p).map(|(v, (t, c))| (Value::new(
-                    if *c {None} else {v.into_compiled(ctx)},
+                    if *c {None} else {t.into_compiled(&v, ctx)},
                     Some(v.clone()),
                     t.clone()
                 ), cparen.as_ref().unwrap_or(&loc).clone())).collect()

@@ -26,14 +26,6 @@ pub enum InterData<'ctx> {
     Module(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)
 }
 impl<'ctx> InterData<'ctx> {
-    pub fn into_compiled(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
-        match self {
-            InterData::Int(val) => Some(BasicValueEnum::IntValue(ctx.context.i64_type().const_int(*val as u64, true))),
-            InterData::Float(val) => Some(BasicValueEnum::FloatValue(ctx.context.f64_type().const_float(*val))),
-            InterData::Str(val) => Some(BasicValueEnum::PointerValue(ctx.builder.build_global_string_ptr(val.as_str(), "cobalt.str").as_pointer_value())),
-            _ => None
-        }
-    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
             InterData::Null => out.write_all(&[1]),
@@ -189,8 +181,8 @@ impl<'ctx> Value<'ctx> {
         })
     }
 
-    pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
-    pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| v.into_compiled(ctx)))}
+    pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| self.data_type.into_compiled(v, ctx)))}
+    pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| self.data_type.into_compiled(v, ctx)))}
 
     pub fn into_type(self) -> Option<Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(*t)} else {None}}
     pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}

@@ -1,5 +1,6 @@
-use inkwell::types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum};
 use crate::*;
+use inkwell::types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum};
+use inkwell::values::BasicValueEnum;
 use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
@@ -210,6 +211,40 @@ impl Type {
             Tuple(v) => v.iter().all(|x| x.copyable(ctx)),
             Nominal(n) => ctx.nominals.borrow()[n].0.copyable(ctx),
             _ => false
+        }
+    }
+    fn can_be_compiled<'ctx>(&self, v: &InterData<'ctx>, ctx: &CompCtx<'ctx>) -> bool {
+        match self {
+            Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),
+            Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(v, InterData::Float(..)),
+            Type::Tuple(vs) => if let InterData::Array(is) = v {vs.len() == is.len() && vs.iter().zip(is).all(|(t, v)| t.can_be_compiled(v, ctx))} else {false},
+            Type::Nominal(n) => ctx.nominals.borrow()[n].0.can_be_compiled(v, ctx),
+            _ => false
+        }
+    }
+    pub fn into_compiled<'ctx>(&self, v: &InterData<'ctx>, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
+        if ctx.is_const.get() {return None}
+        match self {
+            Type::IntLiteral => if let InterData::Int(v) = v {Some(ctx.context.i64_type().const_int(*v as u64, true).into())} else {None},
+            Type::Int(s, u) => if let InterData::Int(v) = v {Some(ctx.context.custom_width_int_type(*s as u32).const_int(*v as u64, *u).into())} else {None},
+            Type::Float16 => if let InterData::Float(v) = v {Some(ctx.context.f16_type().const_float(*v).into())} else {None},
+            Type::Float32 => if let InterData::Float(v) = v {Some(ctx.context.f32_type().const_float(*v).into())} else {None},
+            Type::Float64 => if let InterData::Float(v) = v {Some(ctx.context.f64_type().const_float(*v).into())} else {None},
+            Type::Float128 => if let InterData::Float(v) = v {Some(ctx.context.f128_type().const_float(*v).into())} else {None},
+            Type::Tuple(vs) => {
+                if !self.can_be_compiled(v, ctx) {return None}
+                if let InterData::Array(is) = v {
+                    let (vals, types): (Vec<_>, Vec<_>) = vs.iter().zip(is).map(|(t, v)| {
+                        let llv = t.into_compiled(v, ctx).unwrap();
+                        (llv, llv.get_type())
+                    }).unzip();
+                    let ty = ctx.context.struct_type(&types, false);
+                    vals.into_iter().enumerate().try_fold(ty.get_undef(), |v, (n, val)| ctx.builder.build_insert_value(v, val, n as u32, "").map(|v| v.into_struct_value())).map(From::from)
+                }
+                else {unreachable!()}
+            },
+            Type::Nominal(n) => ctx.nominals.borrow()[n].0.into_compiled(v, ctx),
+            _ => None
         }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
