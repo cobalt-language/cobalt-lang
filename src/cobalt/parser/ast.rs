@@ -118,7 +118,7 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", toks[1].data))));
                 None
             };
-            errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", tok.data)))));
+            errs.extend(toks.iter().skip(2).next().map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after integer literal", tok.data)))));
             (Box::new(IntLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Float(x) => {
@@ -133,7 +133,7 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after floating-point literal", toks[1].data))));
                 None
             };
-            errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after floating-point literal", tok.data)))));
+            errs.extend(toks.iter().skip(2).next().map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after floating-point literal", tok.data)))));
             (Box::new(FloatLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Char(x) => {
@@ -148,7 +148,7 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
                 errs.push(Diagnostic::error(toks[1].loc.clone(), 270, Some(format!("unexpected {:#} after character literal", toks[1].data))));
                 None
             };
-            errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after character literal", tok.data)))));
+            errs.extend(toks.iter().skip(2).next().map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after character literal", tok.data)))));
             (Box::new(CharLiteralAST::new(loc, *x, suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
         Str(x) => {
@@ -166,15 +166,15 @@ fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnosti
             errs.extend(toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 270, Some(format!("unexpected {:#} after string literal", tok.data)))));
             (Box::new(StringLiteralAST::new(loc, x.clone(), suf.map(|suf| (suf.clone(), toks[1].loc.clone())))), errs)
         },
-        Identifier(x) if x == "null" => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("unexpected {:#} after null", tok.data)))).collect()),
-        Identifier(name) => (Box::new(VarGetAST::new(toks[0].loc.clone(), name.clone(), false)), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect()),
+        Identifier(x) if x == "null" => (Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().skip(1).next().map(|tok| Diagnostic::error(tok.loc.clone(), 271, Some(format!("unexpected {:#} after null", tok.data)))).into_iter().collect()),
+        Identifier(name) => (Box::new(VarGetAST::new(toks[0].loc.clone(), name.clone(), false)), toks.iter().skip(1).next().map(|tok| Diagnostic::error(tok.loc.clone(), 271, Some(format!("got {:#}", tok.data)))).into_iter().collect()),
         Special('.') =>
-            if let Some(Token {loc, data: Identifier(name)}) = toks.get(1) {(Box::new(VarGetAST::new(loc.clone(), name.clone(), true)), toks.iter().skip(2).map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
-            else {(Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().map(|tok| Diagnostic::error(tok.loc.clone(), 273, Some(format!("got {:#}", tok.data)))).collect())}
-        Macro(name, None) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), vec![])), toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect()),
+            if let Some(Token {loc, data: Identifier(name)}) = toks.get(1) {(Box::new(VarGetAST::new(loc.clone(), name.clone(), true)), toks.iter().skip(2).next().map(|tok| Diagnostic::error(tok.loc.clone(), 271, Some(format!("got {:#}", tok.data)))).into_iter().collect())}
+            else {(Box::new(NullAST::new(toks[0].loc.clone())), toks.iter().next().map(|tok| Diagnostic::error(tok.loc.clone(), 271, Some(format!("got {:#}", tok.data)))).into_iter().collect())}
+        Macro(name, None) => (Box::new(IntrinsicAST::new(toks[0].loc.clone(), name.clone(), vec![])), toks.iter().skip(1).next().map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).into_iter().collect()),
         Macro(name, Some((_, atoks))) => {
             let mut atoks = atoks.as_slice();
-            let mut errs = toks.iter().skip(1).map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).collect::<Vec<_>>();
+            let mut errs = toks.iter().skip(1).next().map(|tok| Diagnostic::error(tok.loc.clone(), 272, Some(format!("unexpected {:#} after intrinsic", tok.data)))).into_iter().collect::<Vec<_>>();
             let mut args = vec![];
             while !atoks.is_empty() {
                 let (ast, i, mut es) = parse_expr(atoks, ",", flags);
@@ -192,18 +192,54 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
     match toks.get(0).map(|x| &x.data) {
         Some(Special('(')) => {
             let mut loc = toks[0].loc.clone();
-            loc.1.end = toks.last().unwrap().loc.1.end;
-            if toks.last().unwrap().data == Special(')') {toks = &toks[..(toks.len() - 1)];}
+            let mut errs = {
+                let mut it = toks.iter().skip(1).peekable();
+                let mut depth = 1;
+                let mut idx = 1;
+                loop {
+                    match it.peek().map(|x| &x.data) {
+                        None => break,
+                        Some(Special('(')) => depth += 1,
+                        Some(Special(')')) => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {break}
+                    it.next();
+                    idx += 1;
+                }
+                let err = if idx < toks.len() - 1 {Some(Diagnostic::error(toks[idx + 1].loc.clone(), 256, Some(format!("unexpected {:#}", toks[idx + 1].data))))} else {None};
+                loc.1.end = toks[idx].loc.1.end;
+                toks = &toks[..idx];
+                err.into_iter().collect::<Vec<_>>()
+            };
             toks = &toks[1..];
             if toks.is_empty() {return (Box::new(NullAST::new(unsafe {(*toks.as_ptr().offset(-1)).loc.clone()})), vec![])}
-            let (ast, _, errs) = parse_expr(toks, "", flags);
+            let (ast, _, mut es) = parse_expr(toks, "", flags);
+            errs.append(&mut es);
             (Box::new(ParenAST::new(loc, ast)), errs)
         },
         Some(Special('{')) => {
             let mut start = toks[0].loc.clone();
-            start.1.end = toks.last().unwrap().loc.1.end;
-            if toks.last().unwrap().data == Special('}') {toks = &toks[..(toks.len() - 1)];}
-            let mut errs = vec![];
+            let mut errs = {
+                let mut it = toks.iter().skip(1).peekable();
+                let mut depth = 1;
+                let mut idx = 1;
+                loop {
+                    match it.peek().map(|x| &x.data) {
+                        None => break,
+                        Some(Special('{')) => depth += 1,
+                        Some(Special('}')) => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {break}
+                    it.next();
+                    idx += 1;
+                }
+                let err = if idx < toks.len() - 1 {Some(Diagnostic::error(toks[idx + 1].loc.clone(), 258, Some(format!("unexpected {:#}", toks[idx + 1].data))))} else {None};
+                start.1.end = toks[idx].loc.1.end;
+                toks = &toks[..idx];
+                err.into_iter().collect::<Vec<_>>()
+            };
             toks = &toks[1..];
             let len = toks.len();
             let mut idx = 0;
@@ -225,9 +261,26 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
         },
         Some(Special('[')) => {
             let start = toks[0].loc.clone();
-            let end = toks.last().unwrap().loc.clone();
-            if toks.last().unwrap().data == Special(']') {toks = &toks[..(toks.len() - 1)];}
-            let mut errs = vec![];
+            let (mut errs, end) = {
+                let mut it = toks.iter().skip(1).peekable();
+                let mut depth = 1;
+                let mut idx = 1;
+                loop {
+                    match it.peek().map(|x| &x.data) {
+                        None => break,
+                        Some(Special('[')) => depth += 1,
+                        Some(Special(']')) => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {break}
+                    it.next();
+                    idx += 1;
+                }
+                let err = if idx < toks.len() - 1 {Some(Diagnostic::error(toks[idx].loc.clone(), 257, Some(format!("unexpected {:#}", toks[idx + 1].data))))} else {None};
+                let loc = toks[idx].loc.clone();
+                toks = &toks[..idx];
+                (err.into_iter().collect::<Vec<_>>(), loc)
+            };
             toks = &toks[1..];
             let len = toks.len();
             let mut idx = 0;
