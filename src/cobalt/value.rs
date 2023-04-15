@@ -23,7 +23,7 @@ pub enum InterData<'ctx> {
     Function(FnData<'ctx>),
     InlineAsm(String, String),
     Type(Box<Type>),
-    Module(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)
+    Module(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>, String)
 }
 impl<'ctx> InterData<'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -64,8 +64,10 @@ impl<'ctx> InterData<'ctx> {
                 out.write_all(&[8])?;
                 t.save(out)
             },
-            InterData::Module(v, i) => {
+            InterData::Module(v, i, n) => {
                 out.write_all(&[9])?;
+                out.write_all(n.as_bytes())?;
+                out.write_all(&[0])?;
                 for (name, sym) in v.iter() {
                     if sym.1.export {
                         out.write_all(name.as_bytes())?; // name, null-terminated
@@ -138,6 +140,9 @@ impl<'ctx> InterData<'ctx> {
             9 => {
                 let mut out = HashMap::new();
                 let mut imports = vec![];
+                let mut vec = Vec::new();
+                buf.read_until(0, &mut vec)?;
+                if vec.last() == Some(&0) {vec.pop();}
                 loop {
                     let mut name = vec![];
                     buf.read_until(0, &mut name)?;
@@ -146,7 +151,7 @@ impl<'ctx> InterData<'ctx> {
                     out.insert(String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"), Symbol::load(buf, ctx)?);
                 }
                 while let Some(val) = CompoundDottedName::load(buf)? {imports.push((val, false));}
-                Some(InterData::Module(out, imports))
+                Some(InterData::Module(out, imports, String::from_utf8(vec).expect("Module names should be valid UTF-8")))
             },
             x => panic!("read interpreted data type expecting number in 1..=9, got {x}")
         })
@@ -168,8 +173,8 @@ impl<'ctx> Value<'ctx> {
     pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, address: Rc::default()}}
     pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type, address: Rc::default()}}
     pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData, address: Rc::default()}}
-    pub fn empty_mod() -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![])), data_type: Type::Module, address: Rc::default()}}
-    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps)), data_type: Type::Module, address: Rc::default()}}
+    pub fn empty_mod(name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![], name)), data_type: Type::Module, address: Rc::default()}}
+    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>, name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps, name)), data_type: Type::Module, address: Rc::default()}}
     
     pub fn addr(&self, ctx: &CompCtx<'ctx>) -> Option<PointerValue<'ctx>> {
         self.address.get().or_else(|| {
@@ -186,8 +191,9 @@ impl<'ctx> Value<'ctx> {
 
     pub fn into_type(self) -> Option<Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(*t)} else {None}}
     pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}
-    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
-    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m)), ..} = self {Some((s, m))} else {None}}
+    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>, String)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m, n)), ..} = self {Some((s, m, n))} else {None}}
+    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>, &String)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m, n)), ..} = self {Some((s, m, n))} else {None}}
+    pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<(CompoundDottedName, bool)>, &mut String)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m, n)), ..} = self {Some((s, m, n))} else {None}}
 
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         out.write_all(self.comp_val.as_ref().map(|v| v.into_pointer_value().get_name().to_bytes().to_owned()).unwrap_or_else(Vec::new).as_slice())?; // LLVM symbol name, null-terminated

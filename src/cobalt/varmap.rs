@@ -50,20 +50,20 @@ impl<'ctx> From<Value<'ctx>> for Symbol<'ctx> {
 #[derive(Debug, Clone)]
 pub struct Symbol<'ctx>(pub Value<'ctx>, pub VariableData);
 impl<'ctx> Symbol<'ctx> {
-    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
-    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
-    pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<(CompoundDottedName, bool)>)> {if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = self {Some((s, i))} else {None}}
-    pub fn empty_mod() -> Self {Value::empty_mod().into()}
+    pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>, String)> {self.0.into_mod()}
+    pub fn as_mod(&self) -> Option<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>, &String)> {self.0.as_mod()}
+    pub fn as_mod_mut(&mut self) -> Option<(&mut HashMap<String, Symbol<'ctx>>, &mut Vec<(CompoundDottedName, bool)>, &mut String)> {self.0.as_mod_mut()}
+    pub fn empty_mod(name: String) -> Self {Value::empty_mod(name).into()}
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {self.0.save(out)}
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {Ok(Symbol(Value::load(buf, ctx)?, VariableData {export: false, ..VariableData::default()}))}
     pub fn dump(&self, depth: usize) {
         match self {
-            Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) => {
+            Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, n)), ..}, _) => {
                 let pre = " ".repeat(depth);
-                eprintln!("module");
+                eprintln!("module {n:?}");
                 for (i, _) in i {eprintln!("{pre}    import: {i}")}
                 for (k, s) in s {
-                    eprint!("{pre}    {k}: ");
+                    eprint!("{pre}    {k:?}: ");
                     s.dump(depth + 4)
                 }
             },
@@ -93,7 +93,7 @@ impl<'ctx> VarMap<'ctx> {
         let mut idx = 0;
         if name.ids.is_empty() {panic!("mod_insert cannot insert a value at an empty name")}
         while idx + 1 < name.ids.len() {
-            if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(x, _)), ..}, _) = this.entry(name.ids[idx].0.clone()).or_insert_with(Symbol::empty_mod) {this = x}
+            if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(x, _, _)), ..}, _) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::empty_mod(name.start(idx + 1).to_string())) {this = x}
             else {return Err(RedefVariable::NotAModule(idx, sym))}
             idx += 1;
         }
@@ -102,39 +102,47 @@ impl<'ctx> VarMap<'ctx> {
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
     }
-    pub fn insert_mod(&mut self, name: &DottedName, mut sym: (HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>)) -> Result<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>), RedefVariable<'ctx>> {
+    pub fn insert_mod(&mut self, name: &DottedName, mut sym: (HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>), mod_name: String) -> Result<(&HashMap<String, Symbol<'ctx>>, &Vec<(CompoundDottedName, bool)>, &String), RedefVariable<'ctx>> {
         let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
         let mut idx = 0;
         if name.ids.is_empty() {panic!("mod_insert cannot insert a value at an empty name")}
+        let mut old = String::new();
         while idx + 1 < name.ids.len() {
-            if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(x, _)), ..}, _) = this.entry(name.ids[idx].0.clone()).or_insert_with(Symbol::empty_mod) {this = x}
-            else {return Err(RedefVariable::NotAModule(idx, Value::make_mod(sym.0, sym.1).into()))}
+            if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(x, _, n)), ..}, _) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::empty_mod(old + "." + &name.ids[idx].0)) {
+                this = x;
+                old = n.clone();
+            }
+            else {return Err(RedefVariable::NotAModule(idx, Value::make_mod(sym.0, sym.1, mod_name).into()))}
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ref mut m, ref mut i)), ..}, _) => {
+                Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ref mut m, ref mut i, _)), ..}, _) => {
                     *m = sym.0;
                     i.append(&mut sym.1);
                     Ok(x.into_mut().as_mod().unwrap())
                 },
-                Symbol(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc.clone(), Value::make_mod(sym.0, sym.1).into()))
+                Symbol(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc.clone(), Value::make_mod(sym.0, sym.1, mod_name).into()))
             },
-            Entry::Vacant(x) => Ok(x.insert(Value::make_mod(sym.0, sym.1).into()).as_mod().unwrap())
+            Entry::Vacant(x) => Ok(x.insert(Value::make_mod(sym.0, sym.1, mod_name).into()).as_mod().unwrap())
         }
     }
-    pub fn lookup_mod(&mut self, name: &DottedName) -> Result<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>), UndefVariable> {
+    pub fn lookup_mod(&mut self, name: &DottedName) -> Result<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>, String), UndefVariable> {
         let mut this = if name.global {&mut self.root_mut().symbols} else {&mut self.symbols};
         let mut idx = 0;
+        let mut old = String::new();
         if name.ids.is_empty() {panic!("mod_lookup_insert cannot find a module at an empty name")}
         while idx + 1 < name.ids.len() {
-            if let Some((x, _)) = this.entry(name.ids[idx].0.clone()).or_insert_with(Symbol::empty_mod).as_mod_mut() {this = x}
+            if let Some((x, _, n)) = this.entry(name.ids[idx].0.clone()).or_insert_with(|| Symbol::empty_mod(old + "." + &name.ids[idx].0)).as_mod_mut() {
+                this = x;
+                old = n.clone();
+            }
             else {return Err(UndefVariable::NotAModule(idx))}
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol(Value {data_type: Type::Module, ..}, _) => if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = x.remove() {Ok((s, i))} else {Err(UndefVariable::NotAModule(idx))},
+                Symbol(Value {data_type: Type::Module, ..}, _) => if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, n)), ..}, _) = x.remove() {Ok((s, i, n))} else {Err(UndefVariable::NotAModule(idx))},
                 Symbol(..) => Err(UndefVariable::DoesNotExist(idx)) // should be AlreadyExists, but DoesNotExist wouldn't arise here
             },
             Entry::Vacant(_) => Ok(Default::default())
@@ -164,7 +172,7 @@ impl<'ctx> VarMap<'ctx> {
             let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
             match self.symbols.entry(name) {
                 Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
-                    (Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(bs, bi)), ..}, _), Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ns, mut ni)), ..}, _)) => {
+                    (Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(bs, bi, _)), ..}, _), Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ns, mut ni, _)), ..}, _)) => {
                         bi.append(&mut ni);
                         out.append(&mut merge(bs, ns));
                     },
@@ -190,7 +198,7 @@ impl<'ctx> VarMap<'ctx> {
         Ok(VarMap {parent: None, symbols: out, imports})
     }
     pub fn dump(&self) {
-        eprintln!("module");
+        eprintln!("top level");
         self.imports.iter().for_each(|(i, _)| eprintln!("    import {i}"));
         self.symbols.iter().for_each(|(k, v)| {
             eprint!("    {k:?}: ");
@@ -205,7 +213,7 @@ impl<'ctx> VarMap<'ctx> {
                     Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
                 }))} else {None}}
                 else {
-                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) = symbols.get(x.as_str()) {
+                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _)) = symbols.get(x.as_str()) {
                         Self::satisfy((s, i), name, &pattern[1..], root)
                     } else {None}
                 },
@@ -215,7 +223,7 @@ impl<'ctx> VarMap<'ctx> {
                 }))}
                 else {
                     symbols.values().find_map(|v| {
-                        if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = v {
+                        if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _) = v {
                             Self::satisfy((s, i), name, &pattern[1..], root)
                         } else {None}
                     })
@@ -248,7 +256,7 @@ impl<'ctx> VarMap<'ctx> {
             None => vec![],
             Some(Identifier(x, l)) => match Self::lookup_in_mod((symbols, imports), &x, root) {
                 Some(_) if pattern.len() == 1 => vec![],
-                Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _)) => Self::verify_in_mod((s, i), &pattern[1..], root),
+                Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _)) => Self::verify_in_mod((s, i), &pattern[1..], root),
                 _ => vec![l.clone()]
             },
             Some(Glob(l)) =>
@@ -257,7 +265,7 @@ impl<'ctx> VarMap<'ctx> {
                     else {vec![]}
                 }
                 else {
-                    let mut ll = symbols.values().filter_map(|x| if let Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i)), ..}, _) = x {Some((s, i))} else {None}).map(|(s, i)| {Self::verify_in_mod((s, i), &pattern[1..], root)}).collect::<LinkedList<_>>();
+                    let mut ll = symbols.values().filter_map(|x| x.as_mod()).map(|(s, i, _)| {Self::verify_in_mod((s, i), &pattern[1..], root)}).collect::<LinkedList<_>>();
                     if let Some(mut out) = ll.pop_front() {
                         ll.into_iter().for_each(|v| out.retain(|l| v.contains(l)));
                         out
@@ -314,7 +322,7 @@ fn merge<'ctx>(base: &mut HashMap<String, Symbol<'ctx>>, new: HashMap<String, Sy
     for (key, val) in new {
         match base.entry(key) {
             Entry::Occupied(mut e) => match (e.get_mut(), val) {
-                (Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(bs, bi)), ..}, _), Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ns, mut ni)), ..}, _)) => {
+                (Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(bs, bi, _)), ..}, _), Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(ns, mut ni, _)), ..}, _)) => {
                     bi.append(&mut ni);
                     out.extend(merge(bs, ns).into_iter().map(|x| e.key().to_owned() + &x));
                 },

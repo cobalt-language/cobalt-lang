@@ -58,7 +58,7 @@ impl AST for ModuleAST {
         if target_match == 0 {return (Value::null(), errs)}
         ctx.map_vars(|mut v| {
             match v.lookup_mod(&self.name) {
-                Ok((m, i)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
+                Ok((m, i, _)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
                 Err(UndefVariable::NotAModule(x)) => {
                     errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
                     Box::new(VarMap::new(Some(v)))
@@ -75,7 +75,7 @@ impl AST for ModuleAST {
         ctx.restore_scope(old_scope);
         if vis_spec.is_some() {ctx.export.set(old_vis)}
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
-        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms)));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
         (Value::null(), errs)
     }
     fn to_code(&self) -> String {
