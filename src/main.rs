@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-use colored::Colorize;
 use inkwell::targets::*;
 use inkwell::execution_engine::FunctionLookupError;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -13,6 +11,7 @@ mod libs;
 mod opt;
 mod build;
 mod package;
+mod color;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 #[derive(Debug, PartialEq, Eq)]
@@ -34,9 +33,6 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     machine_code: true
 };
 fn driver() -> Result<(), Box<dyn std::error::Error>> {
-    let ERROR = &"error".bright_red().bold();
-    let WARNING = &"warning".bright_yellow().bold();
-    let MODULE = &"module".blue().bold();
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         println!("{}", HELP);
@@ -66,7 +62,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
         }
         "lex" if cfg!(debug_assertions) => {
             let mut nfcl = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
@@ -76,11 +72,11 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         match c {
                             'c' => {
                                 if nfcl {
-                                    eprintln!("{WARNING}: reuse of -c flag");
+                                    warning!("reuse of -c flag");
                                 }
                                 nfcl = true;
                             }
-                            x => eprintln!("{WARNING}: unknown flag -{x}")
+                            x => warning!("unknown flag -{x}")
                         }
                     }
                 }
@@ -102,13 +98,13 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if nfcl {
-                eprintln!("{ERROR}: -c flag must be followed by code");
+                error!("-c flag must be followed by code");
             }
         },
         "parse" if cfg!(debug_assertions) => {
             let mut nfcl = false;
             let mut loc = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             for arg in args.into_iter().skip(2) {
@@ -118,17 +114,17 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         match c {
                             'c' => {
                                 if nfcl {
-                                    eprintln!("{WARNING}: reuse of -c flag");
+                                    warning!("reuse of -c flag");
                                 }
                                 nfcl = true;
                             },
                             'l' => {
                                 if loc {
-                                    eprintln!("{WARNING}: reuse of -l flag");
+                                    warning!("reuse of -l flag");
                                 }
                                 loc = true;
                             },
-                            x => eprintln!("{WARNING}: unknown flag -{}", x)
+                            x => warning!("unknown flag -{}", x)
                         }
                     }
                 }
@@ -156,7 +152,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if nfcl {
-                eprintln!("{ERROR}: -c flag must be followed by code");
+                error!("-c flag must be followed by code");
             }
         },
         "llvm" if cfg!(debug_assertions) => {
@@ -168,25 +164,25 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
-                                eprintln!("{ERROR}: respecification of input file");
+                                error!("respecification of input file");
                                 exit(1)
                             }
                             in_file = Some("-");
                         }
                         else if arg.as_bytes()[1] == b'-' {
-                            eprintln!("{ERROR}: unknown flag --{}", &arg[2..]);
+                            error!("unknown flag --{}", &arg[2..]);
                             exit(1)
                         }
                         else {
                             for c in arg.chars().skip(1) {
-                                eprintln!("{ERROR}: unknown flag -{c}");
+                                error!("unknown flag -{c}");
                                 exit(1)
                             }
                         }
                     }
                     else {
                         if in_file.is_some() {
-                            eprintln!("{ERROR}: respecification of input file");
+                            error!("respecification of input file");
                             exit(1)
                         }
                         in_file = Some(arg.as_str());
@@ -194,7 +190,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if in_file.is_none() {
-                eprintln!("{ERROR}: no input file given");
+                error!("no input file given");
                 exit(1)
             }
             let in_file = in_file.unwrap();
@@ -203,7 +199,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 std::io::stdin().read_to_string(&mut s)?;
                 s
             } else {std::fs::read_to_string(in_file)?};
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             let mut fail = false;
@@ -219,7 +215,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                error!("\n{}", msg.to_string());
                 fail = true;
             }
             print!("{}", ctx.module.to_string());
@@ -255,7 +251,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
-                                eprintln!("{ERROR}: respecification of input file");
+                                error!("respecification of input file");
                                 exit(1)
                             }
                             in_file = Some("-");
@@ -264,67 +260,67 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             match &arg[2..] {
                                 "continue" => {
                                     if continue_if_err {
-                                        eprintln!("{WARNING}: reuse of --continue flag");
+                                        warning!("reuse of --continue flag");
                                     }
                                     continue_if_err = true;
                                 },
                                 "emit-asm" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Assembly);
                                 },
                                 "emit-obj" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Object);
                                 },
                                 "emit-llvm" | "emit-ir" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Llvm);
                                 },
                                 "emit-bc" | "emit-bitcode" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Bitcode);
                                 },
                                 "lib" | "emit-lib" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Library);
                                 },
                                 "exe" | "executable" | "emit-exe" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Executable);
                                 },
                                 "header" | "emit-header" => {
                                     if output_type.is_some() {
-                                        eprintln!("{ERROR}: respecification of output type");
+                                        error!("respecification of output type");
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Header);
                                 },
                                 "no-default-link" => {
                                     if no_default_link {
-                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                        warning!("reuse of --no-default-link flag");
                                     }
                                     no_default_link = true;
                                 },
                                 x => {
-                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    error!("unknown flag --{x}");
                                     exit(1)
                                 }
                             }
@@ -334,32 +330,32 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 match c {
                                     'p' => {
                                         if profile.is_some() {
-                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                            warning!("respecification of optimization profile");
                                         }
                                         if let Some(x) = it.next() {
                                             profile = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            error!("expected profile after -p flag");
                                             exit(1)
                                         }
                                     },
                                     'c' => {
                                         if continue_if_err {
-                                            eprintln!("{WARNING}: reuse of -c flag");
+                                            warning!("reuse of -c flag");
                                         }
                                         continue_if_err = true;
                                     },
                                     'o' => {
                                         if out_file.is_some() {
-                                            eprintln!("{ERROR}: respecification of input file");
+                                            error!("respecification of input file");
                                             exit(1)
                                         }
                                         if let Some(x) = it.next() {
                                             out_file = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected file after -o flag");
+                                            error!("expected file after -o flag");
                                             exit(1)
                                         }
                                     },
@@ -368,7 +364,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             linked.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            error!("expected library after -l flag");
                                             exit(1)
                                         }
                                     },
@@ -377,20 +373,20 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             link_dirs.push(x.clone());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            error!("expected directory after -L flag");
                                             exit(1)
                                         }
                                     },
                                     't' => {
                                         if triple.is_some() {
-                                            eprintln!("{ERROR}: respecification of target triple");
+                                            error!("respecification of target triple");
                                             exit(1)
                                         }
                                         if let Some(x) = it.next().map(|x| TargetTriple::create(x)) {
                                             triple = Some(x);
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected target triple after -t flag");
+                                            error!("expected target triple after -t flag");
                                             exit(1)
                                         }
                                     },
@@ -402,12 +398,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             headers.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            error!("expected header file after -h flag");
                                             exit(1)
                                         }
                                     },
                                     x => {
-                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        error!("unknown flag -{x}");
                                         exit(1)
                                     }
                                 }
@@ -416,7 +412,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     else {
                         if in_file.is_some() {
-                            eprintln!("{ERROR}: respecification of input file");
+                            error!("respecification of input file");
                             exit(1)
                         }
                         in_file = Some(arg.as_str());
@@ -429,7 +425,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
             if in_file.is_none() {
-                eprintln!("{ERROR}: no input file given");
+                error!("no input file given");
                 exit(1)
             }
             let in_file = in_file.unwrap();
@@ -467,7 +463,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             ctx.module.set_triple(&triple);
             let libs = if !linked.is_empty() {
                 let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
                 libs
@@ -478,7 +474,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
@@ -498,7 +494,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                error!(" {}", msg.to_string());
                 exit(101)
             }
             if fail || overall_fail {exit(101)}
@@ -572,7 +568,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 if code != 0 {exit(code)}
                                 let mut buf = Vec::<u8>::new();
                                 if let Err(e) = ctx.save(&mut buf) {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     exit(4)
                                 }
                                 tmp = temp_file::with_contents(&buf);
@@ -585,7 +581,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     .arg(".colib=readonly,data");
                                 exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
                             }
-                            else {eprintln!("{ERROR}: cannot output library to stdout!"); exit(4)}
+                            else {error!("cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
                             if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
@@ -610,7 +606,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
-                                eprintln!("{ERROR}: respecification of input file");
+                                error!("respecification of input file");
                                 exit(1)
                             }
                             in_file = Some("-");
@@ -619,18 +615,18 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             match &arg[2..] {
                                 "continue" => {
                                     if continue_if_err {
-                                        eprintln!("{WARNING}: reuse of --continue flag");
+                                        warning!("reuse of --continue flag");
                                     }
                                     continue_if_err = true;
                                 },
                                 "no-default-link" => {
                                     if no_default_link {
-                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                        warning!("reuse of --no-default-link flag");
                                     }
                                     no_default_link = true;
                                 },
                                 x => {
-                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    error!("unknown flag --{x}");
                                     exit(1)
                                 }
                             }
@@ -640,19 +636,19 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 match c {
                                     'p' => {
                                         if profile.is_some() {
-                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                            warning!("respecification of optimization profile");
                                         }
                                         if let Some(x) = it.next() {
                                             profile = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            error!("expected profile after -p flag");
                                             exit(1)
                                         }
                                     },
                                     'c' => {
                                         if continue_if_err {
-                                            eprintln!("{WARNING}: reuse of -c flag");
+                                            warning!("reuse of -c flag");
                                         }
                                         continue_if_err = true;
                                     },
@@ -661,7 +657,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             linked.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            error!("expected library after -l flag");
                                             exit(1)
                                         }
                                     },
@@ -670,7 +666,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             link_dirs.push(x.clone());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            error!("expected directory after -L flag");
                                             exit(1)
                                         }
                                     },
@@ -679,12 +675,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             headers.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            error!("expected header file after -h flag");
                                             exit(1)
                                         }
                                     },
                                     x => {
-                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        error!("unknown flag -{x}");
                                         exit(1)
                                     }
                                 }
@@ -693,7 +689,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     else {
                         if in_file.is_some() {
-                            eprintln!("{ERROR}: respecification of input file");
+                            error!("respecification of input file");
                             exit(1)
                         }
                         in_file = Some(arg.as_str());
@@ -716,7 +712,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
                 let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
                 libs
@@ -727,7 +723,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
@@ -748,7 +744,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                error!(" {}", msg.to_string());
                 exit(101)
             }
             if fail || overall_fail {exit(101)}
@@ -791,7 +787,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if in_file.is_some() {
-                                eprintln!("{ERROR}: respecification of input file");
+                                error!("respecification of input file");
                                 exit(1)
                             }
                             in_file = Some("-");
@@ -800,12 +796,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             match &arg[2..] {
                                 "no-default-link" => {
                                     if no_default_link {
-                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                        warning!("reuse of --no-default-link flag");
                                     }
                                     no_default_link = true;
                                 },
                                 x => {
-                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    error!("unknown flag --{x}");
                                     exit(1)
                                 }
                             }
@@ -818,7 +814,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             linked.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected library after -l flag");
+                                            error!("expected library after -l flag");
                                             exit(1)
                                         }
                                     },
@@ -827,7 +823,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             link_dirs.push(x.clone());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected directory after -L flag");
+                                            error!("expected directory after -L flag");
                                             exit(1)
                                         }
                                     },
@@ -836,12 +832,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             headers.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected header file after -h flag");
+                                            error!("expected header file after -h flag");
                                             exit(1)
                                         }
                                     },
                                     x => {
-                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        error!("unknown flag -{x}");
                                         exit(1)
                                     }
                                 }
@@ -850,7 +846,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     else {
                         if in_file.is_some() {
-                            eprintln!("{ERROR}: respecification of input file");
+                            error!("respecification of input file");
                             exit(1)
                         }
                         in_file = Some(arg.as_str());
@@ -885,7 +881,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             ctx.module.set_triple(&triple);
             if !linked.is_empty() {
                 let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| eprintln!("{ERROR}: couldn't find library {nf}"));
+                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
                 if failed {exit(99)}
             }
@@ -894,7 +890,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 ctx.load(&mut file)?;
             }
             let mut fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
@@ -905,7 +901,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if let Err(msg) = ctx.module.verify() {
-                eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+                error!(" {}", msg.to_string());
                 exit(101)
             }
             if fail {exit(101)}
@@ -925,7 +921,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     if arg.as_bytes()[0] == b'-' {
                         if arg.as_bytes().len() == 1 {
                             if project_dir.is_some() {
-                                eprintln!("{ERROR}: respecification of project directory");
+                                error!("respecification of project directory");
                                 exit(1)
                             }
                             project_dir = Some("-");
@@ -934,12 +930,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             match &arg[2..] {
                                 "no-default-link" => {
                                     if no_default_link {
-                                        eprintln!("{WARNING}: reuse of --no-default-link flag");
+                                        warning!("reuse of --no-default-link flag");
                                     }
                                     no_default_link = true;
                                 },
                                 x => {
-                                    eprintln!("{ERROR}: unknown flag --{x}");
+                                    error!("unknown flag --{x}");
                                     exit(1)
                                 }
                             }
@@ -949,52 +945,52 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 match c {
                                     'p' => {
                                         if profile.is_some() {
-                                            eprintln!("{WARNING}: respecification of optimization profile");
+                                            warning!("respecification of optimization profile");
                                         }
                                         if let Some(x) = it.next() {
                                             profile = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected profile after -p flag");
+                                            error!("expected profile after -p flag");
                                             exit(1)
                                         }
                                     },
                                     's' => {
                                         if profile.is_some() {
-                                            eprintln!("{ERROR}: respecification of source directory");
+                                            error!("respecification of source directory");
                                             exit(1)
                                         }
                                         if let Some(x) = it.next() {
                                             source_dir = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected source directory after -s flag");
+                                            error!("expected source directory after -s flag");
                                             exit(1)
                                         }
                                     },
                                     'b' => {
                                         if profile.is_some() {
-                                            eprintln!("{WARNING}: respecification of build directory");
+                                            warning!("respecification of build directory");
                                             exit(1)
                                         }
                                         if let Some(x) = it.next() {
                                             build_dir = Some(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected build directory after -b flag");
+                                            error!("expected build directory after -b flag");
                                             exit(1)
                                         }
                                     },
                                     't' => {
                                         if profile.is_some() {
-                                            eprintln!("{WARNING}: respecification of target triple");
+                                            warning!("respecification of target triple");
                                             exit(1)
                                         }
                                         if let Some(x) = it.next() {
                                             triple = Some(TargetTriple::create(x.as_str()));
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected target triple after -t flag");
+                                            error!("expected target triple after -t flag");
                                             exit(1)
                                         }
                                     },
@@ -1003,12 +999,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             targets.push(x.as_str());
                                         }
                                         else {
-                                            eprintln!("{ERROR}: expected build target after -T flag");
+                                            error!("expected build target after -T flag");
                                             exit(1)
                                         }
                                     },
                                     x => {
-                                        eprintln!("{ERROR}: unknown flag -{x}");
+                                        error!("unknown flag -{x}");
                                         exit(1)
                                     }
                                 }
@@ -1017,7 +1013,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     else {
                         if project_dir.is_some() {
-                            eprintln!("{ERROR}: respecification of project directory");
+                            error!("respecification of project directory");
                             exit(1)
                         }
                         project_dir = Some(arg.as_str());
@@ -1041,7 +1037,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 Some(x) => {
                     if !Path::new(x).exists() {
-                        eprintln!("{ERROR}: {x} does not exist");
+                        error!("{x} does not exist");
                         exit(100)
                     }
                     match std::fs::metadata(x).map(|x| x.file_type().is_dir()) {
@@ -1049,7 +1045,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             let mut path = std::path::PathBuf::from(x);
                             path.push("cobalt.toml");
                             if !path.exists() {
-                                eprintln!("{ERROR}: cannot find cobalt.toml in {x}");
+                                error!("cannot find cobalt.toml in {x}");
                                 exit(100)
                             }
                             let cfg;
@@ -1101,7 +1097,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         if path.exists() {break}
                         path.pop();
                         if !path.pop() {
-                            eprintln!("{ERROR}: couldn't find cobalt.toml in current directory");
+                            error!("couldn't find cobalt.toml in current directory");
                             exit(100)
                         }
                     }
@@ -1148,15 +1144,15 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             match package::Package::init_registry() {
                 Ok(()) => {},
                 Err(package::PackageUpdateError::NoInstallDirectory) => {
-                    eprintln!("{ERROR}: could not find or infer Cobalt directory");
+                    error!("could not find or infer Cobalt directory");
                     exit(1)
                 },
                 Err(package::PackageUpdateError::GitError(e)) => {
-                    eprintln!("{ERROR}: {e}");
+                    error!("{e}");
                     exit(2)
                 }
                 Err(package::PackageUpdateError::StdIoError(e)) => {
-                    eprintln!("{ERROR}: {e}");
+                    error!("{e}");
                     exit(3)
                 }
             };
@@ -1167,19 +1163,19 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap(), None, package::InstallOptions::default()) {
                         Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
                         Err(package::InstallError::DownloadError(e)) => {
-                            eprintln!("{ERROR}: {e}");
+                            error!("{e}");
                             good = 4;
                         },
                         Err(package::InstallError::StdIoError(e)) => {
-                            eprintln!("{ERROR}: {e}");
+                            error!("{e}");
                             good = 3;
                         },
                         Err(package::InstallError::GitCloneError(e)) => {
-                            eprintln!("{ERROR}: {e}");
+                            error!("{e}");
                             good = 2;
                         },
                         Err(package::InstallError::ZipExtractError(e)) => {
-                            eprintln!("{ERROR}: {e}");
+                            error!("{e}");
                             good = 5;
                         },
                         Err(package::InstallError::BuildFailed(e)) => {
@@ -1191,22 +1187,22 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             good = 7;
                         },
                         Err(package::InstallError::CfgFileError(e)) => {
-                            eprintln!("{ERROR} in {pkg}'s config file: {e}");
+                            error!("could not parse {pkg}'s config file: {e}");
                             good = 8;
                         },
                         Err(package::InstallError::InvalidVersionSpec(_, v)) => {
-                            eprintln!("{ERROR} in {pkg}'s dependencies: invalid version spec {v}");
+                            error!("could not parse {pkg}'s dependencies: invalid version spec {v}");
                             good = 9;
                         },
                         Err(package::InstallError::PkgNotFound(p)) => {
-                            eprintln!("{ERROR} in {pkg}'s dependencies: can't find package {p}");
+                            error!("could not parse {pkg}'s dependencies: can't find package {p}");
                             good = 10;
                         },
                         _ => {}
                     }
                 }
                 else {
-                    eprintln!("{ERROR}: couldn't find package {pkg:?}");
+                    error!("couldn't find package {pkg:?}");
                     good = 6;
                 }
             }
@@ -1220,8 +1216,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
 }
 fn main() {
     if let Err(err) = driver() {
-        let ERROR = &"error".bright_red().bold();
-        eprintln!("{ERROR}: {err}");
+        error!("{err}");
         exit(100);
     }
 }
