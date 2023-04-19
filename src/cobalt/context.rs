@@ -154,6 +154,26 @@ impl<'ctx> CompCtx<'ctx> {
             _ => None
         })
     }
+    pub fn lookup_full(&self, name: &DottedName) -> Option<Value<'ctx>> {
+        let v = self.lookup(&name.ids.first()?.0, name.global)?;
+        if !v.1.init {return None}
+        let mut v = v.0.clone();
+        for name in name.ids[1..].iter() {
+            v = match v {
+                Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..} => self.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &name.0, v)).and_then(|Symbol(v, d)| if d.init {Some(v)} else {None})?.clone(),
+                Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} => {
+                    if let Type::Nominal(n) = *t {
+                        self.nominals.borrow()[&n].2.get(&name.0)?.clone()
+                    }
+                    else {
+                        return None
+                    }
+                }
+                x => types::utils::attr((x, (0, 0..0)), (&name.0, (0, 0..0)), self).ok()?
+            };
+        }
+        Some(v)
+    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (n, (t, e, m)) in self.nominals.borrow().iter() {
             if *e {

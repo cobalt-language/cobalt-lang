@@ -1,5 +1,5 @@
 use crate::*;
-use inkwell::values::BasicValueEnum::*;
+use inkwell::values::{AsValueRef, GlobalValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
 use glob::Pattern;
 use std::collections::HashSet;
@@ -16,6 +16,95 @@ impl VarDefAST {
 }
 impl AST for VarDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
+    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        let mut errs = vec![];
+        let mut link_type = None;
+        let mut linkas = None;
+        let mut vis_spec = None;
+        let mut target_match = 2u8;
+        for (ann, arg, loc) in self.annotations.iter() {
+            match ann.as_str() {
+                "link" => {
+                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                        Some("extern") | Some("external") => Some(External),
+                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("intern") | Some("internal") => Some(Internal),
+                        Some("private") => Some(Private),
+                        Some("weak") => Some(WeakAny),
+                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
+                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("common") => Some(Common),
+                        _ => None
+                    }.map(|x| (x, loc.clone()))
+                },
+                "linkas" => {
+                    if let Some(arg) = arg {
+                        linkas = Some(arg.clone())
+                    }
+                },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                        }
+                    }
+                },
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            _ => {},
+                        }
+                    }
+                },
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            _ => {}
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        let vs = vis_spec.unwrap_or(ctx.export.get());
+        if target_match == 0 {return}
+        let t2 = self.val.const_codegen(ctx).0.data_type;
+        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
+            let oic = ctx.is_const.replace(true);
+            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+            ctx.is_const.set(oic);
+            t
+        }) {t} else {
+            match t2 {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            }
+        };
+        let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+            dt.llvm_type(ctx).map(|t| {
+                let gv = ctx.module.add_global(t, None, &linkas.unwrap_or_else(|| ctx.mangle(&self.name)));
+                match link_type {
+                    None => {},
+                    Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
+                    Some((x, _)) => gv.set_linkage(x)
+                }
+                PointerValue(gv.as_pointer_value())
+            }),
+            None,
+            Type::Reference(Box::new(dt), false)
+        ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+    }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -157,7 +246,8 @@ impl AST for VarDefAST {
                 };
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -210,7 +300,8 @@ impl AST for VarDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         gv.set_constant(true);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -288,7 +379,8 @@ impl AST for VarDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         gv.set_constant(false);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -500,6 +592,95 @@ impl MutDefAST {
 }
 impl AST for MutDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
+    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        let mut errs = vec![];
+        let mut link_type = None;
+        let mut linkas = None;
+        let mut vis_spec = None;
+        let mut target_match = 2u8;
+        for (ann, arg, loc) in self.annotations.iter() {
+            match ann.as_str() {
+                "link" => {
+                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                        Some("extern") | Some("external") => Some(External),
+                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("intern") | Some("internal") => Some(Internal),
+                        Some("private") => Some(Private),
+                        Some("weak") => Some(WeakAny),
+                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
+                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("common") => Some(Common),
+                        _ => None
+                    }.map(|x| (x, loc.clone()))
+                },
+                "linkas" => {
+                    if let Some(arg) = arg {
+                        linkas = Some(arg.clone())
+                    }
+                },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                        }
+                    }
+                },
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            _ => {},
+                        }
+                    }
+                },
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            _ => {}
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        let vs = vis_spec.unwrap_or(ctx.export.get());
+        if target_match == 0 {return}
+        let t2 = self.val.const_codegen(ctx).0.data_type;
+        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
+            let oic = ctx.is_const.replace(true);
+            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+            ctx.is_const.set(oic);
+            t
+        }) {t} else {
+            match t2 {
+                Type::IntLiteral => Type::Int(64, false),
+                Type::Reference(b, m) => match *b {
+                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
+                    x => x
+                },
+                x => x
+            }
+        };
+        let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+            dt.llvm_type(ctx).map(|t| {
+                let gv = ctx.module.add_global(t, None, &linkas.unwrap_or_else(|| ctx.mangle(&self.name)));
+                match link_type {
+                    None => {},
+                    Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
+                    Some((x, _)) => gv.set_linkage(x)
+                }
+                PointerValue(gv.as_pointer_value())
+            }),
+            None,
+            Type::Reference(Box::new(dt), false)
+        ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+    }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -626,7 +807,8 @@ impl AST for MutDefAST {
                 };
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     dt.llvm_type(ctx).map(|t| {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         match link_type {
                             None => {},
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
@@ -679,7 +861,8 @@ impl AST for MutDefAST {
                     }
                     else {
                         let t = dt.llvm_type(ctx).unwrap();
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         gv.set_constant(false);
                         gv.set_initializer(&v);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
@@ -757,7 +940,8 @@ impl AST for MutDefAST {
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs))))
                     }
                     else {
-                        let gv = ctx.module.add_global(t, None, linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name).as_str());
+                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         gv.set_constant(false);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}

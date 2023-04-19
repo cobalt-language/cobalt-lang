@@ -1,7 +1,7 @@
 use crate::*;
 use inkwell::basic_block::BasicBlock;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
-use inkwell::values::BasicValueEnum::*;
+use inkwell::values::{AsValueRef, FunctionValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
 use llvm_sys::core::{LLVMGetInsertBlock, LLVMIsABasicBlock};
@@ -29,10 +29,191 @@ impl FnDefAST {
 }
 impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
+    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        let oic = ctx.is_const.replace(true);
+        let ret = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        ctx.is_const.set(oic);
+        let mut link_type = None;
+        let mut linkas = None;
+        let mut cconv = None;
+        let mut inline = None;
+        let mut vis_spec = None;
+        let mut fn_type = None;
+        let mut target_match = 2u8;
+        for (ann, arg, loc) in self.annotations.iter() {
+            match ann.as_str() {
+                "link" => {
+                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                        Some("extern") | Some("external") => Some(External),
+                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("intern") | Some("internal") => Some(Internal),
+                        Some("private") => Some(Private),
+                        Some("weak") => Some(WeakAny),
+                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
+                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("common") => Some(Common),
+                        _ => None
+                    }
+                },
+                "linkas" => {
+                    if let Some(arg) = arg {
+                        linkas = Some((arg.clone(), loc.clone()))
+                    }
+                },
+                "cconv" => {
+                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                        Some("c") | Some("C") => Some(0),
+                        Some("fast") | Some("Fast") => Some(8),
+                        Some("cold") | Some("Cold") => Some(9),
+                        Some("ghc") | Some("GHC") => Some(10),
+                        Some("hipe") | Some("HiPE") => Some(11),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("anyreg") | Some("AnyReg") => Some(13),
+                        Some("preservemost") | Some("PreserveMost") => Some(14),
+                        Some("preserveall") | Some("PreserveAll") => Some(15),
+                        Some("swift") | Some("Swift") => Some(16),
+                        Some("tail") | Some("Tail") => Some(18),
+                        Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
+                        _ => None
+                    });
+                },
+                "extern" => {
+                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                        Some("c") | Some("C") => Some(0),
+                        Some("fast") | Some("Fast") => Some(8),
+                        Some("cold") | Some("Cold") => Some(9),
+                        Some("ghc") | Some("GHC") => Some(10),
+                        Some("hipe") | Some("HiPE") => Some(11),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("anyreg") | Some("AnyReg") => Some(13),
+                        Some("preservemost") | Some("PreserveMost") => Some(14),
+                        Some("preserveall") | Some("PreserveAll") => Some(15),
+                        Some("swift") | Some("Swift") => Some(16),
+                        Some("tail") | Some("Tail") => Some(18),
+                        Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
+                        _ => None
+                    });
+                },
+                "inline" => {
+                    if let Some(arg) = arg {
+                        match arg.as_str() {
+                            "always" | "true" | "1" => inline = Some(true),
+                            "never" | "false" | "0" => inline = Some(false),
+                            _ => {}
+                        }
+                    }
+                    else {
+                        inline = Some(true)
+                    }
+                },
+                "c" | "C" => {
+                    cconv = Some(0);
+                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
+                },
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))}
+                        }
+                    }
+                },
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            _ => {}
+                        }
+                    }
+                },
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            _ => {}
+                        }
+                    }
+                },
+                "method" if self.in_struct => {
+                    if fn_type.is_none() {
+                        if !params.is_empty() {
+                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
+                        }
+                    }
+                },
+                "getter" if self.in_struct => {
+                    if fn_type.is_none() {
+                        if !params.is_empty() {
+                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        let fty = Type::Function(Box::new(ret), params);
+        let vs = vis_spec.unwrap_or(ctx.export.get());
+        let cf = ctx.is_cfunc(&self.name);
+        let cc = cconv.unwrap_or(if cf {0} else {8});
+        let mt = fn_type.unwrap_or(MethodType::Static);
+        if target_match == 0 {return}
+        if let Type::Function(ref ret, ref params) = fty {
+            if let Some(llt) = ret.llvm_type(ctx) {
+                let mut good = true;
+                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                if good && !ctx.is_const.get() {
+                    let ft = llt.fn_type(ps.as_slice(), false);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    match inline {
+                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
+                    f.set_call_conventions(cc);
+                    if let Some(link) = link_type {
+                        f.as_global_value().set_linkage(link)
+                    }
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen(ctx).0;
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                ctx.is_const.set(old_const);
+                                match val {
+                                    Ok(val) => 
+                                        if let Some(val) = val.inter_val {val}
+                                        else {
+                                            InterData::Null
+                                        }
+                                    Err(_) => {
+                                        InterData::Null
+                                    }
+                                }
+                            })).collect(),
+                            cconv: cc,
+                            mt
+                        })),
+                        fty.clone(),
+                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+                }
+            }
+        }
+        else {unreachable!()}
+    }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let oic = ctx.is_const.replace(true);
-        let ret = if let Ok(Value {inter_val: Some(InterData::Type(t)), data_type: Type::TypeData, ..}) = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx) {*t} else {Type::Error};
-        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (if let Ok(Value {inter_val: Some(InterData::Type(t)), data_type: Type::TypeData, ..}) = types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx) {*t} else {Type::Error}, pt == &ParamType::Constant)).collect());
+        let ret = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
         ctx.is_const.set(oic);
         out
     }
@@ -283,7 +464,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
@@ -398,7 +579,7 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
