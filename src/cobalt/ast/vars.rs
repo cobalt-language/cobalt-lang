@@ -2,6 +2,7 @@ use crate::*;
 use inkwell::values::BasicValueEnum::*;
 use inkwell::module::Linkage::*;
 use glob::Pattern;
+use std::collections::HashSet;
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -957,14 +958,32 @@ pub struct ConstDefAST {
     pub name: DottedName,
     pub val: Box<dyn AST>,
     pub type_: Option<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, Location)>,
+    lastmissing: CellExt<HashSet<String>>
 }
 impl ConstDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ConstDefAST {loc, name, val, type_, annotations}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ConstDefAST {loc, name, val, type_, annotations, lastmissing: CellExt::default()}}
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
+    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc.clone()))));}
+    fn constinit_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>, needs_another: &mut bool) {
+        let mut missing = HashSet::new();
+        let pp = ctx.prepass.replace(true);
+        for err in self.codegen(ctx).1 {
+            if err.1 == 394 {
+                let mut trimmed = &err.0.labels[0].message[13..];
+                if let Some(idx) = trimmed.find(' ') {trimmed = &trimmed[..idx];}
+                missing.insert(trimmed.to_string());
+            }
+        }
+        self.lastmissing.map(|v| {
+            *needs_another |= !missing.is_empty() && (v.is_empty() || v.len() > missing.len());
+            missing
+        });
+        ctx.prepass.set(pp);
+    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let mut vis_spec = None;
@@ -1036,7 +1055,7 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc.clone(), vs)))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|x| x.1 == 394), ..VariableData::with_vis(self.loc.clone(), vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
@@ -1074,14 +1093,32 @@ pub struct TypeDefAST {
     pub name: DottedName,
     pub val: Box<dyn AST>,
     pub annotations: Vec<(String, Option<String>, Location)>,
-    pub methods: Vec<Box<dyn AST>>
+    pub methods: Vec<Box<dyn AST>>,
+    lastmissing: CellExt<HashSet<String>>
 }
 impl TypeDefAST {
-    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, methods: Vec<Box<dyn AST>>) -> Self {TypeDefAST {loc, name, val, annotations, methods}}
+    pub fn new(loc: Location, name: DottedName, val: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, methods: Vec<Box<dyn AST>>) -> Self {TypeDefAST {loc, name, val, annotations, methods, lastmissing: CellExt::default()}}
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
+    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc.clone()))));}
+    fn constinit_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>, needs_another: &mut bool) {
+        let mut missing = HashSet::new();
+        let pp = ctx.prepass.replace(true);
+        for err in self.codegen(ctx).1 {
+            if err.1 == 394 {
+                let mut trimmed = &err.0.labels[0].message[13..];
+                if let Some(idx) = trimmed.find(' ') {trimmed = &trimmed[..idx];}
+                missing.insert(trimmed.to_string());
+            }
+        }
+        self.lastmissing.map(|v| {
+            *needs_another |= !missing.is_empty() && (v.is_empty() || v.len() > missing.len());
+            missing
+        });
+        ctx.prepass.set(pp);
+    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let mut vis_spec = None;
@@ -1143,7 +1180,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData::with_vis(self.loc.clone(), vs)))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|x| x.1 == 394), ..VariableData::with_vis(self.loc.clone(), vs)}))) {
             Ok(x) => {
                 (x.0.clone(), errs)
             },
@@ -1202,7 +1239,7 @@ impl AST for VarGetAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         match ctx.lookup(&self.name, self.global) {
-            Some(Symbol(x, _)) => (x.clone(), vec![]),
+            Some(Symbol(x, d)) => (x.clone(), if d.init {vec![]} else {vec![Diagnostic::error(self.loc.clone(), 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name)))]}),
             None => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 320, Some(format!("{} does not exist", self.name)))])
         }
     }

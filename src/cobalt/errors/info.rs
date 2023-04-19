@@ -124,7 +124,8 @@ pub static ERR_REGISTRY: &[(u64, &[Option<ErrorInfo>])] = &[
     /*390*/ ErrorInfo::new("unknown literal suffix", ""),
     /*391*/ ErrorInfo::new("unknown intrinisc", ""),
     /*392*/ ErrorInfo::new("array literal is too long", ""),
-    /*393*/ ErrorInfo::new("methods and getters require the first parameter to be convertible from a reference to self", "")]),
+    /*393*/ ErrorInfo::new("methods and getters require the first parameter to be convertible from a reference to self", ""),
+    /*394*/ ErrorInfo::new("variable is uninitialized", "")]),
     (410, &[
     /*410*/ ErrorInfo::new("unknown annotation", ""),
     /*411*/ ErrorInfo::new("@static annotation cannot have arguments", ""),
