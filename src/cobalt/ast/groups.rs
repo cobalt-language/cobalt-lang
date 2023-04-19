@@ -117,4 +117,18 @@ impl AST for TopLevelAST {
 }
 impl TopLevelAST {
     pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {loc, vals}}
+    pub fn run_passes<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+        let mut again = true;
+        while again {
+            again = false;
+            self.vals.iter().for_each(|val| val.constinit_prepass(ctx, &mut again));
+        }
+        self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+    }
+}
+impl std::fmt::Display for TopLevelAST {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self as &dyn AST)
+    }
 }
