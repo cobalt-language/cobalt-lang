@@ -1360,7 +1360,7 @@ impl AST for TypeDefAST {
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
         });
         ctx.nominals.borrow_mut().insert(mangled.clone(), (ty, true, Default::default()));
-        self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});
+        if !ctx.prepass.get() {self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});}
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
