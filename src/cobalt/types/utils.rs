@@ -1,7 +1,7 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
-use inkwell::values::{BasicValueEnum::*, BasicMetadataValueEnum, CallableValue};
-use inkwell::types::{BasicType, BasicMetadataTypeEnum};
+use inkwell::values::{BasicValueEnum::*, BasicMetadataValueEnum, CallableValue, BasicValue};
+use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
@@ -2281,12 +2281,11 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                     MethodType::Normal => {
                         let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false);
                         let mut v = Value::metaval(iv.clone(), bm);
-                        if let (Some(vv), Some(f), Some(llt)) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
-                            let a = ctx.builder.build_alloca(llt, "");
-                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 0, "").unwrap(), vv);
-                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 1, "").unwrap(), *f);
-                            v.comp_val = Some(ctx.builder.build_load(a, ""));
-                            v.address.set(Some(a));
+                        if let (Some(vv), Some(f), Some(StructType(llt))) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
+                            let v0 = llt.get_undef();
+                            let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                            let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                            v.comp_val = Some(v2.as_basic_value_enum());
                         }
                         Ok(v)
                     },
