@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -6,12 +5,11 @@ use std::ffi::OsString;
 use std::process::Command;
 use std::cell::RefCell;
 use serde::*;
-use colored::Colorize;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST};
-use super::{libs, opt, package};
+use super::{libs, opt, package, warning, error};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
     pub name: String,
@@ -125,19 +123,18 @@ impl TargetData {
         out
     }
     pub fn init_all(&mut self, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, link_dirs: &Vec<&str>) -> Result<(), i32> {
-        let ERROR = "error".bright_red().bold();
         let mut libs = self.missing_libs(targets);
         libs.sort();
         libs.dedup();
         match libs::find_libs(libs.clone(), link_dirs, None) {
             Ok((libs, notfound, failed)) => {
-                for nf in notfound.iter() {eprintln!("{ERROR}: couldn't find library {nf}");}
+                for nf in notfound.iter() {error!("couldn't find library {nf}");}
                 if !notfound.is_empty() {return Err(102)}
                 libs.into_iter().for_each(|(path, name)| self.init_lib(&name, &path, targets));
                 if failed {Err(99)} else {Ok(())}
             },
             Err(e) => {
-                eprintln!("{ERROR}: {e}");
+                error!("{e}");
                 Err(100)
             }
         }
@@ -210,10 +207,8 @@ fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> 
     Ok(((out_path, overall_fail), Some(ast)))
 }
 fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
-    let ERROR = &"error".bright_red().bold();
-    let MODULE = &"module".blue().bold();
     let files = &*cobalt::errors::files::FILES.read().unwrap();
-    let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
+    let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
     let config = term::Config::default();
     let (_, errs) = ast.codegen(ctx);
     let mut fail = false;
@@ -224,7 +219,7 @@ fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions
         return Err(101)
     }
     if let Err(msg) = ctx.module.verify() {
-        eprintln!("{ERROR}: {MODULE}: {}", msg.to_string());
+        error!("\n{}", msg.to_string());
         ctx.with_vars(|v| clear_mod(&v.symbols));
         return Err(101)
     }
@@ -254,8 +249,6 @@ fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions
     Ok(())
 }
 fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> i32 {
-    let ERROR = &"error".bright_red().bold();
-    let WARNING = &"warning".bright_yellow().bold();
     let name = &t.name;
     println!("Building target {name}");
     match t.target_type {
@@ -265,7 +258,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {
                             println!("Failed to build {name} because of a failure in dependencies");
-                            eprintln!("{ERROR}: target {target:?} is not a target in this project");
+                            error!("target {target:?} is not a target in this project");
                             return 105
                         };
                         if d.borrow().is_some() {continue}
@@ -285,22 +278,22 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
                                 Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
                                 Err(package::InstallError::DownloadError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 4
                                 },
                                 Err(package::InstallError::StdIoError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 3
                                 },
                                 Err(package::InstallError::GitCloneError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 2
                                 },
                                 Err(package::InstallError::ZipExtractError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 5
                                 },
@@ -315,17 +308,17 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                     return 7
                                 },
                                 Err(package::InstallError::CfgFileError(e)) => {
-                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    error!("could not parse {target}'s config file: {e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 8
                                 },
                                 Err(package::InstallError::InvalidVersionSpec(_, v)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    error!("could not parse {target}'s dependencies: invalid version spec {v}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 9
                                 },
                                 Err(package::InstallError::PkgNotFound(p)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    error!("could not parse {target}'s dependencies: can't find package {p}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 10
                                 },
@@ -333,13 +326,13 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             }
                         }
                         else {
-                            eprintln!("{ERROR}: can't find package {target}");
+                            error!("can't find package {target}");
                             println!("Failed to build {name} because of a failure in dependencies");
                             return 10
                         }
                     }
                     else {
-                        eprintln!("{ERROR}: unknown version specification {x:?}");
+                        error!("unknown version specification {x:?}");
                         println!("Failed to build {name} because of a failure in dependencies");
                         return 107
                     }
@@ -375,14 +368,14 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         println!("Failed to build {name} because of compile errors");
                         return ecode;
                     }
-                    if !passed {eprintln!("{WARNING}: no files matching glob {files}")}
+                    if !passed {warning!("no files matching glob {files}")}
                 },
                 Some(either::Right(files)) => {
                     let mut failed = false;
                     let mut ecode = 0;
                     for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {
-                            eprintln!("{ERROR}: couldn't find file {file}");
+                            error!("couldn't find file {file}");
                             if opts.continue_build {
                                 failed = true;
                                 continue
@@ -413,7 +406,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     }
                 },
                 None => {
-                    eprintln!("{ERROR}: library target must have files");
+                    error!("library target must have files");
                     println!("Failed to build {name} because no files were specified");
                     return 106;
                 }
@@ -447,7 +440,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {
                             println!("Failed to build {name} because of a failure in dependencies");
-                            eprintln!("{ERROR}: target {target:?} is not a target in this project");
+                            error!("target {target:?} is not a target in this project");
                             return 105
                         };
                         if d.borrow().is_some() {continue}
@@ -467,22 +460,22 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
                                 Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
                                 Err(package::InstallError::DownloadError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 4
                                 },
                                 Err(package::InstallError::StdIoError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 3
                                 },
                                 Err(package::InstallError::GitCloneError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 2
                                 },
                                 Err(package::InstallError::ZipExtractError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 5
                                 },
@@ -497,17 +490,17 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                     return 7
                                 },
                                 Err(package::InstallError::CfgFileError(e)) => {
-                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    error!("could not parse {target}'s config file: {e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 8
                                 },
                                 Err(package::InstallError::InvalidVersionSpec(_, v)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    error!("could not parse {target}'s dependencies: invalid version spec {v}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 9
                                 },
                                 Err(package::InstallError::PkgNotFound(p)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    error!("could not parse {target}'s dependencies: can't find package {p}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 10
                                 },
@@ -515,13 +508,13 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             }
                         }
                         else {
-                            eprintln!("{ERROR}: can't find package {target}");
+                            error!("can't find package {target}");
                             println!("Failed to build {name} because of a failure in dependencies");
                             return 10
                         }
                     }
                     else {
-                        eprintln!("{ERROR}: unknown version specification {x:?}");
+                        error!("unknown version specification {x:?}");
                         println!("Failed to build {name} because of a failure in dependencies");
                         return 107
                     }
@@ -557,14 +550,14 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         println!("Failed to build {name} because of compile errors");
                         return ecode;
                     }
-                    if !passed {eprintln!("{WARNING}: no files matching glob {files}")}
+                    if !passed {warning!("no files matching glob {files}")}
                 },
                 Some(either::Right(files)) => {
                     let mut failed = false;
                     let mut ecode = 0;
                     for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {
-                            eprintln!("{ERROR}: couldn't find file {file}");
+                            error!("couldn't find file {file}");
                             if opts.continue_build {
                                 failed = true;
                                 continue
@@ -595,7 +588,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     }
                 },
                 None => {
-                    eprintln!("{ERROR}: library target must have files");
+                    error!("library target must have files");
                     println!("Failed to build {name} because no files were specified");
                     return 106;
                 }
@@ -611,7 +604,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             if code != 0 {println!("Failed to build {name} because of link errors"); return code}
             let mut buf = Vec::<u8>::new();
             if let Err(e) = ctx.save(&mut buf) {
-                eprintln!("{ERROR}: {e}");
+                error!("{e}");
                 return 4
             }
             let tmp = temp_file::with_contents(&buf);
@@ -629,7 +622,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
         },
         TargetType::Meta => {
             if t.files.is_some() {
-                eprintln!("{ERROR}: meta target cannot have files");
+                error!("meta target cannot have files");
                 return 106;
             }
             for (target, version) in t.deps.iter() {
@@ -637,7 +630,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     "project" => {
                         let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {
                             println!("Failed to build {name} because of a failure in dependencies");
-                            eprintln!("{ERROR}: target {target:?} is not a target in this project");
+                            error!("target {target:?} is not a target in this project");
                             return 105
                         };
                         if d.borrow().is_some() {continue}
@@ -657,22 +650,22 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             match pkg.install(opts.triple.as_str().to_str().unwrap(), Some(v), package::InstallOptions::default()) {
                                 Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
                                 Err(package::InstallError::DownloadError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 4
                                 },
                                 Err(package::InstallError::StdIoError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 3
                                 },
                                 Err(package::InstallError::GitCloneError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 2
                                 },
                                 Err(package::InstallError::ZipExtractError(e)) => {
-                                    eprintln!("{ERROR}: {e}");
+                                    error!("{e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 5
                                 },
@@ -687,17 +680,17 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                     return 7
                                 },
                                 Err(package::InstallError::CfgFileError(e)) => {
-                                    eprintln!("{ERROR} in {target}'s config file: {e}");
+                                    error!("could not parse {target}'s config file: {e}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 8
                                 },
                                 Err(package::InstallError::InvalidVersionSpec(_, v)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: invalid version spec {v}");
+                                    error!("could not parse {target}'s dependencies: invalid version spec {v}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 9
                                 },
                                 Err(package::InstallError::PkgNotFound(p)) => {
-                                    eprintln!("{ERROR} in {target}'s dependencies: can't find package {p}");
+                                    error!("could not parse {target}'s dependencies: can't find package {p}");
                                     println!("Failed to build {name} because of a failure in dependencies");
                                     return 10
                                 },
@@ -705,13 +698,13 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                             }
                         }
                         else {
-                            eprintln!("{ERROR}: can't find package {target}");
+                            error!("can't find package {target}");
                             println!("Failed to build {name} because of a failure in dependencies");
                             return 10
                         }
                     }
                     else {
-                        eprintln!("{ERROR}: unknown version specification {x:?}");
+                        error!("unknown version specification {x:?}");
                         println!("Failed to build {name} because of a failure in dependencies");
                         return 107
                     }
@@ -723,10 +716,9 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
     }
 }
 pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -> i32 {
-    let ERROR = "error".bright_red().bold();
     if let Some(v) = &pkg.co_version {
         if !v.matches(&env!("CARGO_PKG_VERSION").parse::<Version>().unwrap()) {
-            eprintln!(r#"{ERROR}: project has Cobalt version requirement "{v}", but Cobalt version is {}"#, env!("CARGO_PKG_VERSION"));
+            error!(r#"project has Cobalt version requirement "{v}", but Cobalt version is {}"#, env!("CARGO_PKG_VERSION"));
             return 104;
         }
     }
@@ -737,7 +729,7 @@ pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {t} else {
-                eprintln!("{ERROR}: target {target_name:?} is not a target in this project");
+                error!("target {target_name:?} is not a target in this project");
                 return 105;
             };
             if data.borrow().is_some() {continue}

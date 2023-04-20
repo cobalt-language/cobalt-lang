@@ -1,10 +1,10 @@
 use std::process::exit;
 use std::fs::read;
 use std::env::var;
-use colored::Colorize;
 use inkwell::passes::*;
 use inkwell::OptimizationLevel::*;
 use inkwell::module::Module;
+use super::{error, warning};
 pub enum AdditionalArg {
     Null,
     Bool(bool),
@@ -101,9 +101,7 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
     }
     true
 }
-#[allow(non_snake_case)]
 pub fn from_file(data: &str, pm: &PassManager<Module>) {
-    let WARNING = "warning".bright_yellow().bold();
     for (n, mut line) in data.split('\n').enumerate() {
         let n = n + 1;
         if let Some(idx) = line.find('#') {line = &line[..idx];}
@@ -113,35 +111,35 @@ pub fn from_file(data: &str, pm: &PassManager<Module>) {
             let val = line[(idx + 1)..].trim().to_lowercase();
             if val.is_empty() {
                 if !add_pass(pm, pass, Null) {
-                    eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                    warning!("{n}: unknown pass '{pass}'");
                 }
             }
             else if val == "true" {
                 if !add_pass(pm, pass, Bool(true)) {
-                    eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                    warning!("{n}: unknown pass '{pass}'");
                 }
             }
             else if val == "false" {
                 if !add_pass(pm, pass, Bool(false)) {
-                    eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                    warning!("{n}: unknown pass '{pass}'");
                 }
             }
             else if let Ok(val) = val.parse() {
                 if !add_pass(pm, pass, Int(val)) {
-                    eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                    warning!("{n}: unknown pass '{pass}'");
                 }
             }
             else {
-                eprintln!("{WARNING}:{n}: unrecognized value '{val}'");
+                warning!("{n}: unrecognized value '{val}'");
                 if !add_pass(pm, pass, Null) {
-                    eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                    warning!("{n}: unknown pass '{pass}'");
                 }
             }
         }
         else {
             let pass = line.trim();
             if !add_pass(pm, pass, Null) {
-                eprintln!("{WARNING}:{n}: unknown pass '{pass}'");
+                warning!("{n}: unknown pass '{pass}'");
             }
         }
     }
@@ -190,7 +188,7 @@ pub fn load_profile(name: Option<&str>, pm: &PassManager<Module>) {
             pmb.populate_module_pass_manager(pm);
         },
         _ => {
-            eprintln!("{}: couldn't find profile {name}", "error".bright_red().bold());
+            error!("couldn't find profile {name}");
             exit(103);
         }
     }
