@@ -2275,7 +2275,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                 attr((val, vloc), (id, iloc), ctx)
             }
         },
-        Type::Nominal(n) => 
+        Type::Nominal(n) => {
             ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
                 match mt {
                     MethodType::Normal => {
@@ -2297,7 +2297,8 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                         types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                     }
                 }
-            } else {Err(err)}),
+            } else {Err(err)})
+        },
         _ => Err(err)
     }
 }

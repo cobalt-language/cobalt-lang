@@ -2,7 +2,7 @@ use crate::*;
 use inkwell::values::{AsValueRef, GlobalValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
 use glob::Pattern;
-use std::collections::HashSet;
+use std::collections::{HashSet, hash_map::Entry};
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -1286,7 +1286,31 @@ impl TypeDefAST {
 impl AST for TypeDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
-    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc.clone()))));}
+    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc.clone()))));
+        let mangled = ctx.mangle(&self.name);
+        ctx.map_vars(|v| {
+            let mut vm = VarMap::new(Some(v));
+            let mut noms = ctx.nominals.borrow_mut();
+            if let Some(data) = noms.get_mut(&mangled) {vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| (k, Symbol(v, VariableData {fwd: true, ..Default::default()}))))}
+            Box::new(vm)
+        });
+        let pp = ctx.prepass.replace(true);
+        let old_scope = ctx.push_scope(&self.name);
+        ctx.with_vars(|v| {
+            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null.clone()).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+        });
+        {
+            let mut noms = ctx.nominals.borrow_mut();
+            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default()));}
+        }
+        self.methods.iter().for_each(|a| a.varfwd_prepass(ctx));
+        let mut noms = ctx.nominals.borrow_mut();
+        ctx.restore_scope(old_scope);
+        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        ctx.prepass.set(pp);
+    }
     fn constinit_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>, needs_another: &mut bool) {
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
@@ -1301,7 +1325,50 @@ impl AST for TypeDefAST {
             *needs_another |= !missing.is_empty() && (v.is_empty() || v.len() > missing.len());
             missing
         });
+        let mangled = ctx.mangle(&self.name);
+        ctx.map_vars(|v| {
+            let mut vm = VarMap::new(Some(v));
+            let mut noms = ctx.nominals.borrow_mut();
+            if let Some(data) = noms.get_mut(&mangled) {vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| (k, Symbol(v, VariableData {fwd: true, ..Default::default()}))))}
+            Box::new(vm)
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        ctx.with_vars(|v| {
+            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null.clone()).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+        });
+        {
+            let mut noms = ctx.nominals.borrow_mut();
+            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default()));}
+        }
+        self.methods.iter().for_each(|a| a.constinit_prepass(ctx, needs_another));
+        let mut noms = ctx.nominals.borrow_mut();
+        ctx.restore_scope(old_scope);
+        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
         ctx.prepass.set(pp);
+    }
+    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        let mangled = ctx.mangle(&self.name);
+        ctx.map_vars(|v| {
+            let mut vm = VarMap::new(Some(v));
+            let mut noms = ctx.nominals.borrow_mut();
+            if let Some(data) = noms.get_mut(&mangled) {vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| (k, Symbol(v, VariableData {fwd: true, ..Default::default()}))))}
+            Box::new(vm)
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        let ty = types::utils::impl_convert((0, 0..0), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        ctx.with_vars(|v| {
+            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+        });
+        match ctx.nominals.borrow_mut().entry(mangled.clone()) {
+            Entry::Occupied(mut x) => x.get_mut().0 = ty,
+            Entry::Vacant(x) => {x.insert((ty, true, Default::default()));}
+        }
+        self.methods.iter().for_each(|a| a.fwddef_prepass(ctx));
+        let mut noms = ctx.nominals.borrow_mut();
+        ctx.restore_scope(old_scope);
+        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
@@ -1352,14 +1419,22 @@ impl AST for TypeDefAST {
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
-        let old_scope = ctx.push_scope(&self.name);
         let mangled = ctx.mangle(&self.name);
+        ctx.map_vars(|v| {
+            let mut vm = VarMap::new(Some(v));
+            let mut noms = ctx.nominals.borrow_mut();
+            if let Some(data) = noms.get_mut(&mangled) {vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| (k, Symbol(v, VariableData {fwd: true, ..Default::default()}))))}
+            Box::new(vm)
+        });
+        let old_scope = ctx.push_scope(&self.name);
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
         });
-        ctx.nominals.borrow_mut().insert(mangled.clone(), (ty, true, Default::default()));
+        match ctx.nominals.borrow_mut().entry(mangled.clone()) {
+            Entry::Occupied(mut x) => x.get_mut().0 = ty,
+            Entry::Vacant(x) => {x.insert((ty, true, Default::default()));}
+        }
         if !ctx.prepass.get() {self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});}
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);

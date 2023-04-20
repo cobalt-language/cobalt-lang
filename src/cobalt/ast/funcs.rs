@@ -189,16 +189,7 @@ impl AST for FnDefAST {
                                 let val = a.codegen(ctx).0;
                                 let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
-                                match val {
-                                    Ok(val) => 
-                                        if let Some(val) = val.inter_val {val}
-                                        else {
-                                            InterData::Null
-                                        }
-                                    Err(_) => {
-                                        InterData::Null
-                                    }
-                                }
+                                val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
                             })).collect(),
                             cconv: cc,
                             mt
@@ -207,8 +198,59 @@ impl AST for FnDefAST {
                     ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
                 }
             }
+            else if **ret == Type::Null {
+                let mut good = true;
+                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                if good && !ctx.is_const.get() {
+                    let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
+                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    match inline {
+                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
+                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        _ => {}
+                    }
+                    f.set_call_conventions(cc);
+                    if let Some(link) = link_type {
+                        f.as_global_value().set_linkage(link)
+                    }
+                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(InterData::Function(FnData {
+                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen(ctx).0;
+                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                ctx.is_const.set(old_const);
+                                val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
+                            })).collect(),
+                            cconv: cc,
+                            mt
+                        })),
+                        fty.clone(),
+                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+                }
+            }
+            else {
+                let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                    None,
+                    Some(InterData::Function(FnData {
+                        defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                            let old_const = ctx.is_const.replace(true);
+                            let val = a.codegen(ctx).0;
+                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                            ctx.is_const.set(old_const);
+                            val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
+                        })).collect(),
+                        cconv: cc,
+                        mt
+                    })),
+                    fty
+                ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+            }
         }
-        else {unreachable!()}
+        else {unreachable!()};
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let oic = ctx.is_const.replace(true);
