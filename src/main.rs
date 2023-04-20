@@ -7,6 +7,7 @@ use std::io::{Read, Write, BufReader};
 use std::ffi::OsString;
 use path_calculate::*;
 use std::path::{Path, PathBuf};
+use cobalt::AST;
 mod libs;
 mod opt;
 mod build;

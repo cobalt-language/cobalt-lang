@@ -8,7 +8,7 @@ use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
-use cobalt::{CompCtx, Value, Type, InterData};
+use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST};
 use super::{libs, opt, package, warning, error};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -145,20 +145,25 @@ impl TargetData {
         out
     }
 }
-fn clear_mod<'ctx>(this: &mut HashMap<String, cobalt::Symbol<'ctx>>, module: &inkwell::module::Module<'ctx>) {
-    for (_, sym) in this.iter_mut() {
+fn clear_mod<'ctx>(this: &HashMap<String, cobalt::Symbol<'ctx>>) {
+    for (_, sym) in this.iter() {
         match sym {
-            cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m, module),
+            cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
             cobalt::Symbol(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
-                let t = inkwell::types::BasicTypeEnum::try_from(pv.get_type().get_element_type());
-                if let Ok(t) = t {
-                    v.comp_val = Some(inkwell::values::BasicValueEnum::PointerValue(module.add_global(t, None, pv.get_name().to_str().expect("Global variable should have a name!")).as_pointer_value()));
+                unsafe {
+                    if matches!(v.data_type, Type::Function(..)) {
+                        let f = std::mem::transmute::<_, inkwell::values::FunctionValue>(pv);
+                        while let Some(bb) = f.get_first_basic_block() {bb.remove_from_function().unwrap();}
+                    }
+                    else {
+                        std::mem::transmute::<_, inkwell::values::GlobalValue>(pv).set_externally_initialized(true)
+                    }
                 }
             }
         }
     }
 }
-fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -> Result<PathBuf, i32> {
+fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> Result<((PathBuf, bool), Option<TopLevelAST>), i32> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
@@ -172,12 +177,11 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     };
     if out_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
         println!("{} has already been built", pname.display());
-        return Ok(out_path);
+        return Ok(((out_path, false), None));
     }
     println!("Compiling {}", pname.display());
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
     let config = term::Config::default();
-    let flags = cobalt::Flags::default();
     let name = path.to_str().expect("File name must be valid UTF-8");
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
@@ -192,38 +196,35 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
     };
     let file = cobalt::errors::files::add_file(name.to_string(), code.clone());
     let files = &*cobalt::errors::files::FILES.read().unwrap();
-    let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &flags);
+    let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {println!(); return Err(101)}
     overall_fail |= fail;
     fail = false;
-    let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+    let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {println!(); return Err(101)}
+    Ok(((out_path, overall_fail), Some(ast)))
+}
+fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
+    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
+    let config = term::Config::default();
     let (_, errs) = ast.codegen(ctx);
-    overall_fail |= fail;
-    fail = false;
+    let mut fail = false;
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+    overall_fail |= fail;
     if fail && !opts.continue_comp {
-        let new = ctx.context.create_module("");
-        new.set_triple(&ctx.module.get_triple());
-        ctx.with_vars(|v| clear_mod(&mut v.symbols, &new));
-        ctx.module = new;
+        ctx.with_vars(|v| clear_mod(&v.symbols));
         return Err(101)
     }
     if let Err(msg) = ctx.module.verify() {
         error!("\n{}", msg.to_string());
-        let new = ctx.context.create_module("");
-        new.set_triple(&ctx.module.get_triple());
-        ctx.with_vars(|v| clear_mod(&mut v.symbols, &new));
-        ctx.module = new;
+        ctx.with_vars(|v| clear_mod(&v.symbols));
         return Err(101)
     }
     if overall_fail {
-        let new = ctx.context.create_module("");
-        new.set_triple(&ctx.module.get_triple());
-        ctx.with_vars(|v| clear_mod(&mut v.symbols, &new));
-        ctx.module = new;
+        ctx.with_vars(|v| clear_mod(&v.symbols));
         return Err(101)
     }
     let pm = inkwell::passes::PassManager::create(());
@@ -237,18 +238,17 @@ fn build_file<'ctx>(path: &Path, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -
         inkwell::targets::RelocMode::PIC,
         inkwell::targets::CodeModel::Small
     ).expect("failed to create target machine");
+    println!("made target machine for {out_path:?}");
     if let Err(e) = if out_path.parent().unwrap().exists() {Ok(())} else {std::fs::create_dir_all(out_path.parent().unwrap())} {
         eprintln!("error when creating directory {}: {e}", out_path.parent().unwrap().display());
         return Err(100)
     }
-    target_machine.write_to_file(&ctx.module, inkwell::targets::FileType::Object, out_path.as_path()).unwrap();
-    let new = ctx.context.create_module("");
-    new.set_triple(&ctx.module.get_triple());
-    ctx.with_vars(|v| clear_mod(&mut v.symbols, &new));
-    ctx.module = new;
-    Ok(out_path)
+    target_machine.write_to_file(&ctx.module, inkwell::targets::FileType::Object, out_path).unwrap();
+    println!("built artifact for {out_path:?}");
+    ctx.with_vars(|v| clear_mod(&v.symbols));
+    Ok(())
 }
-fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &mut CompCtx<'ctx>, opts: &BuildOptions) -> i32 {
+fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> i32 {
     let name = &t.name;
     println!("Building target {name}");
     match t.target_type {
@@ -339,8 +339,9 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 }
             }
             let mut paths = vec![];
+            let mut asts = vec![];
             match t.files.as_ref() {
-            Some(either::Left(files)) => {
+                Some(either::Left(files)) => {
                     let mut passed = false;
                     let mut ecode = 0;
                     for file in (match glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()) {
@@ -351,8 +352,11 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         }
                     }).filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        match build_file(file.as_path(), ctx, opts) {
-                            Ok(path) => paths.push(path),
+                        match build_file_1(file.as_path(), ctx, opts) {
+                            Ok((path, ast)) => {
+                                paths.push(path);
+                                asts.push(ast);
+                            },
                             Err(code) => if  opts.continue_build {ecode = code} else {
                                 println!("Failed to build {name} because of compile errors");
                                 return code
@@ -381,8 +385,11 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                 return 120
                             }
                         }
-                        match build_file(Path::new(&file), ctx, opts) {
-                            Ok(path) => paths.push(path),
+                        match build_file_1(Path::new(&file), ctx, opts) {
+                            Ok((path, ast)) => {
+                                paths.push(path);
+                                asts.push(ast);
+                            },
                             Err(code) => if opts.continue_build {ecode = code} else {
                                 println!("Failed to build {name} because of compile errors");
                                 return code
@@ -404,10 +411,12 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     return 106;
                 }
             }
+            asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
+            if let Err(err) = paths.iter().zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(&t.name);
             let mut args = vec![OsString::from("-o"), output.into_os_string()];
-            args.extend(paths.into_iter().map(|x| x.into_os_string()));
+            args.extend(paths.into_iter().map(|x| x.0.into_os_string()));
             if let Err(e) = data.borrow_mut().as_mut().unwrap().init_all(targets, &opts.link_dirs) {return e}
             for lib in data.borrow().as_ref().unwrap().initialized_libs(targets) {
                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
@@ -512,6 +521,7 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 }
             }
             let mut paths = vec![];
+            let mut asts = vec![];
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -520,13 +530,15 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         Ok(f) => f,
                         Err(e) => {
                             eprintln!("error in file glob: {e}");
-                            println!("Failed to build {name} because of an error in the glob");
                             return 108;
                         }
                     }).filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        match build_file(file.as_path(), ctx, opts) {
-                            Ok(path) => paths.push(path),
+                        match build_file_1(file.as_path(), ctx, opts) {
+                            Ok((path, ast)) => {
+                                paths.push(path);
+                                asts.push(ast);
+                            },
                             Err(code) => if  opts.continue_build {ecode = code} else {
                                 println!("Failed to build {name} because of compile errors");
                                 return code
@@ -555,8 +567,11 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                                 return 120
                             }
                         }
-                        match build_file(Path::new(&file), ctx, opts) {
-                            Ok(path) => paths.push(path),
+                        match build_file_1(Path::new(&file), ctx, opts) {
+                            Ok((path, ast)) => {
+                                paths.push(path);
+                                asts.push(ast);
+                            },
                             Err(code) => if opts.continue_build {ecode = code} else {
                                 println!("Failed to build {name} because of compile errors");
                                 return code
@@ -578,11 +593,13 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     return 106;
                 }
             }
+            asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
+            if let Err(err) = paths.iter().zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("lib{}.so", t.name));
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
-            cmd.args(paths);
+            cmd.args(paths.into_iter().map(|(x, _)| x));
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {println!("Failed to build {name} because of link errors"); return code}
             let mut buf = Vec::<u8>::new();
@@ -708,6 +725,7 @@ pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -
     let targets = pkg.into_targets().map(|t| (t.name.clone(), (t, RefCell::new(None)))).collect::<HashMap<String, (Target, RefCell<Option<TargetData>>)>>();
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
+    ctx.flags.prepass = false;
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {t} else {
@@ -716,7 +734,7 @@ pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -
             };
             if data.borrow().is_some() {continue}
             else {*data.borrow_mut() = Some(TargetData::default())}
-            let res = build_target(target, data, &targets, &mut ctx, opts);
+            let res = build_target(target, data, &targets, &ctx, opts);
             if res != 0 {return res}
         }
     }

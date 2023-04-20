@@ -18,12 +18,19 @@ impl Display for TreePrefix {
 }
 pub trait AST {
     fn loc(&self) -> Location;
+    // AST properties
     fn is_const(&self) -> bool {false}
     fn expl_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> bool {false}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>);
+    // pretty printing
     fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
+    // prepasses
+    fn varfwd_prepass<'ctx>(&self, _ctx: &CompCtx<'ctx>) {} // runs once, inserts uninit symbols with correct names
+    fn constinit_prepass<'ctx>(&self, _ctx: &CompCtx, _needs_another: &mut bool) {} // runs while needs_another is set to true, pretty much only for ConstDefAST
+    fn fwddef_prepass<'ctx>(&self, _ctx: &CompCtx) {} // create forward definitions for functions in LLVM
+    // code generation
+    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>);
     fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let old_is_const = ctx.is_const.replace(true);
         let res = self.codegen(ctx);

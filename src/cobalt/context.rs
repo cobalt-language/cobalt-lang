@@ -13,6 +13,7 @@ pub struct CompCtx<'ctx> {
     pub is_const: Cell<bool>,
     pub global: Cell<bool>,
     pub export: Cell<bool>,
+    pub prepass: Cell<bool>,
     pub null_type: inkwell::types::BasicTypeEnum<'ctx>,
     pub priority: Counter,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>)>>,
@@ -30,6 +31,7 @@ impl<'ctx> CompCtx<'ctx> {
             is_const: Cell::new(false),
             global: Cell::new(false),
             export: Cell::new(false),
+            prepass: Cell::new(false),
             null_type: ctx.opaque_struct_type("null").into(),
             priority: Counter::max(),
             nominals: RefCell::default(),
@@ -56,6 +58,7 @@ impl<'ctx> CompCtx<'ctx> {
             is_const: Cell::new(false),
             global: Cell::new(false),
             export: Cell::new(false),
+            prepass: Cell::new(false),
             null_type: ctx.opaque_struct_type("null").into(),
             priority: Counter::max(),
             nominals: RefCell::default(),
@@ -150,6 +153,26 @@ impl<'ctx> CompCtx<'ctx> {
             x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
             _ => None
         })
+    }
+    pub fn lookup_full(&self, name: &DottedName) -> Option<Value<'ctx>> {
+        let v = self.lookup(&name.ids.first()?.0, name.global)?;
+        if !v.1.init {return None}
+        let mut v = v.0.clone();
+        for name in name.ids[1..].iter() {
+            v = match v {
+                Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..} => self.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &name.0, v)).and_then(|Symbol(v, d)| if d.init {Some(v)} else {None})?.clone(),
+                Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} => {
+                    if let Type::Nominal(n) = *t {
+                        self.nominals.borrow()[&n].2.get(&name.0)?.clone()
+                    }
+                    else {
+                        return None
+                    }
+                }
+                x => types::utils::attr((x, (0, 0..0)), (&name.0, (0, 0..0)), self).ok()?
+            };
+        }
+        Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (n, (t, e, m)) in self.nominals.borrow().iter() {

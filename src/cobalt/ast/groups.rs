@@ -82,6 +82,15 @@ impl AST for TopLevelAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+        if ctx.flags.prepass {
+            self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+            let mut again = true;
+            while again {
+                again = false;
+                self.vals.iter().for_each(|val| val.constinit_prepass(ctx, &mut again));
+            }
+            self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        }
         let mut errs = vec![];
         self.vals.iter().for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
         (Value::null(), errs)
@@ -108,4 +117,18 @@ impl AST for TopLevelAST {
 }
 impl TopLevelAST {
     pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {loc, vals}}
+    pub fn run_passes<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+        self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+        let mut again = true;
+        while again {
+            again = false;
+            self.vals.iter().for_each(|val| val.constinit_prepass(ctx, &mut again));
+        }
+        self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+    }
+}
+impl std::fmt::Display for TopLevelAST {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self as &dyn AST)
+    }
 }

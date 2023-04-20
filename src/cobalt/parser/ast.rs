@@ -2324,11 +2324,11 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
     }
     (outs, if toks.is_empty() {None} else {Some(i + 1)}, errs)
 }
-pub fn parse(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+pub fn parse(toks: &[Token], flags: &Flags) -> (TopLevelAST, Vec<Diagnostic>) {
     if toks.is_empty() {
-        return (Box::new(TopLevelAST::new((0, 0..0), vec![])), vec![])
+        return (TopLevelAST::new((0, 0..0), vec![]), vec![])
     }
     let start = toks[0].loc.clone(); // already bounds checked
     let (out, _, errs) = parse_tl(toks, flags, true);
-    (Box::new(TopLevelAST::new(start, out)), errs)
+    (TopLevelAST::new(start, out), errs)
 }

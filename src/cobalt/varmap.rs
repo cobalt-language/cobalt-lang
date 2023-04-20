@@ -15,6 +15,8 @@ pub enum RedefVariable<'ctx> {
 pub struct VariableData {
     pub good: bool,
     pub export: bool,
+    pub init: bool,
+    pub fwd: bool,
     pub loc: Option<Location>,
 }
 impl VariableData {
@@ -22,6 +24,8 @@ impl VariableData {
         VariableData {
             good: true,
             export: true,
+            init: true,
+            fwd: false,
             loc: Some(loc)
         }
     }
@@ -29,6 +33,26 @@ impl VariableData {
         VariableData {
             good: true,
             export,
+            init: true,
+            fwd: false,
+            loc: Some(loc)
+        }
+    }
+    pub fn uninit(loc: Location) -> Self {
+        VariableData {
+            good: false,
+            export: true,
+            init: false,
+            fwd: false,
+            loc: Some(loc)
+        }
+    }
+    pub fn uninit_vis(loc: Location, export: bool) -> Self {
+        VariableData {
+            good: false,
+            export,
+            init: false,
+            fwd: false,
             loc: Some(loc)
         }
     }
@@ -38,6 +62,8 @@ impl Default for VariableData {
         VariableData {
             good: true,
             export: true,
+            init: true,
+            fwd: false,
             loc: None
         }
     }
@@ -98,7 +124,15 @@ impl<'ctx> VarMap<'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(x) => Err(RedefVariable::AlreadyExists(idx, x.get().1.loc.clone(), sym)),
+            Entry::Occupied(x) => {
+                let data = x.get().1.clone();
+                if data.fwd || (data.loc.is_some() && data.loc == sym.1.loc) {
+                    let v = x.into_mut();
+                    *v = sym;
+                    Ok(&*v)
+                }
+                else {Err(RedefVariable::AlreadyExists(idx, x.get().1.loc.clone(), sym))}
+            },
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
     }

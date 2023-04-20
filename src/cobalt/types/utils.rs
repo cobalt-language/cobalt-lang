@@ -1,7 +1,7 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
-use inkwell::values::{BasicValueEnum::*, BasicMetadataValueEnum, CallableValue};
-use inkwell::types::{BasicType, BasicMetadataTypeEnum};
+use inkwell::values::{BasicValueEnum::*, BasicMetadataValueEnum, CallableValue, BasicValue};
+use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
@@ -2275,18 +2275,17 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                 attr((val, vloc), (id, iloc), ctx)
             }
         },
-        Type::Nominal(n) => 
+        Type::Nominal(n) => {
             ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
                 match mt {
                     MethodType::Normal => {
                         let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false);
                         let mut v = Value::metaval(iv.clone(), bm);
-                        if let (Some(vv), Some(f), Some(llt)) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
-                            let a = ctx.builder.build_alloca(llt, "");
-                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 0, "").unwrap(), vv);
-                            ctx.builder.build_store(ctx.builder.build_struct_gep(a, 1, "").unwrap(), *f);
-                            v.comp_val = Some(ctx.builder.build_load(a, ""));
-                            v.address.set(Some(a));
+                        if let (Some(vv), Some(f), Some(StructType(llt))) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
+                            let v0 = llt.get_undef();
+                            let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                            let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                            v.comp_val = Some(v2.as_basic_value_enum());
                         }
                         Ok(v)
                     },
@@ -2297,7 +2296,8 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                         types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                     }
                 }
-            } else {Err(err)}),
+            } else {Err(err)})
+        },
         _ => Err(err)
     }
 }

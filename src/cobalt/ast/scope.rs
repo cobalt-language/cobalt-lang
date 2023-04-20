@@ -71,6 +71,15 @@ impl AST for ModuleAST {
         });
         let old_scope = ctx.push_scope(&self.name);
         let old_vis = if let Some((v, _)) = vis_spec {ctx.export.replace(v)} else {false};
+        if ctx.flags.prepass {
+            self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+            let mut again = true;
+            while again {
+                again = false;
+                self.vals.iter().for_each(|val| val.constinit_prepass(ctx, &mut again));
+            }
+            self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        }
         errs.extend(self.vals.iter().flat_map(|val| val.codegen(ctx).1));
         ctx.restore_scope(old_scope);
         if vis_spec.is_some() {ctx.export.set(old_vis)}
