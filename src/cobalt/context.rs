@@ -209,22 +209,22 @@ impl<'ctx> CompCtx<'ctx> {
         self.with_vars(|v| v.save(out))
     }
     pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<String>> {
-        let mut noms = self.nominals.borrow_mut();
         loop {
             let mut vec = vec![];
             buf.read_until(0, &mut vec)?;
             if vec.last() == Some(&0) {vec.pop();}
             if vec.is_empty() {break}
-            let name = String::from_utf8(std::mem::replace(&mut vec, vec![])).expect("Nominal types should be valid UTF-8");
+            let name = String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8");
             let t = Type::load(buf)?;
+            self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default()));
             let mut ms = HashMap::new();
             loop {
                 buf.read_until(0, &mut vec)?;
                 if vec.last() == Some(&0) {vec.pop();}
                 if vec.is_empty() {break}
-                ms.insert(String::from_utf8(std::mem::replace(&mut vec, vec![])).expect("Nominal types should be valid UTF-8"), Value::load(buf, self)?);
+                ms.insert(String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8"), Value::load(buf, self)?);
             }
-            noms.insert(name, (t, false, ms));
+            self.nominals.borrow_mut().get_mut(&name).unwrap().2 = ms;
         }
         self.with_vars(|v| v.load(buf, self))
     }
