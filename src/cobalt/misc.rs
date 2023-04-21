@@ -6,6 +6,7 @@ pub struct Flags {
     pub word_size: u16,
     pub bounds_checks: bool,
     pub prepass: bool,
+    pub dbg_mangle: bool,
     pub(crate) up: bool
 }
 impl Default for Flags {
@@ -14,6 +15,7 @@ impl Default for Flags {
             word_size: std::mem::size_of::<isize>() as u16,
             bounds_checks: true,
             prepass: true,
+            dbg_mangle: false,
             up: true,
         }
     }
