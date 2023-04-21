@@ -202,16 +202,17 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             } else {std::fs::read_to_string(in_file)?};
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
+            let mut flags = cobalt::Flags::default();
+            flags.dbg_mangle = true;
+            let ink_ctx = inkwell::context::Context::create();
+            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
             let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
             let files = &*cobalt::errors::files::FILES.read().unwrap();
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-            let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
@@ -242,6 +243,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let mut triple: Option<TargetTriple> = None;
             let mut continue_if_err = false;
             let mut no_default_link = false;
+            let mut debug_mangle = false;
             let mut profile: Option<&str> = None;
             let mut headers: Vec<&str> = vec![];
             let mut linker_args: Vec<&str> = vec![];
@@ -319,6 +321,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         warning!("reuse of --no-default-link flag");
                                     }
                                     no_default_link = true;
+                                },
+                                "debug-mangle" => {
+                                    if debug_mangle {
+                                        warning!("reuse of --debug-mangle flag");
+                                    }
+                                    debug_mangle = true;
                                 },
                                 x => {
                                     error!("unknown flag --{x}");
@@ -458,6 +466,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 inkwell::targets::CodeModel::Small
             ).expect("failed to create target machine");
             let mut flags = cobalt::Flags::default();
+            flags.dbg_mangle = debug_mangle;
             let ink_ctx = inkwell::context::Context::create();
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
@@ -709,7 +718,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 ("<stdin>", s)
             };
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
                 let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;

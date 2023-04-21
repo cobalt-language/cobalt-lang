@@ -43,6 +43,7 @@ impl AST for VarDefAST {
                         linkas = Some(arg.clone())
                     }
                 },
+                "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -163,6 +164,21 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
                     }
                     is_extern = Some(loc.clone());
+                },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc.clone()))
                 },
                 "target" => {
                     if let Some(arg) = arg {
@@ -619,6 +635,7 @@ impl AST for MutDefAST {
                         linkas = Some(arg.clone())
                     }
                 },
+                "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -732,6 +749,21 @@ impl AST for MutDefAST {
                     else {
                         errs.push(Diagnostic::error(loc.clone(), 415, None))
                     }
+                },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc.clone()))
                 },
                 "extern" => {
                     if let Some(prev) = is_extern.clone() {
@@ -1288,7 +1320,7 @@ impl AST for TypeDefAST {
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc.clone()))));
-        let mangled = ctx.mangle(&self.name);
+        let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
             let mut noms = ctx.nominals.borrow_mut();
@@ -1325,7 +1357,7 @@ impl AST for TypeDefAST {
             *needs_another |= !missing.is_empty() && (v.is_empty() || v.len() > missing.len());
             missing
         });
-        let mangled = ctx.mangle(&self.name);
+        let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
             let mut noms = ctx.nominals.borrow_mut();
@@ -1348,7 +1380,7 @@ impl AST for TypeDefAST {
         ctx.prepass.set(pp);
     }
     fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
-        let mangled = ctx.mangle(&self.name);
+        let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
             let mut noms = ctx.nominals.borrow_mut();
@@ -1419,7 +1451,7 @@ impl AST for TypeDefAST {
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        let mangled = ctx.mangle(&self.name);
+        let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
             let mut noms = ctx.nominals.borrow_mut();

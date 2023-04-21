@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::hash_map::{HashMap, Entry};
 use std::io::{self, Write, Read, BufRead};
 use either::Either::{self, *};
+use owned_chars::OwnedCharsExt;
 pub struct CompCtx<'ctx> {
     pub flags: Flags,
     pub context: &'ctx Context,
@@ -104,7 +105,23 @@ impl<'ctx> CompCtx<'ctx> {
         }) && matches!(name.ids.last().unwrap().0.as_str(), "main") // this match will become larger if more intrinisic stuff is needed
     }
     pub fn mangle(&self, name: &DottedName) -> String {
-        if name.global {format!("{name}")}
+        let raw = 
+            if name.global {format!("{name}")}
+            else {
+                unsafe {
+                    let base = self.name.replace(MaybeUninit::uninit()).assume_init();
+                    let out = format!("{base}{name}");
+                    self.name.set(MaybeUninit::new(base));
+                    out
+                }
+            };
+        if self.flags.dbg_mangle {raw}
+        else {
+            std::iter::once("_C".to_string()).chain(raw.split('.').skip(1).map(|x| format!("{}{}", x.len(), x))).flat_map(|x| x.into_chars()).collect()
+        }
+    }
+    pub fn format(&self, name: &DottedName) -> String {
+        (if name.global {format!("{name}")}
         else {
             unsafe {
                 let base = self.name.replace(MaybeUninit::uninit()).assume_init();
@@ -112,7 +129,7 @@ impl<'ctx> CompCtx<'ctx> {
                 self.name.set(MaybeUninit::new(base));
                 out
             }
-        }
+        })[1..].to_string()
     }
     pub fn push_scope(&self, name: &DottedName) -> Either<usize, String> {
         unsafe {
