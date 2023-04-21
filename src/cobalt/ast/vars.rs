@@ -43,6 +43,7 @@ impl AST for VarDefAST {
                         linkas = Some(arg.clone())
                     }
                 },
+                "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -163,6 +164,21 @@ impl AST for VarDefAST {
                         errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
                     }
                     is_extern = Some(loc.clone());
+                },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc.clone()))
                 },
                 "target" => {
                     if let Some(arg) = arg {
@@ -619,6 +635,7 @@ impl AST for MutDefAST {
                         linkas = Some(arg.clone())
                     }
                 },
+                "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -732,6 +749,21 @@ impl AST for MutDefAST {
                     else {
                         errs.push(Diagnostic::error(loc.clone(), 415, None))
                     }
+                },
+                "c" | "C" => {
+                    match arg.as_ref().map(|x| x.as_str()) {
+                        Some("") | None => {},
+                        Some("extern") => {
+                            if let Some(prev) = is_extern.clone() {
+                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                            }
+                            is_extern = Some(loc.clone());
+                        },
+                        Some(x) => {
+                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                        }
+                    }
+                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc.clone()))
                 },
                 "extern" => {
                     if let Some(prev) = is_extern.clone() {
