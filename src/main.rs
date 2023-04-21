@@ -56,10 +56,13 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         "version" | "--version" | "-v" | "-V" => {
-            println!(
-                "Cobalt version {}\n\
-                LLVM version {}\n\
-                Git commit {} on branch {}{}", env!("CARGO_PKG_VERSION"), env!("LLVM_VERSION"), env!("GIT_COMMIT"), env!("GIT_BRANCH"), if cfg!(debug_assertions) {"\nDebug Build"} else {""});
+            println!("Cobalt version {}", env!("CARGO_PKG_VERSION"));
+            #[cfg(has_llvm)]
+            println!("LLVM version {}", env!("LLVM_VERSION"));
+            #[cfg(has_git)]
+            println!("Git commit {} on branch {}", &env!("GIT_COMMIT")[..6], env!("GIT_BRANCH"));
+            #[cfg(debug_assertions)]
+            println!("Debug Build");
         }
         "lex" if cfg!(debug_assertions) => {
             let mut nfcl = false;

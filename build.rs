@@ -6,10 +6,7 @@ fn git_info() -> Option<()> {
         let (commit, branch) = info.split_once('\n')?;
         println!("cargo:rustc-env=GIT_BRANCH={branch}");
         println!("cargo:rustc-env=GIT_COMMIT={commit}");
-    }
-    else {
-        println!("cargo:rustc-env=GIT_BRANCH=<no git>");
-        println!("cargo:rustc-env=GIT_COMMIT=<no git>");
+        println!("cargo:rustc-cfg=has_git");
     }
     Some(())
 }
@@ -18,9 +15,7 @@ fn llvm_info() -> Option<()> {
     if status.success() {
         let info = std::str::from_utf8(&stdout).ok()?;
         println!("cargo:rustc-env=LLVM_VERSION={info}");
-    }
-    else {
-        println!("cargo:rustc-env=LLVM_VERSION=14.0.x");
+        println!("cargo:rustc-cfg=has_llvm");
     }
     Some(())
 }
