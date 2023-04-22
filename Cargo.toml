@@ -6,8 +6,8 @@ build = "build/main.rs"
 
 [dependencies]
 bitvec = "1.0.1"
-inkwell = { version = "0.1.1", features = ["llvm14-0-no-llvm-linking"] }
-llvm-sys = { version = "140", features = ["strict-versioning", "no-llvm-linking"] }
+inkwell = { version = "0.1.1", features = ["llvm15-0-no-llvm-linking"] }
+llvm-sys = { version = "150", features = ["no-llvm-linking"] }
 unicode-ident = "1.0.8"
 walkdir = "2"
 toml = "0.7.3"
@@ -35,7 +35,8 @@ semver = "1.0.7"
 
 # features passed to llvm-sys
 [features]
-strict-versioning = []
+default = ["strict-versioning"]
+strict-versioning = ['llvm-sys/strict-versioning']
 no-llvm-linking = []
 
 prefer-dynamic = []

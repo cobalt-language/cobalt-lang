@@ -277,7 +277,7 @@ impl AST for ArrayLiteralAST {
                     else {ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "")};
                 let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
                 for (n, elem) in elems.iter().enumerate() {
-                    let gep = unsafe {ctx.builder.build_in_bounds_gep(llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
+                    let gep = unsafe {ctx.builder.build_in_bounds_gep(llt, llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
                     ctx.builder.build_store(gep, elem.value(ctx).unwrap_or_else(|| llt.const_zero()));
                 }
                 Some(llv.into())
@@ -345,7 +345,7 @@ impl AST for TupleLiteralAST {
                     else {
                         if !ctx.is_const.get() {
                             if let Some(PointerValue(pv)) = v.comp_val {
-                                v.comp_val = Some(ctx.builder.build_load(pv, ""));
+                                v.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
                             }
                         }
                         v.data_type = *b;

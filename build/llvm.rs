@@ -1,6 +1,6 @@
 // This file is the same as llvm-sys's, with some slight modifications to make it run as a submodule.
 // Notable changes:
-// - LLVM 14.0 is hardcoded
+// - LLVM 15.0 is hardcoded
 // - Linking method is prefer-dynamic by default
 
 use lazy_static::lazy_static;
@@ -16,11 +16,12 @@ use std::process::Command;
 //
 // When adding new ones, they should also be added to main() to force a
 // rebuild if they are changed.
-static ENV_LLVM_PREFIX: &str = "LLVM_SYS_14_PREFIX";
-static ENV_IGNORE_BLOCKLIST: &str = "LLVM_SYS_14_IGNORE_BLOCKLIST";
-static ENV_NO_CLEAN_CFLAGS: &str = "LLVM_SYS_14_NO_CLEAN_CFLAGS";
-static ENV_USE_DEBUG_MSVCRT: &str = "LLVM_SYS_14_USE_DEBUG_MSVCRT";
-static ENV_FORCE_FFI: &str = "LLVM_SYS_14_FFI_WORKAROUND";
+static ENV_LLVM_PREFIX: &str = "LLVM_SYS_15_PREFIX";
+static ENV_IGNORE_BLOCKLIST: &str = "LLVM_SYS_15_IGNORE_BLOCKLIST";
+static ENV_STRICT_VERSIONING: &str = "LLVM_SYS_15_STRICT_VERSIONING";
+static ENV_NO_CLEAN_CFLAGS: &str = "LLVM_SYS_15_NO_CLEAN_CFLAGS";
+static ENV_USE_DEBUG_MSVCRT: &str = "LLVM_SYS_15_USE_DEBUG_MSVCRT";
+static ENV_FORCE_FFI: &str = "LLVM_SYS_15_FFI_WORKAROUND";
 
 lazy_static! {
     /// LLVM version used by this version of the crate.
@@ -28,7 +29,7 @@ lazy_static! {
         let crate_version = Version::parse(env!("CARGO_PKG_VERSION"))
             .expect("Crate version is somehow not valid semver");
         Version {
-            major: 14,
+            major: 15,
             minor: 0,
             .. crate_version
         }
@@ -95,10 +96,10 @@ fn locate_llvm_config() -> Option<PathBuf> {
 fn llvm_config_binary_names() -> std::vec::IntoIter<String> {
     let mut base_names: Vec<String> = vec![
         "llvm-config".into(),
-        "llvm-config-14".into(),
-        "llvm14-config".into(),
-        "llvm-config-14.0".into(),
-        "llvm-config140".into()
+        "llvm-config-15".into(),
+        "llvm15-config".into(),
+        "llvm-config-15.0".into(),
+        "llvm-config150".into()
     ];
 
     // On Windows, also search for llvm-config.exe
@@ -159,7 +160,17 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
         );
         return false;
     }
-    llvm_version.major == CRATE_VERSION.major && llvm_version.minor == CRATE_VERSION.minor
+
+    let strict =
+        env::var_os(&*ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
+    if strict {
+        llvm_version.major == CRATE_VERSION.major && llvm_version.minor == CRATE_VERSION.minor
+    } else {
+        llvm_version.major >= CRATE_VERSION.major
+            || (llvm_version.major == CRATE_VERSION.major
+                && llvm_version.minor >= CRATE_VERSION.minor)
+    }
+
 }
 
 /// Get the output from running `llvm-config` with the given argument.

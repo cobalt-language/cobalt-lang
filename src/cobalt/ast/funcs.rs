@@ -1019,7 +1019,7 @@ impl AST for IntrinsicAST {
                                 Type::Reference(b, _) => {
                                     if b.register(ctx) && !ctx.is_const.get() {
                                         if let Some(PointerValue(v)) = arg.comp_val {
-                                            arg.comp_val = Some(ctx.builder.build_load(v, ""));
+                                            arg.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                                         }
                                     }
                                     arg.data_type = *b;

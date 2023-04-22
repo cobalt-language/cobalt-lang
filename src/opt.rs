@@ -26,7 +26,6 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
         .replace(['_', '-'], " ")
         .to_lowercase();
     match name.as_str() {
-        "arg promotion" => pm.add_argument_promotion_pass(),
         "const merge" => pm.add_constant_merge_pass(),
         "merge func" | "merge funcs" => pm.add_merge_functions_pass(),
         "dead arg" | "dead args" | "dead arg elimination" | "dead args elimination" => pm.add_dead_arg_elimination_pass(),
@@ -60,7 +59,6 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
         "loop rotate" => pm.add_loop_rotate_pass(),
         "loop reroll" => pm.add_loop_reroll_pass(),
         "loop unroll" => pm.add_loop_unroll_pass(),
-        "loop unswitch" => pm.add_loop_unswitch_pass(),
         "memcpy" | "memcpy opt" => pm.add_memcpy_optimize_pass(),
         "partially inline lib calls" => pm.add_partially_inline_lib_calls_pass(),
         "lower switch" => pm.add_lower_switch_pass(),
@@ -87,16 +85,6 @@ pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> boo
         "basic alias analysis" => pm.add_basic_alias_analysis_pass(),
         "aggressive inst combine" | "aggressive inst combiner" => pm.add_aggressive_inst_combiner_pass(),
         "loop unroll and jam" | "loop unroll jam" => pm.add_loop_unroll_and_jam_pass(),
-        "coroutine early" => pm.add_coroutine_early_pass(),
-        "coroutine split" => pm.add_coroutine_split_pass(),
-        "coroutine elide" => pm.add_coroutine_elide_pass(),
-        "coroutine cleanup" => pm.add_coroutine_cleanup_pass(),
-        "coroutine" | "coroutines" => {
-            pm.add_coroutine_early_pass();
-            pm.add_coroutine_split_pass();
-            pm.add_coroutine_elide_pass();
-            pm.add_coroutine_cleanup_pass();
-        },
         _ => return false
     }
     true

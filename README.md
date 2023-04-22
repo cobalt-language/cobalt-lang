@@ -10,6 +10,7 @@ git clone https://github.com/matt-cornell/cobalt-lang
 cd cobalt-lang
 cargo build
 ```
+By default, builds link dynamically to LLVM 15. They can also statically link to it by enabling the `prefer-static` or `force-static` features.
 ## Language features
 - Modern programming features without a focus on compatibility with an outdated standard
   - First-class functions, arrays, and types
