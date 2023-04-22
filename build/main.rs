@@ -1,4 +1,5 @@
 use std::process::{Command, Output};
+mod llvm;
 fn git_info() -> Option<()> {
     let Output {stdout, status, ..} = Command::new("git").args(["rev-parse", "HEAD", "--abbrev-ref", "HEAD"]).output().ok()?;
     if status.success() {
@@ -10,17 +11,9 @@ fn git_info() -> Option<()> {
     }
     Some(())
 }
-fn llvm_info() -> Option<()> {
-    let Output {stdout, status, ..} = Command::new("llvm-config-14").arg("--version").output().ok()?;
-    if status.success() {
-        let info = std::str::from_utf8(&stdout).ok()?;
-        println!("cargo:rustc-env=LLVM_VERSION={info}");
-        println!("cargo:rustc-cfg=has_llvm");
-    }
-    Some(())
-}
 fn main() {
     println!("cargo:rerun-if-changed=.git");
     git_info();
-    llvm_info();
+    llvm::entry();
+    println!("cargo:rustc-env=LLVM_VERSION={}", llvm::llvm_config("--version"));
 }
