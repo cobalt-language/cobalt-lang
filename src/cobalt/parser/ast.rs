@@ -1,4 +1,3 @@
-#![allow(unreachable_code)]
 use crate::*;
 use crate::parser::ops::*;
 use TokenData::*;
@@ -208,7 +207,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
                     idx += 1;
                 }
                 let err = if idx < toks.len() - 1 {Some(Diagnostic::error(toks[idx + 1].loc.clone(), 256, Some(format!("unexpected {:#}", toks[idx + 1].data))))} else {None};
-                loc.1.end = toks[idx].loc.1.end;
+                loc.1.end = toks.get(idx).unwrap_or(&toks[idx - 1]).loc.1.end;
                 toks = &toks[..idx];
                 err.into_iter().collect::<Vec<_>>()
             };
@@ -220,6 +219,10 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
         },
         Some(Special('{')) => {
             let mut start = toks[0].loc.clone();
+            if toks.len() == 2 {
+                start.1.end = toks[1].loc.1.end;
+                return (Box::new(BlockAST::new(start, vec![])), vec![]);
+            }
             let mut errs = {
                 let mut it = toks.iter().skip(1).peekable();
                 let mut depth = 1;
@@ -261,6 +264,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
         },
         Some(Special('[')) => {
             let start = toks[0].loc.clone();
+            if toks.len() == 2 {return (Box::new(ArrayLiteralAST::new(start, toks[1].loc.clone(), vec![])), vec![]);}
             let (mut errs, end) = {
                 let mut it = toks.iter().skip(1).peekable();
                 let mut depth = 1;
@@ -277,7 +281,7 @@ fn parse_groups(mut toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnos
                     idx += 1;
                 }
                 let err = if idx < toks.len() - 1 {Some(Diagnostic::error(toks[idx].loc.clone(), 257, Some(format!("unexpected {:#}", toks[idx + 1].data))))} else {None};
-                let loc = toks[idx].loc.clone();
+                let loc = toks.get(idx).unwrap_or(&toks[idx - 1]).loc.clone();
                 toks = &toks[..idx];
                 (err.into_iter().collect::<Vec<_>>(), loc)
             };
