@@ -662,6 +662,7 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                 rhs.comp_val = Some(IntValue(if ru {ctx.builder.build_int_z_extend(val, ctx.context.custom_width_int_type(ls as u32), "")}
                 else {ctx.builder.build_int_s_extend(val, ctx.context.custom_width_int_type(ls as u32), "")}));
             }
+            rhs.data_type = Type::Int(ls, ru);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         },
         (Type::Int(ls, lu), Type::Int(rs, _)) if ls < rs => {
@@ -669,6 +670,7 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                 lhs.comp_val = Some(IntValue(if lu {ctx.builder.build_int_z_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}
                 else {ctx.builder.build_int_s_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}));
             }
+            lhs.data_type = Type::Int(rs, lu);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         },
         (Type::Int(ls, lu), Type::Int(rs, ru)) if ls == rs => match op {
