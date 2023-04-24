@@ -103,6 +103,19 @@ impl AST for ErrorTypeAST {
     fn to_code(&self) -> String {"<error type>".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "error type")}
 }
+pub struct TypeLiteralAST {
+    loc: Location
+}
+impl TypeLiteralAST {
+    pub fn new(loc: Location) -> Self {TypeLiteralAST {loc}}
+}
+impl AST for TypeLiteralAST {
+    fn loc(&self) -> Location {self.loc.clone()}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::make_type(Type::TypeData), vec![])}
+    fn to_code(&self) -> String {"type".to_string()}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "type (literal)")}
+}
 pub struct ParenAST {
     pub loc: Location,
     pub base: Box<dyn AST>

@@ -635,8 +635,8 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                     if flags.up {loc.1 += len};
                 }
                 outs.push(Token::new((loc.0, start..(loc.1 + 1)), match s.as_str() {
-                    "let" | "mut" | "const" | "fn" | "cr" | "module" | "import" | "type" => Statement(s),
-                    "if" | "else" | "while" => Keyword(s),
+                    "let" | "mut" | "const" | "fn" | "cr" | "module" | "import" => Statement(s),
+                    "if" | "else" | "while" | "type" | "null" => Keyword(s),
                     _ => Identifier(s)
                 }));
             },
