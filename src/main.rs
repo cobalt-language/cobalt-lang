@@ -604,15 +604,17 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         "jit" => {
-            let mut in_file: Option<&str> = None;
-            let mut linked: Vec<&str> = vec![];
+            let mut in_file: Option<String> = None;
+            let mut linked: Vec<String> = vec![];
             let mut link_dirs: Vec<String> = vec![];
             let mut continue_if_err = false;
             let mut no_default_link = false;
-            let mut headers: Vec<&str> = vec![];
-            let mut profile: Option<&str> = None;
+            let mut headers: Vec<String> = vec![];
+            let mut profile: Option<String> = None;
+            let mut args = Vec::<String>::new();
             {
-                let mut it = args.iter().skip(2).skip_while(|x| x.is_empty());
+                let mut it = std::env::args().skip_while(|x| x.is_empty());
+                args.push(it.by_ref().take(2).map(|x| format!("{x} ")).collect::<String>());
                 while let Some(arg) = it.next() {
                     if arg.is_empty() {continue;}
                     if arg.as_bytes()[0] == b'-' {
@@ -621,10 +623,11 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 error!("respecification of input file");
                                 exit(1)
                             }
-                            in_file = Some("-");
+                            in_file = Some("-".to_string());
                         }
                         else if arg.as_bytes()[1] == b'-' {
                             match &arg[2..] {
+                                "" => args.extend(it.by_ref()),
                                 "continue" => {
                                     if continue_if_err {
                                         warning!("reuse of --continue flag");
@@ -651,7 +654,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                             warning!("respecification of optimization profile");
                                         }
                                         if let Some(x) = it.next() {
-                                            profile = Some(x.as_str());
+                                            profile = Some(x);
                                         }
                                         else {
                                             error!("expected profile after -p flag");
@@ -666,7 +669,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     },
                                     'l' => {
                                         if let Some(x) = it.next() {
-                                            linked.push(x.as_str());
+                                            linked.push(x);
                                         }
                                         else {
                                             error!("expected library after -l flag");
@@ -675,7 +678,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     },
                                     'L' => {
                                         if let Some(x) = it.next() {
-                                            link_dirs.push(x.clone());
+                                            link_dirs.push(x);
                                         }
                                         else {
                                             error!("expected directory after -L flag");
@@ -684,7 +687,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     },
                                     'h' => {
                                         if let Some(x) = it.next() {
-                                            headers.push(x.as_str());
+                                            headers.push(x);
                                         }
                                         else {
                                             error!("expected header file after -h flag");
@@ -704,7 +707,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             error!("respecification of input file");
                             exit(1)
                         }
-                        in_file = Some(arg.as_str());
+                        in_file = Some(arg);
                     }
                 }
             }
@@ -713,11 +716,16 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = if let Some(f) = in_file {(f, std::fs::read_to_string(f)?)}
-            else {
-                let mut s = String::new();
-                std::io::stdin().read_to_string(&mut s)?;
-                ("<stdin>", s)
+            let (in_file, code) = match in_file.as_deref().unwrap_or("-") {
+                "-" => {
+                    let mut s = String::new();
+                    std::io::stdin().read_to_string(&mut s)?;
+                    ("<stdin>", s)
+                },
+                f => {
+                    args[0].push_str(f);
+                    (f, std::fs::read_to_string(f)?)
+                }
             };
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
@@ -762,7 +770,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             }
             if fail || overall_fail {exit(101)}
             let pm = inkwell::passes::PassManager::create(());
-            opt::load_profile(profile, &pm);
+            opt::load_profile(profile.as_deref(), &pm);
             pm.run_on(&ctx.module);
             let ee = ctx.module.create_jit_execution_engine(inkwell::OptimizationLevel::None).expect("Couldn't create execution engine!");
             for (lib, _) in libs {
@@ -781,9 +789,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         exit(255)
                     }
                 };
-                let this = format!("{} {in_file}", std::env::args().next().unwrap_or("<no exe?>".to_string()));
                 ee.run_static_constructors();
-                let ec = ee.run_function_as_main(main_fn, &[&this]);
+                let ec = ee.run_function_as_main(main_fn, &args.iter().map(String::as_str).collect::<Vec<_>>());
                 ee.run_static_destructors();
                 exit(ec);
             }
