@@ -16,7 +16,15 @@ impl Display for TreePrefix {
         Ok(())
     }
 }
-pub trait AST {
+pub trait ASTClone {
+    fn clone_ast(&self) -> Box<dyn AST>;
+}
+impl<T: AST + Clone + 'static> ASTClone for T {
+    fn clone_ast(&self) -> Box<dyn AST> {
+        Box::new(self.clone())
+    }
+}
+pub trait AST: ASTClone + std::fmt::Debug {
     fn loc(&self) -> Location;
     // AST properties
     fn is_const(&self) -> bool {false}
@@ -62,6 +70,9 @@ impl Display for dyn AST {
         let mut pre = TreePrefix::new();
         self.print_impl(f, &mut pre)
     }
+}
+impl Clone for Box<dyn AST> {
+    fn clone(&self) -> Self {self.clone_ast()}
 }
 pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, last: bool) -> Result {
     write!(f, "{}{}", pre, if last {"└── "} else {"├── "})?;

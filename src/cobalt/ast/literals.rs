@@ -1,6 +1,7 @@
 use crate::*;
 use inkwell::values::BasicValueEnum::*;
 use inkwell::types::BasicType;
+#[derive(Debug, Clone)]
 pub struct IntLiteralAST {
     loc: Location,
     pub val: i128,
@@ -52,6 +53,7 @@ impl AST for IntLiteralAST {
         else {writeln!(f)}
     }
 }
+#[derive(Debug, Clone)]
 pub struct FloatLiteralAST {
     loc: Location,
     pub val: f64,
@@ -95,6 +97,7 @@ impl AST for FloatLiteralAST {
         else {writeln!(f)}
     }
 }
+#[derive(Debug, Clone)]
 pub struct CharLiteralAST {
     loc: Location,
     pub val: char,
@@ -146,6 +149,7 @@ impl AST for CharLiteralAST {
         else {writeln!(f)}
     }
 }
+#[derive(Debug, Clone)]
 pub struct StringLiteralAST {
     loc: Location,
     pub val: String,
@@ -190,6 +194,7 @@ impl AST for StringLiteralAST {
         else {writeln!(f)}
     }
 }
+#[derive(Debug, Clone)]
 pub struct ArrayLiteralAST {
     pub start: Location,
     pub end: Location,
@@ -309,6 +314,7 @@ impl AST for ArrayLiteralAST {
         Ok(())
     }
 }
+#[derive(Debug, Clone)]
 pub struct TupleLiteralAST {
     pub vals: Vec<Box<dyn AST>>
 }

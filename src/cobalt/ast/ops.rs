@@ -1,4 +1,5 @@
 use crate::*;
+#[derive(Debug, Clone)]
 pub struct BinOpAST {
     loc: Location,
     pub op: String,
@@ -130,6 +131,7 @@ impl AST for BinOpAST {
         print_ast_child(f, pre, &*self.rhs, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct PostfixAST {
     loc: Location,
     pub op: String,
@@ -159,6 +161,7 @@ impl AST for PostfixAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct PrefixAST {
     loc: Location,
     pub op: String,
@@ -188,6 +191,7 @@ impl AST for PrefixAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct SubAST {
     loc: Location,
     pub target: Box<dyn AST>,
@@ -217,6 +221,7 @@ impl AST for SubAST {
         print_ast_child(f, pre, &*self.index, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct DotAST {
     pub obj: Box<dyn AST>,
     pub name: (String, Location)

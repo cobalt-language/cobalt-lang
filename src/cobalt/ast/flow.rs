@@ -1,4 +1,5 @@
 use crate::*;
+#[derive(Debug, Clone)]
 pub struct IfAST {
     loc: Location,
     pub cond: Box<dyn AST>,
@@ -123,6 +124,7 @@ impl AST for IfAST {
         }
     }
 }
+#[derive(Debug, Clone)]
 pub struct WhileAST {
     loc: Location,
     cond: Box<dyn AST>,

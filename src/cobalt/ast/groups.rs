@@ -1,5 +1,6 @@
 use crate::*;
 use codespan_reporting::files::Files;
+#[derive(Debug, Clone)]
 pub struct BlockAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>
@@ -38,6 +39,7 @@ impl AST for BlockAST {
 impl BlockAST {
     pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {BlockAST {loc, vals}}
 }
+#[derive(Debug, Clone)]
 pub struct GroupAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>
@@ -74,6 +76,7 @@ impl AST for GroupAST {
 impl GroupAST {
     pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {GroupAST {loc, vals}}
 }
+#[derive(Debug, Clone)]
 pub struct TopLevelAST {
     loc: Location,
     pub vals: Vec<Box<dyn AST>>

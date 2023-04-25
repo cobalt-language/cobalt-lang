@@ -1,5 +1,6 @@
 use crate::*;
 use glob::Pattern;
+#[derive(Debug, Clone)]
 pub struct ModuleAST {
     loc: Location,
     pub name: DottedName,
@@ -111,6 +112,7 @@ impl AST for ModuleAST {
 impl ModuleAST {
     pub fn new(loc: Location, name: DottedName, vals: Vec<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ModuleAST {loc, name, vals, annotations}}
 }
+#[derive(Debug, Clone)]
 pub struct ImportAST {
     loc: Location,
     pub name: CompoundDottedName,

@@ -8,13 +8,14 @@ use llvm_sys::core::{LLVMGetInsertBlock, LLVMIsABasicBlock};
 use llvm_sys::prelude::LLVMValueRef;
 use std::collections::LinkedList;
 use glob::Pattern;
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
     Mutable,
     Constant
 }
 type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
+#[derive(Debug, Clone)]
 pub struct FnDefAST {
     loc: Location,
     pub name: DottedName,
@@ -847,6 +848,7 @@ impl AST for FnDefAST {
         print_ast_child(f, pre, &*self.body, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct CallAST {
     loc: Location,
     pub cparen: Location,
@@ -893,6 +895,7 @@ impl AST for CallAST {
         Ok(())
     }
 }
+#[derive(Debug, Clone)]
 pub struct IntrinsicAST {
     loc: Location,
     pub name: String,

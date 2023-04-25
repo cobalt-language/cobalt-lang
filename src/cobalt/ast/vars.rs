@@ -3,6 +3,7 @@ use inkwell::values::{AsValueRef, GlobalValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
 use glob::Pattern;
 use std::collections::{HashSet, hash_map::Entry};
+#[derive(Debug, Clone)]
 pub struct VarDefAST {
     loc: Location,
     pub name: DottedName,
@@ -595,6 +596,7 @@ impl AST for VarDefAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct MutDefAST {
     loc: Location,
     pub name: DottedName,
@@ -1169,6 +1171,7 @@ impl AST for MutDefAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct ConstDefAST {
     loc: Location,
     pub name: DottedName,
@@ -1304,6 +1307,7 @@ impl AST for ConstDefAST {
         print_ast_child(f, pre, &*self.val, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct TypeDefAST {
     loc: Location,
     pub name: DottedName,
@@ -1514,6 +1518,7 @@ impl AST for TypeDefAST {
         Ok(())
     }
 }
+#[derive(Debug, Clone)]
 pub struct VarGetAST {
     loc: Location,
     pub name: String,

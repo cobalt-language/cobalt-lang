@@ -1,4 +1,5 @@
 use crate::*;
+#[derive(Debug, Clone)]
 pub struct CastAST {
     loc: Location,
     pub val: Box<dyn AST>,
@@ -31,6 +32,7 @@ impl AST for CastAST {
         print_ast_child(f, pre, &*self.target, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct BitCastAST {
     loc: Location,
     pub val: Box<dyn AST>,
@@ -77,6 +79,7 @@ impl AST for BitCastAST {
         print_ast_child(f, pre, &*self.target, true)
     }
 }
+#[derive(Debug, Clone)]
 pub struct NullAST {
     loc: Location
 }
@@ -90,6 +93,7 @@ impl AST for NullAST {
     fn to_code(&self) -> String {"null".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "null")}
 }
+#[derive(Debug, Clone)]
 pub struct ErrorTypeAST {
     loc: Location
 }
@@ -103,6 +107,7 @@ impl AST for ErrorTypeAST {
     fn to_code(&self) -> String {"<error type>".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "error type")}
 }
+#[derive(Debug, Clone)]
 pub struct TypeLiteralAST {
     loc: Location
 }
@@ -116,6 +121,7 @@ impl AST for TypeLiteralAST {
     fn to_code(&self) -> String {"type".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {writeln!(f, "type (literal)")}
 }
+#[derive(Debug, Clone)]
 pub struct ParenAST {
     pub loc: Location,
     pub base: Box<dyn AST>
