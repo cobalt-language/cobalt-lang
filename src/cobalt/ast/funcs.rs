@@ -32,8 +32,8 @@ impl AST for FnDefAST {
     fn loc(&self) -> Location {self.loc.clone()}
     fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        let ret = types::utils::impl_convert(Default::default(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(Default::default(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -255,8 +255,8 @@ impl AST for FnDefAST {
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert((0, 0..0), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert((0, 0..0), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
+        let ret = types::utils::impl_convert(Default::default(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(Default::default(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
         ctx.is_const.set(oic);
         out
     }
@@ -560,7 +560,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
                                         Some(param),
                                         None,
                                         ty.clone(),
@@ -568,7 +568,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
                                         None,
                                         None,
                                         ty.clone(),
@@ -675,7 +675,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
                                         Some(param),
                                         None,
                                         ty.clone()
@@ -683,7 +683,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), (0, 0..0))), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
                                         None,
                                         None,
                                         ty.clone()

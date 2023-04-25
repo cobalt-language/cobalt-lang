@@ -8,7 +8,7 @@ use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
-use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST};
+use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use super::{libs, opt, package, warning, error};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -194,8 +194,8 @@ fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> 
             return Err(100)
         }
     };
-    let file = cobalt::errors::files::add_file(name.to_string(), code.clone());
-    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let files = &mut *FILES.write().unwrap();
+    let file = files.add_file(0, name.to_string(), code.clone());
     let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {println!(); return Err(101)}
@@ -207,7 +207,7 @@ fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> 
     Ok(((out_path, overall_fail), Some(ast)))
 }
 fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
-    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let files = &*FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
     let config = term::Config::default();
     let (_, errs) = ast.codegen(ctx);

@@ -1,16 +1,8 @@
-use codespan_reporting::{diagnostic::{self, *}, files::*};
+use codespan_reporting::{diagnostic::{self, *}};
 use std::ops::Range;
-use std::sync::RwLock;
-pub mod files {
-    use super::*;
-    lazy_static::lazy_static! {
-        pub static ref FILES: RwLock<SimpleFiles<String, String>> = RwLock::new(SimpleFiles::new());
-    }
-    pub fn add_file(name: String, source: String) -> FileId {
-        FILES.write().expect("FILES should not be poisoned").add(name, source)
-    }
-}
-pub type FileId = usize;
+pub mod files;
+pub use files::FILES;
+pub type FileId = (usize, usize);
 pub type Location = (FileId, Range<usize>);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic(pub diagnostic::Diagnostic<FileId>, pub u64);
