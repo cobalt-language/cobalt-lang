@@ -600,24 +600,18 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
             cmd.args(paths.into_iter().map(|(x, _)| x));
+            let mut obj = libs::new_object(opts.triple);
+            libs::populate_header(&mut obj, ctx);
+            let tmp = match obj.write() {
+                Ok(buf) => temp_file::with_contents(&buf),
+                Err(err) => {
+                    error!("{err}");
+                    return 4;
+                }
+            };
+            cmd.arg(tmp.path());
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code != 0 {println!("Failed to build {name} because of link errors"); return code}
-            let mut buf = Vec::<u8>::new();
-            if let Err(e) = ctx.save(&mut buf) {
-                error!("{e}");
-                return 4
-            }
-            let tmp = temp_file::with_contents(&buf);
-            cmd = Command::new("objcopy");
-            cmd
-                .arg(&output)
-                .arg("--add-section")
-                .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
-                .arg("--set-section-flags")
-                .arg(".colib=readonly,data");
-            let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code == 0 {println!("Built {name}");}
-            else {println!("Failed to build {name} because of link errors");}
+            if code != 0 {println!("Failed to build {name} because of link errors")}
             code
         },
         TargetType::Meta => {

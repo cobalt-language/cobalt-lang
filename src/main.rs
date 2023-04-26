@@ -526,13 +526,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Bitcode =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
                     else {std::io::stdout().write_all(ctx.module.write_bitcode_to_memory().as_slice())?},
+                OutputType::Assembly => {
+                    let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
+                    if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
+                    else {std::io::stdout().write_all(code.as_slice())?}
+                }
                 _ => {
-                    if output_type == OutputType::Assembly {
-                        let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
-                        if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
-                        else {std::io::stdout().write_all(code.as_slice())?}
-                        return Ok(())
-                    }
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
                     match output_type {
                         OutputType::Executable => {
@@ -560,11 +559,21 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         },
                         OutputType::Library => {
                             if let Some(out_file) = out_file {
-                                let mut tmp = temp_file::with_contents(mb.as_slice());
+                                let mut obj = libs::new_object(&triple);
+                                libs::populate_header(&mut obj, &ctx);
+                                let tmp1 = match obj.write() {
+                                    Ok(data) => temp_file::with_contents(&data),
+                                    Err(err) => {
+                                        error!("{err}");
+                                        exit(4)
+                                    }
+                                };
+                                let tmp2 = temp_file::with_contents(mb.as_slice());
                                 let mut cmd = Command::new("ld");
                                 cmd
                                     .arg("--shared")
-                                    .arg(tmp.path())
+                                    .arg(tmp1.path())
+                                    .arg(tmp2.path())
                                     .arg("-o")
                                     .arg(&out_file);
                                 let mut args = vec![];
@@ -577,28 +586,16 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
                                 }
                                 let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
-                                if code != 0 {exit(code)}
-                                let mut buf = Vec::<u8>::new();
-                                if let Err(e) = ctx.save(&mut buf) {
-                                    error!("{e}");
-                                    exit(4)
-                                }
-                                tmp = temp_file::with_contents(&buf);
-                                cmd = Command::new("objcopy");
-                                cmd
-                                    .arg(&out_file)
-                                    .arg("--add-section")
-                                    .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
-                                    .arg("--set-section-flags")
-                                    .arg(".colib=readonly,data");
-                                exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
+                                std::mem::drop(tmp1);
+                                std::mem::drop(tmp2);
+                                exit(code)
                             }
                             else {error!("cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
                             if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
-                        x => panic!("{x:?} has already been handled")
+                        x => unreachable!("{x:?} has already been handled")
                     }
                 }
             }
