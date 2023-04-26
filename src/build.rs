@@ -2,7 +2,7 @@ use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::ffi::OsString;
-use std::process::Command;
+use std::process::{Command, exit};
 use std::cell::RefCell;
 use serde::*;
 use either::Either;
@@ -21,30 +21,36 @@ pub struct Project {
     #[serde(alias = "target")]
     targets: Option<Vec<Target>>,
     #[serde(alias = "lib")]
-    library: Option<Vec<Library>>,
-    #[serde(alias = "exe")]
-    #[serde(alias = "bin")]
-    #[serde(alias = "executable")]
-    executable: Option<Vec<Executable>>,
-    meta: Option<Vec<Meta>>
+    library: Option<Vec<SpecialTarget>>,
+    #[serde(alias = "exe", alias = "bin", alias = "binary")]
+    executable: Option<Vec<SpecialTarget>>,
+    meta: Option<Vec<SpecialTarget>>
 }
 impl Project {
     pub fn into_targets(self) -> impl Iterator<Item = Target> {
-        self.targets.unwrap_or_default().into_iter()
-        .chain(self.executable.unwrap_or_default().into_iter().map(|Executable {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
-        .chain(self.library.unwrap_or_default().into_iter().map(|Library {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
-        .chain(self.meta.unwrap_or_default().into_iter().map(|Meta {name, deps}| Target {target_type: TargetType::Library, files: None, name, deps}))
+        self.targets.unwrap_or_default().into_iter().map(|x| {
+            if x.target_type == TargetType::Meta && x.files.is_some() {
+                error!("meta target (name: {}) cannot have files", x.name);
+                exit(100)
+            }
+            x
+        })
+        .chain(self.executable.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
+        .chain(self.library.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
+        .chain(self.meta.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| {
+            if files.is_some() {
+                error!("meta target (name: {name}) cannot have files");
+                exit(100)
+            }
+            Target {target_type: TargetType::Meta, files: None, name, deps}
+        }))
     }
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub enum TargetType {
-    #[serde(rename = "exe")]
-    #[serde(alias = "executable")]
-    #[serde(alias = "bin")]
-    #[serde(alias = "binary")]
+    #[serde(rename = "exe", alias = "executable", alias = "bin", alias = "binary")]
     Executable,
-    #[serde(rename = "lib")]
-    #[serde(alias = "library")]
+    #[serde(rename = "lib", alias = "library")]
     Library,
     #[serde(rename = "meta")]
     Meta
@@ -56,44 +62,26 @@ pub struct Target {
     pub target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
-    #[serde(default)]
-    #[serde(alias = "dependencies")]
+    #[serde(default, alias = "dependencies")]
     pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone, Deserialize)]
-struct Executable {
+struct SpecialTarget {
     pub name: String,
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
-    #[serde(default)]
-    #[serde(alias = "dependencies")]
-    pub deps: HashMap<String, String>
-}
-#[derive(Debug, Clone, Deserialize)]
-struct Library {
-    pub name: String,
-    #[serde(with = "either::serde_untagged_optional")]
-    pub files: Option<Either<String, Vec<String>>>,
-    #[serde(default)]
-    #[serde(alias = "dependencies")]
-    pub deps: HashMap<String, String>
-}
-#[derive(Debug, Clone, Deserialize)]
-struct Meta {
-    pub name: String,
-    #[serde(default)]
-    #[serde(alias = "dependencies")]
+    #[serde(default, alias = "dependencies")]
     pub deps: HashMap<String, String>
 }
 #[derive(Debug, Clone)]
-pub struct BuildOptions<'a, 'b, 'c, 'd, 'e> {
+pub struct BuildOptions<'a> {
     pub source_dir: &'a Path,
-    pub build_dir: &'b Path,
+    pub build_dir: &'a Path,
     pub continue_build: bool,
     pub continue_comp: bool,
-    pub triple: &'c inkwell::targets::TargetTriple,
-    pub profile: &'d str,
-    pub link_dirs: Vec<&'e str>
+    pub triple: &'a inkwell::targets::TargetTriple,
+    pub profile: &'a str,
+    pub link_dirs: Vec<&'a str>
 }
 enum LibInfo {
     Name(String),
@@ -145,7 +133,7 @@ impl TargetData {
         out
     }
 }
-fn clear_mod<'ctx>(this: &HashMap<String, cobalt::Symbol<'ctx>>) {
+fn clear_mod(this: &HashMap<String, cobalt::Symbol>) {
     for (_, sym) in this.iter() {
         match sym {
             cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
@@ -163,7 +151,7 @@ fn clear_mod<'ctx>(this: &HashMap<String, cobalt::Symbol<'ctx>>) {
         }
     }
 }
-fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> Result<((PathBuf, bool), Option<TopLevelAST>), i32> {
+fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((PathBuf, bool), Option<TopLevelAST>), i32> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
@@ -206,7 +194,7 @@ fn build_file_1<'ctx>(path: &Path, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> 
     if fail && !opts.continue_comp {println!(); return Err(101)}
     Ok(((out_path, overall_fail), Some(ast)))
 }
-fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
+fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
     let files = &*cobalt::errors::files::FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
     let config = term::Config::default();
@@ -248,7 +236,7 @@ fn build_file_2<'ctx>(ast: TopLevelAST, ctx: &CompCtx<'ctx>, opts: &BuildOptions
     ctx.with_vars(|v| clear_mod(&v.symbols));
     Ok(())
 }
-fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx<'ctx>, opts: &BuildOptions) -> i32 {
+fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx, opts: &BuildOptions) -> i32 {
     let name = &t.name;
     println!("Building target {name}");
     match t.target_type {
