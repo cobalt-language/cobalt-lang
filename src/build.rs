@@ -520,8 +520,11 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                     }
                 }
             }
-            let mut paths = vec![];
             let mut asts = vec![];
+            let mut header_path = opts.build_dir.to_path_buf();
+            header_path.push(".artifacts");
+            header_path.push("co-header.o");
+            let mut paths = vec![(header_path, false)];
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -536,6 +539,16 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
                         match build_file_1(file.as_path(), ctx, opts) {
                             Ok((path, ast)) => {
+                                if paths[0].0 == path.0 { // make sure header file doesn't collide
+                                    let mut base = OsString::from("_");
+                                    base.push(&paths[0].0);
+                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
+                                        let mut new = OsString::from("_");
+                                        std::mem::swap(&mut base, &mut new);
+                                        base.push(new);
+                                    }
+                                    paths[0].0 = PathBuf::from(base);
+                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -569,6 +582,16 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                         }
                         match build_file_1(Path::new(&file), ctx, opts) {
                             Ok((path, ast)) => {
+                                if paths[0].0 == path.0 { // make sure header file doesn't collide
+                                    let mut base = OsString::from("_");
+                                    base.push(&paths[0].0);
+                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
+                                        let mut new = OsString::from("_");
+                                        std::mem::swap(&mut base, &mut new);
+                                        base.push(new);
+                                    }
+                                    paths[0].0 = PathBuf::from(base);
+                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -594,22 +617,22 @@ fn build_target<'ctx>(t: &Target, data: &RefCell<Option<TargetData>>, targets: &
                 }
             }
             asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
-            if let Err(err) = paths.iter().zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
+            if let Err(err) = paths.iter().skip(1).zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("lib{}.so", t.name));
+            let mut obj = libs::new_object(opts.triple);
+            libs::populate_header(&mut obj, ctx);
+            if let Err(err) = (|| -> Result<(), Box<dyn std::error::Error>> {
+                let file = std::fs::File::create(&paths[0].0)?;
+                let buf = std::io::BufWriter::new(file);
+                obj.write_stream(buf)
+            })() {
+                error!("{err}");
+                return 4;
+            };
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
             cmd.args(paths.into_iter().map(|(x, _)| x));
-            let mut obj = libs::new_object(opts.triple);
-            libs::populate_header(&mut obj, ctx);
-            let tmp = match obj.write() {
-                Ok(buf) => temp_file::with_contents(&buf),
-                Err(err) => {
-                    error!("{err}");
-                    return 4;
-                }
-            };
-            cmd.arg(tmp.path());
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {println!("Failed to build {name} because of link errors")}
             code
