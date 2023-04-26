@@ -23,7 +23,8 @@ enum OutputType {
     Assembly,
     Llvm,
     Bitcode,
-    Header
+    Header,
+    HeaderObj
 }
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
     asm_parser: true,
@@ -318,6 +319,13 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     output_type = Some(OutputType::Header);
                                 },
+                                "header-obj" | "emit-header-obj" => {
+                                    if output_type.is_some() {
+                                        error!("respecification of output type");
+                                        exit(1)
+                                    }
+                                    output_type = Some(OutputType::HeaderObj);
+                                },
                                 "no-default-link" => {
                                     if no_default_link {
                                         warning!("reuse of --no-default-link flag");
@@ -457,6 +465,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::Llvm => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::HeaderObj => format!("{}.coh.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
             });
             let out_file = if out_file == "-" {None} else {Some(out_file)};
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
@@ -520,6 +529,15 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         ctx.save(&mut file)?;
                     }
                     else {ctx.save(&mut std::io::stdout())?}
+                OutputType::HeaderObj => {
+                    let mut obj = libs::new_object(&triple);
+                    libs::populate_header(&mut obj, &ctx);
+                    if let Some(out) = out_file {
+                        let file = std::fs::File::create(out)?;
+                        obj.write_stream(file)?;
+                    }
+                    else {obj.write_stream(std::io::stdout())?}
+                }
                 OutputType::Llvm =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},

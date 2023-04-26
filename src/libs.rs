@@ -16,10 +16,10 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
                     if let Some(ctx) = ctx {
                         use object::read::{Object, ObjectSection};
                         let mut buf = Vec::new();
-                        let mut file = std::fs::File::open(lib)?;
+                        let mut file = std::fs::File::open(&path)?;
                         file.read_to_end(&mut buf)?;
                         match object::File::parse(buf.as_slice()) {
-                            Ok(obj) => if let Some(colib) = obj.section_by_name("colib").and_then(|v| v.uncompressed_data().ok()) {
+                            Ok(obj) => if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
                                 for c in ctx.load(&mut &*colib)? {
                                     error!("conflicting definitions for {c}");
                                     failed = true;
@@ -93,7 +93,7 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
-    let colib = obj.add_section(vec![], b"colib".to_vec(), SectionKind::Other);
+    let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Note);
     let colib = obj.section_mut(colib);
     colib.set_data(buf, 1);
 }
