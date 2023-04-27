@@ -92,12 +92,12 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 }
 pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String {
     let triple = triple.as_str().to_str().unwrap();
-    let components = triple.split("-");
-    if matches!(components.next().copied(), "wasm" | "wasm32") {format!("{base}.wasm")} else {
-        match components.next(1).copied() {
+    let mut components = triple.split("-");
+    if matches!(components.next(), Some("wasm" | "wasm32")) {format!("{base}.wasm")} else {
+        match components.next() {
             Some("apple") => format!("lib{base}.dylib"),
             Some("linux") => format!("lib{base}.so"),
-            _ => match components.next(2).copied() {
+            _ => match components.next() {
                 Some("apple" | "ios" | "darwin") => format!("lib{base}.dylib"),
                 Some("windows") => format!("{base}.dylib"),
                 _ => format!("lib{base}.so")
