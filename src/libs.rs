@@ -90,6 +90,21 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     };
     Object::new(format, arch, endian)
 }
+pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String {
+    let triple = triple.as_str().to_str().unwrap();
+    let components = triple.split("-");
+    if matches!(components.next().copied(), "wasm" | "wasm32") {format!("{base}.wasm")} else {
+        match components.next(1).copied() {
+            Some("apple") => format!("lib{base}.dylib"),
+            Some("linux") => format!("lib{base}.so"),
+            _ => match components.next(2).copied() {
+                Some("apple" | "ios" | "darwin") => format!("lib{base}.dylib"),
+                Some("windows") => format!("{base}.dylib"),
+                _ => format!("lib{base}.so")
+            }
+        }
+    }
+}
 pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
