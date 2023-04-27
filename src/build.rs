@@ -8,7 +8,7 @@ use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
-use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST};
+use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use super::{libs, opt, package, warning, error};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -182,8 +182,8 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((Pat
             return Err(100)
         }
     };
-    let file = cobalt::errors::files::add_file(name.to_string(), code.clone());
-    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let files = &mut *FILES.write().unwrap();
+    let file = files.add_file(0, name.to_string(), code.clone());
     let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {println!(); return Err(101)}
@@ -195,7 +195,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((Pat
     Ok(((out_path, overall_fail), Some(ast)))
 }
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
-    let files = &*cobalt::errors::files::FILES.read().unwrap();
+    let files = &*FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
     let config = term::Config::default();
     let (_, errs) = ast.codegen(ctx);
@@ -508,8 +508,11 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                     }
                 }
             }
-            let mut paths = vec![];
             let mut asts = vec![];
+            let mut header_path = opts.build_dir.to_path_buf();
+            header_path.push(".artifacts");
+            header_path.push("co-header.o");
+            let mut paths = vec![(header_path, false)];
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -524,6 +527,16 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
                         match build_file_1(file.as_path(), ctx, opts) {
                             Ok((path, ast)) => {
+                                if paths[0].0 == path.0 { // make sure header file doesn't collide
+                                    let mut base = OsString::from("_");
+                                    base.push(&paths[0].0);
+                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
+                                        let mut new = OsString::from("_");
+                                        std::mem::swap(&mut base, &mut new);
+                                        base.push(new);
+                                    }
+                                    paths[0].0 = PathBuf::from(base);
+                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -557,6 +570,16 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                         }
                         match build_file_1(Path::new(&file), ctx, opts) {
                             Ok((path, ast)) => {
+                                if paths[0].0 == path.0 { // make sure header file doesn't collide
+                                    let mut base = OsString::from("_");
+                                    base.push(&paths[0].0);
+                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
+                                        let mut new = OsString::from("_");
+                                        std::mem::swap(&mut base, &mut new);
+                                        base.push(new);
+                                    }
+                                    paths[0].0 = PathBuf::from(base);
+                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -582,30 +605,24 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                 }
             }
             asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
-            if let Err(err) = paths.iter().zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
+            if let Err(err) = paths.iter().skip(1).zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("lib{}.so", t.name));
+            let mut obj = libs::new_object(opts.triple);
+            libs::populate_header(&mut obj, ctx);
+            if let Err(err) = (|| -> Result<(), Box<dyn std::error::Error>> {
+                let file = std::fs::File::create(&paths[0].0)?;
+                let buf = std::io::BufWriter::new(file);
+                obj.write_stream(buf)
+            })() {
+                error!("{err}");
+                return 4;
+            };
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
             cmd.args(paths.into_iter().map(|(x, _)| x));
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code != 0 {println!("Failed to build {name} because of link errors"); return code}
-            let mut buf = Vec::<u8>::new();
-            if let Err(e) = ctx.save(&mut buf) {
-                error!("{e}");
-                return 4
-            }
-            let tmp = temp_file::with_contents(&buf);
-            cmd = Command::new("objcopy");
-            cmd
-                .arg(&output)
-                .arg("--add-section")
-                .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
-                .arg("--set-section-flags")
-                .arg(".colib=readonly,data");
-            let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code == 0 {println!("Built {name}");}
-            else {println!("Failed to build {name} because of link errors");}
+            if code != 0 {println!("Failed to build {name} because of link errors")}
             code
         },
         TargetType::Meta => {

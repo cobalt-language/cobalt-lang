@@ -69,9 +69,9 @@ impl CompoundDottedNameSegment {
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
                 if name.last() == Some(&0) {name.pop();}
-                Ok(Some(Identifier(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), (0, 0..0))))
+                Ok(Some(Identifier(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Default::default())))
             },
-            2 => Ok(Some(Glob((0, 0..0)))),
+            2 => Ok(Some(Glob(Default::default()))),
             3 => {
                 let mut out = vec![];
                 loop {

@@ -234,7 +234,7 @@ impl AST for ArrayLiteralAST {
         let mut elems = vec![];
         let mut ty = Type::Null;
         let mut first = true;
-        let mut elem_loc: Location = (0, 0..0);
+        let mut elem_loc: Location = Default::default();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);

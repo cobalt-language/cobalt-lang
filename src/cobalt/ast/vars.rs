@@ -1392,7 +1392,7 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        let ty = types::utils::impl_convert((0, 0..0), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let ty = types::utils::impl_convert(Default::default(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());

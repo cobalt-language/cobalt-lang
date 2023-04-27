@@ -7,7 +7,7 @@ use std::io::{Read, Write, BufReader};
 use std::ffi::OsString;
 use path_calculate::*;
 use std::path::{Path, PathBuf};
-use cobalt::AST;
+use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
 mod build;
@@ -23,7 +23,8 @@ enum OutputType {
     Assembly,
     Llvm,
     Bitcode,
-    Header
+    Header,
+    HeaderObj
 }
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
     asm_parser: true,
@@ -85,16 +86,16 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let file = cobalt::errors::files::add_file("<command line>".to_string(), arg.clone());
-                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let files = &mut *FILES.write().unwrap();
+                    let file = files.add_file(0, "<command line>".to_string(), arg.clone());
                     let (toks, errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
                 else {
                     let code = std::fs::read_to_string(arg.as_str())?;
-                    let file = cobalt::errors::files::add_file(arg.clone(), code.clone());
-                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let files = &mut *FILES.write().unwrap();
+                    let file = files.add_file(0, arg.clone(), code.clone());
                     let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
@@ -133,8 +134,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let file = cobalt::errors::files::add_file("<command line>".to_string(), arg.clone());
-                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let files = &mut *FILES.write().unwrap();
+                    let file = files.add_file(0, "<command line>".to_string(), arg.clone());
                     let (toks, mut errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
@@ -144,8 +145,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 else {
                     let code = std::fs::read_to_string(arg.as_str())?;
-                    let file = cobalt::errors::files::add_file(arg.clone(), code.clone());
-                    let files = &*cobalt::errors::files::FILES.read().unwrap();
+                    let files = &mut *FILES.write().unwrap();
+                    let file = files.add_file(0, arg.clone(), code.clone());
                     let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
                     let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
@@ -209,8 +210,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let ink_ctx = inkwell::context::Context::create();
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
-            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
-            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let files = &mut *FILES.write().unwrap();
+            let file = files.add_file(0, in_file.to_string(), code.clone());
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
@@ -317,6 +318,13 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(1)
                                     }
                                     output_type = Some(OutputType::Header);
+                                },
+                                "header-obj" | "emit-header-obj" => {
+                                    if output_type.is_some() {
+                                        error!("respecification of output type");
+                                        exit(1)
+                                    }
+                                    output_type = Some(OutputType::HeaderObj);
                                 },
                                 "no-default-link" => {
                                     if no_default_link {
@@ -451,12 +459,13 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
-                OutputType::Library => format!("lib{}.so", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::Library => libs::format_lib(in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), &triple),
                 OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Llvm => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
                 OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+                OutputType::HeaderObj => format!("{}.coh.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
             });
             let out_file = if out_file == "-" {None} else {Some(out_file)};
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
@@ -488,8 +497,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
-            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let files = &mut *FILES.write().unwrap();
+            let file = files.add_file(0, in_file.to_string(), code.clone());
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
@@ -520,19 +529,27 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         ctx.save(&mut file)?;
                     }
                     else {ctx.save(&mut std::io::stdout())?}
+                OutputType::HeaderObj => {
+                    let mut obj = libs::new_object(&triple);
+                    libs::populate_header(&mut obj, &ctx);
+                    if let Some(out) = out_file {
+                        let file = std::fs::File::create(out)?;
+                        obj.write_stream(file)?;
+                    }
+                    else {obj.write_stream(std::io::stdout())?}
+                }
                 OutputType::Llvm =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
                 OutputType::Bitcode =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
                     else {std::io::stdout().write_all(ctx.module.write_bitcode_to_memory().as_slice())?},
+                OutputType::Assembly => {
+                    let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
+                    if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
+                    else {std::io::stdout().write_all(code.as_slice())?}
+                }
                 _ => {
-                    if output_type == OutputType::Assembly {
-                        let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
-                        if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
-                        else {std::io::stdout().write_all(code.as_slice())?}
-                        return Ok(())
-                    }
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
                     match output_type {
                         OutputType::Executable => {
@@ -560,11 +577,21 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         },
                         OutputType::Library => {
                             if let Some(out_file) = out_file {
-                                let mut tmp = temp_file::with_contents(mb.as_slice());
+                                let mut obj = libs::new_object(&triple);
+                                libs::populate_header(&mut obj, &ctx);
+                                let tmp1 = match obj.write() {
+                                    Ok(data) => temp_file::with_contents(&data),
+                                    Err(err) => {
+                                        error!("{err}");
+                                        exit(4)
+                                    }
+                                };
+                                let tmp2 = temp_file::with_contents(mb.as_slice());
                                 let mut cmd = Command::new("ld");
                                 cmd
                                     .arg("--shared")
-                                    .arg(tmp.path())
+                                    .arg(tmp1.path())
+                                    .arg(tmp2.path())
                                     .arg("-o")
                                     .arg(&out_file);
                                 let mut args = vec![];
@@ -577,28 +604,16 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
                                 }
                                 let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
-                                if code != 0 {exit(code)}
-                                let mut buf = Vec::<u8>::new();
-                                if let Err(e) = ctx.save(&mut buf) {
-                                    error!("{e}");
-                                    exit(4)
-                                }
-                                tmp = temp_file::with_contents(&buf);
-                                cmd = Command::new("objcopy");
-                                cmd
-                                    .arg(&out_file)
-                                    .arg("--add-section")
-                                    .arg(format!(".colib={}", tmp.path().as_os_str().to_str().expect("temporary file should be valid Unicode")))
-                                    .arg("--set-section-flags")
-                                    .arg(".colib=readonly,data");
-                                exit(cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1))
+                                std::mem::drop(tmp1);
+                                std::mem::drop(tmp2);
+                                exit(code)
                             }
                             else {error!("cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
                             if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
-                        x => panic!("{x:?} has already been handled")
+                        x => unreachable!("{x:?} has already been handled")
                     }
                 }
             }
@@ -747,8 +762,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let flags = cobalt::Flags::default();
-            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
-            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let files = &mut *FILES.write().unwrap();
+            let file = files.add_file(0, in_file.to_string(), code.clone());
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
@@ -912,8 +927,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let mut fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let file = cobalt::errors::files::add_file(in_file.to_string(), code.clone());
-            let files = &*cobalt::errors::files::FILES.read().unwrap();
+            let files = &mut *FILES.write().unwrap();
+            let file = files.add_file(0, in_file.to_string(), code.clone());
             let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);

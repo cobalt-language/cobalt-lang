@@ -69,7 +69,7 @@ fn parse_paths(toks: &[Token], is_nested: bool) -> (CompoundDottedName, usize, V
 fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, Vec<Diagnostic>) {
     let mut idx = 1;
     let mut errs = vec![];
-    if toks.is_empty() {return (DottedName::local((String::new(), (0, 0..0))), 0, vec![])}
+    if toks.is_empty() {return (DottedName::local((String::new(), Default::default())), 0, vec![])}
     let (mut name, mut lwp) = match &toks[0].data {
         Special('.') => (DottedName::new(vec![], true), true),
         Identifier(s) => (DottedName::new(vec![(s.clone(), toks[0].loc.clone())], false), false),
@@ -103,7 +103,7 @@ fn parse_path(toks: &[Token], terminators: &'static str) -> (DottedName, usize, 
     (name, idx + 1, errs)
 }
 fn parse_literals(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
-    if toks.is_empty() {return (Box::new(NullAST::new((0, 0..0))), vec![])}
+    if toks.is_empty() {return (Box::new(NullAST::new(Default::default())), vec![])}
     match &toks[0].data {
         Int(x) => {
             if toks.len() == 1 {return (Box::new(IntLiteralAST::new(toks[0].loc.clone(), *x, None)), vec![])}
@@ -2340,7 +2340,7 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
 }
 pub fn parse(toks: &[Token], flags: &Flags) -> (TopLevelAST, Vec<Diagnostic>) {
     if toks.is_empty() {
-        return (TopLevelAST::new((0, 0..0), vec![]), vec![])
+        return (TopLevelAST::new(Default::default(), vec![]), vec![])
     }
     let start = toks[0].loc.clone(); // already bounds checked
     let (out, _, errs) = parse_tl(toks, flags, true);

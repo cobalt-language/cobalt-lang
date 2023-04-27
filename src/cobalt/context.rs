@@ -186,7 +186,7 @@ impl<'ctx> CompCtx<'ctx> {
                         return None
                     }
                 }
-                x => types::utils::attr((x, (0, 0..0)), (&name.0, (0, 0..0)), self).ok()?
+                x => types::utils::attr((x, Default::default()), (&name.0, Default::default()), self).ok()?
             };
         }
         Some(v)
