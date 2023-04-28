@@ -28,6 +28,7 @@ path-calculate = "0.1.3"
 termcolor = "1.2.0"
 owned_chars = "0.3.2"
 object = { version = "0.31.0", features = ["write"] }
+os_str_bytes = "6.5.0"
 
 [build-dependencies]
 lazy_static = "1.0"
