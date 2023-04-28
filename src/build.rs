@@ -45,8 +45,20 @@ impl Project {
             Target {target_type: TargetType::Meta, files: None, name, deps}
         }))
     }
+    pub fn target_type(&self, name: &str) -> Option<TargetType> {
+        self.targets.as_ref().and_then(|v| v.iter().find_map(|x| (x.name == name).then_some(x.target_type)))
+        .or_else(|| self.executable.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Executable)))
+        .or_else(|| self.library.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Library)))
+        .or_else(|| self.meta.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Meta)))
+    }
+    pub fn get_exe<'a>(&'a self) -> Vec<&'a str> {
+        let mut out = Vec::with_capacity(self.targets.as_ref().map_or(0, |v| v.len()) + self.executable.as_ref().map_or(0, |v| v.len()));
+        if let Some(ref v) = self.targets {out.extend(v.iter().filter_map(|x| (x.target_type == TargetType::Executable).then_some(x.name.as_str())))}
+        if let Some(ref v) = self.executable {out.extend(v.iter().map(|x| x.name.as_str()))}
+        out
+    }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum TargetType {
     #[serde(rename = "exe", alias = "executable", alias = "bin", alias = "binary")]
     Executable,
