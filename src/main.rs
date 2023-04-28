@@ -1012,8 +1012,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
         },
         "proj" | "project" => match args[2].as_str() {
             "track" => {
-                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {format!("{path}/registry")}
-                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt/registry")}
+                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
+                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
                     else {error!("couldn't determine Cobalt directory"); exit(100)});
                 if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
                 cobalt_dir.push("tracked.txt");
@@ -1024,7 +1024,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                             let cfg_path = path.join("cobalt.toml");
                             if !cfg_path.exists() {continue}
                             if std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()).is_some() {
-                                file.write_all(&cfg_path.to_raw_bytes())?;
+                                file.write_all(&cfg_path.as_absolute_path()?.to_raw_bytes())?;
                                 file.write_all(&[0])?;
                                 break 'found
                             }
@@ -1041,7 +1041,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         let mut path: PathBuf = arg.into();
                         if path.is_dir() {path.push("cobalt.toml");}
                         toml::from_str::<build::Project>(&std::fs::read_to_string(&path)?)?;
-                        file.write_all(&path.to_raw_bytes())?;
+                        file.write_all(&path.as_absolute_path()?.to_raw_bytes())?;
                         file.write_all(&[0])?;
                     }
                 }
@@ -1189,6 +1189,14 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     exit(100)
                                 }
                                 let cfg;
+                                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
+                                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
+                                    else {error!("couldn't determine Cobalt directory"); exit(100)});
+                                if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
+                                cobalt_dir.push("tracked.txt");
+                                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(cobalt_dir)?;
+                                file.write_all(&path.as_absolute_path()?.to_raw_bytes())?;
+                                file.write_all(&[0])?;
                                 match std::fs::read_to_string(path) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
@@ -1208,6 +1216,14 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut path = std::path::PathBuf::from(x);
                                 path.pop();
                                 let cfg;
+                                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
+                                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
+                                    else {error!("couldn't determine Cobalt directory"); exit(100)});
+                                if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
+                                cobalt_dir.push("tracked.txt");
+                                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(cobalt_dir)?;
+                                file.write_all(&Path::new(x).as_absolute_path()?.to_raw_bytes())?;
+                                file.write_all(&[0])?;
                                 match std::fs::read_to_string(x) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
