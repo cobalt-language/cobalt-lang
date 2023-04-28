@@ -1290,7 +1290,29 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     exit(100)
                                 }
                                 let cfg;
-                                match std::fs::read_to_string(path) {
+                                match std::fs::read_to_string(&path) {
+                                    Ok(c) => cfg = c,
+                                    Err(e) => {
+                                        eprintln!("error when reading project file: {e}");
+                                        exit(100)
+                                    }
+                                }
+                                let cfg = match toml::from_str::<build::Project>(&cfg) {
+                                    Ok(proj) => proj,
+                                    Err(e) => {
+                                        eprintln!("error when parsing project file: {e}");
+                                        exit(100)
+                                    }
+                                };
+                                track_project(&cfg.name, path, &mut vecs);
+                                save_projects(vecs)?;
+                                (cfg , PathBuf::from(x))
+                            },
+                            Ok(false) => {
+                                let mut path = std::path::PathBuf::from(&x);
+                                path.pop();
+                                let cfg;
+                                match std::fs::read_to_string(&x) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
                                         eprintln!("error when reading project file: {e}");
@@ -1305,28 +1327,6 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 };
                                 track_project(&cfg.name, x.clone().into(), &mut vecs);
-                                save_projects(vecs)?;
-                                (cfg , PathBuf::from(x))
-                            },
-                            Ok(false) => {
-                                let mut path = std::path::PathBuf::from(&x);
-                                path.pop();
-                                let cfg;
-                                match std::fs::read_to_string(x) {
-                                    Ok(c) => cfg = c,
-                                    Err(e) => {
-                                        eprintln!("error when reading project file: {e}");
-                                        exit(100)
-                                    }
-                                }
-                                let cfg = match toml::from_str::<build::Project>(&cfg) {
-                                    Ok(proj) => proj,
-                                    Err(e) => {
-                                        eprintln!("error when parsing project file: {e}");
-                                        exit(100)
-                                    }
-                                };
-                                track_project(&cfg.name, path.clone(), &mut vecs);
                                 save_projects(vecs)?;
                                 (cfg, path)
                             },
@@ -1541,7 +1541,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     exit(100)
                                 }
                                 let cfg;
-                                match std::fs::read_to_string(path) {
+                                match std::fs::read_to_string(&path) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
                                         eprintln!("error when reading project file: {e}");
@@ -1555,7 +1555,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 };
-                                track_project(&cfg.name, x.clone().into(), &mut vecs);
+                                track_project(&cfg.name, path, &mut vecs);
                                 save_projects(vecs)?;
                                 (cfg , PathBuf::from(x))
                             },
@@ -1563,7 +1563,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut path = std::path::PathBuf::from(&x);
                                 path.pop();
                                 let cfg;
-                                match std::fs::read_to_string(x) {
+                                match std::fs::read_to_string(&x) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
                                         eprintln!("error when reading project file: {e}");
@@ -1577,7 +1577,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 };
-                                track_project(&cfg.name, path.clone(), &mut vecs);
+                                track_project(&cfg.name, x.into(), &mut vecs);
                                 save_projects(vecs)?;
                                 (cfg, path)
                             },
