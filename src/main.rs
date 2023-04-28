@@ -1272,13 +1272,18 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         }, PathBuf::from("."))
                     },
                     Some(x) => {
-                        if !Path::new(x).exists() {
+                        let mut x = x.to_string();
+                        let mut vecs = load_projects()?;
+                        if x.as_bytes()[0] == b':' {
+                            if let Some(p) = vecs.iter().find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned()) {x = p}
+                        }
+                        if !Path::new(&x).exists() {
                             error!("{x} does not exist");
                             exit(100)
                         }
-                        match std::fs::metadata(x).map(|x| x.file_type().is_dir()) {
+                        match std::fs::metadata(&x).map(|x| x.file_type().is_dir()) {
                             Ok(true) => {
-                                let mut path = std::path::PathBuf::from(x);
+                                let mut path = std::path::PathBuf::from(&x);
                                 path.push("cobalt.toml");
                                 if !path.exists() {
                                     error!("cannot find cobalt.toml in {x}");
@@ -1299,13 +1304,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 };
-                                let mut vecs = load_projects()?;
-                                track_project(&cfg.name, x.into(), &mut vecs);
+                                track_project(&cfg.name, x.clone().into(), &mut vecs);
                                 save_projects(vecs)?;
                                 (cfg , PathBuf::from(x))
                             },
                             Ok(false) => {
-                                let mut path = std::path::PathBuf::from(x);
+                                let mut path = std::path::PathBuf::from(&x);
                                 path.pop();
                                 let cfg;
                                 match std::fs::read_to_string(x) {
@@ -1322,7 +1326,6 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 };
-                                let mut vecs = load_projects()?;
                                 track_project(&cfg.name, path.clone(), &mut vecs);
                                 save_projects(vecs)?;
                                 (cfg, path)
