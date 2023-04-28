@@ -27,7 +27,7 @@ fn load_projects() -> io::Result<Vec<[String; 2]>> {
     let mut it = buf.split('\0');
     let len = it.size_hint();
     let mut vec = Vec::<[String; 2]>::with_capacity(len.1.unwrap_or(len.0));
-    while let (Some(name), Some(path)) = (it.next(), it.next()) {vec.push([name.to_string(), path.to_string()])}
+    while let (Some(name), Some(path)) = (it.next(), it.next()) {if Path::new(path).exists() {vec.push([name.to_string(), path.to_string()])}}
     Ok(vec)
 }
 fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
