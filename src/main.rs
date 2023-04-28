@@ -3,11 +3,10 @@ use inkwell::execution_engine::FunctionLookupError;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
-use std::io::{Read, Write, BufReader};
+use std::io::{self, Read, Write, BufReader, Seek};
 use std::ffi::OsString;
 use path_calculate::*;
 use std::path::{Path, PathBuf};
-use os_str_bytes::OsStrBytes;
 use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
@@ -16,6 +15,39 @@ mod package;
 mod color;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
+fn load_projects() -> io::Result<Vec<[String; 2]>> {
+    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
+        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
+        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
+    cobalt_dir.push("tracked.txt");
+    let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(cobalt_dir)?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)?;
+    let mut it = buf.split('\0');
+    let len = it.size_hint();
+    let mut vec = Vec::<[String; 2]>::with_capacity(len.1.unwrap_or(len.0));
+    while let (Some(name), Some(path)) = (it.next(), it.next()) {vec.push([name.to_string(), path.to_string()])}
+    Ok(vec)
+}
+fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
+    if let Some(entry) = vec.iter_mut().find(|[_, p]| if let Ok(path) = path.as_absolute_path() {path == Path::new(&p)} else {false}) {entry[0] = name.to_string()}
+    else {vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])}
+}
+fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
+    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
+        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
+        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
+    cobalt_dir.push("tracked.txt");
+    let mut file = std::fs::OpenOptions::new().write(true).create(true).open(cobalt_dir)?;
+    vec.into_iter().flatten().try_for_each(|s| {
+        file.write_all(s.as_bytes())?;
+        file.write_all(&[0])
+    })?;
+    let pos = file.stream_position()?;
+    file.set_len(pos)
+}
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
@@ -1012,20 +1044,15 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
         },
         "proj" | "project" => match args[2].as_str() {
             "track" => {
-                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-                    else {error!("couldn't determine Cobalt directory"); exit(100)});
-                if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
-                cobalt_dir.push("tracked.txt");
-                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(cobalt_dir)?;
                 if args.len() == 3 {
                     'found: {
                         for path in std::env::current_dir()?.ancestors() {
                             let cfg_path = path.join("cobalt.toml");
                             if !cfg_path.exists() {continue}
-                            if std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()).is_some() {
-                                file.write_all(&cfg_path.as_absolute_path()?.to_raw_bytes())?;
-                                file.write_all(&[0])?;
+                            if let Some(proj) = std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()) {
+                                let mut vecs = load_projects()?;
+                                track_project(&proj.name, cfg_path, &mut vecs);
+                                save_projects(vecs)?;
                                 break 'found
                             }
                         }
@@ -1033,6 +1060,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 else {
+                    let mut vec = load_projects()?;
                     for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
                         if arg.as_bytes()[0] == b'-' {
                             error!("'track' subcommand does not accept flags");
@@ -1040,10 +1068,9 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let mut path: PathBuf = arg.into();
                         if path.is_dir() {path.push("cobalt.toml");}
-                        toml::from_str::<build::Project>(&std::fs::read_to_string(&path)?)?;
-                        file.write_all(&path.as_absolute_path()?.to_raw_bytes())?;
-                        file.write_all(&[0])?;
+                        track_project(&toml::from_str::<build::Project>(&std::fs::read_to_string(&path)?)?.name, path, &mut vec);
                     }
+                    save_projects(vec)?;
                 }
             },
             "build" => {
@@ -1189,14 +1216,6 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                     exit(100)
                                 }
                                 let cfg;
-                                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-                                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-                                    else {error!("couldn't determine Cobalt directory"); exit(100)});
-                                if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
-                                cobalt_dir.push("tracked.txt");
-                                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(cobalt_dir)?;
-                                file.write_all(&path.as_absolute_path()?.to_raw_bytes())?;
-                                file.write_all(&[0])?;
                                 match std::fs::read_to_string(path) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
@@ -1204,26 +1223,22 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 }
-                                (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                let cfg = match toml::from_str::<build::Project>(&cfg) {
                                     Ok(proj) => proj,
                                     Err(e) => {
                                         eprintln!("error when parsing project file: {e}");
                                         exit(100)
                                     }
-                                }, PathBuf::from(x))
+                                };
+                                let mut vecs = load_projects()?;
+                                track_project(&cfg.name, x.into(), &mut vecs);
+                                save_projects(vecs)?;
+                                (cfg , PathBuf::from(x))
                             },
                             Ok(false) => {
                                 let mut path = std::path::PathBuf::from(x);
                                 path.pop();
                                 let cfg;
-                                let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-                                    else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-                                    else {error!("couldn't determine Cobalt directory"); exit(100)});
-                                if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
-                                cobalt_dir.push("tracked.txt");
-                                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(cobalt_dir)?;
-                                file.write_all(&Path::new(x).as_absolute_path()?.to_raw_bytes())?;
-                                file.write_all(&[0])?;
                                 match std::fs::read_to_string(x) {
                                     Ok(c) => cfg = c,
                                     Err(e) => {
@@ -1231,13 +1246,17 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                                         exit(100)
                                     }
                                 }
-                                (match toml::from_str::<build::Project>(cfg.as_str()) {
+                                let cfg = match toml::from_str::<build::Project>(&cfg) {
                                     Ok(proj) => proj,
                                     Err(e) => {
                                         eprintln!("error when parsing project file: {e}");
                                         exit(100)
                                     }
-                                }, path)
+                                };
+                                let mut vecs = load_projects()?;
+                                track_project(&cfg.name, path.clone(), &mut vecs);
+                                save_projects(vecs)?;
+                                (cfg, path)
                             },
                             Err(e) => {
                                 eprintln!("error when determining type of {x}: {e}");
