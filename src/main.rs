@@ -1073,6 +1073,75 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     save_projects(vec)?;
                 }
             },
+            "untrack" => {
+                if args.len() == 3 {
+                    'found: {
+                        for path in std::env::current_dir()?.ancestors() {
+                            let cfg_path = path.join("cobalt.toml");
+                            if !cfg_path.exists() {continue}
+                            if std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()).is_some() {
+                                let mut vecs = load_projects()?;
+                                vecs.retain(|[_, p]| Path::new(p) != cfg_path);
+                                save_projects(vecs)?;
+                                break 'found
+                            }
+                        }
+                        error!("couldn't find cobalt.toml in currnet or parent directories");
+                    }
+                }
+                else {
+                    let mut vec = load_projects()?;
+                    for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
+                        if arg.as_bytes()[0] == b'-' {
+                            error!("'track' subcommand does not accept flags");
+                            exit(1);
+                        }
+                        let mut path: PathBuf = arg.into();
+                        if path.is_dir() {path.push("cobalt.toml");}
+                        vec.retain(|[_, p]| Path::new(p) != path);
+                    }
+                    save_projects(vec)?;
+                }
+            },
+            "list" => {
+                let mut machine = false;
+                for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
+                    if arg.as_bytes()[0] == b'-' && arg.len() > 1 {
+                        if arg.as_bytes()[1] == b'-' {
+                            if matches!(&arg[2..], "machine" | "machine-readable") {
+                                if machine {warning!("reuse of --machine flag")}
+                                machine = true;
+                            }
+                            else {
+                                error!("unknown flag {arg}");
+                                exit(1);
+                            }
+                        }
+                        else {
+                            for c in arg[1..].chars() {
+                                if c == 'm' {
+                                    if machine {warning!("reuse of --machine flag")}
+                                    machine = true;
+                                }
+                                else {
+                                    error!("unknown flag -{c}");
+                                    exit(1);
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        error!("positional arguments are not allowed for this command");
+                        exit(1);
+                    }
+                }
+                let vecs = load_projects()?;
+                if machine {vecs.iter().for_each(|[n, p]| println!("{n}\t{p}"))}
+                else {
+                    let padding = vecs.iter().map(|[n, _]| n.chars().count()).max().unwrap_or(0);
+                    vecs.iter().for_each(|[n, p]| println!("{n}{} => {p}", " ".repeat(padding - n.chars().count())));
+                }
+            },
             "build" => {
                 let mut project_dir: Option<&str> = None;
                 let mut source_dir: Option<&str> = None;
