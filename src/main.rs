@@ -7,6 +7,8 @@ use std::io::{self, Read, Write, BufReader, Seek};
 use std::ffi::OsString;
 use path_calculate::*;
 use std::path::{Path, PathBuf};
+use anyhow::Context;
+use anyhow_std::*;
 use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
@@ -67,7 +69,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
-fn driver() -> Result<(), Box<dyn std::error::Error>> {
+fn driver() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         println!("{}", HELP);
@@ -488,7 +490,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             } else {std::fs::read_to_string(in_file)?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
-            else {Target::initialize_native(&INIT_NEEDED)?}
+            else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
             let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
             let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
                 OutputType::Executable => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
@@ -548,7 +550,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                error!(" {}", msg.to_string());
+                error!("\n{}", msg.to_string());
                 exit(101)
             }
             if fail || overall_fail {exit(101)}
@@ -565,11 +567,12 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 OutputType::HeaderObj => {
                     let mut obj = libs::new_object(&triple);
                     libs::populate_header(&mut obj, &ctx);
+                    let vec = obj.write()?;
                     if let Some(out) = out_file {
-                        let file = std::fs::File::create(out)?;
-                        obj.write_stream(file)?;
+                        let mut file = std::fs::File::create(out)?;
+                        file.write_all(&vec)?;
                     }
-                    else {obj.write_stream(std::io::stdout())?}
+                    else {std::io::stdout().write_all(&vec)?}
                 }
                 OutputType::Llvm =>
                     if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
@@ -813,7 +816,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if fail && !continue_if_err {exit(101)}
             if let Err(msg) = ctx.module.verify() {
-                error!(" {}", msg.to_string());
+                error!("\n{}", msg.to_string());
                 exit(101)
             }
             if fail || overall_fail {exit(101)}
@@ -932,7 +935,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 std::io::stdin().read_to_string(&mut s)?;
                 ("<stdin>", s)
             };
-            Target::initialize_native(&INIT_NEEDED)?;
+            Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
             let triple = TargetMachine::get_default_triple();
             let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
                 &triple,
@@ -969,7 +972,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if let Err(msg) = ctx.module.verify() {
-                error!(" {}", msg.to_string());
+                error!("\n{}", msg.to_string());
                 exit(101)
             }
             if fail {exit(101)}
@@ -1259,17 +1262,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 let (project_data, project_dir) = match project_dir {
                     Some("-") => {
                         let mut cfg = String::new();
-                        if let Err(e) = std::io::stdin().read_to_string(&mut cfg) {
-                            eprintln!("error when reading project file from stdin: {e}");
-                            exit(100)
-                        }
-                        (match toml::from_str::<build::Project>(cfg.as_str()) {
-                            Ok(proj) => proj,
-                            Err(e) => {
-                                eprintln!("error when parsing project file: {e}");
-                                exit(100)
-                            }
-                        }, PathBuf::from("."))
+                        std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
+                        (toml::from_str::<build::Project>(cfg.as_str()).context("failed to parse project file")?, PathBuf::from("."))
                     },
                     Some(x) => {
                         let mut x = x.to_string();
@@ -1277,92 +1271,37 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         if x.as_bytes()[0] == b':' {
                             if let Some(p) = vecs.iter().find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned()) {x = p}
                         }
-                        if !Path::new(&x).exists() {
-                            error!("{x} does not exist");
-                            exit(100)
+                        if Path::new(&x).metadata_anyhow()?.file_type().is_dir() {
+                            let mut path = std::path::PathBuf::from(&x);
+                            path.push("cobalt.toml");
+                            if !path.exists() {anyhow::bail!("failed to find cobalt.toml in {x}")}
+                            let cfg = path.read_to_string_anyhow()?;
+                            let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
+                            track_project(&cfg.name, path, &mut vecs);
+                            save_projects(vecs)?;
+                            (cfg , PathBuf::from(x))
                         }
-                        match std::fs::metadata(&x).map(|x| x.file_type().is_dir()) {
-                            Ok(true) => {
-                                let mut path = std::path::PathBuf::from(&x);
-                                path.push("cobalt.toml");
-                                if !path.exists() {
-                                    error!("cannot find cobalt.toml in {x}");
-                                    exit(100)
-                                }
-                                let cfg;
-                                match std::fs::read_to_string(&path) {
-                                    Ok(c) => cfg = c,
-                                    Err(e) => {
-                                        eprintln!("error when reading project file: {e}");
-                                        exit(100)
-                                    }
-                                }
-                                let cfg = match toml::from_str::<build::Project>(&cfg) {
-                                    Ok(proj) => proj,
-                                    Err(e) => {
-                                        eprintln!("error when parsing project file: {e}");
-                                        exit(100)
-                                    }
-                                };
-                                track_project(&cfg.name, path, &mut vecs);
-                                save_projects(vecs)?;
-                                (cfg , PathBuf::from(x))
-                            },
-                            Ok(false) => {
-                                let mut path = std::path::PathBuf::from(&x);
-                                path.pop();
-                                let cfg;
-                                match std::fs::read_to_string(&x) {
-                                    Ok(c) => cfg = c,
-                                    Err(e) => {
-                                        eprintln!("error when reading project file: {e}");
-                                        exit(100)
-                                    }
-                                }
-                                let cfg = match toml::from_str::<build::Project>(&cfg) {
-                                    Ok(proj) => proj,
-                                    Err(e) => {
-                                        eprintln!("error when parsing project file: {e}");
-                                        exit(100)
-                                    }
-                                };
-                                track_project(&cfg.name, x.clone().into(), &mut vecs);
-                                save_projects(vecs)?;
-                                (cfg, path)
-                            },
-                            Err(e) => {
-                                eprintln!("error when determining type of {x}: {e}");
-                                exit(100)
-                            }
+                        else {
+                            let mut path = std::path::PathBuf::from(&x);
+                            path.pop();
+                            let cfg = path.read_to_string_anyhow()?;
+                            let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
+                            track_project(&cfg.name, x.clone().into(), &mut vecs);
+                            save_projects(vecs)?;
+                            (cfg, path)
                         }
                     },
                     None => {
-                        let cfg;
                         let mut path = std::env::current_dir()?;
                         loop {
                             path.push("cobalt.toml");
                             if path.exists() {break}
                             path.pop();
-                            if !path.pop() {
-                                error!("couldn't find cobalt.toml in current directory");
-                                exit(100)
-                            }
+                            if !path.pop() {anyhow::bail!("couldn't find cobalt.toml in current directory")}
                         }
-                        match std::fs::read_to_string(&path) {
-                            Ok(c) => cfg = c,
-                            Err(e) => {
-                                eprintln!("error when reading project file: {e}");
-                                exit(100)
-                            }
-                        }
+                        let cfg = Path::new(&path).read_to_string_anyhow()?;
                         path.pop();
-                        (match toml::from_str::<build::Project>(cfg.as_str()) {
-                            Ok(proj) => proj,
-                            Err(e) => {
-                                eprintln!("error when parsing project file: {e}");
-                                exit(100)
-                            }
-                        }, path)
+                        (toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?, path)
                     }
                 };
                 if !no_default_link {
@@ -1376,7 +1315,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     dir
                 }, PathBuf::from);
                 if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
-                else {Target::initialize_native(&INIT_NEEDED)?}
+                else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
                 exit(build::build(project_data, if targets.is_empty() {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
                     source_dir,
                     build_dir: build_dir.as_path(),
@@ -1510,17 +1449,8 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                 let (project_data, project_dir) = match project_dir {
                     Some("-") => {
                         let mut cfg = String::new();
-                        if let Err(e) = std::io::stdin().read_to_string(&mut cfg) {
-                            eprintln!("error when reading project file from stdin: {e}");
-                            exit(100)
-                        }
-                        (match toml::from_str::<build::Project>(cfg.as_str()) {
-                            Ok(proj) => proj,
-                            Err(e) => {
-                                eprintln!("error when parsing project file: {e}");
-                                exit(100)
-                            }
-                        }, PathBuf::from("."))
+                        std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
+                        (toml::from_str::<build::Project>(cfg.as_str()).context("failed to parse project file")?, PathBuf::from("."))
                     },
                     Some(x) => {
                         let mut x = x.to_string();
@@ -1528,115 +1458,50 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                         if x.as_bytes()[0] == b':' {
                             if let Some(p) = vecs.iter().find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned()) {x = p}
                         }
-                        if !Path::new(&x).exists() {
-                            error!("{x} does not exist");
-                            exit(100)
+                        if Path::new(&x).metadata_anyhow()?.file_type().is_dir() {
+                            let mut path = std::path::PathBuf::from(&x);
+                            path.push("cobalt.toml");
+                            if !path.exists() {anyhow::bail!("failed to find cobalt.toml in {x}")}
+                            let cfg = path.read_to_string_anyhow()?;
+                            let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
+                            track_project(&cfg.name, path, &mut vecs);
+                            save_projects(vecs)?;
+                            (cfg , PathBuf::from(x))
                         }
-                        match std::fs::metadata(&x).map(|x| x.file_type().is_dir()) {
-                            Ok(true) => {
-                                let mut path = std::path::PathBuf::from(&x);
-                                path.push("cobalt.toml");
-                                if !path.exists() {
-                                    error!("cannot find cobalt.toml in {x}");
-                                    exit(100)
-                                }
-                                let cfg;
-                                match std::fs::read_to_string(&path) {
-                                    Ok(c) => cfg = c,
-                                    Err(e) => {
-                                        eprintln!("error when reading project file: {e}");
-                                        exit(100)
-                                    }
-                                }
-                                let cfg = match toml::from_str::<build::Project>(&cfg) {
-                                    Ok(proj) => proj,
-                                    Err(e) => {
-                                        eprintln!("error when parsing project file: {e}");
-                                        exit(100)
-                                    }
-                                };
-                                track_project(&cfg.name, path, &mut vecs);
-                                save_projects(vecs)?;
-                                (cfg , PathBuf::from(x))
-                            },
-                            Ok(false) => {
-                                let mut path = std::path::PathBuf::from(&x);
-                                path.pop();
-                                let cfg;
-                                match std::fs::read_to_string(&x) {
-                                    Ok(c) => cfg = c,
-                                    Err(e) => {
-                                        eprintln!("error when reading project file: {e}");
-                                        exit(100)
-                                    }
-                                }
-                                let cfg = match toml::from_str::<build::Project>(&cfg) {
-                                    Ok(proj) => proj,
-                                    Err(e) => {
-                                        eprintln!("error when parsing project file: {e}");
-                                        exit(100)
-                                    }
-                                };
-                                track_project(&cfg.name, x.into(), &mut vecs);
-                                save_projects(vecs)?;
-                                (cfg, path)
-                            },
-                            Err(e) => {
-                                eprintln!("error when determining type of {x}: {e}");
-                                exit(100)
-                            }
+                        else {
+                            let mut path = std::path::PathBuf::from(&x);
+                            path.pop();
+                            let cfg = path.read_to_string_anyhow()?;
+                            let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
+                            track_project(&cfg.name, x.clone().into(), &mut vecs);
+                            save_projects(vecs)?;
+                            (cfg, path)
                         }
                     },
                     None => {
-                        let cfg;
                         let mut path = std::env::current_dir()?;
                         loop {
                             path.push("cobalt.toml");
                             if path.exists() {break}
                             path.pop();
-                            if !path.pop() {
-                                error!("couldn't find cobalt.toml in current directory");
-                                exit(100)
-                            }
+                            if !path.pop() {anyhow::bail!("couldn't find cobalt.toml in current directory")}
                         }
-                        match std::fs::read_to_string(&path) {
-                            Ok(c) => cfg = c,
-                            Err(e) => {
-                                eprintln!("error when reading project file: {e}");
-                                exit(100)
-                            }
-                        }
+                        let cfg = Path::new(&path).read_to_string_anyhow()?;
                         path.pop();
-                        (match toml::from_str::<build::Project>(cfg.as_str()) {
-                            Ok(proj) => proj,
-                            Err(e) => {
-                                eprintln!("error when parsing project file: {e}");
-                                exit(100)
-                            }
-                        }, path)
+                        (toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?, path)
                     }
                 };
                 let mut target = target.map_or_else(|| {
                     let exes = project_data.get_exe();
                     match exes.len() {
-                        0 => {
-                            error!("no executable targets available for current project");
-                            exit(10)
-                        }
-                        1 => exes[0].to_string(),
-                        x => {
-                            error!("{x} executable targets available, please select one");
-                            error!("select one of {exes:?}");
-                            exit(10)
-                        }
+                        0 => anyhow::bail!("no executable targets available for current project"),
+                        1 => Ok(exes[0].to_string()),
+                        x => anyhow::bail!("{x} executable targets available, please select one: {exes:?}")
                     }
                 }, |t| {
-                    if project_data.target_type(t) != Some(build::TargetType::Executable) {
-                        error!("target type must be an executable");
-                        exit(1);
-                    }
-                    t.to_string()
-                });
+                    if project_data.target_type(t) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
+                    Ok(t.to_string())
+                })?;
                 if !no_default_link {
                     if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                     else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
@@ -1648,7 +1513,7 @@ fn driver() -> Result<(), Box<dyn std::error::Error>> {
                     dir
                 }, PathBuf::from);
                 if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
-                else {Target::initialize_native(&INIT_NEEDED)?}
+                else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
                 let default = TargetMachine::get_default_triple();
                 let code = build::build(project_data, Some(vec![target.clone()]), &build::BuildOptions {
                     source_dir,
