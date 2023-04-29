@@ -1544,7 +1544,7 @@ fn driver() -> anyhow::Result<()> {
 }
 fn main() {
     if let Err(err) = driver() {
-        error!("{err}");
+        error!("{err:#}");
         exit(100);
     }
 }
