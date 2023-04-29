@@ -224,6 +224,7 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                                 Some('=') => {count += 1;},
                                 _ => break
                             }
+                            if flags.up {loc.1 += 1};
                         }
                         loop {
                             while let Some(c) = it.next_if(|&x| x != '=') { // skip characters that aren't '='
