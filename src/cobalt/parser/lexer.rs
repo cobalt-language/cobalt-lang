@@ -235,14 +235,14 @@ pub fn lex(data: &str, mut loc: (FileId, usize), flags: &Flags) -> (Vec<Token>, 
                                 break 'main;
                             }
                             let mut rem = count;
-                            while rem > 0 && it.peek() == Some(&'=') { // the number of consecutive '='s
+                            while it.peek() == Some(&'=') { // the number of consecutive '='s
                                 if flags.up {loc.1 += 1};
                                 if rem > 0 { // it's ok if there's extra '='s
                                     rem -= 1;
                                 }
                                 it.next();
                             }
-                            if it.peek() == Some(&'#') { // check to make sure that it's actually ended
+                            if rem == 0 && it.peek() == Some(&'#') { // check to make sure that it's actually ended
                                 if flags.up {loc.1 += 1};
                                 break;
                             }
