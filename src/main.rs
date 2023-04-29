@@ -128,7 +128,7 @@ fn driver() -> anyhow::Result<()> {
                     for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
                 else {
-                    let code = std::fs::read_to_string(arg.as_str())?;
+                    let code = Path::new(&arg).read_to_string_anyhow()?;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, arg.clone(), code.clone());
                     let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
@@ -179,7 +179,7 @@ fn driver() -> anyhow::Result<()> {
                     else {print!("{}", ast)}
                 }
                 else {
-                    let code = std::fs::read_to_string(arg.as_str())?;
+                    let code = Path::new(&arg).read_to_string_anyhow()?;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, arg.clone(), code.clone());
                     let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
@@ -237,7 +237,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 s
-            } else {std::fs::read_to_string(in_file)?};
+            } else {Path::new(in_file).read_to_string_anyhow()?};
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
             let mut flags = cobalt::Flags::default();
@@ -487,7 +487,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 s
-            } else {std::fs::read_to_string(in_file)?};
+            } else {Path::new(in_file).read_to_string_anyhow()?};
             let output_type = output_type.unwrap_or(OutputType::Executable);
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
@@ -775,7 +775,7 @@ fn driver() -> anyhow::Result<()> {
                 },
                 f => {
                     args[0].push_str(f);
-                    (f, std::fs::read_to_string(f)?)
+                    (f, Path::new(f).read_to_string_anyhow()?)
                 }
             };
             let ink_ctx = inkwell::context::Context::create();
@@ -929,7 +929,7 @@ fn driver() -> anyhow::Result<()> {
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = if let Some(f) = in_file {(f, std::fs::read_to_string(f)?)}
+            let (in_file, code) = if let Some(f) = in_file {(f, Path::new(f).read_to_string_anyhow()?)}
             else {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -1071,7 +1071,7 @@ fn driver() -> anyhow::Result<()> {
                         }
                         let mut path: PathBuf = arg.into();
                         if path.is_dir() {path.push("cobalt.toml");}
-                        track_project(&toml::from_str::<build::Project>(&std::fs::read_to_string(&path)?)?.name, path, &mut vec);
+                        track_project(&toml::from_str::<build::Project>(&Path::new(&path).read_to_string_anyhow()?)?.name, path, &mut vec);
                     }
                     save_projects(vec)?;
                 }
