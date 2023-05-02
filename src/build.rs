@@ -2,8 +2,10 @@ use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::ffi::OsString;
+use std::io::{Read, Write, BufWriter};
 use std::process::{Command, exit};
 use std::cell::RefCell;
+use std::borrow::Cow;
 use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
@@ -145,8 +147,9 @@ impl TargetData {
         out
     }
 }
-fn clear_mod(this: &HashMap<String, cobalt::Symbol>) {
-    for (_, sym) in this.iter() {
+fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
+    for (_, sym) in this.iter_mut() {
+        sym.1.export = false;
         match sym {
             cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
             cobalt::Symbol(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
@@ -163,11 +166,17 @@ fn clear_mod(this: &HashMap<String, cobalt::Symbol>) {
         }
     }
 }
-fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((PathBuf, bool), Option<TopLevelAST>), i32> {
+fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<(([PathBuf; 2], bool), Option<TopLevelAST>), i32> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
+    out_path.push("objects");
     out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     out_path.set_extension("o");
+    let mut head_path = opts.build_dir.to_path_buf();
+    head_path.push(".artifacts");
+    head_path.push("headers");
+    head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    head_path.set_extension("coh.o");
     let pname = match path.related_to(opts.source_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -175,18 +184,32 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((Pat
             return Err(100)
         }
     };
-    if out_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
+    let mut fail = false;
+    let mut overall_fail = false;
+    if out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
         println!("{} has already been built", pname.display());
-        return Ok(((out_path, false), None));
+        use object::read::{Object, ObjectSection};
+        let mut buf = Vec::new();
+        let mut file = std::fs::File::open(&path).map_err(|err| {error!("{err}"); 4})?;
+        file.read_to_end(&mut buf).map_err(|err| {error!("{err}"); 4})?;
+        let obj = object::File::parse(buf.as_slice()).map_err(|err| {
+            error!("{err}");
+            4
+        })?;
+        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
+            for c in ctx.load(&mut &*colib).map_err(|err| {error!("{err}"); 4})? {
+                error!("conflicting definitions for {c}");
+                fail = true;
+            }
+        }
+        return if fail {Err(101)} else {Ok((([out_path, head_path], false), None))};
     }
-    println!("Compiling {}", pname.display());
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
     let config = term::Config::default();
     let name = path.to_str().expect("File name must be valid UTF-8");
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
-    let mut fail = false;
-    let mut overall_fail = false;
+    fail = false;
     let code = match std::fs::read_to_string(path.as_absolute_path().unwrap()) {
         Ok(code) => code,
         Err(e) => {
@@ -198,15 +221,16 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<((Pat
     let file = files.add_file(0, name.to_string(), code.clone());
     let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-    if fail && !opts.continue_comp {println!(); return Err(101)}
+    if fail && !opts.continue_comp {return Err(101)}
     overall_fail |= fail;
     fail = false;
     let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
-    if fail && !opts.continue_comp {println!(); return Err(101)}
-    Ok(((out_path, overall_fail), Some(ast)))
+    if fail && !opts.continue_comp {return Err(101)}
+    ast.run_passes(ctx);
+    Ok((([out_path, head_path], overall_fail), Some(ast)))
 }
-fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, out_path: &Path, mut overall_fail: bool) -> Result<(), i32> {
+fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut overall_fail: bool) -> Result<(), i32> {
     let files = &*FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
     let config = term::Config::default();
@@ -215,16 +239,16 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, out_path: 
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     overall_fail |= fail;
     if fail && !opts.continue_comp {
-        ctx.with_vars(|v| clear_mod(&v.symbols));
+        ctx.with_vars(|v| clear_mod(&mut v.symbols));
         return Err(101)
     }
     if let Err(msg) = ctx.module.verify() {
         error!("\n{}", msg.to_string());
-        ctx.with_vars(|v| clear_mod(&v.symbols));
+        ctx.with_vars(|v| clear_mod(&mut v.symbols));
         return Err(101)
     }
     if overall_fail {
-        ctx.with_vars(|v| clear_mod(&v.symbols));
+        ctx.with_vars(|v| clear_mod(&mut v.symbols));
         return Err(101)
     }
     let pm = inkwell::passes::PassManager::create(());
@@ -238,15 +262,37 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, out_path: 
         inkwell::targets::RelocMode::PIC,
         inkwell::targets::CodeModel::Small
     ).expect("failed to create target machine");
-    println!("made target machine for {out_path:?}");
     if let Err(e) = if out_path.parent().unwrap().exists() {Ok(())} else {std::fs::create_dir_all(out_path.parent().unwrap())} {
         eprintln!("error when creating directory {}: {e}", out_path.parent().unwrap().display());
         return Err(100)
     }
+    if let Err(e) = if head_path.parent().unwrap().exists() {Ok(())} else {std::fs::create_dir_all(head_path.parent().unwrap())} {
+        eprintln!("error when creating directory {}: {e}", head_path.parent().unwrap().display());
+        return Err(100)
+    }
     target_machine.write_to_file(&ctx.module, inkwell::targets::FileType::Object, out_path).unwrap();
-    println!("built artifact for {out_path:?}");
-    ctx.with_vars(|v| clear_mod(&v.symbols));
-    Ok(())
+    let out = ctx.with_vars(|v| {
+        let mut obj = libs::new_object(opts.triple);
+        libs::populate_header(&mut obj, ctx);
+        let mut file = BufWriter::new(std::fs::File::create(head_path)?);
+        file.write_all(&obj.write()?)?;
+        file.flush()?;
+        clear_mod(&mut v.symbols);
+        anyhow::Ok(())
+    }).map_err(|e| {
+        error!("{e:#}");
+        101
+    });
+    let mut pname = match out_path.related_to(opts.build_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error occured when finding relative path: {e}");
+            return Err(100)
+        }
+    };
+    if let Ok(base) = pname.strip_prefix(Path::new(".artifacts").join("objects")).map(ToOwned::to_owned).map(Cow::Owned) {pname = base;};
+    println!("Built {}", pname.display());
+    out
 }
 fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx, opts: &BuildOptions) -> i32 {
     let name = &t.name;
@@ -412,11 +458,11 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                 }
             }
             asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
-            if let Err(err) = paths.iter().zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
+            if let Err(err) = paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, (&p1, &p2), *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(&t.name);
             let mut args = vec![OsString::from("-o"), output.into_os_string()];
-            args.extend(paths.into_iter().map(|x| x.0.into_os_string()));
+            args.extend(paths.into_iter().map(|x| x.0[0].clone().into_os_string()));
             if let Err(e) = data.borrow_mut().as_mut().unwrap().init_all(targets, &opts.link_dirs) {return e}
             for lib in data.borrow().as_ref().unwrap().initialized_libs(targets) {
                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
@@ -521,10 +567,7 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                 }
             }
             let mut asts = vec![];
-            let mut header_path = opts.build_dir.to_path_buf();
-            header_path.push(".artifacts");
-            header_path.push("co-header.o");
-            let mut paths = vec![(header_path, false)];
+            let mut paths = vec![];
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -539,16 +582,6 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
                         match build_file_1(file.as_path(), ctx, opts) {
                             Ok((path, ast)) => {
-                                if paths[0].0 == path.0 { // make sure header file doesn't collide
-                                    let mut base = OsString::from("_");
-                                    base.push(&paths[0].0);
-                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
-                                        let mut new = OsString::from("_");
-                                        std::mem::swap(&mut base, &mut new);
-                                        base.push(new);
-                                    }
-                                    paths[0].0 = PathBuf::from(base);
-                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -582,16 +615,6 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                         }
                         match build_file_1(Path::new(&file), ctx, opts) {
                             Ok((path, ast)) => {
-                                if paths[0].0 == path.0 { // make sure header file doesn't collide
-                                    let mut base = OsString::from("_");
-                                    base.push(&paths[0].0);
-                                    while paths.iter().skip(1).any(|(p, _)| p == &base) {
-                                        let mut new = OsString::from("_");
-                                        std::mem::swap(&mut base, &mut new);
-                                        base.push(new);
-                                    }
-                                    paths[0].0 = PathBuf::from(base);
-                                }
                                 paths.push(path);
                                 asts.push(ast);
                             },
@@ -616,23 +639,12 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                     return 106;
                 }
             }
-            asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
-            if let Err(err) = paths.iter().skip(1).zip(asts).try_for_each(|((path, fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, &path, *fail)} else {Ok(())}) {return err}
+            if let Err(err) = paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, (&p1, &p2), *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(format!("lib{}.so", t.name));
-            let mut obj = libs::new_object(opts.triple);
-            libs::populate_header(&mut obj, ctx);
-            if let Err(err) = (|| -> Result<(), Box<dyn std::error::Error>> {
-                let file = std::fs::File::create(&paths[0].0)?;
-                let buf = std::io::BufWriter::new(file);
-                obj.write_stream(buf)
-            })() {
-                error!("{err}");
-                return 4;
-            };
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
-            cmd.args(paths.into_iter().map(|(x, _)| x));
+            cmd.args(paths.into_iter().flat_map(|(x, _)| x));
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {println!("Failed to build {name} because of link errors")}
             code
