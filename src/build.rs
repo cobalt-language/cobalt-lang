@@ -190,7 +190,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> Result<(([Pa
         println!("{} has already been built", pname.display());
         use object::read::{Object, ObjectSection};
         let mut buf = Vec::new();
-        let mut file = std::fs::File::open(&path).map_err(|err| {error!("{err}"); 4})?;
+        let mut file = std::fs::File::open(&head_path).map_err(|err| {error!("{err}"); 4})?;
         file.read_to_end(&mut buf).map_err(|err| {error!("{err}"); 4})?;
         let obj = object::File::parse(buf.as_slice()).map_err(|err| {
             error!("{err}");
