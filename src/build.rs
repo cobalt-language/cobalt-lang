@@ -271,18 +271,18 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
         return Err(100)
     }
     target_machine.write_to_file(&ctx.module, inkwell::targets::FileType::Object, out_path).unwrap();
-    let out = ctx.with_vars(|v| {
-        let mut obj = libs::new_object(opts.triple);
-        libs::populate_header(&mut obj, ctx);
+    let mut obj = libs::new_object(opts.triple);
+    libs::populate_header(&mut obj, ctx);
+    (|| {
         let mut file = BufWriter::new(std::fs::File::create(head_path)?);
         file.write_all(&obj.write()?)?;
         file.flush()?;
-        clear_mod(&mut v.symbols);
         anyhow::Ok(())
-    }).map_err(|e| {
-        error!("{e:#}");
-        101
-    });
+    })().map_err(|e| {
+        println!("{e:#}");
+        4
+    })?;
+    ctx.with_vars(|v| clear_mod(&mut v.symbols));
     let mut pname = match out_path.related_to(opts.build_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -292,7 +292,7 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     };
     if let Ok(base) = pname.strip_prefix(Path::new(".artifacts").join("objects")).map(ToOwned::to_owned).map(Cow::Owned) {pname = base;};
     println!("Built {}", pname.display());
-    out
+    Ok(())
 }
 fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx, opts: &BuildOptions) -> i32 {
     let name = &t.name;
