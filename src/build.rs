@@ -457,7 +457,6 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                     return 106;
                 }
             }
-            asts.iter().for_each(|ast| if let Some(ast) = ast {ast.run_passes(ctx)});
             if let Err(err) = paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, (&p1, &p2), *fail)} else {Ok(())}) {return err}
             let mut output = opts.build_dir.to_path_buf();
             output.push(&t.name);
