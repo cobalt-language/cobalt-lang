@@ -1,11 +1,24 @@
 use std::path::PathBuf;
 use std::ffi::OsStr;
-use std::io::{self, Read};
+use std::io::Read;
+use std::fmt;
 use object::{SectionKind, write::Object};
-use super::error;
-pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::CompCtx>) -> io::Result<(Vec<(PathBuf, String)>, Vec<String>, bool)> {
+#[derive(Debug)]
+pub struct ConflictingDefs(pub Vec<String>);
+impl fmt::Display for ConflictingDefs {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut it = self.0.iter().peekable();
+        while let Some(v) = it.next() {
+            write!(f, "conflicting defintions for {v}")?;
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for ConflictingDefs {}
+pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::CompCtx>) -> anyhow::Result<(Vec<(PathBuf, String)>, Vec<String>)> {
     let mut out = vec![];
-    let mut failed = false;
+    let mut conflicts = vec![];
     for x in dirs.iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file()) {
         let path = x.into_path();
         if let Some(ext) = path.file_name().and_then(OsStr::to_str).map(|x| x.find('.').map(|i| &x[i..]).unwrap_or(x)) {if !(ext.contains(".so") || ext.contains(".dylib") || ext.contains(".dll")) {continue}} else {continue}
@@ -18,14 +31,9 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
                         let mut buf = Vec::new();
                         let mut file = std::fs::File::open(&path)?;
                         file.read_to_end(&mut buf)?;
-                        match object::File::parse(buf.as_slice()) {
-                            Ok(obj) => if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
-                                for c in ctx.load(&mut &*colib)? {
-                                    error!("conflicting definitions for {c}");
-                                    failed = true;
-                                }
-                            },
-                            Err(err) => error!("{err}")
+                        let obj = object::File::parse(buf.as_slice())?;
+                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
+                            conflicts.append(&mut ctx.load(&mut &*colib)?);
                         }
                     }
                     out.push((path.clone(), val));
@@ -49,7 +57,8 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
             }
         }
     }
-    Ok((out, libs.into_iter().filter(|x| !x.is_empty()).collect(), failed))
+    if !conflicts.is_empty() {anyhow::bail!(ConflictingDefs(conflicts))}
+    Ok((out, libs.into_iter().filter(|x| !x.is_empty()).collect()))
 }
 pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     let triple = triple.as_str().to_str().unwrap();
