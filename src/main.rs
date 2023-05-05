@@ -37,7 +37,12 @@ fn load_projects() -> io::Result<Vec<[String; 2]>> {
 }
 fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
     if let Some(entry) = vec.iter_mut().find(|[_, p]| if let Ok(path) = path.as_absolute_path() {path == Path::new(&p)} else {false}) {entry[0] = name.to_string()}
-    else {vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])}
+    else if let Some(entry) = vec.iter_mut().find(|[n, _]| n == name) {entry[1] = path.as_absolute_path().unwrap().to_string_lossy().to_string()}
+    else {
+        vec.sort_by(|[n1, _], [n2, _]| n1.cmp(n2));
+        vec.dedup_by(|[n1, _], [n2, _]| n1 == n2);
+        vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])
+    }
 }
 fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
     let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
