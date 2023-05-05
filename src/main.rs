@@ -1080,6 +1080,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut no_default_link = false;
                 let mut triple: Option<TargetTriple> = None;
                 let mut targets: Vec<&str> = vec![];
+                let mut rebuild = false;
                 {
                     let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
                     while let Some(arg) = it.next() {
@@ -1098,6 +1099,12 @@ fn driver() -> anyhow::Result<()> {
                                             warning!("reuse of --no-default-link flag");
                                         }
                                         no_default_link = true;
+                                    },
+                                    "rebuild" => {
+                                        if rebuild {
+                                            warning!("reuse of -r flag");
+                                        }
+                                        rebuild = true;
                                     },
                                     x => {
                                         error!("unknown flag --{x}");
@@ -1148,7 +1155,7 @@ fn driver() -> anyhow::Result<()> {
                                         },
                                         't' => {
                                             if profile.is_some() {
-                                                warning!("respecification of target triple");
+                                                error!("respecification of target triple");
                                                 exit(1)
                                             }
                                             if let Some(x) = it.next() {
@@ -1167,6 +1174,12 @@ fn driver() -> anyhow::Result<()> {
                                                 error!("expected build target after -T flag");
                                                 exit(1)
                                             }
+                                        },
+                                        'r' => {
+                                            if rebuild {
+                                                warning!("reuse of -r flag");
+                                            }
+                                            rebuild = true;
                                         },
                                         x => {
                                             error!("unknown flag -{x}");
@@ -1249,6 +1262,7 @@ fn driver() -> anyhow::Result<()> {
                     triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
                     continue_build: false,
                     continue_comp: false,
+                    rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
             },
@@ -1262,6 +1276,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut triple: Option<TargetTriple> = None;
                 let mut target: Option<&str> = None;
                 let mut cmd_args: Vec<String> = vec![];
+                let mut rebuild = false;
                 {
                     let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
                     while let Some(arg) = it.next() {
@@ -1281,6 +1296,12 @@ fn driver() -> anyhow::Result<()> {
                                             warning!("reuse of --no-default-link flag");
                                         }
                                         no_default_link = true;
+                                    },
+                                    "rebuild" => {
+                                        if rebuild {
+                                            warning!("reuse of -r flag");
+                                        }
+                                        rebuild = true;
                                     },
                                     x => {
                                         error!("unknown flag --{x}");
@@ -1354,6 +1375,12 @@ fn driver() -> anyhow::Result<()> {
                                                 error!("expected build target after -T flag");
                                                 exit(1)
                                             }
+                                        },
+                                        'r' => {
+                                            if rebuild {
+                                                warning!("reuse of -r flag");
+                                            }
+                                            rebuild = true;
                                         },
                                         x => {
                                             error!("unknown flag -{x}");
@@ -1448,6 +1475,7 @@ fn driver() -> anyhow::Result<()> {
                     triple: triple.as_ref().unwrap_or(&default),
                     continue_build: false,
                     continue_comp: false,
+                    rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
                 let mut exe_path = build_dir;

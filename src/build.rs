@@ -95,6 +95,7 @@ pub struct BuildOptions<'a> {
     pub build_dir: &'a Path,
     pub continue_build: bool,
     pub continue_comp: bool,
+    pub rebuild: bool,
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>
@@ -130,7 +131,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> anyhow::Resu
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     let pname = path.related_to(opts.source_dir)?;
-    if out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
+    if !opts.rebuild && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
         println!("{} has already been built", pname.display());
         use object::read::{Object, ObjectSection};
         let mut buf = Vec::new();
