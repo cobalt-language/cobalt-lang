@@ -121,7 +121,7 @@ fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
         }
     }
 }
-fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST>)> {
+fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bool) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST>)> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push("objects");
@@ -133,7 +133,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions) -> anyhow::Resu
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     let pname = path.related_to(opts.source_dir)?;
-    if !opts.rebuild && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
+    if !(force_build || opts.rebuild) && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
         println!("{} has already been built", pname.display());
         use object::read::{Object, ObjectSection};
         let mut buf = Vec::new();
@@ -223,9 +223,10 @@ enum BuiltState {
 impl BuiltState {
     pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
 }
-fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
+fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
     let mut libs = vec![];
     let mut conflicts = vec![];
+    let mut changed = false;
     for (target, version) in t.deps.iter() {
         match version.as_str() {
             "project" => {
@@ -241,7 +242,9 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                     },
                     BuiltState::NotBuilt => {}
                 }
-                if let Some(artifact) = build_target(t, d, targets, opts)? {
+                let (c, a) = build_target(t, d, targets, opts)?;
+                changed |= c;
+                if let Some(artifact) = a {
                     use object::{Object, ObjectSection};
                     let buf = artifact.read_anyhow()?;
                     let obj = object::File::parse(buf.as_slice())?;
@@ -261,15 +264,16 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
     for lib in notfound {anyhow::bail!("couldn't find {lib}")}
-    Ok(libs.into_iter().map(|(x, _)| x).collect())
+    Ok((changed, libs.into_iter().map(|(x, _)| x).collect()))
 }
-fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
+fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Option<PathBuf>)> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
     let name = &t.name;
     println!("Building target {name}");
-    let libs = resolve_deps(&ctx, t, targets, opts)?;
+    let (rebuild, libs) = resolve_deps(&ctx, t, targets, opts)?;
+    let mut changed = rebuild;
     match t.target_type {
         TargetType::Executable => {
             let mut paths = vec![];
@@ -279,7 +283,8 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
                     let mut passed = false;
                     for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts)?;
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
                         passed = true;
@@ -297,7 +302,8 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
                             }
                             else {anyhow::bail!("couldn't find file {file}")}
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts)?;
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -327,10 +333,9 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             if code == 0 {println!("Built {name}");}
             else {anyhow::bail!("C compiler exited with code {code}");}
             data.set(BuiltState::Built(output.clone()));
-            Ok(Some(output))
+            Ok((changed, Some(output)))
         },
         TargetType::Library => {
-            let libs = resolve_deps(&ctx, t, targets, opts)?;
             let mut asts = vec![];
             let mut paths = vec![];
             match t.files.as_ref() {
@@ -338,7 +343,8 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
                     let mut passed = false;
                     for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts)?;
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
                         passed = true;
@@ -356,7 +362,8 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
                             }
                             else {anyhow::bail!("couldn't find file {file}")}
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts)?;
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -383,16 +390,15 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {anyhow::bail!("ld exited with code {code}")}
             data.set(BuiltState::Built(output.clone()));
-            Ok(Some(output))
+            Ok((changed, Some(output)))
         },
         TargetType::Meta => {
             if t.files.is_some() {
                 anyhow::bail!("meta target cannot have files");
             }
-            let _ = resolve_deps(&ctx, t, targets, opts)?;
             println!("Built {name}");
             data.set(BuiltState::BuiltMeta);
-            Ok(None)
+            Ok((changed, None))
         }
     }
 }
