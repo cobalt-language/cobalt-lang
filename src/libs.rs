@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::ffi::OsStr;
-use std::io::Read;
 use std::fmt;
 use object::{SectionKind, write::Object};
 #[derive(Debug)]
@@ -28,9 +27,8 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
                     let val = std::mem::take(lib);
                     if let Some(ctx) = ctx {
                         use object::read::{Object, ObjectSection};
-                        let mut buf = Vec::new();
-                        let mut file = std::fs::File::open(&path)?;
-                        file.read_to_end(&mut buf)?;
+                        use anyhow_std::PathAnyhow;
+                        let buf = path.read_anyhow()?;
                         let obj = object::File::parse(buf.as_slice())?;
                         if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
                             conflicts.append(&mut ctx.load(&mut &*colib)?);

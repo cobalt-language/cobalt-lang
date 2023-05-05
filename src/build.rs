@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::ffi::OsString;
 use std::io::{Read, Write, BufWriter};
 use std::process::{Command, exit};
-use std::cell::RefCell;
 use std::borrow::Cow;
 use serde::*;
 use either::Either;
@@ -13,6 +12,7 @@ use path_calculate::*;
 use anyhow::Context;
 use anyhow_std::*;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
+use cobalt::misc::CellExt as Cell;
 use super::{libs, opt, warning, error, CompileErrors};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -98,48 +98,6 @@ pub struct BuildOptions<'a> {
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>
-}
-enum LibInfo {
-    Name(String),
-    Path(PathBuf)
-}
-#[derive(Default)]
-struct TargetData {
-    pub libs: Vec<LibInfo>,
-    pub deps: Vec<String>
-}
-impl TargetData {
-    pub fn init_lib(&mut self, name: &str, path: &Path, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>) {
-        for lib in self.libs.iter_mut() {
-            if let LibInfo::Name(l) = lib {
-                if l == name {
-                    *lib = LibInfo::Path(path.to_path_buf());
-                }
-            }
-        }
-        for dep in self.deps.iter() {
-            targets.get(dep).expect("Dependency should exist!").1.borrow_mut().as_mut().expect("Dependency should be initialized!").init_lib(name, path, targets);
-        }
-    }
-    fn missing_libs<'a, 'b: 'a>(&'b self, targets: &'a HashMap<String, (Target, RefCell<Option<TargetData>>)>) -> Vec<String> {
-        let mut out = self.libs.iter().filter_map(|lib| if let LibInfo::Name(lib) = lib {Some(lib.clone())} else {None}).collect::<Vec<_>>();
-        for dep in self.deps.iter() {out.extend(targets.get(dep).expect("Dependency should exist!").1.borrow().as_ref().expect("Dependency should be initialized!").missing_libs(targets))}
-        out
-    }
-    pub fn init_all(&mut self, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, link_dirs: &Vec<&str>) -> anyhow::Result<()> {
-        let mut libs = self.missing_libs(targets);
-        libs.sort();
-        libs.dedup();
-        let (libs, notfound) = libs::find_libs(libs.clone(), link_dirs, None)?;
-        for nf in notfound.iter() {anyhow::bail!("couldn't find library {nf}");}
-        libs.into_iter().for_each(|(path, name)| self.init_lib(&name, &path, targets));
-        Ok(())
-    }
-    pub fn initialized_libs<'a, 'b: 'a>(&'b self, targets: &'a HashMap<String, (Target, RefCell<Option<TargetData>>)>) -> Vec<PathBuf> {
-        let mut out = self.libs.iter().filter_map(|lib| if let LibInfo::Path(p) = lib {Some(p.clone())} else {None}).collect::<Vec<_>>();
-        for dep in self.deps.iter() {out.extend(targets.get(dep).expect("Dependency should exist!").1.borrow().as_ref().expect("Dependency should be initialized!").initialized_libs(targets))}
-        out
-    }
 }
 fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
     for (_, sym) in this.iter_mut() {
@@ -252,30 +210,65 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     println!("Built {}", pname.display());
     Ok(())
 }
-fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMap<String, (Target, RefCell<Option<TargetData>>)>, ctx: &CompCtx, opts: &BuildOptions) -> anyhow::Result<()> {
-    let name = &t.name;
-    println!("Building target {name}");
-    match t.target_type {
-        TargetType::Executable => {
-            for (target, version) in t.deps.iter() {
-                match version.as_str() {
-                    "project" => {
-                        let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
-                        if d.borrow().is_some() {continue}
-                        else {*d.borrow_mut() = Some(TargetData::default())}
-                        build_target(t, d, targets, ctx, opts)?;
-                        data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+enum BuiltState {
+    #[default]
+    NotBuilt,
+    BuiltMeta,
+    Built(PathBuf)
+}
+impl BuiltState {
+    pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
+}
+fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
+    let mut libs = vec![];
+    let mut conflicts = vec![];
+    for (target, version) in t.deps.iter() {
+        match version.as_str() {
+            "project" => {
+                let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
+                match d.clone().into_inner() {
+                    BuiltState::BuiltMeta => continue,
+                    BuiltState::Built(artifact) => {
+                        use object::{Object, ObjectSection};
+                        let buf = artifact.read_anyhow()?;
+                        let obj = object::File::parse(buf.as_slice())?;
+                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?);}
+                        continue
                     },
-                    "system" => {
-                        data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
-                    },
-                    x => {
-                        let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
-                        std::mem::drop(v);
-                        anyhow::bail!("packages are not currently supported!");
+                    BuiltState::NotBuilt => {}
+                }
+                if let Some(artifact) = build_target(t, d, targets, opts)? {
+                    use object::{Object, ObjectSection};
+                    let buf = artifact.read_anyhow()?;
+                    let obj = object::File::parse(buf.as_slice())?;
+                    if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
+                        conflicts.append(&mut ctx.load(&mut &*colib)?);
                     }
                 }
+            },
+            "system" => libs.push(target.clone()),
+            x => {
+                let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
+                std::mem::drop(v);
+                anyhow::bail!("packages are not currently supported!");
             }
+        }
+    }
+    if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
+    let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
+    for lib in notfound {anyhow::bail!("couldn't find {lib}")}
+    Ok(libs.into_iter().map(|(x, _)| x).collect())
+}
+fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
+    let ink_ctx = inkwell::context::Context::create();
+    let mut ctx = CompCtx::new(&ink_ctx, "");
+    ctx.flags.prepass = false;
+    let name = &t.name;
+    println!("Building target {name}");
+    let libs = resolve_deps(&ctx, t, targets, opts)?;
+    match t.target_type {
+        TargetType::Executable => {
             let mut paths = vec![];
             let mut asts = vec![];
             match t.files.as_ref() {
@@ -283,7 +276,7 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                     let mut passed = false;
                     for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        let (path, ast) = build_file_1(file.as_path(), ctx, opts)?;
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts)?;
                         paths.push(path);
                         asts.push(ast);
                         passed = true;
@@ -301,7 +294,7 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                             }
                             else {anyhow::bail!("couldn't find file {file}")}
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), ctx, opts)?;
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -311,13 +304,12 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(&t.name);
-            let mut args = vec![OsString::from("-o"), output.into_os_string()];
+            let mut args = vec![OsString::from("-o"), output.clone().into_os_string()];
             args.extend(paths.into_iter().map(|x| x.0[0].clone().into_os_string()));
-            data.borrow_mut().as_mut().unwrap().init_all(targets, &opts.link_dirs)?;
-            for lib in data.borrow().as_ref().unwrap().initialized_libs(targets) {
+            for lib in libs {
                 let parent = lib.parent().unwrap().as_os_str().to_os_string();
                 args.push(OsString::from("-L"));
                 args.push(parent.clone());
@@ -331,28 +323,11 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
             .ok().and_then(|x| x.code()).unwrap_or(-1);
             if code == 0 {println!("Built {name}");}
             else {anyhow::bail!("C compiler exited with code {code}");}
-            Ok(())
+            data.set(BuiltState::Built(output.clone()));
+            Ok(Some(output))
         },
         TargetType::Library => {
-            for (target, version) in t.deps.iter() {
-                match version.as_str() {
-                    "project" => {
-                        let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
-                        if d.borrow().is_some() {continue}
-                        else {*d.borrow_mut() = Some(TargetData::default())}
-                        build_target(t, d, targets, ctx, opts)?;
-                        data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
-                    },
-                    "system" => {
-                        data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
-                    },
-                    x => {
-                        let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
-                        std::mem::drop(v);
-                        anyhow::bail!("packages are not currently supported!");
-                    }
-                }
-            }
+            let libs = resolve_deps(&ctx, t, targets, opts)?;
             let mut asts = vec![];
             let mut paths = vec![];
             match t.files.as_ref() {
@@ -360,7 +335,7 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                     let mut passed = false;
                     for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
                         if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
-                        let (path, ast) = build_file_1(file.as_path(), ctx, opts)?;
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts)?;
                         paths.push(path);
                         asts.push(ast);
                         passed = true;
@@ -378,7 +353,7 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                             }
                             else {anyhow::bail!("couldn't find file {file}")}
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), ctx, opts)?;
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -388,41 +363,33 @@ fn build_target(t: &Target, data: &RefCell<Option<TargetData>>, targets: &HashMa
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(libs::format_lib(&t.name, &opts.triple));
             let mut cmd = Command::new("ld");
             cmd.args(["--shared", "-o"]).arg(&output);
             cmd.args(paths.into_iter().flat_map(|(x, _)| x));
+            for lib in libs {
+                let parent = lib.parent().unwrap().as_os_str().to_os_string();
+                cmd.arg(OsString::from("-L"));
+                cmd.arg(parent.clone());
+                cmd.arg(OsString::from("-rpath"));
+                cmd.arg(parent);
+                cmd.arg(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
+            }
             let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
             if code != 0 {anyhow::bail!("ld exited with code {code}")}
-            Ok(())
+            data.set(BuiltState::Built(output.clone()));
+            Ok(Some(output))
         },
         TargetType::Meta => {
             if t.files.is_some() {
                 anyhow::bail!("meta target cannot have files");
             }
-            for (target, version) in t.deps.iter() {
-                match version.as_str() {
-                    "project" => {
-                        let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
-                        if d.borrow().is_some() {continue}
-                        else {*d.borrow_mut() = Some(TargetData::default())}
-                        build_target(t, d, targets, ctx, opts)?;
-                        data.borrow_mut().as_mut().unwrap().deps.push(target.clone());
-                    },
-                    "system" => {
-                        data.borrow_mut().as_mut().unwrap().libs.push(LibInfo::Name(target.clone()));
-                    },
-                    x => {
-                        let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
-                        std::mem::drop(v);
-                        anyhow::bail!("packages are not currently supported!");
-                    }
-                }
-            }
+            let _ = resolve_deps(&ctx, t, targets, opts)?;
             println!("Built {name}");
-            Ok(())
+            data.set(BuiltState::BuiltMeta);
+            Ok(None)
         }
     }
 }
@@ -432,25 +399,20 @@ pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -
             anyhow::bail!(r#"project has Cobalt version requirement "{v}", but Cobalt version is {}"#, env!("CARGO_PKG_VERSION"));
         }
     }
-    let targets = pkg.into_targets().map(|t| (t.name.clone(), (t, RefCell::new(None)))).collect::<HashMap<String, (Target, RefCell<Option<TargetData>>)>>();
-    let ink_ctx = inkwell::context::Context::create();
-    let mut ctx = CompCtx::new(&ink_ctx, "");
-    ctx.flags.prepass = false;
+    let targets = pkg.into_targets().map(|t| (t.name.clone(), (t, Cell::default()))).collect::<HashMap<_, (Target, Cell<BuiltState>)>>();
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {t} else {
                 anyhow::bail!("target {target_name:?} is not a target in this project");
             };
-            if data.borrow().is_some() {continue}
-            else {*data.borrow_mut() = Some(TargetData::default())}
-            build_target(target, data, &targets, &ctx, opts)?;
+            if data.with(|x| x.is_built()) {continue}
+            build_target(target, data, &targets, opts)?;
         }
     }
     else {
         for (_, (target, data)) in targets.iter() {
-            if data.borrow().is_some() {continue}
-            else {*data.borrow_mut() = Some(TargetData::default())}
-            build_target(target, data, &targets, &mut ctx, opts)?;
+            if data.with(|x| x.is_built()) {continue}
+            build_target(target, data, &targets, opts)?;
         }
     }
     Ok(())
