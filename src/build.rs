@@ -105,14 +105,16 @@ fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
         sym.1.export = false;
         match sym {
             cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
-            cobalt::Symbol(v, _) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
-                unsafe {
-                    if matches!(v.data_type, Type::Function(..)) {
-                        let f = std::mem::transmute::<_, inkwell::values::FunctionValue>(pv);
-                        while let Some(bb) = f.get_first_basic_block() {bb.remove_from_function().unwrap();}
-                    }
-                    else {
-                        std::mem::transmute::<_, inkwell::values::GlobalValue>(pv).set_externally_initialized(true)
+            cobalt::Symbol(v, d) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+                if !d.fwd && d.init {
+                    unsafe {
+                        if matches!(v.data_type, Type::Function(..)) {
+                            let f = std::mem::transmute::<_, inkwell::values::FunctionValue>(pv);
+                            f.set_linkage(inkwell::module::Linkage::AvailableExternally);
+                        }
+                        else {
+                            std::mem::transmute::<_, inkwell::values::GlobalValue>(pv).set_externally_initialized(true)
+                        }
                     }
                 }
             }
