@@ -985,7 +985,7 @@ fn driver() -> anyhow::Result<()> {
                                 break 'found
                             }
                         }
-                        error!("couldn't find cobalt.toml in currnet or parent directories");
+                        anyhow::bail!("couldn't find cobalt.toml in currnet or parent directories");
                     }
                 }
                 else {
@@ -1222,8 +1222,8 @@ fn driver() -> anyhow::Result<()> {
                         }
                         else {
                             let mut path = std::path::PathBuf::from(&x);
-                            path.pop();
                             let cfg = path.read_to_string_anyhow()?;
+                            path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
                             track_project(&cfg.name, x.clone().into(), &mut vecs);
                             save_projects(vecs)?;
@@ -1423,8 +1423,8 @@ fn driver() -> anyhow::Result<()> {
                         }
                         else {
                             let mut path = std::path::PathBuf::from(&x);
-                            path.pop();
                             let cfg = path.read_to_string_anyhow()?;
+                            path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
                             track_project(&cfg.name, x.clone().into(), &mut vecs);
                             save_projects(vecs)?;
