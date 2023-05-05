@@ -224,6 +224,7 @@ impl BuiltState {
     pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
 }
 fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
+    let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
     let mut changed = false;
@@ -237,7 +238,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                         use object::{Object, ObjectSection};
                         let buf = artifact.read_anyhow()?;
                         let obj = object::File::parse(buf.as_slice())?;
-                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?);}
+                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
                         continue
                     },
                     BuiltState::NotBuilt => {}
@@ -248,9 +249,8 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                     use object::{Object, ObjectSection};
                     let buf = artifact.read_anyhow()?;
                     let obj = object::File::parse(buf.as_slice())?;
-                    if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
-                        conflicts.append(&mut ctx.load(&mut &*colib)?);
-                    }
+                    if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
+                    out.push(artifact);
                 }
             },
             "system" => libs.push(target.clone()),
@@ -264,7 +264,8 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
     for lib in notfound {anyhow::bail!("couldn't find {lib}")}
-    Ok((changed, libs.into_iter().map(|(x, _)| x).collect()))
+    out.extend(libs.into_iter().map(|(x, _)| x));
+    Ok((changed, out))
 }
 fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Option<PathBuf>)> {
     let ink_ctx = inkwell::context::Context::create();

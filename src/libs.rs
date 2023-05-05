@@ -115,7 +115,7 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
 pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
-    let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Note);
+    let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Other);
     let colib = obj.section_mut(colib);
     colib.set_data(buf, 1);
 }
