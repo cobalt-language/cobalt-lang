@@ -1,6 +1,4 @@
-use std::mem::MaybeUninit;
 use std::cell::Cell;
-use std::pin::Pin;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
     pub word_size: u16,
@@ -29,48 +27,34 @@ impl Counter {
     pub fn incr(&self) -> &Self {self.0.set(self.0.get() + 1); self}
     pub fn decr(&self) -> &Self {self.0.set(self.0.get() - 1); self}
 }
-pub struct CellExt<T>(Cell<MaybeUninit<T>>);
+pub struct CellExt<T>(Cell<Option<T>>);
 impl<T> CellExt<T> {
-    pub fn new(val: T) -> Self {CellExt(Cell::new(MaybeUninit::new(val)))}
+    pub fn new(val: T) -> Self {CellExt(Cell::new(Some(val)))}
     pub fn map<F: FnOnce(T) -> T>(&self, f: F) -> &Self {
-        let val = self.0.replace(MaybeUninit::uninit());
-        self.0.set(MaybeUninit::new(unsafe {f(val.assume_init())}));
+        let val = self.0.take();
+        self.0.set(Some(f(val.unwrap())));
         self
     }
     pub fn map_split<U, F: FnOnce(T) -> (T, U)>(&self, f: F) -> U {
-        let val = self.0.replace(MaybeUninit::uninit());
-        let (val, ret) = unsafe {f(val.assume_init())};
-        self.0.set(MaybeUninit::new(val));
+        let val = self.0.take();
+        let (val, ret) = f(val.unwrap());
+        self.0.set(Some(val));
         ret
     }
     pub fn try_map<E, F: FnOnce(T) -> Result<T, E>>(&self, f: F) -> Result<(), E> {
-        let val = self.0.replace(MaybeUninit::uninit());
-        self.0.set(MaybeUninit::new(unsafe {f(val.assume_init())}?));
+        let val = self.0.take();
+        self.0.set(Some(f(val.unwrap())?));
         Ok(())
     }
     pub fn with<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
-        let mut val = unsafe {self.0.replace(MaybeUninit::uninit()).assume_init()};
+        let mut val = self.0.take().unwrap();
         let out = f(&mut val);
-        self.0.set(MaybeUninit::new(val));
+        self.0.set(Some(val));
         out
     }
-    pub fn replace(&self, val: T) -> T {unsafe {self.0.replace(MaybeUninit::new(val)).assume_init()}}
-    pub fn set(&self, val: T) {unsafe {self.0.replace(MaybeUninit::new(val)).assume_init_drop()}}
-}
-impl<T> CellExt<Pin<Box<T>>> {
-    pub fn with_self<'this, R, F: FnOnce(&mut Pin<Box<T>>) -> R>(&'this self, f: F) -> R {
-        let mut val = unsafe {self.0.replace(MaybeUninit::uninit()).assume_init()};
-        let out = f(unsafe {std::mem::transmute::<&mut _, &'this mut _>(&mut val)});
-        self.0.set(MaybeUninit::new(val));
-        out
-    }
-}
-impl<T> Drop for CellExt<T> {
-    fn drop(&mut self) {
-        unsafe {
-            self.0.replace(MaybeUninit::uninit()).assume_init_drop();
-        }
-    }
+    pub fn replace(&self, val: T) -> T {self.0.replace(Some(val)).unwrap()}
+    pub fn set(&self, val: T) {self.0.set(Some(val))}
+    pub fn into_inner(self) -> T {self.0.into_inner().unwrap()}
 }
 impl<T: Clone> Clone for CellExt<T> {
     fn clone(&self) -> Self {

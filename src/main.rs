@@ -9,12 +9,15 @@ use path_calculate::*;
 use std::path::{Path, PathBuf};
 use anyhow::Context;
 use anyhow_std::*;
+use thiserror::Error;
 use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
 mod build;
-mod package;
 mod color;
+#[derive(Debug, Error)]
+#[error("compiler errors were encountered")]
+struct CompileErrors;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
 fn load_projects() -> io::Result<Vec<[String; 2]>> {
@@ -34,7 +37,12 @@ fn load_projects() -> io::Result<Vec<[String; 2]>> {
 }
 fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
     if let Some(entry) = vec.iter_mut().find(|[_, p]| if let Ok(path) = path.as_absolute_path() {path == Path::new(&p)} else {false}) {entry[0] = name.to_string()}
-    else {vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])}
+    else if let Some(entry) = vec.iter_mut().find(|[n, _]| n == name) {entry[1] = path.as_absolute_path().unwrap().to_string_lossy().to_string()}
+    else {
+        vec.sort_by(|[n1, _], [n2, _]| n1.cmp(n2));
+        vec.dedup_by(|[n1, _], [n2, _]| n1 == n2);
+        vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])
+    }
 }
 fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
     let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
@@ -518,10 +526,9 @@ fn driver() -> anyhow::Result<()> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if !linked.is_empty() {
-                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
+                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
-                if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
@@ -538,22 +545,22 @@ fn driver() -> anyhow::Result<()> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 exit(101)
             }
-            if fail || overall_fail {exit(101)}
+            if fail || overall_fail {anyhow::bail!(CompileErrors)}
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile, &pm);
             pm.run_on(&ctx.module);
@@ -615,13 +622,7 @@ fn driver() -> anyhow::Result<()> {
                             if let Some(out_file) = out_file {
                                 let mut obj = libs::new_object(&triple);
                                 libs::populate_header(&mut obj, &ctx);
-                                let tmp1 = match obj.write() {
-                                    Ok(data) => temp_file::with_contents(&data),
-                                    Err(err) => {
-                                        error!("{err}");
-                                        exit(4)
-                                    }
-                                };
+                                let tmp1 = temp_file::with_contents(&obj.write()?);
                                 let tmp2 = temp_file::with_contents(mb.as_slice());
                                 let mut cmd = Command::new("ld");
                                 cmd
@@ -783,10 +784,9 @@ fn driver() -> anyhow::Result<()> {
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
-                let (libs, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
+                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
-                if failed {exit(99)}
                 libs
             } else {vec![]};
             for head in headers {
@@ -804,22 +804,22 @@ fn driver() -> anyhow::Result<()> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
-            if fail && !continue_if_err {exit(101)}
+            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 exit(101)
             }
-            if fail || overall_fail {exit(101)}
+            if fail || overall_fail {anyhow::bail!(CompileErrors)}
             let pm = inkwell::passes::PassManager::create(());
             opt::load_profile(profile.as_deref(), &pm);
             pm.run_on(&ctx.module);
@@ -951,10 +951,9 @@ fn driver() -> anyhow::Result<()> {
             let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             if !linked.is_empty() {
-                let (_, notfound, failed) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
+                let (_, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
                 if !notfound.is_empty() {exit(102)}
-                if failed {exit(99)}
             }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -973,77 +972,9 @@ fn driver() -> anyhow::Result<()> {
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
-                exit(101)
+                anyhow::bail!(CompileErrors)
             }
-            if fail {exit(101)}
-        },
-        "install" => {
-            match package::Package::init_registry() {
-                Ok(()) => {},
-                Err(package::PackageUpdateError::NoInstallDirectory) => {
-                    error!("could not find or infer Cobalt directory");
-                    exit(1)
-                },
-                Err(package::PackageUpdateError::GitError(e)) => {
-                    error!("{e}");
-                    exit(2)
-                }
-                Err(package::PackageUpdateError::StdIoError(e)) => {
-                    error!("{e}");
-                    exit(3)
-                }
-            };
-            let mut good = 0;
-            let registry = package::Package::registry();
-            for pkg in args.iter().skip(2).filter(|x| !x.is_empty()) {
-                if let Some(p) = registry.get(pkg) {
-                    match p.install(TargetMachine::get_default_triple().as_str().to_str().unwrap(), None, package::InstallOptions::default()) {
-                        Err(package::InstallError::NoInstallDirectory) => panic!("This would only be reachable if $HOME was deleted in a data race, which may or may not even be possible"),
-                        Err(package::InstallError::DownloadError(e)) => {
-                            error!("{e}");
-                            good = 4;
-                        },
-                        Err(package::InstallError::StdIoError(e)) => {
-                            error!("{e}");
-                            good = 3;
-                        },
-                        Err(package::InstallError::GitCloneError(e)) => {
-                            error!("{e}");
-                            good = 2;
-                        },
-                        Err(package::InstallError::ZipExtractError(e)) => {
-                            error!("{e}");
-                            good = 5;
-                        },
-                        Err(package::InstallError::BuildFailed(e)) => {
-                            eprintln!("failed to build package {pkg}");
-                            good = e;
-                        },
-                        Err(package::InstallError::NoMatchesError) => {
-                            eprintln!("package {p:?} has no releases");
-                            good = 7;
-                        },
-                        Err(package::InstallError::CfgFileError(e)) => {
-                            error!("could not parse {pkg}'s config file: {e}");
-                            good = 8;
-                        },
-                        Err(package::InstallError::InvalidVersionSpec(_, v)) => {
-                            error!("could not parse {pkg}'s dependencies: invalid version spec {v}");
-                            good = 9;
-                        },
-                        Err(package::InstallError::PkgNotFound(p)) => {
-                            error!("could not parse {pkg}'s dependencies: can't find package {p}");
-                            good = 10;
-                        },
-                        _ => {}
-                    }
-                }
-                else {
-                    error!("couldn't find package {pkg:?}");
-                    good = 6;
-                }
-            }
-            exit(good)
+            if fail {anyhow::bail!(CompileErrors)}
         },
         "proj" | "project" => match args[2].as_str() {
             "track" => {
@@ -1059,7 +990,7 @@ fn driver() -> anyhow::Result<()> {
                                 break 'found
                             }
                         }
-                        error!("couldn't find cobalt.toml in currnet or parent directories");
+                        anyhow::bail!("couldn't find cobalt.toml in currnet or parent directories");
                     }
                 }
                 else {
@@ -1154,6 +1085,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut no_default_link = false;
                 let mut triple: Option<TargetTriple> = None;
                 let mut targets: Vec<&str> = vec![];
+                let mut rebuild = false;
                 {
                     let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
                     while let Some(arg) = it.next() {
@@ -1172,6 +1104,12 @@ fn driver() -> anyhow::Result<()> {
                                             warning!("reuse of --no-default-link flag");
                                         }
                                         no_default_link = true;
+                                    },
+                                    "rebuild" => {
+                                        if rebuild {
+                                            warning!("reuse of -r flag");
+                                        }
+                                        rebuild = true;
                                     },
                                     x => {
                                         error!("unknown flag --{x}");
@@ -1222,7 +1160,7 @@ fn driver() -> anyhow::Result<()> {
                                         },
                                         't' => {
                                             if profile.is_some() {
-                                                warning!("respecification of target triple");
+                                                error!("respecification of target triple");
                                                 exit(1)
                                             }
                                             if let Some(x) = it.next() {
@@ -1241,6 +1179,12 @@ fn driver() -> anyhow::Result<()> {
                                                 error!("expected build target after -T flag");
                                                 exit(1)
                                             }
+                                        },
+                                        'r' => {
+                                            if rebuild {
+                                                warning!("reuse of -r flag");
+                                            }
+                                            rebuild = true;
                                         },
                                         x => {
                                             error!("unknown flag -{x}");
@@ -1283,8 +1227,8 @@ fn driver() -> anyhow::Result<()> {
                         }
                         else {
                             let mut path = std::path::PathBuf::from(&x);
-                            path.pop();
                             let cfg = path.read_to_string_anyhow()?;
+                            path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
                             track_project(&cfg.name, x.clone().into(), &mut vecs);
                             save_projects(vecs)?;
@@ -1316,15 +1260,16 @@ fn driver() -> anyhow::Result<()> {
                 }, PathBuf::from);
                 if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
                 else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
-                exit(build::build(project_data, if targets.is_empty() {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
+                build::build(project_data, if targets.is_empty() {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
                     source_dir,
                     build_dir: build_dir.as_path(),
                     profile: profile.unwrap_or("default"),
                     triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
                     continue_build: false,
                     continue_comp: false,
+                    rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
-                }));
+                })?;
             },
             "run" | "exec" => {
                 let mut project_dir: Option<&str> = None;
@@ -1336,6 +1281,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut triple: Option<TargetTriple> = None;
                 let mut target: Option<&str> = None;
                 let mut cmd_args: Vec<String> = vec![];
+                let mut rebuild = false;
                 {
                     let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
                     while let Some(arg) = it.next() {
@@ -1355,6 +1301,12 @@ fn driver() -> anyhow::Result<()> {
                                             warning!("reuse of --no-default-link flag");
                                         }
                                         no_default_link = true;
+                                    },
+                                    "rebuild" => {
+                                        if rebuild {
+                                            warning!("reuse of -r flag");
+                                        }
+                                        rebuild = true;
                                     },
                                     x => {
                                         error!("unknown flag --{x}");
@@ -1429,6 +1381,12 @@ fn driver() -> anyhow::Result<()> {
                                                 exit(1)
                                             }
                                         },
+                                        'r' => {
+                                            if rebuild {
+                                                warning!("reuse of -r flag");
+                                            }
+                                            rebuild = true;
+                                        },
                                         x => {
                                             error!("unknown flag -{x}");
                                             exit(1)
@@ -1470,8 +1428,8 @@ fn driver() -> anyhow::Result<()> {
                         }
                         else {
                             let mut path = std::path::PathBuf::from(&x);
-                            path.pop();
                             let cfg = path.read_to_string_anyhow()?;
+                            path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
                             track_project(&cfg.name, x.clone().into(), &mut vecs);
                             save_projects(vecs)?;
@@ -1515,16 +1473,16 @@ fn driver() -> anyhow::Result<()> {
                 if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
                 else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
                 let default = TargetMachine::get_default_triple();
-                let code = build::build(project_data, Some(vec![target.clone()]), &build::BuildOptions {
+                build::build(project_data, Some(vec![target.clone()]), &build::BuildOptions {
                     source_dir,
                     build_dir: build_dir.as_path(),
                     profile: profile.unwrap_or("default"),
                     triple: triple.as_ref().unwrap_or(&default),
                     continue_build: false,
                     continue_comp: false,
+                    rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
-                });
-                if code != 0 {exit(code)}
+                })?;
                 let mut exe_path = build_dir;
                 if triple.as_ref().and_then(|t| t.as_str().to_str().ok()).map_or(false, |t| t.contains("windows")) {target.push_str(".exe");}
                 exe_path.push(target);

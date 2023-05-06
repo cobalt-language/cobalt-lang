@@ -1,5 +1,6 @@
 use inkwell::{context::Context, module::Module, builder::Builder};
 use crate::*;
+use std::pin::Pin;
 use std::mem::MaybeUninit;
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::{HashMap, Entry};
@@ -19,7 +20,7 @@ pub struct CompCtx<'ctx> {
     pub priority: Counter,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>)>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
-    vars: Cell<MaybeUninit<Box<VarMap<'ctx>>>>,
+    vars: Cell<MaybeUninit<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
 }
 impl<'ctx> CompCtx<'ctx> {
@@ -37,7 +38,7 @@ impl<'ctx> CompCtx<'ctx> {
             priority: Counter::max(),
             nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
-            vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
+            vars: Cell::new(MaybeUninit::new(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
                 ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
                 ("bool", Value::make_type(Type::Int(1, false)).into()),
@@ -64,7 +65,7 @@ impl<'ctx> CompCtx<'ctx> {
             priority: Counter::max(),
             nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
-            vars: Cell::new(MaybeUninit::new(Box::new(VarMap::new(Some([
+            vars: Cell::new(MaybeUninit::new(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
                 ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
                 ("bool", Value::make_type(Type::Int(1, false)).into()),
@@ -79,21 +80,21 @@ impl<'ctx> CompCtx<'ctx> {
             flags
         }
     }
-    pub fn with_vars<R, F: FnOnce(&'ctx mut VarMap<'ctx>) -> R>(&self, f: F) -> R {
+    pub fn with_vars<'a, R, F: FnOnce(&'a mut VarMap<'ctx>) -> R>(&'a self, f: F) -> R {
         let mut val = unsafe {self.vars.replace(MaybeUninit::uninit()).assume_init()};
-        let out = f(unsafe {std::mem::transmute::<&mut _, &'ctx mut _>(val.as_mut())});
+        let out = f(unsafe {std::mem::transmute(val.as_mut().get_mut())});
         self.vars.set(MaybeUninit::new(val));
         out
     }
     pub fn map_vars<F: FnOnce(Box<VarMap<'ctx>>) -> Box<VarMap<'ctx>>>(&self, f: F) -> &Self {
         let val = self.vars.replace(MaybeUninit::uninit());
-        self.vars.set(MaybeUninit::new(unsafe {f(val.assume_init())}));
+        self.vars.set(MaybeUninit::new(Pin::new(unsafe {f(Pin::into_inner(val.assume_init()))})));
         self
     }
     pub fn map_split_vars<R, F: FnOnce(Box<VarMap<'ctx>>) -> (Box<VarMap<'ctx>>, R)>(&self, f: F) -> R {
         let val = self.vars.replace(MaybeUninit::uninit());
-        let (v, out) = unsafe {f(val.assume_init())};
-        self.vars.set(MaybeUninit::new(v));
+        let (v, out) = unsafe {f(Pin::into_inner(val.assume_init()))};
+        self.vars.set(MaybeUninit::new(Pin::new(v)));
         out
     }
     pub fn is_cfunc(&self, name: &DottedName) -> bool {
