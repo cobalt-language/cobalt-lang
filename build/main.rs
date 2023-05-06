@@ -16,4 +16,5 @@ fn main() {
     git_info();
     llvm::entry();
     println!("cargo:rustc-env=LLVM_VERSION={}", llvm::llvm_config("--version"));
+    println!("cargo:rustc-env=HOST={}", std::env::var("TARGET").unwrap());
 }

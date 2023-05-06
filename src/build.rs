@@ -1,9 +1,8 @@
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::ffi::OsString;
 use std::io::{Read, Write, BufWriter};
-use std::process::{Command, exit};
+use std::process::exit;
 use std::borrow::Cow;
 use serde::*;
 use either::Either;
@@ -13,7 +12,7 @@ use anyhow::Context;
 use anyhow_std::*;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use cobalt::misc::CellExt as Cell;
-use super::{libs, opt, warning, error, CompileErrors};
+use super::{cc, libs, opt, warning, error, CompileErrors};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
     pub name: String,
@@ -239,6 +238,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                         let buf = artifact.read_anyhow()?;
                         let obj = object::File::parse(buf.as_slice())?;
                         if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
+                        out.push(artifact);
                         continue
                     },
                     BuiltState::NotBuilt => {}
@@ -317,22 +317,13 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(&t.name);
-            let mut args = vec![OsString::from("-o"), output.clone().into_os_string()];
-            args.extend(paths.into_iter().map(|x| x.0[0].clone().into_os_string()));
-            for lib in libs {
-                let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                args.push(OsString::from("-L"));
-                args.push(parent.clone());
-                args.push(OsString::from("-rpath"));
-                args.push(parent);
-                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-            }
-            let code = Command::new("cc").args(args.iter()).status()
-            .or_else(|_| Command::new("clang").args(args.iter()).status())
-            .or_else(|_| Command::new("gcc").args(args.iter()).status())
-            .ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code == 0 {println!("Built {name}");}
-            else {anyhow::bail!("C compiler exited with code {code}");}
+            let mut cc = cc::CompileCommand::new();
+            cc.objs(paths.into_iter().map(|([x, _], _)| x));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code == 0 {println!("Built {name}")}
+            else {anyhow::bail!("C compiler exited with code {code}")}
             data.set(BuiltState::Built(output.clone()));
             Ok((changed, Some(output)))
         },
@@ -377,19 +368,14 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(libs::format_lib(&t.name, &opts.triple));
-            let mut cmd = Command::new("ld");
-            cmd.args(["--shared", "-o"]).arg(&output);
-            cmd.args(paths.into_iter().flat_map(|(x, _)| x));
-            for lib in libs {
-                let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                cmd.arg(OsString::from("-L"));
-                cmd.arg(parent.clone());
-                cmd.arg(OsString::from("-rpath"));
-                cmd.arg(parent);
-                cmd.arg(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-            }
-            let code = cmd.status().ok().and_then(|x| x.code()).unwrap_or(-1);
-            if code != 0 {anyhow::bail!("ld exited with code {code}")}
+            let mut cc = cc::CompileCommand::new();
+            cc.lib(true);
+            cc.objs(paths.into_iter().flat_map(|x| x.0));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code == 0 {println!("Built {name}")}
+            else {anyhow::bail!("C compiler exited with code {code}")}
             data.set(BuiltState::Built(output.clone()));
             Ok((changed, Some(output)))
         },

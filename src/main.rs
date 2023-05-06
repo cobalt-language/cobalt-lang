@@ -4,7 +4,6 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
 use std::io::{self, Read, Write, BufReader, Seek};
-use std::ffi::OsString;
 use path_calculate::*;
 use std::path::{Path, PathBuf};
 use anyhow::Context;
@@ -15,6 +14,7 @@ mod libs;
 mod opt;
 mod build;
 mod color;
+mod cc;
 #[derive(Debug, Error)]
 #[error("compiler errors were encountered")]
 struct CompileErrors;
@@ -601,22 +601,14 @@ fn driver() -> anyhow::Result<()> {
                                 exit(4)
                             }
                             let tmp = temp_file::with_contents(mb.as_slice());
-                            let mut args = vec![OsString::from(tmp.path()), OsString::from("-o"), OsString::from(out_file.unwrap())];
-                            for (lib, _) in libs {
-                                let lib = lib.as_absolute_path()?;
-                                let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                                args.push(OsString::from("-L"));
-                                args.push(parent.clone());
-                                args.push(OsString::from("-rpath"));
-                                args.push(parent);
-                                args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-                            }
-                            args.extend(linker_args.into_iter().map(OsString::from));
-                            exit( // search for cc, then, clang, and finally gcc
-                                Command::new("cc").args(args.iter()).status()
-                                .or_else(|_| Command::new("clang").args(args.iter()).status())
-                                .or_else(|_| Command::new("gcc").args(args.iter()).status())
-                                .ok().and_then(|x| x.code()).unwrap_or(0))
+                            let mut cc = cc::CompileCommand::new();
+                            cc.obj(tmp.path());
+                            cc.output(out_file.unwrap());
+                            cc.link_libs(libs.into_iter().map(|(l, _)| l));
+                            cc.target(triple.as_str().to_str().unwrap());
+                            let res = cc.build()?.status_anyhow()?;
+                            std::mem::drop(tmp);
+                            exit(res.code().unwrap_or(-1));
                         },
                         OutputType::Library => {
                             if let Some(out_file) = out_file {
@@ -624,26 +616,16 @@ fn driver() -> anyhow::Result<()> {
                                 libs::populate_header(&mut obj, &ctx);
                                 let tmp1 = temp_file::with_contents(&obj.write()?);
                                 let tmp2 = temp_file::with_contents(mb.as_slice());
-                                let mut cmd = Command::new("ld");
-                                cmd
-                                    .arg("--shared")
-                                    .arg(tmp1.path())
-                                    .arg(tmp2.path())
-                                    .arg("-o")
-                                    .arg(&out_file);
-                                let mut args = vec![];
-                                for (lib, _) in libs {
-                                    let parent = lib.parent().unwrap().as_os_str().to_os_string();
-                                    args.push(OsString::from("-L"));
-                                    args.push(parent.clone());
-                                    args.push(OsString::from("-rpath"));
-                                    args.push(parent);
-                                    args.push(OsString::from((std::borrow::Cow::Borrowed("-l:") + lib.file_name().unwrap().to_string_lossy()).into_owned()));
-                                }
-                                let code = cmd.args(args).status().ok().and_then(|x| x.code()).unwrap_or(-1);
+                                let mut cc = cc::CompileCommand::new();
+                                cc.lib(true);
+                                cc.objs([tmp1.path(), tmp2.path()]);
+                                cc.output(&out_file);
+                                cc.link_libs(libs.into_iter().map(|(l, _)| l));
+                                cc.target(triple.as_str().to_str().unwrap());
+                                let res = cc.build()?.status_anyhow()?;
                                 std::mem::drop(tmp1);
                                 std::mem::drop(tmp2);
-                                exit(code)
+                                exit(res.code().unwrap_or(-1))
                             }
                             else {error!("cannot output library to stdout!"); exit(4)}
                         },
