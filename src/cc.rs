@@ -72,7 +72,7 @@ impl CompileCommand {
     }
     pub fn build(&self) -> Result<Command, cc::Error> {
         let mut build = cc::Build::new();
-        build.opt_level(0).cargo_metadata(false).warnings(false);
+        build.opt_level(0).cargo_metadata(false).warnings(false).host(env!("HOST"));
         let default = inkwell::targets::TargetMachine::get_default_triple();
         let default = default.as_str().to_str().unwrap();
         build.target(self.target_.as_deref().unwrap_or(default));
