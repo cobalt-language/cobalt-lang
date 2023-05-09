@@ -13,6 +13,7 @@ use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
 mod build;
+mod pkg;
 mod color;
 mod cc;
 #[derive(Debug, Error)]
@@ -20,10 +21,16 @@ mod cc;
 struct CompileErrors;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
+fn cobalt_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("COBALT_DIR") {path.into()}
+    else if let Ok(path) = std::env::var("HOME") {Path::new(&path).join(".cobalt")}
+    else {
+        error!("couldn't determine Cobalt directory");
+        exit(100)
+    }
+}
 fn load_projects() -> io::Result<Vec<[String; 2]>> {
-    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    let mut cobalt_dir = cobalt_dir();
     if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
     cobalt_dir.push("tracked.txt");
     let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(cobalt_dir)?;
@@ -45,9 +52,7 @@ fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
     }
 }
 fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
-    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    let mut cobalt_dir = cobalt_dir();
     if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
     cobalt_dir.push("tracked.txt");
     let mut file = std::fs::OpenOptions::new().write(true).create(true).open(cobalt_dir)?;
