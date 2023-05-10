@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use either::Either;
 use anyhow_std::*;
+use path_calculate::path_absolutize::Absolutize;
 use crate::cobalt_dir;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
@@ -14,22 +15,27 @@ pub struct GitInfo {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GitLocation {
+    #[serde(rename = "branch")]
     Branch(String),
-    #[serde(alias = "tag")]
+    #[serde(rename = "commit", alias = "tag")]
     Commit(String)
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RegistryType {
-    #[serde(with = "either::serde_untagged")]
+    #[serde(rename = "git", with = "either::serde_untagged")]
     Git(Either<String, GitInfo>),
+    #[serde(rename = "tar", alias = "tarball", alias = "tgz")]
     Tar(String), // URL/path of .tar.gz archive
+    #[serde(rename = "zip", alias = "zipball")]
     Zip(String), // URL/path of .zip archive
+    #[serde(rename = "cmd", alias = "shell")]
     Cmd(String), // Command to run to update
+    #[serde(rename = "manual", alias = "other")]
     Manual       // Something we don't have to worry about handles it
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Registry {
-    #[serde(flatten, rename = "type")]
+    #[serde(flatten)]
     pub reg_type: RegistryType,
     pub path: PathBuf
 }
@@ -54,18 +60,23 @@ pub struct Release {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Source {
-    #[serde(with = "either::serde_untagged")]
+    #[serde(rename = "git", with = "either::serde_untagged")]
     Git(Either<String, GitInfo>),
+    #[serde(rename = "tar", alias = "tarball", alias = "tgz")]
     Tar(String),
+    #[serde(rename = "zip", alias = "zipball")]
     Zip(String)
 }
 pub fn get_packages() -> anyhow::Result<Vec<Package>> {
-    let reg_path = cobalt_dir().join("registries.toml");
+    let cdir = cobalt_dir();
+    let reg_path = cdir.join("registries.toml");
     if !reg_path.exists() {return Ok(vec![])}
     let registries = toml::from_str::<RegistryList>(&reg_path.read_to_string_anyhow()?)?;
     let mut out = vec![];
+    let reg_dir = cdir.join("registries");
+    reg_dir.create_dir_all_anyhow()?;
     for reg in registries.registry {
-        let mut path = reg.path;
+        let mut path = reg.path.absolutize_from(&reg_dir)?.to_path_buf();
         if let RegistryType::Git(Either::Right(GitInfo {dir: Some(ref dir), ..})) = reg.reg_type {path.push(dir)}
         let it = path.read_dir_anyhow()?;
         let bounds = it.size_hint();
@@ -78,11 +89,14 @@ pub fn get_packages() -> anyhow::Result<Vec<Package>> {
     Ok(out)
 }
 pub fn update_packages() -> anyhow::Result<()> {
-    let reg_path = cobalt_dir().join("registries.toml");
+    let cdir = cobalt_dir();
+    let reg_path = cdir.join("registries.toml");
     if !reg_path.exists() {return Ok(())}
     let registries = toml::from_str::<RegistryList>(&reg_path.read_to_string_anyhow()?)?;
+    let reg_dir = cdir.join("registries");
+    reg_dir.create_dir_all_anyhow()?;
     for reg in registries.registry {
-        let path = reg.path;
+        let path = reg.path.absolutize_from(&reg_dir)?;
         use RegistryType::*;
         match reg.reg_type {
             Git(Either::Left(url) | Either::Right(GitInfo {url, branch: None, ..})) => {

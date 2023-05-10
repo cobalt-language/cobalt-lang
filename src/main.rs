@@ -963,8 +963,8 @@ fn driver() -> anyhow::Result<()> {
             }
             if fail {anyhow::bail!(CompileErrors)}
         },
-        "proj" | "project" => match args[2].as_str() {
-            "track" => {
+        "proj" | "project" => match args.get(2).map(String::as_str) {
+            Some("track") => {
                 if args.len() == 3 {
                     'found: {
                         for path in std::env::current_dir()?.ancestors() {
@@ -994,7 +994,7 @@ fn driver() -> anyhow::Result<()> {
                     save_projects(vec)?;
                 }
             },
-            "untrack" => {
+            Some("untrack") => {
                 if args.len() == 3 {
                     'found: {
                         for path in std::env::current_dir()?.ancestors() {
@@ -1014,7 +1014,7 @@ fn driver() -> anyhow::Result<()> {
                     let mut vec = load_projects()?;
                     for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
                         if arg.as_bytes()[0] == b'-' {
-                            error!("'track' subcommand does not accept flags");
+                            error!("'untrack' subcommand does not accept flags");
                             exit(1);
                         }
                         let mut path: PathBuf = arg.into();
@@ -1024,7 +1024,7 @@ fn driver() -> anyhow::Result<()> {
                     save_projects(vec)?;
                 }
             },
-            "list" => {
+            Some("list") => {
                 let mut machine = false;
                 for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
                     if arg.as_bytes()[0] == b'-' && arg.len() > 1 {
@@ -1063,7 +1063,7 @@ fn driver() -> anyhow::Result<()> {
                     vecs.iter().for_each(|[n, p]| println!("{n}{} => {p}", " ".repeat(padding - n.chars().count())));
                 }
             },
-            "build" => {
+            Some("build") => {
                 let mut project_dir: Option<&str> = None;
                 let mut source_dir: Option<&str> = None;
                 let mut build_dir: Option<&str> = None;
@@ -1258,7 +1258,7 @@ fn driver() -> anyhow::Result<()> {
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
             },
-            "run" | "exec" => {
+            Some("run" | "exec") => {
                 let mut project_dir: Option<&str> = None;
                 let mut source_dir: Option<&str> = None;
                 let mut build_dir: Option<&str> = None;
@@ -1475,8 +1475,23 @@ fn driver() -> anyhow::Result<()> {
                 exe_path.push(target);
                 exit(Command::new(exe_path).args(cmd_args).status()?.code().unwrap_or(-1))
             },
-            x => {
+            Some(x) => {
                 error!("unknown subcommand '{x}'");
+                exit(1);
+            },
+            None => {
+                error!("project subcommand requires a subcommand");
+                exit(1);
+            }
+        },
+        "pkg" | "package" => match args.get(2).map(String::as_str) {
+            Some("update") => pkg::update_packages()?,
+            Some(x) => {
+                error!("unknown subcommand '{x}'");
+                exit(1);
+            },
+            None => {
+                error!("project subcommand requires a subcommand");
                 exit(1);
             }
         },
