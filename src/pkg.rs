@@ -5,7 +5,7 @@ use either::Either;
 use anyhow_std::*;
 use path_calculate::path_absolutize::Absolutize;
 use semver::{Version, VersionReq};
-use crate::cobalt_dir;
+use crate::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
     #[serde(alias = "path")]
@@ -196,10 +196,8 @@ pub struct InstallSpec {
     pub targets: Option<Vec<String>>
 }
 impl InstallSpec {
-    #[allow(dead_code)]
     pub fn new(name: String, version: VersionReq, targets: Option<Vec<String>>) -> Self {Self {name, version, targets}}
-    #[allow(dead_code)]
-    pub fn named<N: Into<String>>(name: N) -> Self {Self::new(name.into(), VersionReq::STAR, None)}
+    pub fn from_pkgdep(name: String, spec: build::PkgDepSpec) -> Self {Self {name, version: spec.version, targets: spec.targets}}
 }
 impl std::str::FromStr for InstallSpec {
     type Err = semver::Error;
@@ -209,11 +207,11 @@ impl std::str::FromStr for InstallSpec {
         let mut it = req.match_indices(['@', ':']).peekable();
         let name = if let Some(&(idx, _)) = it.peek() {req[..idx].to_string()} else {req.to_string()};
         while let Some((idx, ch)) = it.next() {
-            let blk = if let Some(&(next, _)) = it.peek() {&req[idx..next]} else {req};
+            let blk = if let Some(&(next, _)) = it.peek() {req[idx..next].trim()} else {req[idx..].trim()};
             match ch {
                 "@" => version.comparators.append(&mut VersionReq::parse(blk)?.comparators),
                 ":" => targets.get_or_insert_with(Vec::new).extend(blk.split(',').map(str::trim).map(String::from)),
-                x => unreachable!(r#"should be "@" or ":", got {x:?}"#)
+                x => unreachable!("should be '@' or ':', got {x:?}")
             }
         }
         Ok(Self {name, version, targets})

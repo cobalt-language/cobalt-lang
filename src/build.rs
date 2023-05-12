@@ -12,7 +12,7 @@ use anyhow::Context;
 use anyhow_std::*;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use cobalt::misc::CellExt as Cell;
-use super::{cc, libs, opt, warning, error, CompileErrors};
+use super::*;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
     pub name: String,
@@ -78,7 +78,7 @@ pub struct Target {
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(default, alias = "dependencies")]
-    pub deps: HashMap<String, String>
+    pub deps: HashMap<String, Dependency>
 }
 #[derive(Debug, Clone, Deserialize)]
 struct SpecialTarget {
@@ -86,7 +86,7 @@ struct SpecialTarget {
     #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
     #[serde(default, alias = "dependencies")]
-    pub deps: HashMap<String, String>
+    pub deps: HashMap<String, Dependency>
 }
 #[derive(Debug, Clone)]
 pub struct BuildOptions<'a> {
@@ -98,6 +98,83 @@ pub struct BuildOptions<'a> {
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>
+}
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct PkgDepSpec {
+    #[serde(default)]
+    pub version: semver::VersionReq,
+    pub targets: Option<Vec<String>>
+}
+#[derive(Debug, Clone)]
+pub enum Dependency {
+    Project,
+    System,
+    Package(PkgDepSpec)
+}
+impl<'de> Deserialize<'de> for Dependency {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use std::fmt::{self, Formatter};
+        use serde::de::*;
+        struct DepVisitor;
+        impl<'de> Visitor<'de> for DepVisitor {
+            type Value = Dependency;
+            fn expecting(&self, f: &mut Formatter) -> fmt::Result {f.write_str(r#""project", "version", or a version statement"#)}
+            fn visit_str<E: Error>(self, v: &str) -> Result<Dependency, E> {
+                Ok(match v.trim() {
+                    "project" => Dependency::Project,
+                    "system" => Dependency::System,
+                    x => Dependency::Package({
+                        let mut it = v.match_indices(['@', ':']).peekable();
+                        if let Some(&(next, _)) = it.peek() {
+                            let mut targets: Option<Vec<String>> = None;
+                            let mut version = VersionReq::parse(&v[..next]).map_err(Error::custom)?;
+                            while let Some((idx, ch)) = it.next() {
+                                let blk = if let Some(&(next, _)) = it.peek() {v[idx..next].trim()} else {v[idx..].trim()};
+                                match ch {
+                                    "@" => version.comparators.extend(VersionReq::parse(blk).map_err(Error::custom)?.comparators),
+                                    ":" => targets.get_or_insert_with(Vec::new).extend(blk.split(',').map(str::trim).map(String::from)),
+                                    x => unreachable!("expected '@' or ':', got {x:?}")
+                                }
+                            }
+                            PkgDepSpec {targets, version}
+                        }
+                        else {PkgDepSpec {targets: None, version: VersionReq::parse(x).map_err(Error::custom)?}}
+                    })
+                })
+            }
+            fn visit_map<M: MapAccess<'de>>(self, mut v: M) -> Result<Dependency, M::Error> {
+                enum Field {Version, Targets}
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Field, D::Error> {
+                        struct FieldVisitor;
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+                            fn expecting(&self, f: &mut Formatter) -> fmt::Result {f.write_str("`version` or `targets`")}
+                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
+                                match v {
+                                    "version" => Ok(Field::Version),
+                                    "targets" => Ok(Field::Targets),
+                                     _ => Err(Error::unknown_field(v, &["version", "targets"]))
+                                }
+                            }
+                        }
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+                let mut targets: Option<Vec<String>> = None;
+                let mut version: Option<VersionReq> = None;
+                while let Some(key) = v.next_key()? {
+                    match key {
+                        Field::Version => if version.is_some() {return Err(Error::duplicate_field("version"))} else {version = Some(v.next_value()?)}
+                        Field::Targets => if targets.is_some() {return Err(Error::duplicate_field("targets"))} else {targets = Some(v.next_value()?)}
+                    }
+                }
+                let version = version.ok_or_else(|| Error::missing_field("version"))?;
+                Ok(Dependency::Package(PkgDepSpec {targets, version}))
+            }
+        }
+        deserializer.deserialize_any(DepVisitor)
+    }
 }
 fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
     for (_, sym) in this.iter_mut() {
@@ -228,8 +305,8 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     let mut conflicts = vec![];
     let mut changed = false;
     for (target, version) in t.deps.iter() {
-        match version.as_str() {
-            "project" => {
+        match version {
+            Dependency::Project => {
                 let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
                 match d.clone().into_inner() {
                     BuiltState::BuiltMeta => continue,
@@ -253,12 +330,8 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                     out.push(artifact);
                 }
             },
-            "system" => libs.push(target.clone()),
-            x => {
-                let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
-                std::mem::drop(v);
-                anyhow::bail!("packages are not currently supported!");
-            }
+            Dependency::System => libs.push(target.clone()),
+            Dependency::Package(_) => anyhow::bail!("packages are not currently supported!")
         }
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
