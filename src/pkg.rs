@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use either::Either;
 use anyhow_std::*;
 use path_calculate::path_absolutize::Absolutize;
+use semver::{Version, VersionReq};
 use crate::cobalt_dir;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
@@ -56,7 +57,9 @@ pub struct Package {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub source: Source,
-    pub prebuilds: HashMap<String, HashMap<String, Source>>
+    pub prebuilds: HashMap<String, HashMap<String, Source>>,
+    #[serde(alias = "proj_file", alias = "proj-file")]
+    pub project: Option<String>
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Source {
@@ -66,6 +69,9 @@ pub enum Source {
     Tar(String),
     #[serde(rename = "zip", alias = "zipball")]
     Zip(String)
+}
+lazy_static::lazy_static! {
+    pub static ref REGISTRY: anyhow::Result<Vec<Package>> = get_packages();
 }
 pub fn get_packages() -> anyhow::Result<Vec<Package>> {
     let cdir = cobalt_dir();
@@ -182,4 +188,34 @@ pub fn update_packages() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallSpec {
+    pub name: String,
+    pub version: VersionReq,
+    pub targets: Option<Vec<String>>
+}
+impl InstallSpec {
+    #[allow(dead_code)]
+    pub fn new(name: String, version: VersionReq, targets: Option<Vec<String>>) -> Self {Self {name, version, targets}}
+    #[allow(dead_code)]
+    pub fn named<N: Into<String>>(name: N) -> Self {Self::new(name.into(), VersionReq::STAR, None)}
+}
+impl std::str::FromStr for InstallSpec {
+    type Err = semver::Error;
+    fn from_str(req: &str) -> Result<Self, Self::Err> {
+        let mut targets: Option<Vec<String>> = None;
+        let mut version = VersionReq::STAR;
+        let mut it = req.match_indices(['@', ':']).peekable();
+        let name = if let Some(&(idx, _)) = it.peek() {req[..idx].to_string()} else {req.to_string()};
+        while let Some((idx, ch)) = it.next() {
+            let blk = if let Some(&(next, _)) = it.peek() {&req[idx..next]} else {req};
+            match ch {
+                "@" => version.comparators.append(&mut VersionReq::parse(blk)?.comparators),
+                ":" => targets.get_or_insert_with(Vec::new).extend(blk.split(',').map(str::trim).map(String::from)),
+                x => unreachable!(r#"should be "@" or ":", got {x:?}"#)
+            }
+        }
+        Ok(Self {name, version, targets})
+    }
 }
