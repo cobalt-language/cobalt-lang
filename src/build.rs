@@ -48,6 +48,19 @@ impl Project {
             Target {target_type: TargetType::Meta, files: None, name, deps}
         }))
     }
+    pub fn get_target(&self, target: &str) -> Option<Target> {
+        if let Some(val) = self.targets.iter().flatten().find_map(|x| (x.name == target).then_some(x)) {return Some(val.clone())}
+        if let Some(val) = self.executable.iter().flatten().find_map(|SpecialTarget {name, files, deps}| (name == target).then(|| Target {target_type: TargetType::Executable, name: name.clone(), files: files.clone(), deps: deps.clone()})) {return Some(val)}
+        if let Some(val) = self.library.iter().flatten().find_map(|SpecialTarget {name, files, deps}| (name == target).then(|| Target {target_type: TargetType::Library, name: name.clone(), files: files.clone(), deps: deps.clone()})) {return Some(val)}
+        if let Some(val) = self.meta.iter().flatten().find_map(|SpecialTarget {name, files, deps}| (name == target).then(|| Target {target_type: TargetType::Meta, name: name.clone(), files: files.clone(), deps: deps.clone()})) {return Some(val)}
+        None
+    }
+    pub fn has_target(&self, target: &str) -> bool {
+        self.targets.iter().flatten().any(|x| x.name == target) ||
+        self.executable.iter().flatten().any(|x| x.name == target) ||
+        self.library.iter().flatten().any(|x| x.name == target) ||
+        self.meta.iter().flatten().any(|x| x.name == target) 
+    }
     pub fn target_type(&self, name: &str) -> Option<TargetType> {
         self.targets.as_ref().and_then(|v| v.iter().find_map(|x| (x.name == name).then_some(x.target_type)))
         .or_else(|| self.executable.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Executable)))

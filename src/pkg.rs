@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
-use std::path::PathBuf;
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::collections::{HashMap, BTreeMap};
 use either::Either;
 use anyhow_std::*;
 use path_calculate::path_absolutize::Absolutize;
@@ -57,9 +57,46 @@ pub struct Package {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub source: Source,
-    pub prebuilds: HashMap<String, HashMap<String, Source>>,
+    pub prebuilds: BTreeMap<Version, HashMap<String, Source>>,
     #[serde(alias = "proj_file", alias = "proj-file")]
     pub project: Option<String>
+}
+impl Release {
+    pub fn project(&self, name: &str, version: &Version, frozen: bool) -> anyhow::Result<build::Project> {
+        let mut path = cobalt_dir();
+        path.push("packages");
+        path.push(name);
+        path.push(version.to_string());
+        if !path.exists() {path.create_dir_all_anyhow()?}
+        path.push("cobalt.toml");
+        if path.exists() {return Ok(toml::from_str(&path.read_to_string_anyhow()?)?)}
+        path.pop();
+        path.push("src");
+        path.push("cobalt.toml");
+        if path.exists() {return Ok(toml::from_str(&path.read_to_string_anyhow()?)?)}
+        path.pop();
+        path.pop();
+        path.push("cobalt.toml");
+        if let Some(mut project) = self.project.as_deref() {
+            if if project.starts_with("file://") {project = &project[7..]; true} else {project.starts_with('/')} {
+                Path::new(project).copy_anyhow(&path)?;
+                return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+            }
+            else if !frozen {
+                let buf = ureq::get(project).call()?.into_string()?;
+                path.write_anyhow(&buf)?;
+                return Ok(toml::from_str(&buf)?);
+            }
+        }
+        path.pop();
+        path.push("src");
+        if !(frozen || path.exists()) {
+            self.source.install(&path)?;
+            path.push("cobalt.toml");
+            return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+        }
+        Err(InstallError::Frozen(name.to_string()).into())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Source {
@@ -69,6 +106,30 @@ pub enum Source {
     Tar(String),
     #[serde(rename = "zip", alias = "zipball")]
     Zip(String)
+}
+impl Source {
+    pub fn install<P: AsRef<Path>>(&self, to: P) -> anyhow::Result<PathBuf> {
+        let mut to = to.as_ref().to_path_buf();
+        if to.exists() {to.remove_dir_all_anyhow()?}
+        match self {
+            Self::Git(Either::Left(url) | Either::Right(GitInfo {url, branch: None, ..})) => {git2::Repository::clone_recurse(&url, &to)?;},
+            Self::Git(Either::Right(GitInfo {url, branch: Some(GitLocation::Branch(commit) | GitLocation::Commit(commit)), ..})) => {
+                let repo = git2::Repository::clone_recurse(&url, &to)?;
+                let (object, reference) = repo.revparse_ext(&commit)?;
+                repo.checkout_tree(&object, None)?;
+                if let Some(gref) = reference {repo.set_head(std::str::from_utf8(gref.name_bytes())?)?}
+                else {repo.set_head_detached(object.id())?}
+            },
+            Self::Tar(url) => tar::Archive::new(flate2::read::GzDecoder::new(ureq::get(&url).call()?.into_reader())).unpack(&to)?,
+            Self::Zip(url) => {
+                let mut buf = vec![];
+                ureq::get(&url).call()?.into_reader().read_to_end(&mut buf)?;
+                zip_extract::extract(std::io::Cursor::new(buf), &to, true)?;
+            }
+        }
+        if let Self::Git(Either::Right(GitInfo {dir: Some(p), ..})) = self {to.push(p)}
+        Ok(to)
+    }
 }
 lazy_static::lazy_static! {
     pub static ref REGISTRY: anyhow::Result<Vec<Package>> = get_packages();
@@ -216,4 +277,22 @@ impl std::str::FromStr for InstallSpec {
         }
         Ok(Self {name, version, targets})
     }
+}
+#[derive(Debug, Clone, Error)]
+pub enum InstallError {
+    #[error("couldn't find package {0:?}")]
+    CantFindPkg(&'static str),
+    #[error("package {0:?} is not installed and would need to be downloaded")]
+    Frozen(String),
+    #[error("package {0:?} (version {1}) doesn't have the {2:?} target")]
+    NoMatchingTarget(&'static str, Version, &'static str),
+    #[error("package {0:?} doesn't have any versions matching the requirement: {1:?}")]
+    NoMatchingVersion(&'static str, VersionReq),
+    #[error("package {0:?} does not have a `default` target, and none were specified")]
+    NoDefaultTarget(&'static str)
+}
+#[derive(Debug, Clone, Default)]
+pub struct InstallOptions {
+    pub force_build: bool,
+    pub frozen: bool
 }

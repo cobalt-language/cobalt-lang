@@ -14,6 +14,7 @@ mod libs;
 mod opt;
 mod build;
 mod pkg;
+mod graph;
 mod color;
 mod cc;
 #[derive(Debug, Error)]

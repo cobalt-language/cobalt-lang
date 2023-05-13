@@ -31,6 +31,7 @@ anyhow = "1.0.70"
 anyhow-std = "0.1.3"
 thiserror = "1.0.40"
 cc = "1.0"
+lasso = { version = "0.7.0", features = ["multi-threaded"] }
 
 [build-dependencies]
 lazy_static = "1.0"
