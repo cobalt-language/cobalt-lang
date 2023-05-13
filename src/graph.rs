@@ -90,6 +90,16 @@ impl PkgNode {
         self.dependents += 1;
         self.comps.extend(ver.comparators.into_iter().map(|v| (v, dep)));
     }
+    /// Use a DFS to find a cycle in the packages
+    /// While a valid graph can be created with cycles, a proper build order cannot.
+    pub(self) fn find_cycle(&self, start: (Id, Id), ctx: &DependencyGraph) -> Option<VecDeque<(Id, Id)>> {
+        if self.dependencies.iter().any(|(d, _)| d == &start) {return Some(VecDeque::new())}
+        self.dependencies.iter().find_map(|(d, _)| {
+            let mut deque = ctx.packages.get(d)?.find_cycle(start, ctx)?;
+            deque.push_front(d);
+            Some(deque)
+        })
+    }
 }
 pub struct DependencyGraph {
     pub(self) registry: HashMap<Id, &'static pkg::Package>,
@@ -114,12 +124,17 @@ impl DependencyGraph {
             is_frozen: false
         }
     }
+    /// Clear the DependencyGraph
+    /// This is cheaper than creating a new one because the HashMap registry doesn't need to be
+    /// rebuilt.
+    pub fn clear(&mut self) {self.packages.clear()}
     /// Build the dependency tree from the installation specification
     pub fn build_tree<I: IntoIterator<Item = pkg::InstallSpec>>(&mut self, pkgs: I) -> anyhow::Result<()> {
         let mut node = PkgNode::default();
         node.dependents = 1;
         node.version = Version::new(1, 0, 0);
         let idef = STRINGS.get_or_intern_static("default");
+        let ientry = STRINGS.get_or_intern_static("<installation entry>");
         for pkg::InstallSpec {name, targets, version} in pkgs {
             let iname = STRINGS.get_or_intern(&name);
             if let Some(targets) = targets {
@@ -144,8 +159,31 @@ impl DependencyGraph {
                 else {anyhow::bail!(pkg::InstallError::NoDefaultTarget(STRINGS.resolve(&idef)))}
             }
         }
-        let mut queue: VecDeque<(Id, Id)> = [(STRINGS.get_or_intern_static("<installation entry>"), STRINGS.get_or_intern_static("<installation entry>"))].into();
+        let mut queue: VecDeque<(Id, Id)> = [(ientry, ientry)].into();
         while let Some((p, t)) = queue.pop_front() {unsafe {(*(&mut self.packages as *mut HashMap<(Id, Id), PkgNode>)).get_mut(&(p, t))}.unwrap().update(p, t, self, &mut queue)?}
         Ok(())
+    }
+    /// Find a suitable build order from the built dependency tree
+    /// If this fails, it returns at least one cycle in the graph
+    /// The DependencyGraph will be left in the empty state after a call to this function
+    /// This implementation uses Kahn's algorithm
+    pub fn build_order(&mut self) -> Result<VecDeque<(Id, Id)>, VecDeque<(Id, Id)>> {
+        let ientry = STRINGS.get_or_intern_static("<installation entry>");
+        let mut nodes: VecDeque<(Id, Id)> = [(ientry, ientry)].into();
+        let mut out: VecDeque = VecDeque::new();
+        while let Some(node) = nodes.pop_front() {
+            out.push(node);
+            for (dep, _) in self.packages.remove(&node).unwrap().dependencies.iter_mut() {
+                let node = &mut self.packages.get_mut(&dep).unwrap();
+                node.dependents -= 1;
+                if node.dependents == 0 {nodes.push(deps)}
+            }
+        }
+        if self.packages.is_empty() {Ok(out)}
+        else {
+            let out = self.packages.iter().find_map(|(k, x)| x.find_cycle(k)).unwrap();
+            self.packages.clear(); // Just to be sure that the result is in a clean state
+            Err(out)
+        }
     }
 }
