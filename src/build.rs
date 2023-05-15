@@ -227,6 +227,8 @@ fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
         }
     }
 }
+/// Start building a file
+/// This stops after running the prepasses to allow them to be run on all files before continuing
 fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bool) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST>)> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
@@ -264,6 +266,8 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ast.run_passes(ctx);
     Ok((([out_path, head_path], overall_fail), Some(ast)))
 }
+/// Finish building the file
+/// This picks up where `build_file_1` left off
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut overall_fail: bool) -> anyhow::Result<()> {
     let files = &*FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
@@ -307,6 +311,9 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     ctx.with_vars(|v| clear_mod(&mut v.symbols));
     Ok(())
 }
+/// Resolve dependencies for `build_target_single`
+/// This replaces project dependencies with packages, checks `plan` for installation versions, and
+/// assumes that all dependencies are already built
 fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
     let mut out = vec![];
     let mut libs = vec![];
@@ -341,6 +348,7 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
     out.extend(libs.into_iter().map(|(x, _)| x));
     Ok(out)
 }
+/// Build a single target, for use in package installation
 pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
@@ -427,6 +435,9 @@ enum BuiltState {
 impl BuiltState {
     pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
 }
+/// Resolve dependencies for a target
+/// The header is loaded into the compilation context, and it returns a tuple containing if a
+/// dependency has been rebuilt and a Vec containing the files that need to be linked
 fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
     let mut out = vec![];
     let mut libs = vec![];
@@ -474,6 +485,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     out.extend(libs.into_iter().map(|(x, _)| x));
     Ok((changed, out))
 }
+/// Build a single target. This is used with the `build` entry function
 fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Option<PathBuf>)> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
@@ -588,6 +600,7 @@ fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashM
         }
     }
 }
+/// Build the project. If to_build is None, all targets are built
 pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -> anyhow::Result<()> {
     if let Some(v) = &pkg.co_version {
         if !v.matches(&env!("CARGO_PKG_VERSION").parse::<Version>().unwrap()) {

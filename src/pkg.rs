@@ -9,6 +9,7 @@ use semver::{Version, VersionReq};
 use thiserror::Error;
 use indexmap::IndexMap;
 use crate::{build, graph, cobalt_dir, error};
+/// Information about a cloned repository
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
     #[serde(alias = "path")]
@@ -17,6 +18,8 @@ pub struct GitInfo {
     branch: Option<GitLocation>, // branch/commit/tag to use
     dir: Option<PathBuf> // subdirectory
 }
+/// What to checkout to
+/// Branches are updated, commits aren't
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GitLocation {
     #[serde(rename = "branch")]
@@ -24,6 +27,8 @@ pub enum GitLocation {
     #[serde(rename = "commit", alias = "tag")]
     Commit(String)
 }
+/// Location of a registry
+/// This defines what happens when update() is called
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RegistryType {
     #[serde(rename = "git", with = "either::serde_untagged")]
@@ -37,34 +42,47 @@ pub enum RegistryType {
     #[serde(rename = "manual", alias = "other")]
     Manual       // Something we don't have to worry about handles it
 }
+/// The actual registry: its type and path
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Registry {
     #[serde(flatten)]
     pub reg_type: RegistryType,
     pub path: PathBuf
 }
+/// Shim for serde
+/// Registries are supposed to be defined as a list of tables in TOML, so this helps
+/// deserialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryList {
     #[serde(default)]
     pub registry: Vec<Registry>
 }
+/// A general structure describing how to install a project
+/// While Projects describe how to build a project, Packages define how to install it, storing
+/// releases and that contain the source and prebuilds
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
     pub name: String,
     pub author: String,
-    pub source: Source,
     #[serde(alias = "description")]
     pub desc: Option<String>,
     pub releases: BTreeMap<Version, Release>
 }
+/// A single version of a project
+/// Every release must have a source, but can also optionally have prebuilds and a separate
+/// manifest download to speed up its usage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub source: Source,
+    /// A map of Arch => Target => URL
+    /// The URL should be to download the uncompressed output
     pub prebuilds: HashMap<String, HashMap<String, String>>,
+    /// An optional URL to download just the `cobalt.toml` file
     #[serde(alias = "proj_file", alias = "proj-file")]
     pub project: Option<String>
 }
 impl Release {
+    /// Get the manifest for this release
     pub fn project(&self, name: &str, version: &Version, frozen: bool) -> anyhow::Result<build::Project> {
         let mut path = cobalt_dir();
         path.push("packages");
@@ -101,6 +119,7 @@ impl Release {
         Err(InstallError::Frozen(name.to_string()).into())
     }
 }
+/// How to download a project
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Source {
     #[serde(rename = "git", with = "either::serde_untagged")]
@@ -111,6 +130,8 @@ pub enum Source {
     Zip(String)
 }
 impl Source {
+    /// Install the source to a given location
+    /// The returned `PathBuf` is in case the target was a subdirectory of a Git repository
     pub fn install<P: AsRef<Path>>(&self, to: P) -> anyhow::Result<PathBuf> {
         let mut to = to.as_ref().to_path_buf();
         if to.exists() {to.remove_dir_all_anyhow()?}
@@ -137,6 +158,7 @@ impl Source {
 lazy_static::lazy_static! {
     pub static ref REGISTRY: Vec<Package> = get_packages().map_err(|e| {error!("{e:#}"); std::process::exit(101)}).unwrap();
 }
+/// Get all packages as a `Vec`
 pub fn get_packages() -> anyhow::Result<Vec<Package>> {
     let cdir = cobalt_dir();
     let reg_path = cdir.join("registries.toml");
@@ -158,6 +180,7 @@ pub fn get_packages() -> anyhow::Result<Vec<Package>> {
     }
     Ok(out)
 }
+/// Update all registries
 pub fn update_packages() -> anyhow::Result<()> {
     let cdir = cobalt_dir();
     let reg_path = cdir.join("registries.toml");
@@ -253,6 +276,8 @@ pub fn update_packages() -> anyhow::Result<()> {
     }
     Ok(())
 }
+/// An installation specification
+/// It has a terse `FromStr` impl for command line use
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallSpec {
     pub name: String,
@@ -283,16 +308,25 @@ impl std::str::FromStr for InstallSpec {
 }
 #[derive(Debug, Clone, Error)]
 pub enum InstallError {
+    /// Package does not exist
     #[error("couldn't find package {0:?}")]
     CantFindPkg(&'static str),
+    /// Something needs to be downloaded
     #[error("package {0:?} is not installed and would need to be downloaded")]
     Frozen(String),
+    /// This package doesn't have the target we need
     #[error("package {0:?} (version {1}) doesn't have the {2:?} target")]
     NoMatchingTarget(&'static str, Version, &'static str),
+    /// This package doesn't have the right version
     #[error("package {0:?} doesn't have any versions matching the requirement: {1:?}")]
     NoMatchingVersion(&'static str, VersionReq),
+    /// This package doesn't have a default target
     #[error("package {0:?} does not have a `default` target, and none were specified")]
     NoDefaultTarget(&'static str),
+    /// There was a dependency cycle
+    /// This prints out the cycle, in the format: package.target@version -> next.target@version,
+    /// ending with the first package
+    /// This only prints out one cycle, but there could be multiple.
     #[error("dependencies couldn't be resolved due to a cycle: {}", DisplayCycle(.0))]
     DependencyCycle(VecDeque<(graph::Id, graph::Id, Version)>)
 }
@@ -304,10 +338,12 @@ impl std::fmt::Display for DisplayCycle<'_> {
         write!(f, "{}.{}@{v}", graph::STRINGS.resolve(pkg), graph::STRINGS.resolve(tar))
     }
 }
+/// Installation options
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force_build: bool,
     pub frozen: bool,
+    /// This is the target triple
     pub target: String
 }
 impl Default for InstallOptions {
@@ -353,11 +389,15 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
     src_path.push(pkg);
     src_path.push(version.to_string());
     src_path.push("src");
+    if let Source::Git(Either::Right(GitInfo {dir: Some(p), ..})) = &package.releases[version].source {src_path.push(p)}
     if !src_path.exists() {
         if opts.frozen {anyhow::bail!(InstallError::Frozen(pkg.to_string()))}
         package.releases[version].source.install(&src_path)?;
     }
-    let mut build_path = src_path.clone();
+    let mut build_path = cobalt_dir();
+    build_path.push("packages");
+    build_path.push(pkg);
+    build_path.push(version.to_string());
     build_path.push("build");
     let proj = toml::from_str::<build::Project>(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
     let target = proj.targets.get(tar).ok_or(InstallError::NoMatchingTarget(pkg, version.clone(), tar))?;
