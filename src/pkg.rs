@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 use std::collections::{HashMap, BTreeMap, VecDeque};
@@ -6,6 +7,7 @@ use anyhow_std::*;
 use path_calculate::path_absolutize::Absolutize;
 use semver::{Version, VersionReq};
 use thiserror::Error;
+use indexmap::IndexMap;
 use crate::{build, graph, cobalt_dir, error};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
@@ -327,7 +329,7 @@ pub fn installed_path(package: &str, target: &str, version: &Version) -> PathBuf
     path
 }
 /// Install a singular package. It is assumed that all of its dependencies are already met
-fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts: &InstallOptions, package: &Package) -> anyhow::Result<()> {
+fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts: &InstallOptions, package: &Package, plan: &IndexMap<(&str, &str), Version>) -> anyhow::Result<()> {
     let path = installed_path(pkg, tar, version);
     if !opts.force_build && path.exists() {return Ok(())} // already exists
     if !opts.force_build {
@@ -359,7 +361,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
     build_path.push("build");
     let proj = toml::from_str::<build::Project>(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
     let target = proj.targets.get(tar).ok_or(InstallError::NoMatchingTarget(pkg, version.clone(), tar))?;
-    let out = build::build_target_single(&target, pkg, tar, version, &build::BuildOptions {
+    let out = build::build_target_single(&target, pkg, tar, version, plan, &build::BuildOptions {
         source_dir: &src_path,
         build_dir: &build_path,
         continue_comp: false,
@@ -374,12 +376,12 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
 }
 /// Installation entry point
 /// All packages can just be given, and everything is handled
-pub fn install<I: IntoIterator<Item = InstallSpec>>(pkgs: I, opts: &InstallOptions) -> anyhow::Result<HashMap<(&'static str, &'static str), Version>> {
+pub fn install<I: IntoIterator<Item = InstallSpec>>(pkgs: I, opts: &InstallOptions) -> anyhow::Result<IndexMap<(&'static str, &'static str), Version>> {
     let reg = REGISTRY.iter().map(|pkg| (pkg.name.as_str(), pkg)).collect::<HashMap<&'static str, _>>();
     let mut graph = graph::DependencyGraph::new();
     graph.is_frozen = opts.frozen;
     graph.build_tree(pkgs)?;
-    let order = graph.build_order().map_err(InstallError::DependencyCycle)?.into_iter().map(|(p, t, v)| (graph::STRINGS.resolve(&p), graph::STRINGS.resolve(&t), v)).collect::<VecDeque<_>>();
-    order.iter().try_for_each(|(p, t, v)| install_single(p, t, &v, &Default::default(), &reg[p]))?;
-    Ok(order.into_iter().map(|(p, t, v)| ((p, t), v)).collect())
+    let order = graph.build_order().map_err(InstallError::DependencyCycle)?.into_iter().map(|(p, t, v)| ((graph::STRINGS.resolve(&p), graph::STRINGS.resolve(&t)), v)).collect::<IndexMap<_, _>>();
+    order.iter().try_for_each(|((p, t), v)| install_single(p, t, &v, &Default::default(), &reg[p], &order))?;
+    Ok(order)
 }

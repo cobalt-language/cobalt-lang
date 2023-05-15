@@ -1,16 +1,17 @@
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::io::{Read, Write, BufWriter};
+use std::io::{Write, BufWriter};
 use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
 use anyhow::Context;
 use anyhow_std::*;
+use indexmap::IndexMap;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use cobalt::misc::CellExt as Cell;
-use super::*;
+use crate::*;
 #[derive(Debug, Clone)]
 pub struct Project {
     pub name: String,
@@ -238,15 +239,8 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     if !(force_build || opts.rebuild) && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
-        use object::read::{Object, ObjectSection};
-        let mut buf = Vec::new();
-        let mut file = std::fs::File::open(&head_path)?;
-        file.read_to_end(&mut buf)?;
-        let obj = object::File::parse(buf.as_slice())?;
-        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
-            let vec = ctx.load(&mut &*colib)?;
-            if !vec.is_empty() {anyhow::bail!(libs::ConflictingDefs(vec));}
-        }
+        let conflicts = libs::load_lib(&head_path, &ctx)?;
+        if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
         return Ok((([out_path, head_path], false), None));
     }
     let mut fail = false;
@@ -313,7 +307,7 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     ctx.with_vars(|v| clear_mod(&mut v.symbols));
     Ok(())
 }
-fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
+fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
@@ -326,14 +320,19 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, opts
                 artifact.push(pkg);
                 artifact.push(v.to_string());
                 artifact.push(target);
-                use object::{Object, ObjectSection};
-                let buf = artifact.read_anyhow()?;
-                let obj = object::File::parse(buf.as_slice())?;
-                if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
+                conflicts.append(&mut libs::load_lib(&artifact, ctx)?);
                 out.push(artifact);
             },
             Dependency::System => libs.push(target.clone()),
-            Dependency::Package(_) => anyhow::bail!("packages are not currently supported!")
+            Dependency::Package(spec) => spec.targets.clone().unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|tar| {
+                let mut path = installed_path.clone();
+                path.push(target);
+                path.push(plan[&(target.as_str(), tar.as_str())].to_string());
+                path.push(tar);
+                conflicts.append(&mut libs::load_lib(&path, ctx)?);
+                out.push(path);
+                anyhow::Ok(())
+            })?
         }
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
@@ -342,11 +341,11 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, opts
     out.extend(libs.into_iter().map(|(x, _)| x));
     Ok(out)
 }
-pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
+pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let libs = resolve_deps_internal(&ctx, t, pkg, v, opts)?;
+    let libs = resolve_deps_internal(&ctx, t, pkg, v, plan, opts)?;
     match t.target_type {
         TargetType::Executable => {
             let mut paths = vec![];
@@ -432,6 +431,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
+    let mut to_install = vec![];
     let mut changed = false;
     for (target, version) in t.deps.iter() {
         match version {
@@ -440,11 +440,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                 match d.clone().into_inner() {
                     BuiltState::BuiltMeta => continue,
                     BuiltState::Built(artifact) => {
-                        use object::{Object, ObjectSection};
-                        let buf = artifact.read_anyhow()?;
-                        let obj = object::File::parse(buf.as_slice())?;
-                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
-                        out.push(artifact);
+                        libs::load_lib(&artifact, ctx)?;
                         continue
                     },
                     BuiltState::NotBuilt => {}
@@ -452,17 +448,26 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                 let (c, a) = build_target(t, &target, d, targets, opts)?;
                 changed |= c;
                 if let Some(artifact) = a {
-                    use object::{Object, ObjectSection};
-                    let buf = artifact.read_anyhow()?;
-                    let obj = object::File::parse(buf.as_slice())?;
-                    if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
+                    libs::load_lib(&artifact, ctx)?;
                     out.push(artifact);
                 }
             },
             Dependency::System => libs.push(target.clone()),
-            Dependency::Package(_) => anyhow::bail!("packages are not currently supported!")
+            Dependency::Package(PkgDepSpec {version, targets}) => to_install.push(pkg::InstallSpec {name: target.clone(), version: version.clone(), targets: targets.clone()})
         }
     }
+    let plan = pkg::install(to_install.iter().cloned(), &pkg::InstallOptions {target: opts.triple.as_str().to_str().unwrap().to_string(), ..Default::default()})?;
+    let mut installed_path = cobalt_dir();
+    installed_path.push("installed");
+    to_install.into_iter().try_for_each(|pkg::InstallSpec {name, targets, ..}| targets.unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|target| {
+        let mut path = installed_path.clone();
+        path.push(&name);
+        path.push(plan[&(name.as_str(), target.as_str())].to_string());
+        path.push(&target);
+        conflicts.append(&mut libs::load_lib(&path, ctx)?);
+        out.push(path);
+        anyhow::Ok(())
+    }))?;
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
     for lib in notfound {anyhow::bail!("couldn't find {lib}")}

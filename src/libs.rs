@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ffi::OsStr;
 use std::fmt;
+use os_str_bytes::OsStrBytes;
 use object::{SectionKind, write::Object};
 #[derive(Debug)]
 pub struct ConflictingDefs(pub Vec<String>);
@@ -26,13 +27,7 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
                 if lib == stem || (stem.starts_with("lib") && lib == &stem[3..]) {
                     let val = std::mem::take(lib);
                     if let Some(ctx) = ctx {
-                        use object::read::{Object, ObjectSection};
-                        use anyhow_std::PathAnyhow;
-                        let buf = path.read_anyhow()?;
-                        let obj = object::File::parse(buf.as_slice())?;
-                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
-                            conflicts.append(&mut ctx.load(&mut &*colib)?);
-                        }
+                        conflicts.append(&mut load_lib(&path, ctx)?)
                     }
                     out.push((path.clone(), val));
                 }
@@ -48,8 +43,7 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::Comp
         if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
             for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
                 if lib == stem || (stem.starts_with("lib") && lib == &stem[3..]) {
-                    let mut val = String::new();
-                    std::mem::swap(&mut val, lib);
+                    let val = std::mem::take(lib);
                     out.push((path.clone(), val));
                 }
             }
@@ -118,4 +112,21 @@ pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
     let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Other);
     let colib = obj.section_mut(colib);
     colib.set_data(buf, 1);
+}
+pub fn load_lib(path: &Path, ctx: &cobalt::CompCtx) -> anyhow::Result<Vec<String>> {
+    use object::read::{Object, ObjectSection};
+    use anyhow_std::PathAnyhow;
+    let buf = path.read_anyhow()?;
+    let mut conflicts = vec![];
+    if buf.len() >= 4 && &buf[..4] == b"META" {
+        buf[4..].split(|&c| c == 0).try_for_each(|p| anyhow::Ok(conflicts.append(&mut load_lib(&Path::assert_from_raw_bytes(p), ctx)?)))?;
+        Ok(conflicts)
+    }
+    else {
+        let obj = object::File::parse(buf.as_slice())?;
+        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
+            conflicts.append(&mut ctx.load(&mut &*colib)?);
+        }
+        Ok(conflicts)
+    }
 }

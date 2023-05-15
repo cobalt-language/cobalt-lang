@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::{HashMap, VecDeque};
 use semver::{Version, VersionReq, Comparator};
 use lasso::{ThreadedRodeo, Spur};
