@@ -1486,7 +1486,15 @@ fn driver() -> anyhow::Result<()> {
             }
         },
         "pkg" | "package" => match args.get(2).map(String::as_str) {
-            Some("update") => pkg::update_packages()?,
+            Some("update") => {
+                if args.len() > 3 {anyhow::bail!("arguments cannot be passed here")};
+                pkg::update_packages()?
+            },
+            Some("install") => {
+                pkg::install(args.iter().skip(3).map(|x|
+                    if x.starts_with('-') {Err(anyhow::anyhow!(r#"argument cannot start with "-" here"#))}
+                    else {anyhow::Ok(x.parse()?)}
+                ).collect::<anyhow::Result<Vec<_>>>()?, &Default::default())?;}, // TODO: give all of this a proper CLI
             Some(x) => {
                 error!("unknown subcommand '{x}'");
                 exit(1);
