@@ -1,11 +1,12 @@
 use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{HashMap, BTreeMap, VecDeque};
 use either::Either;
 use anyhow_std::*;
 use path_calculate::path_absolutize::Absolutize;
 use semver::{Version, VersionReq};
-use crate::*;
+use thiserror::Error;
+use crate::{build, graph, cobalt_dir, error};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
     #[serde(alias = "path")]
@@ -52,12 +53,12 @@ pub struct Package {
     pub source: Source,
     #[serde(alias = "description")]
     pub desc: Option<String>,
-    pub releases: HashMap<String, Release>
+    pub releases: BTreeMap<Version, Release>
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub source: Source,
-    pub prebuilds: BTreeMap<Version, HashMap<String, Source>>,
+    pub prebuilds: HashMap<String, HashMap<String, String>>,
     #[serde(alias = "proj_file", alias = "proj-file")]
     pub project: Option<String>
 }
@@ -132,7 +133,7 @@ impl Source {
     }
 }
 lazy_static::lazy_static! {
-    pub static ref REGISTRY: anyhow::Result<Vec<Package>> = get_packages();
+    pub static ref REGISTRY: Vec<Package> = get_packages().map_err(|e| {error!("{e:#}"); std::process::exit(101)}).unwrap();
 }
 pub fn get_packages() -> anyhow::Result<Vec<Package>> {
     let cdir = cobalt_dir();
@@ -289,10 +290,96 @@ pub enum InstallError {
     #[error("package {0:?} doesn't have any versions matching the requirement: {1:?}")]
     NoMatchingVersion(&'static str, VersionReq),
     #[error("package {0:?} does not have a `default` target, and none were specified")]
-    NoDefaultTarget(&'static str)
+    NoDefaultTarget(&'static str),
+    #[error("dependencies couldn't be resolved due to a cycle: {}", DisplayCycle(.0))]
+    DependencyCycle(VecDeque<(graph::Id, graph::Id, Version)>)
 }
-#[derive(Debug, Clone, Default)]
+struct DisplayCycle<'a>(pub &'a VecDeque<(graph::Id, graph::Id, Version)>);
+impl std::fmt::Display for DisplayCycle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for (pkg, tar, v) in self.0 {write!(f, "{}.{}@{v} -> ", graph::STRINGS.resolve(&pkg), graph::STRINGS.resolve(&tar))?}
+        let (pkg, tar, v) = self.0.front().unwrap();
+        write!(f, "{}.{}@{v}", graph::STRINGS.resolve(pkg), graph::STRINGS.resolve(tar))
+    }
+}
+#[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force_build: bool,
-    pub frozen: bool
+    pub frozen: bool,
+    pub target: String
+}
+impl Default for InstallOptions {
+    fn default() -> Self {
+        Self {
+            force_build: false,
+            frozen: false,
+            target: inkwell::targets::TargetMachine::get_default_triple().as_str().to_str().unwrap().to_string()
+        }
+    }
+}
+/// Convenience method to find the path that a package is installed to
+pub fn installed_path(package: &str, target: &str, version: &Version) -> PathBuf {
+    let mut path = cobalt_dir();
+    path.push("installed");
+    path.push(package);
+    path.push(version.to_string());
+    path.push(target);
+    path
+}
+/// Install a singular package. It is assumed that all of its dependencies are already met
+fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts: &InstallOptions, package: &Package) -> anyhow::Result<()> {
+    let path = installed_path(pkg, tar, version);
+    if !opts.force_build && path.exists() {return Ok(())} // already exists
+    if !opts.force_build {
+        // Search for prebuilds that match the target
+        // If opts.frozen == true, only allow files starting with "/" or "file://", which are
+        // recognized as local files
+        if let Some(mut url) = package.releases[version].prebuilds.iter().flat_map(|(os, ts)| ts.iter().map(|(tar, url)| (os.as_str(), tar, url))).find_map(|(os, t, url)| ((!opts.frozen || url.starts_with('/') || url.starts_with("file://")) && t == tar && glob::Pattern::new(&os).ok()?.matches(&opts.target)).then_some(url.as_str())) {
+            if if url.starts_with("file://") {url = &url[7..]; true} else {url.starts_with('/')} {
+                Path::new(url).copy_anyhow(path)?;
+            }
+            else {
+                assert!(!opts.frozen); // this should always be true, but one small assertion won't hurt performance
+                let mut file = std::fs::File::create(path)?;
+                std::io::copy(&mut ureq::get(url).call()?.into_reader(), &mut file)?;
+            }
+            return Ok(());
+        }
+    }
+    let mut src_path = cobalt_dir();
+    src_path.push("packages");
+    src_path.push(pkg);
+    src_path.push(version.to_string());
+    src_path.push("src");
+    if !src_path.exists() {
+        if opts.frozen {anyhow::bail!(InstallError::Frozen(pkg.to_string()))}
+        package.releases[version].source.install(&src_path)?;
+    }
+    let mut build_path = src_path.clone();
+    build_path.push("build");
+    let proj = toml::from_str::<build::Project>(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
+    let target = proj.targets.get(tar).ok_or(InstallError::NoMatchingTarget(pkg, version.clone(), tar))?;
+    let out = build::build_target_single(&target, pkg, tar, version, &build::BuildOptions {
+        source_dir: &src_path,
+        build_dir: &build_path,
+        continue_comp: false,
+        continue_build: false,
+        rebuild: true,
+        profile: "default",
+        triple: &inkwell::targets::TargetTriple::create(&opts.target),
+        link_dirs: vec![]
+    })?;
+    if let Some(out) = out {out.copy_anyhow(path)?;} else {path.write_anyhow([])?}
+    Ok(())
+}
+/// Installation entry point
+/// All packages can just be given, and everything is handled
+pub fn install<I: IntoIterator<Item = InstallSpec>>(pkgs: I, opts: &InstallOptions) -> anyhow::Result<HashMap<(&'static str, &'static str), Version>> {
+    let reg = REGISTRY.iter().map(|pkg| (pkg.name.as_str(), pkg)).collect::<HashMap<&'static str, _>>();
+    let mut graph = graph::DependencyGraph::new();
+    graph.is_frozen = opts.frozen;
+    graph.build_tree(pkgs)?;
+    let order = graph.build_order().map_err(InstallError::DependencyCycle)?.into_iter().map(|(p, t, v)| (graph::STRINGS.resolve(&p), graph::STRINGS.resolve(&t), v)).collect::<VecDeque<_>>();
+    order.iter().try_for_each(|(p, t, v)| install_single(p, t, &v, &Default::default(), &reg[p]))?;
+    Ok(order.into_iter().map(|(p, t, v)| ((p, t), v)).collect())
 }

@@ -2,7 +2,6 @@ use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io::{Read, Write, BufWriter};
-use std::borrow::Cow;
 use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
@@ -238,7 +237,6 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     head_path.push("headers");
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
-    let pname = path.related_to(opts.source_dir)?;
     if !(force_build || opts.rebuild) && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
         use object::read::{Object, ObjectSection};
         let mut buf = Vec::new();
@@ -313,9 +311,112 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     file.write_all(&obj.write()?)?;
     file.flush()?;
     ctx.with_vars(|v| clear_mod(&mut v.symbols));
-    let mut pname = out_path.related_to(opts.build_dir)?;
-    if let Ok(base) = pname.strip_prefix(Path::new(".artifacts").join("objects")).map(ToOwned::to_owned).map(Cow::Owned) {pname = base;};
     Ok(())
+}
+fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    let mut libs = vec![];
+    let mut conflicts = vec![];
+    let mut installed_path = cobalt_dir();
+    installed_path.push("installed");
+    for (target, version) in t.deps.iter() {
+        match version {
+            Dependency::Project => {
+                let mut artifact = installed_path.clone();
+                artifact.push(pkg);
+                artifact.push(v.to_string());
+                artifact.push(target);
+                use object::{Object, ObjectSection};
+                let buf = artifact.read_anyhow()?;
+                let obj = object::File::parse(buf.as_slice())?;
+                if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
+                out.push(artifact);
+            },
+            Dependency::System => libs.push(target.clone()),
+            Dependency::Package(_) => anyhow::bail!("packages are not currently supported!")
+        }
+    }
+    if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
+    let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
+    for lib in notfound {anyhow::bail!("couldn't find {lib}")}
+    out.extend(libs.into_iter().map(|(x, _)| x));
+    Ok(out)
+}
+pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
+    let ink_ctx = inkwell::context::Context::create();
+    let mut ctx = CompCtx::new(&ink_ctx, "");
+    ctx.flags.prepass = false;
+    let libs = resolve_deps_internal(&ctx, t, pkg, v, opts)?;
+    match t.target_type {
+        TargetType::Executable => {
+            let mut paths = vec![];
+            let mut asts = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                Some(either::Right(files)) => {
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {anyhow::bail!("couldn't find file {file}")}
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                None => anyhow::bail!("target must have files")
+            }
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut cc = cc::CompileCommand::new();
+            cc.objs(paths.into_iter().map(|([x, _], _)| x));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            Ok(Some(output))
+        },
+        TargetType::Library => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                Some(either::Right(files)) => {
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {anyhow::bail!("couldn't find file {file}")}
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                None => anyhow::bail!("target must have files")
+            }
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut cc = cc::CompileCommand::new();
+            cc.lib(true);
+            cc.objs(paths.into_iter().flat_map(|x| x.0));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            Ok(Some(output))
+        },
+        TargetType::Meta => Ok(None)
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 enum BuiltState {
@@ -477,9 +578,6 @@ fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashM
             Ok((changed, Some(output)))
         },
         TargetType::Meta => {
-            if t.files.is_some() {
-                anyhow::bail!("meta target cannot have files");
-            }
             data.set(BuiltState::BuiltMeta);
             Ok((changed, None))
         }

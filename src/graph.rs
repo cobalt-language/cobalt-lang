@@ -32,12 +32,9 @@ impl PkgNode {
         // find a suitable release
         let (r, version) = ctx.registry.get(&pkg)
             .ok_or_else(|| pkg::InstallError::CantFindPkg(STRINGS.resolve(&pkg)))?
-            .releases.iter().filter_map(|(v, p)| {
-                let v = Version::parse(v).ok()?;
-                self.comps.iter().all(|(c, _)| c.matches(&v)).then_some((p, v))
-            }).last()
+            .releases.iter().filter_map(|(v, p)| self.comps.iter().all(|(c, _)| c.matches(&v)).then_some((p, v))).last()
             .ok_or_else(|| pkg::InstallError::NoMatchingVersion(STRINGS.resolve(&pkg), VersionReq {comparators: self.comps.iter().map(|(c, _)| c.clone()).collect()}))?;
-        if self.init && version == self.version {return Ok(())} // everything is fine.
+        if self.init && version == &self.version {return Ok(())} // everything is fine.
         let proj = r.project(STRINGS.resolve(&pkg), &version, ctx.is_frozen)?;
         // get target
         let mut deps = {
@@ -111,7 +108,7 @@ impl DependencyGraph {
     /// The registry is used from `pkg::REGISTRY`, and `packages` is initially empty
     pub fn new() -> Self {
         Self {
-            registry: pkg::REGISTRY.as_ref().expect("registry must be successfully built").iter().map(|pkg| (STRINGS.get_or_intern_static(&pkg.name), pkg)).collect(),
+            registry: pkg::REGISTRY.iter().map(|pkg| (STRINGS.get_or_intern_static(&pkg.name), pkg)).collect(),
             packages: HashMap::new(),
             is_frozen: false
         }
@@ -119,7 +116,7 @@ impl DependencyGraph {
     /// Create a new dependency graph, but with `is_frozen` set to `true`.
     pub fn frozen() -> Self {
         Self {
-            registry: pkg::REGISTRY.as_ref().expect("registry must be successfully built").iter().map(|pkg| (STRINGS.get_or_intern_static(&pkg.name), pkg)).collect(),
+            registry: pkg::REGISTRY.iter().map(|pkg| (STRINGS.get_or_intern_static(&pkg.name), pkg)).collect(),
             packages: HashMap::new(),
             is_frozen: false
         }
@@ -147,10 +144,7 @@ impl DependencyGraph {
             else {
                 let (r, v) = self.registry.get(&iname)
                     .ok_or_else(|| pkg::InstallError::CantFindPkg(STRINGS.resolve(&iname)))?
-                    .releases.iter().filter_map(|(v, p)| {
-                        let v = Version::parse(v).ok()?;
-                        version.matches(&v).then_some((p, v))
-                    }).last()
+                    .releases.iter().filter_map(|(v, p)| version.matches(&v).then_some((p, v))).last()
                     .ok_or_else(|| pkg::InstallError::NoMatchingVersion(STRINGS.resolve(&iname), version.clone()))?;
                 let proj = r.project(&name, &v, self.is_frozen)?;
                 if proj.targets.contains_key("default") {
