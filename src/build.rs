@@ -1,65 +1,26 @@
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::io::{Read, Write, BufWriter};
-use std::process::exit;
-use std::borrow::Cow;
+use std::io::{Write, BufWriter};
 use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
 use path_calculate::*;
 use anyhow::Context;
 use anyhow_std::*;
+use indexmap::IndexMap;
+use os_str_bytes::OsStrBytes;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use cobalt::misc::CellExt as Cell;
-use super::{cc, libs, opt, warning, error, CompileErrors};
-#[derive(Debug, Clone, Deserialize)]
+use crate::*;
+#[derive(Debug, Clone)]
 pub struct Project {
     pub name: String,
     pub version: Version,
     pub author: Option<String>,
     pub co_version: Option<VersionReq>,
-    #[serde(alias = "description")]
     pub desc: Option<String>,
-    #[serde(alias = "target")]
-    targets: Option<Vec<Target>>,
-    #[serde(alias = "lib")]
-    library: Option<Vec<SpecialTarget>>,
-    #[serde(alias = "exe", alias = "bin", alias = "binary")]
-    executable: Option<Vec<SpecialTarget>>,
-    meta: Option<Vec<SpecialTarget>>
-}
-impl Project {
-    pub fn into_targets(self) -> impl Iterator<Item = Target> {
-        self.targets.unwrap_or_default().into_iter().map(|x| {
-            if x.target_type == TargetType::Meta && x.files.is_some() {
-                error!("meta target (name: {}) cannot have files", x.name);
-                exit(100)
-            }
-            x
-        })
-        .chain(self.executable.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| Target {target_type: TargetType::Executable, name, files, deps}))
-        .chain(self.library.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| Target {target_type: TargetType::Library, name, files, deps}))
-        .chain(self.meta.unwrap_or_default().into_iter().map(|SpecialTarget {name, files, deps}| {
-            if files.is_some() {
-                error!("meta target (name: {name}) cannot have files");
-                exit(100)
-            }
-            Target {target_type: TargetType::Meta, files: None, name, deps}
-        }))
-    }
-    pub fn target_type(&self, name: &str) -> Option<TargetType> {
-        self.targets.as_ref().and_then(|v| v.iter().find_map(|x| (x.name == name).then_some(x.target_type)))
-        .or_else(|| self.executable.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Executable)))
-        .or_else(|| self.library.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Library)))
-        .or_else(|| self.meta.as_ref().and_then(|v| v.iter().any(|x| x.name == name).then_some(TargetType::Meta)))
-    }
-    pub fn get_exe<'a>(&'a self) -> Vec<&'a str> {
-        let mut out = Vec::with_capacity(self.targets.as_ref().map_or(0, |v| v.len()) + self.executable.as_ref().map_or(0, |v| v.len()));
-        if let Some(ref v) = self.targets {out.extend(v.iter().filter_map(|x| (x.target_type == TargetType::Executable).then_some(x.name.as_str())))}
-        if let Some(ref v) = self.executable {out.extend(v.iter().map(|x| x.name.as_str()))}
-        out
-    }
+    pub targets: HashMap<String, Target>
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum TargetType {
@@ -70,23 +31,93 @@ pub enum TargetType {
     #[serde(rename = "meta")]
     Meta
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Target {
-    pub name: String,
-    #[serde(rename = "type")]
     pub target_type: TargetType,
-    #[serde(with = "either::serde_untagged_optional")]
     pub files: Option<Either<String, Vec<String>>>,
-    #[serde(default, alias = "dependencies")]
-    pub deps: HashMap<String, String>
+    pub deps: HashMap<String, Dependency>
 }
-#[derive(Debug, Clone, Deserialize)]
-struct SpecialTarget {
-    pub name: String,
+#[derive(Deserialize)]
+#[serde(rename = "target")]
+struct TargetShim {
+    name: String,
+    #[serde(rename = "type")]
+    target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
-    pub files: Option<Either<String, Vec<String>>>,
-    #[serde(default, alias = "dependencies")]
-    pub deps: HashMap<String, String>
+    files: Option<Either<String, Vec<String>>>,
+    #[serde(default)]
+    deps: HashMap<String, Dependency>
+}
+#[derive(Deserialize)]
+#[serde(rename = "target")]
+struct KnownTargetShim {
+    name: String,
+    #[serde(with = "either::serde_untagged_optional")]
+    files: Option<Either<String, Vec<String>>>,
+    #[serde(default)]
+    deps: HashMap<String, Dependency>
+}
+impl<'de> Deserialize<'de> for Project {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::*;
+        use std::fmt::{self, Formatter};
+        struct ProjectVisitor;
+        impl<'de> Visitor<'de> for ProjectVisitor {
+            type Value = Project;
+            fn expecting(&self, f: &mut Formatter) -> fmt::Result {f.write_str("struct Project")}
+            fn visit_map<V: MapAccess<'de>>(self, mut map: V) -> Result<Project, V::Error> {
+                let mut name = None;
+                let mut version = None;
+                let mut author = None;
+                let mut co_version = None;
+                let mut desc = None;
+                let mut targets = HashMap::new();
+                enum Field {Name, Version, Author, CoVersion, Desc, Targets, Bin, Lib, Meta, Ignore}
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Field, D::Error> {
+                        struct FieldVisitor;
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+                            fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {f.write_str("field identifier")}
+                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
+                                Ok(match v {
+                                    "name" => Field::Name,
+                                    "version" => Field::Version,
+                                    "author" => Field::Author,
+                                    "co_version" | "co-version" | "cobalt" => Field::CoVersion,
+                                    "desc" | "description" => Field::Desc,
+                                    "target" | "targets" => Field::Targets,
+                                    "bin" | "binary" | "exe" | "executable" => Field::Bin,
+                                    "lib" | "library" => Field::Lib,
+                                    "meta" => Field::Meta,
+                                    _ => Field::Ignore
+                                })
+                            }
+                        }
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Name => if name.is_some() {return Err(Error::duplicate_field("name"))} else {name = Some(map.next_value()?)}
+                        Field::Version => if version.is_some() {return Err(Error::duplicate_field("version"))} else {version = Some(map.next_value()?)}
+                        Field::Author => if author.is_some() {return Err(Error::duplicate_field("author"))} else {author = Some(map.next_value()?)}
+                        Field::CoVersion => if co_version.is_some() {return Err(Error::duplicate_field("co_version"))} else {co_version = Some(map.next_value()?)}
+                        Field::Desc => if desc.is_some() {return Err(Error::duplicate_field("desc"))} else {desc = Some(map.next_value()?)}
+                        Field::Targets => targets.extend(&mut map.next_value::<Vec<TargetShim>>()?.into_iter().map(|TargetShim {name, target_type, deps, files}| (name, Target {target_type, deps, files}))),
+                        Field::Bin => targets.extend(&mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(|KnownTargetShim {name, deps, files}| (name, Target {target_type: TargetType::Executable, deps, files}))),
+                        Field::Lib => targets.extend(&mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(|KnownTargetShim {name, deps, files}| (name, Target {target_type: TargetType::Library, deps, files}))),
+                        Field::Meta => targets.extend(&mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(|KnownTargetShim {name, deps, files}| (name, Target {target_type: TargetType::Meta, deps, files}))),
+                        Field::Ignore => {}
+                    }
+                }
+                let name = name.ok_or_else(|| Error::missing_field("name"))?;
+                let version = version.ok_or_else(|| Error::missing_field("version"))?;
+                Ok(Project {name, version, author, co_version, desc, targets})
+            }
+        }
+        deserializer.deserialize_struct("Project", &["name", "version", "author", "co_version", "desc", "targets"], ProjectVisitor)
+    }
 }
 #[derive(Debug, Clone)]
 pub struct BuildOptions<'a> {
@@ -98,6 +129,83 @@ pub struct BuildOptions<'a> {
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>
+}
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct PkgDepSpec {
+    #[serde(default)]
+    pub version: semver::VersionReq,
+    pub targets: Option<Vec<String>>
+}
+#[derive(Debug, Clone)]
+pub enum Dependency {
+    Project,
+    System,
+    Package(PkgDepSpec)
+}
+impl<'de> Deserialize<'de> for Dependency {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use std::fmt::{self, Formatter};
+        use serde::de::*;
+        struct DepVisitor;
+        impl<'de> Visitor<'de> for DepVisitor {
+            type Value = Dependency;
+            fn expecting(&self, f: &mut Formatter) -> fmt::Result {f.write_str(r#""project", "version", or a version statement"#)}
+            fn visit_str<E: Error>(self, v: &str) -> Result<Dependency, E> {
+                Ok(match v.trim() {
+                    "project" => Dependency::Project,
+                    "system" => Dependency::System,
+                    x => Dependency::Package({
+                        let mut it = v.match_indices(['@', ':']).peekable();
+                        if let Some(&(next, _)) = it.peek() {
+                            let mut targets: Option<Vec<String>> = None;
+                            let mut version = VersionReq::parse(&v[..next]).map_err(Error::custom)?;
+                            while let Some((idx, ch)) = it.next() {
+                                let blk = if let Some(&(next, _)) = it.peek() {v[idx..next].trim()} else {v[idx..].trim()};
+                                match ch {
+                                    "@" => version.comparators.extend(VersionReq::parse(blk).map_err(Error::custom)?.comparators),
+                                    ":" => targets.get_or_insert_with(Vec::new).extend(blk.split(',').map(str::trim).map(String::from)),
+                                    x => unreachable!("expected '@' or ':', got {x:?}")
+                                }
+                            }
+                            PkgDepSpec {targets, version}
+                        }
+                        else {PkgDepSpec {targets: None, version: VersionReq::parse(x).map_err(Error::custom)?}}
+                    })
+                })
+            }
+            fn visit_map<M: MapAccess<'de>>(self, mut v: M) -> Result<Dependency, M::Error> {
+                enum Field {Version, Targets}
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Field, D::Error> {
+                        struct FieldVisitor;
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+                            fn expecting(&self, f: &mut Formatter) -> fmt::Result {f.write_str("`version` or `targets`")}
+                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
+                                match v {
+                                    "version" => Ok(Field::Version),
+                                    "targets" => Ok(Field::Targets),
+                                     _ => Err(Error::unknown_field(v, &["version", "targets"]))
+                                }
+                            }
+                        }
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+                let mut targets: Option<Vec<String>> = None;
+                let mut version: Option<VersionReq> = None;
+                while let Some(key) = v.next_key()? {
+                    match key {
+                        Field::Version => if version.is_some() {return Err(Error::duplicate_field("version"))} else {version = Some(v.next_value()?)}
+                        Field::Targets => if targets.is_some() {return Err(Error::duplicate_field("targets"))} else {targets = Some(v.next_value()?)}
+                    }
+                }
+                let version = version.ok_or_else(|| Error::missing_field("version"))?;
+                Ok(Dependency::Package(PkgDepSpec {targets, version}))
+            }
+        }
+        deserializer.deserialize_any(DepVisitor)
+    }
 }
 fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
     for (_, sym) in this.iter_mut() {
@@ -120,6 +228,8 @@ fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
         }
     }
 }
+/// Start building a file
+/// This stops after running the prepasses to allow them to be run on all files before continuing
 fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bool) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST>)> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
@@ -131,18 +241,9 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     head_path.push("headers");
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
-    let pname = path.related_to(opts.source_dir)?;
     if !(force_build || opts.rebuild) && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
-        println!("{} has already been built", pname.display());
-        use object::read::{Object, ObjectSection};
-        let mut buf = Vec::new();
-        let mut file = std::fs::File::open(&head_path)?;
-        file.read_to_end(&mut buf)?;
-        let obj = object::File::parse(buf.as_slice())?;
-        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
-            let vec = ctx.load(&mut &*colib)?;
-            if !vec.is_empty() {anyhow::bail!(libs::ConflictingDefs(vec));}
-        }
+        let conflicts = libs::load_lib(&head_path, &ctx)?;
+        if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
         return Ok((([out_path, head_path], false), None));
     }
     let mut fail = false;
@@ -166,6 +267,8 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ast.run_passes(ctx);
     Ok((([out_path, head_path], overall_fail), Some(ast)))
 }
+/// Finish building the file
+/// This picks up where `build_file_1` left off
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut overall_fail: bool) -> anyhow::Result<()> {
     let files = &*FILES.read().unwrap();
     let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
@@ -207,72 +310,178 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
     file.write_all(&obj.write()?)?;
     file.flush()?;
     ctx.with_vars(|v| clear_mod(&mut v.symbols));
-    let mut pname = out_path.related_to(opts.build_dir)?;
-    if let Ok(base) = pname.strip_prefix(Path::new(".artifacts").join("objects")).map(ToOwned::to_owned).map(Cow::Owned) {pname = base;};
-    println!("Built {}", pname.display());
     Ok(())
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-enum BuiltState {
-    #[default]
-    NotBuilt,
-    BuiltMeta,
-    Built(PathBuf)
-}
-impl BuiltState {
-    pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
-}
-fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
+/// Resolve dependencies for `build_target_single`
+/// This replaces project dependencies with packages, checks `plan` for installation versions, and
+/// assumes that all dependencies are already built
+fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
-    let mut changed = false;
+    let mut installed_path = cobalt_dir();
+    installed_path.push("installed");
     for (target, version) in t.deps.iter() {
-        match version.as_str() {
-            "project" => {
-                let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
-                match d.clone().into_inner() {
-                    BuiltState::BuiltMeta => continue,
-                    BuiltState::Built(artifact) => {
-                        use object::{Object, ObjectSection};
-                        let buf = artifact.read_anyhow()?;
-                        let obj = object::File::parse(buf.as_slice())?;
-                        if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
-                        out.push(artifact);
-                        continue
-                    },
-                    BuiltState::NotBuilt => {}
-                }
-                let (c, a) = build_target(t, d, targets, opts)?;
-                changed |= c;
-                if let Some(artifact) = a {
-                    use object::{Object, ObjectSection};
-                    let buf = artifact.read_anyhow()?;
-                    let obj = object::File::parse(buf.as_slice())?;
-                    if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {conflicts.append(&mut ctx.load(&mut &*colib)?)}
-                    out.push(artifact);
-                }
+        match version {
+            Dependency::Project => {
+                let mut artifact = installed_path.clone();
+                artifact.push(pkg);
+                artifact.push(v.to_string());
+                artifact.push(target);
+                conflicts.append(&mut libs::load_lib(&artifact, ctx)?);
+                out.push(artifact);
             },
-            "system" => libs.push(target.clone()),
-            x => {
-                let v = x.parse::<VersionReq>().context("could not parse version requirement")?;
-                std::mem::drop(v);
-                anyhow::bail!("packages are not currently supported!");
-            }
+            Dependency::System => libs.push(target.clone()),
+            Dependency::Package(spec) => spec.targets.clone().unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|tar| {
+                let mut path = installed_path.clone();
+                path.push(target);
+                path.push(plan[&(target.as_str(), tar.as_str())].to_string());
+                path.push(tar);
+                conflicts.append(&mut libs::load_lib(&path, ctx)?);
+                out.push(path);
+                anyhow::Ok(())
+            })?
         }
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
     for lib in notfound {anyhow::bail!("couldn't find {lib}")}
     out.extend(libs.into_iter().map(|(x, _)| x));
-    Ok((changed, out))
+    Ok(out)
 }
-fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Option<PathBuf>)> {
+/// Build a single target, for use in package installation
+pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<PathBuf> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let name = &t.name;
-    println!("Building target {name}");
+    let libs = resolve_deps_internal(&ctx, t, pkg, v, plan, opts)?;
+    match t.target_type {
+        TargetType::Executable => {
+            let mut paths = vec![];
+            let mut asts = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                Some(either::Right(files)) => {
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {anyhow::bail!("couldn't find file {file}")}
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                None => anyhow::bail!("target must have files")
+            }
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut cc = cc::CompileCommand::new();
+            cc.objs(paths.into_iter().map(|([x, _], _)| x));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            Ok(output)
+        },
+        TargetType::Library => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob((opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str()).context("error in file glob")?.filter_map(Result::ok) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {continue}
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                Some(either::Right(files)) => {
+                    for file in files.iter().filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f)) {
+                        if std::fs::metadata(&file).map(|m| !m.file_type().is_file()).unwrap_or(true) {anyhow::bail!("couldn't find file {file}")}
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                },
+                None => anyhow::bail!("target must have files")
+            }
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut cc = cc::CompileCommand::new();
+            cc.lib(true);
+            cc.objs(paths.into_iter().flat_map(|x| x.0));
+            cc.output(&output);
+            cc.link_libs(libs);
+            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            Ok(output)
+        },
+        TargetType::Meta => {
+            let output = opts.build_dir.join(name);
+            let mut vec = Vec::new();
+            for lib in libs {
+                vec.extend_from_slice(&lib.to_raw_bytes());
+                vec.push(0);
+            }
+            vec.pop();
+            output.write_anyhow(vec)?;
+            Ok(output)
+        }
+    }
+}
+/// Resolve dependencies for a target
+/// The header is loaded into the compilation context, and it returns a tuple containing if a
+/// dependency has been rebuilt and a Vec containing the files that need to be linked
+fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
+    let mut out = vec![];
+    let mut libs = vec![];
+    let mut conflicts = vec![];
+    let mut to_install = vec![];
+    let mut changed = false;
+    for (target, version) in t.deps.iter() {
+        match version {
+            Dependency::Project => {
+                let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
+                if d.with(|d| if let Some(a) = d {libs::load_lib(a, ctx)?; anyhow::Ok(true)} else {anyhow::Ok(false)})? {continue}
+                let (c, artifact) = build_target(t, &target, d, targets, opts)?;
+                changed |= c;
+                libs::load_lib(&artifact, ctx)?;
+                out.push(artifact);
+            },
+            Dependency::System => libs.push(target.clone()),
+            Dependency::Package(PkgDepSpec {version, targets}) => to_install.push(pkg::InstallSpec {name: target.clone(), version: version.clone(), targets: targets.clone()})
+        }
+    }
+    let plan = pkg::install(to_install.iter().cloned(), &pkg::InstallOptions {target: opts.triple.as_str().to_str().unwrap().to_string(), ..Default::default()})?;
+    let mut installed_path = cobalt_dir();
+    installed_path.push("installed");
+    to_install.into_iter().try_for_each(|pkg::InstallSpec {name, targets, ..}| targets.unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|target| {
+        let mut path = installed_path.clone();
+        path.push(&name);
+        path.push(plan[&(name.as_str(), target.as_str())].to_string());
+        path.push(&target);
+        conflicts.append(&mut libs::load_lib(&path, ctx)?);
+        out.push(path);
+        anyhow::Ok(())
+    }))?;
+    if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
+    let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
+    for lib in notfound {anyhow::bail!("couldn't find {lib}")}
+    out.extend(libs.into_iter().map(|(x, _)| x));
+    Ok((changed, out))
+}
+/// Build a single target. This is used with the `build` entry function
+fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, PathBuf)> {
+    let ink_ctx = inkwell::context::Context::create();
+    let mut ctx = CompCtx::new(&ink_ctx, "");
+    ctx.flags.prepass = false;
     let (rebuild, libs) = resolve_deps(&ctx, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -316,16 +525,15 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             }
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
-            output.push(&t.name);
+            output.push(name);
             let mut cc = cc::CompileCommand::new();
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
-            if code == 0 {println!("Built {name}")}
-            else {anyhow::bail!("C compiler exited with code {code}")}
-            data.set(BuiltState::Built(output.clone()));
-            Ok((changed, Some(output)))
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         },
         TargetType::Library => {
             let mut asts = vec![];
@@ -367,48 +575,52 @@ fn build_target(t: &Target, data: &Cell<BuiltState>, targets: &HashMap<String, (
             }
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(&t.name, &opts.triple));
+            output.push(libs::format_lib(name, &opts.triple));
             let mut cc = cc::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
-            if code == 0 {println!("Built {name}")}
-            else {anyhow::bail!("C compiler exited with code {code}")}
-            data.set(BuiltState::Built(output.clone()));
-            Ok((changed, Some(output)))
+            if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         },
         TargetType::Meta => {
-            if t.files.is_some() {
-                anyhow::bail!("meta target cannot have files");
+            let output = opts.build_dir.join(name.to_string() + ".meta");
+            let mut vec = Vec::new();
+            for lib in libs {
+                vec.extend_from_slice(&lib.to_raw_bytes());
+                vec.push(0);
             }
-            println!("Built {name}");
-            data.set(BuiltState::BuiltMeta);
-            Ok((changed, None))
+            vec.pop();
+            output.write_anyhow(vec)?;
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         }
     }
 }
+/// Build the project. If to_build is None, all targets are built
 pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -> anyhow::Result<()> {
     if let Some(v) = &pkg.co_version {
         if !v.matches(&env!("CARGO_PKG_VERSION").parse::<Version>().unwrap()) {
             anyhow::bail!(r#"project has Cobalt version requirement "{v}", but Cobalt version is {}"#, env!("CARGO_PKG_VERSION"));
         }
     }
-    let targets = pkg.into_targets().map(|t| (t.name.clone(), (t, Cell::default()))).collect::<HashMap<_, (Target, Cell<BuiltState>)>>();
+    let targets = pkg.targets.into_iter().map(|(n, t)| (n, (t, Cell::default()))).collect::<HashMap<_, (Target, Cell<Option<PathBuf>>)>>();
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {t} else {
                 anyhow::bail!("target {target_name:?} is not a target in this project");
             };
-            if data.with(|x| x.is_built()) {continue}
-            build_target(target, data, &targets, opts)?;
+            if data.with(|x| x.is_some()) {continue}
+            build_target(target, &target_name, data, &targets, opts)?;
         }
     }
     else {
-        for (_, (target, data)) in targets.iter() {
-            if data.with(|x| x.is_built()) {continue}
-            build_target(target, data, &targets, opts)?;
+        for (name, (target, data)) in targets.iter() {
+            if data.with(|x| x.is_some()) {continue}
+            build_target(target, name, data, &targets, opts)?;
         }
     }
     Ok(())

@@ -13,6 +13,8 @@ use cobalt::{AST, errors::FILES};
 mod libs;
 mod opt;
 mod build;
+mod pkg;
+mod graph;
 mod color;
 mod cc;
 #[derive(Debug, Error)]
@@ -20,10 +22,16 @@ mod cc;
 struct CompileErrors;
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
+fn cobalt_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("COBALT_DIR") {path.into()}
+    else if let Ok(path) = std::env::var("HOME") {Path::new(&path).join(".cobalt")}
+    else {
+        error!("couldn't determine Cobalt directory");
+        exit(100)
+    }
+}
 fn load_projects() -> io::Result<Vec<[String; 2]>> {
-    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    let mut cobalt_dir = cobalt_dir();
     if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
     cobalt_dir.push("tracked.txt");
     let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(cobalt_dir)?;
@@ -45,9 +53,7 @@ fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
     }
 }
 fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
-    let mut cobalt_dir = PathBuf::from(if let Ok(path) = std::env::var("COBALT_DIR") {path}
-        else if let Ok(path) = std::env::var("HOME") {format!("{path}/.cobalt")}
-        else {error!("couldn't determine Cobalt directory"); exit(100)});
+    let mut cobalt_dir = cobalt_dir();
     if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
     cobalt_dir.push("tracked.txt");
     let mut file = std::fs::OpenOptions::new().write(true).create(true).open(cobalt_dir)?;
@@ -958,8 +964,8 @@ fn driver() -> anyhow::Result<()> {
             }
             if fail {anyhow::bail!(CompileErrors)}
         },
-        "proj" | "project" => match args[2].as_str() {
-            "track" => {
+        "proj" | "project" => match args.get(2).map(String::as_str) {
+            Some("track") => {
                 if args.len() == 3 {
                     'found: {
                         for path in std::env::current_dir()?.ancestors() {
@@ -989,7 +995,7 @@ fn driver() -> anyhow::Result<()> {
                     save_projects(vec)?;
                 }
             },
-            "untrack" => {
+            Some("untrack") => {
                 if args.len() == 3 {
                     'found: {
                         for path in std::env::current_dir()?.ancestors() {
@@ -1009,7 +1015,7 @@ fn driver() -> anyhow::Result<()> {
                     let mut vec = load_projects()?;
                     for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
                         if arg.as_bytes()[0] == b'-' {
-                            error!("'track' subcommand does not accept flags");
+                            error!("'untrack' subcommand does not accept flags");
                             exit(1);
                         }
                         let mut path: PathBuf = arg.into();
@@ -1019,7 +1025,7 @@ fn driver() -> anyhow::Result<()> {
                     save_projects(vec)?;
                 }
             },
-            "list" => {
+            Some("list") => {
                 let mut machine = false;
                 for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
                     if arg.as_bytes()[0] == b'-' && arg.len() > 1 {
@@ -1058,7 +1064,7 @@ fn driver() -> anyhow::Result<()> {
                     vecs.iter().for_each(|[n, p]| println!("{n}{} => {p}", " ".repeat(padding - n.chars().count())));
                 }
             },
-            "build" => {
+            Some("build") => {
                 let mut project_dir: Option<&str> = None;
                 let mut source_dir: Option<&str> = None;
                 let mut build_dir: Option<&str> = None;
@@ -1253,7 +1259,7 @@ fn driver() -> anyhow::Result<()> {
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
             },
-            "run" | "exec" => {
+            Some("run" | "exec") => {
                 let mut project_dir: Option<&str> = None;
                 let mut source_dir: Option<&str> = None;
                 let mut build_dir: Option<&str> = None;
@@ -1432,14 +1438,14 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 let mut target = target.map_or_else(|| {
-                    let exes = project_data.get_exe();
+                    let exes = project_data.targets.iter().filter_map(|(k, x)| (x.target_type == build::TargetType::Executable).then_some(k.as_str())).collect::<Vec<_>>();
                     match exes.len() {
                         0 => anyhow::bail!("no executable targets available for current project"),
                         1 => Ok(exes[0].to_string()),
                         x => anyhow::bail!("{x} executable targets available, please select one: {exes:?}")
                     }
                 }, |t| {
-                    if project_data.target_type(t) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
+                    if project_data.targets.get(t).map(|x| x.target_type) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
                     Ok(t.to_string())
                 })?;
                 if !no_default_link {
@@ -1470,8 +1476,31 @@ fn driver() -> anyhow::Result<()> {
                 exe_path.push(target);
                 exit(Command::new(exe_path).args(cmd_args).status()?.code().unwrap_or(-1))
             },
-            x => {
+            Some(x) => {
                 error!("unknown subcommand '{x}'");
+                exit(1);
+            },
+            None => {
+                error!("project subcommand requires a subcommand");
+                exit(1);
+            }
+        },
+        "pkg" | "package" => match args.get(2).map(String::as_str) {
+            Some("update") => {
+                if args.len() > 3 {anyhow::bail!("arguments cannot be passed here")};
+                pkg::update_packages()?
+            },
+            Some("install") => {
+                pkg::install(args.iter().skip(3).map(|x|
+                    if x.starts_with('-') {Err(anyhow::anyhow!(r#"argument cannot start with "-" here"#))}
+                    else {anyhow::Ok(x.parse()?)}
+                ).collect::<anyhow::Result<Vec<_>>>()?, &Default::default())?;}, // TODO: give all of this a proper CLI
+            Some(x) => {
+                error!("unknown subcommand '{x}'");
+                exit(1);
+            },
+            None => {
+                error!("project subcommand requires a subcommand");
                 exit(1);
             }
         },
