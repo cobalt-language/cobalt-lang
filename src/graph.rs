@@ -2,9 +2,9 @@ use std::collections::{HashMap, VecDeque};
 use semver::{Version, VersionReq, Comparator};
 use lasso::{ThreadedRodeo, Spur};
 use crate::{pkg, build};
-type Id = Spur;
+pub type Id = Spur;
 lazy_static::lazy_static! {
-    static ref STRINGS: ThreadedRodeo = ThreadedRodeo::new();
+    pub static ref STRINGS: ThreadedRodeo = ThreadedRodeo::new();
 }
 struct PkgNode {
     pub version: Version,
@@ -41,14 +41,14 @@ impl PkgNode {
         let proj = r.project(STRINGS.resolve(&pkg), &version, ctx.is_frozen)?;
         // get target
         let mut deps = {
-            let target = proj.get_target(STRINGS.resolve(&target)).ok_or_else(|| pkg::InstallError::NoMatchingTarget(STRINGS.resolve(&pkg), self.version.clone(), STRINGS.resolve(&target)))?;
+            let target = proj.targets.get(STRINGS.resolve(&target)).ok_or_else(|| pkg::InstallError::NoMatchingTarget(STRINGS.resolve(&pkg), self.version.clone(), STRINGS.resolve(&target)))?;
             let mut deps = Vec::new();
             for (k, x) in target.deps.iter() {
                 match x {
                     build::Dependency::Project       => deps.push(((pkg, STRINGS.get_or_intern(k)), VersionReq {comparators: vec![Comparator {op: semver::Op::Exact, major: version.major, minor: Some(version.minor), patch: Some(version.patch), pre: version.pre.clone()}]})),
                     build::Dependency::System        => {},
                     build::Dependency::Package(info) => deps.extend(info.targets.as_ref().cloned()
-                        .or_else(|| proj.has_target("default").then(|| vec!["default".to_string()]))
+                        .or_else(|| proj.targets.contains_key("default").then(|| vec!["default".to_string()]))
                         .ok_or_else(|| pkg::InstallError::NoDefaultTarget(STRINGS.resolve(&pkg)))?.iter()
                         .map(|x| ((STRINGS.get_or_intern(k), STRINGS.get_or_intern(x)), info.version.clone())))
                 }
@@ -96,7 +96,7 @@ impl PkgNode {
         if self.dependencies.iter().any(|(d, _)| d == &start) {return Some(VecDeque::new())}
         self.dependencies.iter().find_map(|(d, _)| {
             let mut deque = ctx.packages.get(d)?.find_cycle(start, ctx)?;
-            deque.push_front(d);
+            deque.push_front(*d);
             Some(deque)
         })
     }
@@ -153,7 +153,7 @@ impl DependencyGraph {
                     }).last()
                     .ok_or_else(|| pkg::InstallError::NoMatchingVersion(STRINGS.resolve(&iname), version.clone()))?;
                 let proj = r.project(&name, &v, self.is_frozen)?;
-                if proj.has_target("default") {
+                if proj.targets.contains_key("default") {
                     node.dependencies.push(((iname, idef), version.clone()));
                 }
                 else {anyhow::bail!(pkg::InstallError::NoDefaultTarget(STRINGS.resolve(&idef)))}
@@ -167,21 +167,26 @@ impl DependencyGraph {
     /// If this fails, it returns at least one cycle in the graph
     /// The DependencyGraph will be left in the empty state after a call to this function
     /// This implementation uses Kahn's algorithm
-    pub fn build_order(&mut self) -> Result<VecDeque<(Id, Id)>, VecDeque<(Id, Id)>> {
+    pub fn build_order(&mut self) -> Result<VecDeque<(Id, Id, Version)>, VecDeque<(Id, Id, Version)>> {
         let ientry = STRINGS.get_or_intern_static("<installation entry>");
         let mut nodes: VecDeque<(Id, Id)> = [(ientry, ientry)].into();
-        let mut out: VecDeque = VecDeque::new();
+        let mut out: VecDeque<(Id, Id, Version)> = VecDeque::new();
         while let Some(node) = nodes.pop_front() {
-            out.push(node);
-            for (dep, _) in self.packages.remove(&node).unwrap().dependencies.iter_mut() {
+            let n = self.packages.remove(&node).unwrap();
+            out.push_back((node.0, node.1, n.version));
+            for (dep, _) in n.dependencies.iter() {
                 let node = &mut self.packages.get_mut(&dep).unwrap();
                 node.dependents -= 1;
-                if node.dependents == 0 {nodes.push(deps)}
+                if node.dependents == 0 {nodes.push_back(*dep)}
             }
         }
         if self.packages.is_empty() {Ok(out)}
         else {
-            let out = self.packages.iter().find_map(|(k, x)| x.find_cycle(k)).unwrap();
+            let out = self.packages.iter().find_map(|(&k, x)| {
+                let mut out = x.find_cycle(k, self)?;
+                out.push_front(k);
+                Some(out.into_iter().map(|(p, t)| (p, t, self.packages[&(p, t)].version.clone())).collect())
+            }).unwrap();
             self.packages.clear(); // Just to be sure that the result is in a clean state
             Err(out)
         }

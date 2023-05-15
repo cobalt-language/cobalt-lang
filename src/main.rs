@@ -1438,14 +1438,14 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 let mut target = target.map_or_else(|| {
-                    let exes = project_data.get_exe();
+                    let exes = project_data.targets.iter().filter_map(|(k, x)| (x.target_type == build::TargetType::Executable).then_some(k.as_str())).collect::<Vec<_>>();
                     match exes.len() {
                         0 => anyhow::bail!("no executable targets available for current project"),
                         1 => Ok(exes[0].to_string()),
                         x => anyhow::bail!("{x} executable targets available, please select one: {exes:?}")
                     }
                 }, |t| {
-                    if project_data.target_type(t) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
+                    if project_data.targets.get(t).map(|x| x.target_type) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
                     Ok(t.to_string())
                 })?;
                 if !no_default_link {
