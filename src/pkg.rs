@@ -411,7 +411,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
         triple: &inkwell::targets::TargetTriple::create(&opts.target),
         link_dirs: vec![]
     })?;
-    if let Some(out) = out {out.copy_anyhow(path)?;} else {path.write_anyhow([])?}
+    out.copy_anyhow(path)?;
     Ok(())
 }
 /// Installation entry point

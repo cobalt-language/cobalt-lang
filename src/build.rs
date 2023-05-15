@@ -9,6 +9,7 @@ use path_calculate::*;
 use anyhow::Context;
 use anyhow_std::*;
 use indexmap::IndexMap;
+use os_str_bytes::OsStrBytes;
 use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
 use cobalt::misc::CellExt as Cell;
 use crate::*;
@@ -349,7 +350,7 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
     Ok(out)
 }
 /// Build a single target, for use in package installation
-pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Option<PathBuf>> {
+pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<PathBuf> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
@@ -386,7 +387,7 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
-            Ok(Some(output))
+            Ok(output)
         },
         TargetType::Library => {
             let mut asts = vec![];
@@ -420,25 +421,25 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
-            Ok(Some(output))
+            Ok(output)
         },
-        TargetType::Meta => Ok(None)
+        TargetType::Meta => {
+            let output = opts.build_dir.join(name);
+            let mut vec = Vec::new();
+            for lib in libs {
+                vec.extend_from_slice(&lib.to_raw_bytes());
+                vec.push(0);
+            }
+            vec.pop();
+            output.write_anyhow(vec)?;
+            Ok(output)
+        }
     }
-}
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-enum BuiltState {
-    #[default]
-    NotBuilt,
-    BuiltMeta,
-    Built(PathBuf)
-}
-impl BuiltState {
-    pub fn is_built(&self) -> bool {*self != Self::NotBuilt}
 }
 /// Resolve dependencies for a target
 /// The header is loaded into the compilation context, and it returns a tuple containing if a
 /// dependency has been rebuilt and a Vec containing the files that need to be linked
-fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
+fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
@@ -448,20 +449,11 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
         match version {
             Dependency::Project => {
                 let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
-                match d.clone().into_inner() {
-                    BuiltState::BuiltMeta => continue,
-                    BuiltState::Built(artifact) => {
-                        libs::load_lib(&artifact, ctx)?;
-                        continue
-                    },
-                    BuiltState::NotBuilt => {}
-                }
-                let (c, a) = build_target(t, &target, d, targets, opts)?;
+                if d.with(|d| if let Some(a) = d {libs::load_lib(a, ctx)?; anyhow::Ok(true)} else {anyhow::Ok(false)})? {continue}
+                let (c, artifact) = build_target(t, &target, d, targets, opts)?;
                 changed |= c;
-                if let Some(artifact) = a {
-                    libs::load_lib(&artifact, ctx)?;
-                    out.push(artifact);
-                }
+                libs::load_lib(&artifact, ctx)?;
+                out.push(artifact);
             },
             Dependency::System => libs.push(target.clone()),
             Dependency::Package(PkgDepSpec {version, targets}) => to_install.push(pkg::InstallSpec {name: target.clone(), version: version.clone(), targets: targets.clone()})
@@ -486,7 +478,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     Ok((changed, out))
 }
 /// Build a single target. This is used with the `build` entry function
-fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashMap<String, (Target, Cell<BuiltState>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Option<PathBuf>)> {
+fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, PathBuf)> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
@@ -540,8 +532,8 @@ fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashM
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
-            data.set(BuiltState::Built(output.clone()));
-            Ok((changed, Some(output)))
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         },
         TargetType::Library => {
             let mut asts = vec![];
@@ -591,12 +583,20 @@ fn build_target(t: &Target, name: &str, data: &Cell<BuiltState>, targets: &HashM
             cc.link_libs(libs);
             let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
-            data.set(BuiltState::Built(output.clone()));
-            Ok((changed, Some(output)))
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         },
         TargetType::Meta => {
-            data.set(BuiltState::BuiltMeta);
-            Ok((changed, None))
+            let output = opts.build_dir.join(name.to_string() + ".meta");
+            let mut vec = Vec::new();
+            for lib in libs {
+                vec.extend_from_slice(&lib.to_raw_bytes());
+                vec.push(0);
+            }
+            vec.pop();
+            output.write_anyhow(vec)?;
+            data.set(Some(output.clone()));
+            Ok((changed, output))
         }
     }
 }
@@ -607,19 +607,19 @@ pub fn build(pkg: Project, to_build: Option<Vec<String>>, opts: &BuildOptions) -
             anyhow::bail!(r#"project has Cobalt version requirement "{v}", but Cobalt version is {}"#, env!("CARGO_PKG_VERSION"));
         }
     }
-    let targets = pkg.targets.into_iter().map(|(n, t)| (n, (t, Cell::default()))).collect::<HashMap<_, (Target, Cell<BuiltState>)>>();
+    let targets = pkg.targets.into_iter().map(|(n, t)| (n, (t, Cell::default()))).collect::<HashMap<_, (Target, Cell<Option<PathBuf>>)>>();
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {t} else {
                 anyhow::bail!("target {target_name:?} is not a target in this project");
             };
-            if data.with(|x| x.is_built()) {continue}
+            if data.with(|x| x.is_some()) {continue}
             build_target(target, &target_name, data, &targets, opts)?;
         }
     }
     else {
         for (name, (target, data)) in targets.iter() {
-            if data.with(|x| x.is_built()) {continue}
+            if data.with(|x| x.is_some()) {continue}
             build_target(target, name, data, &targets, opts)?;
         }
     }
