@@ -177,7 +177,7 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
 ///
 /// Lazily searches for or compiles LLVM as configured by the environment
 /// variables.
-pub fn llvm_config(arg: &str) -> String {
+fn llvm_config(arg: &str) -> String {
     try_llvm_config(Some(arg).into_iter()).expect("Surprising failure from llvm-config")
 }
 
@@ -536,7 +536,7 @@ fn is_llvm_debug() -> bool {
     llvm_config("--build-mode").contains("Debug")
 }
 
-pub fn entry() {
+fn main() {
     // Behavior can be significantly affected by these vars.
     println!("cargo:rerun-if-env-changed={}", &*ENV_LLVM_PREFIX);
     if let Ok(path) = env::var(&*ENV_LLVM_PREFIX) {
@@ -606,4 +606,5 @@ pub fn entry() {
     if force_ffi {
         println!("cargo:rustc-link-lib=dylib={}", "ffi");
     }
+    println!("cargo:rustc-env=LLVM_VERSION={}", llvm_config("--version"));
 }

@@ -8,7 +8,8 @@ use path_calculate::path_absolutize::Absolutize;
 use semver::{Version, VersionReq};
 use thiserror::Error;
 use indexmap::IndexMap;
-use crate::{build, graph, cobalt_dir, error};
+use crate::*;
+use cobalt_errors::error;
 /// Information about a cloned repository
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
@@ -84,7 +85,7 @@ pub struct Release {
 impl Release {
     /// Get the manifest for this release
     pub fn project(&self, name: &str, version: &Version, frozen: bool) -> anyhow::Result<build::Project> {
-        let mut path = cobalt_dir();
+        let mut path = cobalt_dir()?;
         path.push("packages");
         path.push(name);
         path.push(version.to_string());
@@ -160,7 +161,7 @@ lazy_static::lazy_static! {
 }
 /// Get all packages as a `Vec`
 pub fn get_packages() -> anyhow::Result<Vec<Package>> {
-    let cdir = cobalt_dir();
+    let cdir = cobalt_dir()?;
     let reg_path = cdir.join("registries.toml");
     if !reg_path.exists() {return Ok(vec![])}
     let registries = toml::from_str::<RegistryList>(&reg_path.read_to_string_anyhow()?)?;
@@ -182,7 +183,7 @@ pub fn get_packages() -> anyhow::Result<Vec<Package>> {
 }
 /// Update all registries
 pub fn update_packages() -> anyhow::Result<()> {
-    let cdir = cobalt_dir();
+    let cdir = cobalt_dir()?;
     let reg_path = cdir.join("registries.toml");
     if !reg_path.exists() {return Ok(())}
     let registries = toml::from_str::<RegistryList>(&reg_path.read_to_string_anyhow()?)?;
@@ -356,17 +357,17 @@ impl Default for InstallOptions {
     }
 }
 /// Convenience method to find the path that a package is installed to
-pub fn installed_path(package: &str, target: &str, version: &Version) -> PathBuf {
-    let mut path = cobalt_dir();
+pub fn installed_path(package: &str, target: &str, version: &Version) -> Result<PathBuf, NoCobaltDir> {
+    let mut path = cobalt_dir()?;
     path.push("installed");
     path.push(package);
     path.push(version.to_string());
     path.push(target);
-    path
+    Ok(path)
 }
 /// Install a singular package. It is assumed that all of its dependencies are already met
 fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts: &InstallOptions, package: &Package, plan: &IndexMap<(&str, &str), Version>) -> anyhow::Result<()> {
-    let path = installed_path(pkg, tar, version);
+    let path = installed_path(pkg, tar, version)?;
     if !opts.force_build && path.exists() {return Ok(())} // already exists
     if !opts.force_build {
         // Search for prebuilds that match the target
@@ -384,7 +385,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
             return Ok(());
         }
     }
-    let mut src_path = cobalt_dir();
+    let mut src_path = cobalt_dir()?;
     src_path.push("packages");
     src_path.push(pkg);
     src_path.push(version.to_string());
@@ -394,7 +395,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
         if opts.frozen {anyhow::bail!(InstallError::Frozen(pkg.to_string()))}
         package.releases[version].source.install(&src_path)?;
     }
-    let mut build_path = cobalt_dir();
+    let mut build_path = cobalt_dir()?;
     build_path.push("packages");
     build_path.push(pkg);
     build_path.push(version.to_string());

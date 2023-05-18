@@ -3,6 +3,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use os_str_bytes::OsStrBytes;
 use object::{SectionKind, write::Object};
+use cobalt_ast::CompCtx;
 /// This is a list of all symbols defined in multiple files
 #[derive(Debug)]
 pub struct ConflictingDefs(pub Vec<String>);
@@ -21,7 +22,7 @@ impl std::error::Error for ConflictingDefs {}
 /// If ctx is Some, load the headers into the context
 /// Returns a Vec containing the path to a found library along with its original specifaction, and
 /// a Vec containing the libraries that weren't found
-pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&cobalt::CompCtx>) -> anyhow::Result<(Vec<(PathBuf, String)>, Vec<String>)> {
+pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&CompCtx>) -> anyhow::Result<(Vec<(PathBuf, String)>, Vec<String>)> {
     let mut out = vec![];
     let mut conflicts = vec![];
     for x in dirs.iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file()) {
@@ -118,7 +119,7 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
     }
 }
 /// Populate the `.colib` header with the data from the context
-pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
+pub fn populate_header(obj: &mut Object, ctx: &CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
     let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Other);
@@ -126,7 +127,7 @@ pub fn populate_header(obj: &mut Object, ctx: &cobalt::CompCtx) {
     colib.set_data(buf, 1);
 }
 /// Load the data in the `.colib` header from the file at the specified path
-pub fn load_lib(path: &Path, ctx: &cobalt::CompCtx) -> anyhow::Result<Vec<String>> {
+pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
     use object::read::{Object, ObjectSection};
     use anyhow_std::PathAnyhow;
     let buf = path.read_anyhow()?;

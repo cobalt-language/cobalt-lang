@@ -1,5 +1,5 @@
 use crate::*;
-use crate::parser::ops::*;
+use crate::ops::*;
 use TokenData::*;
 fn null(toks: &[Token]) -> Box<dyn AST> {
     let l = unsafe {(*toks.as_ptr().offset(-1)).loc.clone()};
@@ -786,7 +786,7 @@ fn parse_prefix(toks: &[Token], flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>
     }
     parse_postfix(toks, flags)
 }
-fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r parser::ops::OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
+fn parse_binary<'a, F: Clone + for<'r> FnMut(&'r OpType) -> bool>(toks: &[Token], ops_arg: &[OpType], mut ops_it: std::slice::SplitInclusive<'a, OpType, F>, flags: &Flags) -> (Box<dyn AST>, Vec<Diagnostic>) {
     if ops_arg.is_empty() {return (Box::new(NullAST::new(toks[0].loc.clone())), vec![])}
     let (op_ty, ops) = ops_arg.split_last().unwrap();
     let mut errs = vec![];
