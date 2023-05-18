@@ -1,0 +1,22 @@
+[package]
+name = "cobalt-cli"
+version = "0.5.2"
+edition = "2021"
+
+[dependencies]
+cobalt-parser.path = "../cobalt-parser"
+cobalt-ast.path = "../cobalt-ast"
+cobalt-build.path = "../cobalt-build"
+cobalt-errors.path = "../cobalt-errors"
+cobalt-utils.path = "../cobalt-utils"
+inkwell = "0.2.0"
+toml = "0.7.3"
+codespan-reporting = "0.11.1"
+temp-file = "0.1.7"
+anyhow = "1.0.71"
+anyhow-std = "0.1.3"
+termcolor = "1.2.0"
+
+[[bin]]
+name = "co"
+path = "src/main.rs"

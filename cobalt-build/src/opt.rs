@@ -4,7 +4,7 @@ use std::env::var;
 use inkwell::passes::*;
 use inkwell::OptimizationLevel::*;
 use inkwell::module::Module;
-use super::{error, warning};
+use cobalt_errors::{error, warning};
 pub enum AdditionalArg {
     Null,
     Bool(bool),

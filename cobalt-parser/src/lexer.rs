@@ -1,5 +1,4 @@
 use crate::*;
-use crate::errors::*;
 use std::fmt::{self, Display, Formatter};
 use unicode_ident::*;
 use codespan_reporting::files::Files;

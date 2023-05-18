@@ -5,7 +5,7 @@ pub struct Flags {
     pub bounds_checks: bool,
     pub prepass: bool,
     pub dbg_mangle: bool,
-    pub(crate) up: bool
+    pub up: bool
 }
 impl Default for Flags {
     fn default() -> Self {

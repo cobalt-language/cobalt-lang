@@ -3,67 +3,20 @@ use inkwell::execution_engine::FunctionLookupError;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
-use std::io::{self, Read, Write, BufReader, Seek};
-use path_calculate::*;
+use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 use anyhow::Context;
 use anyhow_std::*;
-use thiserror::Error;
-use cobalt::{AST, errors::FILES};
-mod libs;
-mod opt;
-mod build;
-mod pkg;
-mod graph;
-mod color;
-mod cc;
-#[derive(Debug, Error)]
-#[error("compiler errors were encountered")]
-struct CompileErrors;
+
+use cobalt_ast::{AST, CompCtx};
+use cobalt_errors::{FILES, error, warning};
+use cobalt_build::*;
+use cobalt_utils::Flags;
+use cobalt_parser::{lex, parse};
+
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
-fn cobalt_dir() -> PathBuf {
-    if let Ok(path) = std::env::var("COBALT_DIR") {path.into()}
-    else if let Ok(path) = std::env::var("HOME") {Path::new(&path).join(".cobalt")}
-    else {
-        error!("couldn't determine Cobalt directory");
-        exit(100)
-    }
-}
-fn load_projects() -> io::Result<Vec<[String; 2]>> {
-    let mut cobalt_dir = cobalt_dir();
-    if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
-    cobalt_dir.push("tracked.txt");
-    let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(cobalt_dir)?;
-    let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
-    let mut it = buf.split('\0');
-    let len = it.size_hint();
-    let mut vec = Vec::<[String; 2]>::with_capacity(len.1.unwrap_or(len.0));
-    while let (Some(name), Some(path)) = (it.next(), it.next()) {if Path::new(path).exists() {vec.push([name.to_string(), path.to_string()])}}
-    Ok(vec)
-}
-fn track_project(name: &str, path: PathBuf, vec: &mut Vec<[String; 2]>) {
-    if let Some(entry) = vec.iter_mut().find(|[_, p]| if let Ok(path) = path.as_absolute_path() {path == Path::new(&p)} else {false}) {entry[0] = name.to_string()}
-    else if let Some(entry) = vec.iter_mut().find(|[n, _]| n == name) {entry[1] = path.as_absolute_path().unwrap().to_string_lossy().to_string()}
-    else {
-        vec.sort_by(|[n1, _], [n2, _]| n1.cmp(n2));
-        vec.dedup_by(|[n1, _], [n2, _]| n1 == n2);
-        vec.push([name.to_string(), path.as_absolute_path().unwrap().to_string_lossy().to_string()])
-    }
-}
-fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
-    let mut cobalt_dir = cobalt_dir();
-    if !cobalt_dir.exists() {std::fs::create_dir_all(&cobalt_dir)?;}
-    cobalt_dir.push("tracked.txt");
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).open(cobalt_dir)?;
-    vec.into_iter().flatten().try_for_each(|s| {
-        file.write_all(s.as_bytes())?;
-        file.write_all(&[0])
-    })?;
-    let pos = file.stream_position()?;
-    file.set_len(pos)
-}
+
 #[derive(Debug, PartialEq, Eq)]
 enum OutputType {
     Executable,
@@ -75,6 +28,7 @@ enum OutputType {
     Header,
     HeaderObj
 }
+
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
     asm_parser: true,
     asm_printer: true,
@@ -83,6 +37,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
+
 fn driver() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
@@ -94,7 +49,7 @@ fn driver() -> anyhow::Result<()> {
             match args.get(2) {
                 None => println!("{HELP}"),
                 Some(x) if x.len() == 5 && (x.as_bytes()[0] == b'E' || x.as_bytes()[0] == b'W') && x.bytes().skip(1).all(|x| (b'0'..=b'9').contains(&x)) => {
-                    match cobalt::errors::info::lookup(x[1..].parse().unwrap()).map(|x| x.help) {
+                    match cobalt_errors::info::lookup(x[1..].parse().unwrap()).map(|x| x.help) {
                         None | Some("") => eprintln!("no help message available for {x}"),
                         Some(x) => println!("{x}")
                     }
@@ -107,7 +62,7 @@ fn driver() -> anyhow::Result<()> {
         },
         "version" | "--version" | "-v" | "-V" => {
             println!("Cobalt version {}", env!("CARGO_PKG_VERSION"));
-            println!("LLVM version {}", env!("LLVM_VERSION"));
+            println!("LLVM version {}", cobalt_ast::LLVM_VERSION);
             #[cfg(has_git)]
             println!("Git commit {} on branch {}", &env!("GIT_COMMIT")[..6], env!("GIT_BRANCH"));
             #[cfg(debug_assertions)]
@@ -117,7 +72,7 @@ fn driver() -> anyhow::Result<()> {
             let mut nfcl = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
+            let flags = Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.is_empty() {continue;}
                 if arg.as_bytes()[0] == b'-' {
@@ -137,7 +92,7 @@ fn driver() -> anyhow::Result<()> {
                     nfcl = false;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
+                    let (toks, errs) = lex(arg.as_str(), (file, 0), &flags);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
@@ -145,7 +100,7 @@ fn driver() -> anyhow::Result<()> {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, arg.clone(), code.clone());
-                    let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+                    let (toks, errs) = lex(code.as_str(), (file, 0), &flags);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
                 }
@@ -159,7 +114,7 @@ fn driver() -> anyhow::Result<()> {
             let mut loc = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
+            let flags = Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.is_empty() {continue;}
                 if arg.as_bytes()[0] == b'-' {
@@ -185,8 +140,8 @@ fn driver() -> anyhow::Result<()> {
                     nfcl = false;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, mut errs) = cobalt::parser::lex(arg.as_str(), (file, 0), &flags);
-                    let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
+                    let (toks, mut errs) = lex(arg.as_str(), (file, 0), &flags);
+                    let (ast, mut es) = parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     if loc {print!("{:#}", ast)}
@@ -196,8 +151,8 @@ fn driver() -> anyhow::Result<()> {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let files = &mut *FILES.write().unwrap();
                     let file = files.add_file(0, arg.clone(), code.clone());
-                    let (toks, mut errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
-                    let (ast, mut es) = cobalt::parser::parse(toks.as_slice(), &flags);
+                    let (toks, mut errs) = lex(code.as_str(), (file, 0), &flags);
+                    let (ast, mut es) = parse(toks.as_slice(), &flags);
                     errs.append(&mut es);
                     for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
                     if loc {print!("{:#}", ast)}
@@ -254,16 +209,16 @@ fn driver() -> anyhow::Result<()> {
             } else {Path::new(in_file).read_to_string_anyhow()?};
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let mut flags = cobalt::Flags::default();
+            let mut flags = Flags::default();
             flags.dbg_mangle = true;
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
             let files = &mut *FILES.write().unwrap();
             let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
+            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
+            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
@@ -278,7 +233,7 @@ fn driver() -> anyhow::Result<()> {
         "parse-header" if cfg!(debug_assertions) => {
             for fname in std::env::args().skip(2) {
                 let ink_ctx = inkwell::context::Context::create();
-                let ctx = cobalt::CompCtx::new(&ink_ctx, "<anon>");
+                let ctx = CompCtx::new(&ink_ctx, "<anon>");
                 let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
                 match ctx.load(&mut file) {
                     Ok(_) => ctx.with_vars(|v| v.dump()),
@@ -525,11 +480,11 @@ fn driver() -> anyhow::Result<()> {
                 inkwell::targets::RelocMode::PIC,
                 inkwell::targets::CodeModel::Small
             ).expect("failed to create target machine");
-            let mut flags = cobalt::Flags::default();
+            let mut flags = Flags::default();
             flags.dbg_mangle = debug_mangle;
             let ink_ctx = inkwell::context::Context::create();
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
-            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             let libs = if !linked.is_empty() {
                 let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
@@ -547,12 +502,12 @@ fn driver() -> anyhow::Result<()> {
             let config = term::Config::default();
             let files = &mut *FILES.write().unwrap();
             let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
+            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
+            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
@@ -768,7 +723,7 @@ fn driver() -> anyhow::Result<()> {
                 }
             };
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = cobalt::context::CompCtx::new(&ink_ctx, in_file);
+            let mut ctx = CompCtx::new(&ink_ctx, in_file);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
@@ -785,15 +740,15 @@ fn driver() -> anyhow::Result<()> {
             let mut overall_fail = false;
             let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
             let config = term::Config::default();
-            let flags = cobalt::Flags::default();
+            let flags = Flags::default();
             let files = &mut *FILES.write().unwrap();
             let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &flags);
+            let (toks, errs) = lex(code.as_str(), (file, 0), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &flags);
+            let (ast, errs) = parse(toks.as_slice(), &flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
@@ -933,10 +888,10 @@ fn driver() -> anyhow::Result<()> {
                 inkwell::targets::RelocMode::PIC,
                 inkwell::targets::CodeModel::Small
             ).expect("failed to create target machine");
-            let mut flags = cobalt::Flags::default();
+            let mut flags = Flags::default();
             let ink_ctx = inkwell::context::Context::create();
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
-            let ctx = cobalt::context::CompCtx::with_flags(&ink_ctx, in_file, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             ctx.module.set_triple(&triple);
             if !linked.is_empty() {
                 let (_, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
@@ -952,9 +907,9 @@ fn driver() -> anyhow::Result<()> {
             let config = term::Config::default();
             let files = &mut *FILES.write().unwrap();
             let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = cobalt::parser::lex(code.as_str(), (file, 0), &ctx.flags);
+            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
-            let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
+            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}

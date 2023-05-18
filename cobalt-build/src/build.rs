@@ -10,8 +10,9 @@ use anyhow::Context;
 use anyhow_std::*;
 use indexmap::IndexMap;
 use os_str_bytes::OsStrBytes;
-use cobalt::{CompCtx, Value, Type, InterData, AST, ast::TopLevelAST, errors::FILES};
-use cobalt::misc::CellExt as Cell;
+use cobalt_ast::ast::*;
+use cobalt_utils::CellExt as Cell;
+use cobalt_errors::{FILES, error, warning};
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -207,12 +208,12 @@ impl<'de> Deserialize<'de> for Dependency {
         deserializer.deserialize_any(DepVisitor)
     }
 }
-fn clear_mod(this: &mut HashMap<String, cobalt::Symbol>) {
+fn clear_mod(this: &mut HashMap<String, Symbol>) {
     for (_, sym) in this.iter_mut() {
         sym.1.export = false;
         match sym {
-            cobalt::Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
-            cobalt::Symbol(v, d) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+            Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(m, ..)), ..}, _) => clear_mod(m),
+            Symbol(v, d) => if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                 if !d.fwd && d.init {
                     unsafe {
                         if matches!(v.data_type, Type::Function(..)) {
@@ -256,12 +257,12 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let files = &mut *FILES.write().unwrap();
     let file = files.add_file(0, name.to_string(), code.clone());
-    let (toks, errs) = cobalt::parser::lexer::lex(&code, (file, 0), &ctx.flags);
+    let (toks, errs) = cobalt_parser::lex(&code, (file, 0), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     overall_fail |= fail;
     fail = false;
-    let (ast, errs) = cobalt::parser::ast::parse(toks.as_slice(), &ctx.flags);
+    let (ast, errs) = cobalt_parser::parse(toks.as_slice(), &ctx.flags);
     for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);
@@ -319,7 +320,7 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
-    let mut installed_path = cobalt_dir();
+    let mut installed_path = cobalt_dir()?;
     installed_path.push("installed");
     for (target, version) in t.deps.iter() {
         match version {
@@ -460,7 +461,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
         }
     }
     let plan = pkg::install(to_install.iter().cloned(), &pkg::InstallOptions {target: opts.triple.as_str().to_str().unwrap().to_string(), ..Default::default()})?;
-    let mut installed_path = cobalt_dir();
+    let mut installed_path = cobalt_dir()?;
     installed_path.push("installed");
     to_install.into_iter().try_for_each(|pkg::InstallSpec {name, targets, ..}| targets.unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|target| {
         let mut path = installed_path.clone();

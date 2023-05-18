@@ -1,5 +1,4 @@
 use std::process::{Command, Output};
-mod llvm;
 fn git_info() -> Option<()> {
     let Output {stdout, status, ..} = Command::new("git").args(["rev-parse", "HEAD", "--abbrev-ref", "HEAD"]).output().ok()?;
     if status.success() {
@@ -15,6 +14,4 @@ fn main() {
     println!("cargo:rerun-if-changed=.git");
     println!("cargo:rustc-env=HOST={}", std::env::var("TARGET").unwrap());
     git_info();
-    llvm::entry();
-    println!("cargo:rustc-env=LLVM_VERSION={}", llvm::llvm_config("--version"));
 }

@@ -1,0 +1,31 @@
+[package]
+name = "cobalt-ast"
+version = "0.5.2"
+edition = "2021"
+
+[dependencies]
+cobalt-errors.path = "../cobalt-errors"
+cobalt-utils.path = "../cobalt-utils"
+bitvec = "1.0.1"
+inkwell = { version = "0.2.0", features = ["llvm15-0-no-llvm-linking"] }
+llvm-sys = { version = "150", features = ["no-llvm-linking"] }
+either = "1.8.1"
+glob = "0.3.1"
+codespan-reporting = "0.11.1"
+owned_chars = "0.3.2"
+
+[build-dependencies]
+lazy_static = "1.4"
+regex = "1.8"
+semver = "1.0"
+
+# features passed to llvm-sys
+[features]
+default = ["strict-versioning"]
+strict-versioning = ['llvm-sys/strict-versioning']
+no-llvm-linking = []
+
+prefer-dynamic = []
+force-dynamic = []
+prefer-static = []
+force-static = []
