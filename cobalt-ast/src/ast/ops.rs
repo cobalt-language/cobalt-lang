@@ -1,16 +1,16 @@
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct BinOpAST {
-    loc: Location,
+    loc: SourceSpan,
     pub op: String,
     pub lhs: Box<dyn AST>,
     pub rhs: Box<dyn AST>
 }
 impl BinOpAST {
-    pub fn new(loc: Location, op: String, lhs: Box<dyn AST>, rhs: Box<dyn AST>) -> Self {BinOpAST {loc, op, lhs, rhs}}
+    pub fn new(loc: SourceSpan, op: String, lhs: Box<dyn AST>, rhs: Box<dyn AST>) -> Self {BinOpAST {loc, op, lhs, rhs}}
 }
 impl AST for BinOpAST {
-    fn loc(&self) -> Location {(self.loc.0, self.lhs.loc().1.start..self.rhs.loc().1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.lhs.loc(), self.rhs.loc())}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if self.op == "&?" || self.op == "|?" {
             let t = self.rhs.res_type(ctx);
@@ -115,7 +115,7 @@ impl AST for BinOpAST {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let rhs = self.rhs.codegen_errs(ctx, &mut errs);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
-                (types::utils::bin_op(self.loc.clone(), (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
+                (types::utils::bin_op(self.loc, (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
                     errs.push(e);
                     Value::error()
                 }), errs)
@@ -125,30 +125,30 @@ impl AST for BinOpAST {
     fn to_code(&self) -> String {
         format!("({} {} {})", self.lhs.to_code(), self.op, self.rhs.to_code())
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "binary op: {}", self.op)?;
-        print_ast_child(f, pre, &*self.lhs, false)?;
-        print_ast_child(f, pre, &*self.rhs, true)
+        print_ast_child(f, pre, &*self.lhs, false, file)?;
+        print_ast_child(f, pre, &*self.rhs, true, file)
     }
 }
 #[derive(Debug, Clone)]
 pub struct PostfixAST {
-    loc: Location,
+    loc: SourceSpan,
     pub op: String,
     pub val: Box<dyn AST>,
 }
 impl PostfixAST {
-    pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PostfixAST {loc, op, val}}
+    pub fn new(loc: SourceSpan, op: String, val: Box<dyn AST>) -> Self {PostfixAST {loc, op, val}}
 }
 impl AST for PostfixAST {
-    fn loc(&self) -> Location {(self.loc.0, self.val.loc().1.start..self.loc.1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.loc)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (types::utils::post_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (types::utils::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -156,29 +156,29 @@ impl AST for PostfixAST {
     fn to_code(&self) -> String {
         format!("{}{}", self.val.to_code(), self.op)
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "postfix op: {}", self.op)?;
-        print_ast_child(f, pre, &*self.val, true)
+        print_ast_child(f, pre, &*self.val, true, file)
     }
 }
 #[derive(Debug, Clone)]
 pub struct PrefixAST {
-    loc: Location,
+    loc: SourceSpan,
     pub op: String,
     pub val: Box<dyn AST>,
 }
 impl PrefixAST {
-    pub fn new(loc: Location, op: String, val: Box<dyn AST>) -> Self {PrefixAST {loc, op, val}}
+    pub fn new(loc: SourceSpan, op: String, val: Box<dyn AST>) -> Self {PrefixAST {loc, op, val}}
 }
 impl AST for PrefixAST {
-    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.val.loc().1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (types::utils::pre_op(self.loc.clone(), (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (types::utils::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -186,22 +186,22 @@ impl AST for PrefixAST {
     fn to_code(&self) -> String {
         format!("{}{}", self.op, self.val.to_code())
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "prefix op: {}", self.op)?;
-        print_ast_child(f, pre, &*self.val, true)
+        print_ast_child(f, pre, &*self.val, true, file)
     }
 }
 #[derive(Debug, Clone)]
 pub struct SubAST {
-    loc: Location,
+    loc: SourceSpan,
     pub target: Box<dyn AST>,
     pub index: Box<dyn AST>,
 }
 impl SubAST {
-    pub fn new(loc: Location, target: Box<dyn AST>, index: Box<dyn AST>) -> Self {SubAST {loc, target, index}}
+    pub fn new(loc: SourceSpan, target: Box<dyn AST>, index: Box<dyn AST>) -> Self {SubAST {loc, target, index}}
 }
 impl AST for SubAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let (target, mut errs) = self.target.codegen(ctx);
@@ -215,22 +215,22 @@ impl AST for SubAST {
     fn to_code(&self) -> String {
         format!("{}[{}]", self.target.to_code(), self.index.to_code())
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "subscript")?;
-        print_ast_child(f, pre, &*self.target, false)?;
-        print_ast_child(f, pre, &*self.index, true)
+        print_ast_child(f, pre, &*self.target, false, file)?;
+        print_ast_child(f, pre, &*self.index, true, file)
     }
 }
 #[derive(Debug, Clone)]
 pub struct DotAST {
     pub obj: Box<dyn AST>,
-    pub name: (String, Location)
+    pub name: (String, SourceSpan)
 }
 impl DotAST {
-    pub fn new(obj: Box<dyn AST>, name: (String, Location)) -> Self {DotAST {obj, name}}
+    pub fn new(obj: Box<dyn AST>, name: (String, SourceSpan)) -> Self {DotAST {obj, name}}
 }
 impl AST for DotAST {
-    fn loc(&self) -> Location {(self.name.1.0, self.obj.loc().1.start..self.name.1.1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.obj.loc(), self.name.1)}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         match self.obj.res_type(ctx) {
             Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
@@ -273,8 +273,8 @@ impl AST for DotAST {
         (v, errs)
     }
     fn to_code(&self) -> String {format!("{}.{}", self.obj.to_code(), self.name.0)}
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "attr: {}", self.name.0)?;
-        print_ast_child(f, pre, &*self.obj, true)
+        print_ast_child(f, pre, &*self.obj, true, file)
     }
 }

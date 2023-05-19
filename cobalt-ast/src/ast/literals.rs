@@ -3,15 +3,15 @@ use inkwell::values::BasicValueEnum::*;
 use inkwell::types::BasicType;
 #[derive(Debug, Clone)]
 pub struct IntLiteralAST {
-    loc: Location,
+    loc: SourceSpan,
     pub val: i128,
-    pub suffix: Option<(String, Location)>
+    pub suffix: Option<(String, SourceSpan)>
 }
 impl IntLiteralAST {
-    pub fn new(loc: Location, val: i128, suffix: Option<(String, Location)>) -> Self {IntLiteralAST {loc, val, suffix}}
+    pub fn new(loc: SourceSpan, val: i128, suffix: Option<(String, SourceSpan)>) -> Self {IntLiteralAST {loc, val, suffix}}
 }
 impl AST for IntLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
@@ -36,7 +36,7 @@ impl AST for IntLiteralAST {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for integer literal")))])
+            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for integer literal")))])
         }
     }
     fn to_code(&self) -> String {
@@ -47,7 +47,7 @@ impl AST for IntLiteralAST {
             self.val.to_string()
         }
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "int: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
@@ -55,15 +55,15 @@ impl AST for IntLiteralAST {
 }
 #[derive(Debug, Clone)]
 pub struct FloatLiteralAST {
-    loc: Location,
+    loc: SourceSpan,
     pub val: f64,
-    pub suffix: Option<(String, Location)>
+    pub suffix: Option<(String, SourceSpan)>
 }
 impl FloatLiteralAST {
-    pub fn new(loc: Location, val: f64, suffix: Option<(String, Location)>) -> Self {FloatLiteralAST {loc, val, suffix}}
+    pub fn new(loc: SourceSpan, val: f64, suffix: Option<(String, SourceSpan)>) -> Self {FloatLiteralAST {loc, val, suffix}}
 }
 impl AST for FloatLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
@@ -80,7 +80,7 @@ impl AST for FloatLiteralAST {
             Some(("f16", _)) => (Value::interpreted(FloatValue(ctx.context.f16_type().const_float(self.val)), InterData::Float(self.val), Type::Float16), vec![]),
             Some(("f32", _)) => (Value::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
             Some(("f128", _)) => (Value::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for float literal")))])
+            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for float literal")))])
         }
     }
     fn to_code(&self) -> String {
@@ -91,7 +91,7 @@ impl AST for FloatLiteralAST {
             self.val.to_string()
         }
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "float: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
@@ -99,15 +99,15 @@ impl AST for FloatLiteralAST {
 }
 #[derive(Debug, Clone)]
 pub struct CharLiteralAST {
-    loc: Location,
+    loc: SourceSpan,
     pub val: char,
-    pub suffix: Option<(String, Location)>
+    pub suffix: Option<(String, SourceSpan)>
 }
 impl CharLiteralAST {
-    pub fn new(loc: Location, val: char, suffix: Option<(String, Location)>) -> Self {CharLiteralAST {loc, val, suffix}}
+    pub fn new(loc: SourceSpan, val: char, suffix: Option<(String, SourceSpan)>) -> Self {CharLiteralAST {loc, val, suffix}}
 }
 impl AST for CharLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
@@ -132,7 +132,7 @@ impl AST for CharLiteralAST {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for character literal")))])
+            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for character literal")))])
         }
     }
     fn to_code(&self) -> String {
@@ -143,7 +143,7 @@ impl AST for CharLiteralAST {
             format!("{:?}", self.val)
         }
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "char: {:?}", self.val)?;
         if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
@@ -151,15 +151,15 @@ impl AST for CharLiteralAST {
 }
 #[derive(Debug, Clone)]
 pub struct StringLiteralAST {
-    loc: Location,
+    loc: SourceSpan,
     pub val: String,
-    pub suffix: Option<(String, Location)>
+    pub suffix: Option<(String, SourceSpan)>
 }
 impl StringLiteralAST {
-    pub fn new(loc: Location, val: String, suffix: Option<(String, Location)>) -> Self {StringLiteralAST {loc, val, suffix}}
+    pub fn new(loc: SourceSpan, val: String, suffix: Option<(String, SourceSpan)>) -> Self {StringLiteralAST {loc, val, suffix}}
 }
 impl AST for StringLiteralAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix {
@@ -177,7 +177,7 @@ impl AST for StringLiteralAST {
                 gv.set_linkage(inkwell::module::Linkage::Private);
                 (Value::interpreted(gv.as_pointer_value().const_cast(ctx.context.i8_type().ptr_type(inkwell::AddressSpace::from(0u16))).into(), InterData::Str(self.val.clone()), Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, false)), Some(self.val.len() as u32))), false)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(loc.clone(), 390, Some(format!("unknown suffix {x} for string literal")))])
+            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for string literal")))])
         }
     }
     fn to_code(&self) -> String {
@@ -188,7 +188,7 @@ impl AST for StringLiteralAST {
             format!("{:?}", self.val)
         }
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "string: {:?}", self.val)?;
         if let Some((ref s, _)) = self.suffix {write!(f, ", suffix: {}", s)}
         else {writeln!(f)}
@@ -196,15 +196,15 @@ impl AST for StringLiteralAST {
 }
 #[derive(Debug, Clone)]
 pub struct ArrayLiteralAST {
-    pub start: Location,
-    pub end: Location,
+    pub start: SourceSpan,
+    pub end: SourceSpan,
     pub vals: Vec<Box<dyn AST>>,
 }
 impl ArrayLiteralAST {
-    pub fn new(start: Location, end: Location, vals: Vec<Box<dyn AST>>) -> Self {ArrayLiteralAST {start, end, vals}}
+    pub fn new(start: SourceSpan, end: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {ArrayLiteralAST {start, end, vals}}
 }
 impl AST for ArrayLiteralAST {
-    fn loc(&self) -> Location {(self.start.0, self.start.1.start..self.end.1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.start, self.end)}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
@@ -234,7 +234,7 @@ impl AST for ArrayLiteralAST {
         let mut elems = vec![];
         let mut ty = Type::Null;
         let mut first = true;
-        let mut elem_loc: Location = Default::default();
+        let mut elem_loc: SourceSpan = unreachable_span();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
@@ -258,7 +258,7 @@ impl AST for ArrayLiteralAST {
                     elem_loc = val.loc();
                 }
                 else {
-                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {dt}"))).note(elem_loc.clone(), format!("type set to {ty} here")));
+                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {dt}"))).note(elem_loc, format!("type set to {ty} here")));
                 }
             }
             elems.push(v);
@@ -304,11 +304,11 @@ impl AST for ArrayLiteralAST {
         }
         out + "]"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "array")?;
         let mut len = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, len == 1)?;
+            print_ast_child(f, pre, &**val, len == 1, file)?;
             len -= 1;
         }
         Ok(())
@@ -325,10 +325,10 @@ impl TupleLiteralAST {
     }
 }
 impl AST for TupleLiteralAST {
-    fn loc(&self) -> Location {
+    fn loc(&self) -> SourceSpan {
         let start = self.vals.first().unwrap().loc();
         let end = self.vals.last().unwrap().loc();
-        (start.0, start.1.start..end.1.end)
+        merge_spans(start, end)
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
@@ -382,11 +382,11 @@ impl AST for TupleLiteralAST {
         }
         out + ")"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "tuple")?;
         let mut len = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, len == 1)?;
+            print_ast_child(f, pre, &**val, len == 1, file)?;
             len -= 1;
         }
         Ok(())

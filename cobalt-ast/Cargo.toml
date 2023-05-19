@@ -11,7 +11,6 @@ inkwell = { version = "0.2.0", features = ["llvm15-0-no-llvm-linking"] }
 llvm-sys = { version = "150", features = ["no-llvm-linking"] }
 either = "1.8.1"
 glob = "0.3.1"
-codespan-reporting = "0.11.1"
 owned_chars = "0.3.2"
 
 [build-dependencies]

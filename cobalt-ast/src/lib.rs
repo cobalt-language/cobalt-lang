@@ -15,5 +15,4 @@ pub use varmap::*;
 pub use value::*;
 use ast::{print_ast_child, TreePrefix};
 use cobalt_utils::*;
-use cobalt_errors::{Diagnostic, Location};
-use cobalt_errors as errors;
+use cobalt_errors::*;

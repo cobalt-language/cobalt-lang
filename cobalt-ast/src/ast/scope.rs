@@ -2,19 +2,20 @@ use crate::*;
 use glob::Pattern;
 #[derive(Debug, Clone)]
 pub struct ModuleAST {
-    loc: Location,
+    loc: SourceSpan,
     pub name: DottedName,
     pub vals: Vec<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, SourceSpan)>
 }
 impl AST for ModuleAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
+            let loc = *loc;
             match ann.as_str() {
                 "target" => {
                     if let Some(arg) = arg {
@@ -22,38 +23,38 @@ impl AST for ModuleAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None));
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc)),
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc)),
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
         if target_match == 0 {return (Value::null(), errs)}
@@ -99,36 +100,37 @@ impl AST for ModuleAST {
         }
         out + "}"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "module: {}", self.name)?;
         let mut count = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, count == 1)?;
+            print_ast_child(f, pre, &**val, count == 1, file)?;
             count -= 1;
         }
         Ok(())
     }
 }
 impl ModuleAST {
-    pub fn new(loc: Location, name: DottedName, vals: Vec<Box<dyn AST>>, annotations: Vec<(String, Option<String>, Location)>) -> Self {ModuleAST {loc, name, vals, annotations}}
+    pub fn new(loc: SourceSpan, name: DottedName, vals: Vec<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>) -> Self {ModuleAST {loc, name, vals, annotations}}
 }
 #[derive(Debug, Clone)]
 pub struct ImportAST {
-    loc: Location,
+    loc: SourceSpan,
     pub name: CompoundDottedName,
-    pub annotations: Vec<(String, Option<String>, Location)>
+    pub annotations: Vec<(String, Option<String>, SourceSpan)>
 }
 impl ImportAST {
-    pub fn new(loc: Location, name: CompoundDottedName, annotations: Vec<(String, Option<String>, Location)>) -> Self {ImportAST {loc, name, annotations}}
+    pub fn new(loc: SourceSpan, name: CompoundDottedName, annotations: Vec<(String, Option<String>, SourceSpan)>) -> Self {ImportAST {loc, name, annotations}}
 }
 impl AST for ImportAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
         let mut errs = vec![];
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
+            let loc = *loc;
             match ann.as_str() {
                 "target" => {
                     if let Some(arg) = arg {
@@ -136,38 +138,38 @@ impl AST for ImportAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None));
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc)),
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc)),
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
             }
         }
         if target_match == 0 {return (Value::null(), errs)}
@@ -181,7 +183,7 @@ impl AST for ImportAST {
     fn to_code(&self) -> String {
         format!("import {}", self.name)
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "import: {}", self.name)
     }
 }

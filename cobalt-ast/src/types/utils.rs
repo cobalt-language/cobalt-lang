@@ -228,12 +228,12 @@ pub fn attr_type<'ctx>(target: Type, attr: &str, ctx: &CompCtx<'ctx>) -> Type {
         _ => Type::Error
     }
 }
-pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mut rhs, rloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan), (mut rhs, rloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let ln = lhs.data_type.to_string();
     let rn = rhs.data_type.to_string();
-    let err = Diagnostic::error(loc.clone(), 310, Some(format!("binary operator {op} is not defined for values of types {ln} and {rn}")))
-        .note(lloc.clone(), format!("left value is of type {ln}"))
-        .note(rloc.clone(), format!("right value is of type {rn}"));
+    let err = Diagnostic::error(loc, 310, Some(format!("binary operator {op} is not defined for values of types {ln} and {rn}")))
+        .note(lloc, format!("left value is of type {ln}"))
+        .note(rloc, format!("right value is of type {rn}"));
     match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Borrow(l), r) => {
             lhs.data_type = *l;
@@ -852,11 +852,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
             )),
             _ => Err(err)
         },
-        (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(Default::default(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
+        (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(unreachable_span(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
         (Type::IntLiteral, x @ Type::Int(..)) => {
             let t = x.clone();
             lhs.data_type = Type::IntLiteral;
-            bin_op(loc, (impl_convert(Default::default(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
+            bin_op(loc, (impl_convert(unreachable_span(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
@@ -1331,10 +1331,10 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
         _ => Err(err)
     }
 }
-pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc.clone(), 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
-        .note(vloc.clone(), format!("value is of type {n}"));
+    let err = Diagnostic::error(loc, 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
+        .note(vloc, format!("value is of type {n}"));
     match val.data_type {
         Type::Borrow(x) => {
             val.data_type = *x;
@@ -1526,7 +1526,7 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
         _ => Err(err)
     }
 }
-pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let n = val.data_type.to_string();
     let err = Diagnostic::error(loc, 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
         .note(vloc, format!("value is of type {n}"));
@@ -1568,10 +1568,10 @@ pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &s
         _ => Err(err)
     }
 }
-pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc): (Value<'ctx>, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let b = val.data_type.to_string();
     let s = idx.data_type.to_string();
-    let err = Diagnostic::error(vloc.clone(), 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc.clone(), format!("base type is {b}")).note(iloc.clone(), format!("subscript type is {s}"));
+    let err = Diagnostic::error(vloc, 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc, format!("base type is {b}")).note(iloc, format!("subscript type is {s}"));
     match idx.data_type {
         Type::Borrow(x) => {
             idx.data_type = *x;
@@ -1781,12 +1781,12 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
         }
     }
 }
-pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<Location>), (target, tloc): (Type, Option<Location>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let li = format!("source type is {}", val.data_type);
     let ri = format!("target type is {target}");
-    let mut err = Diagnostic::error(loc.clone(), 311, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
-    if let Some(l) = vloc.clone() {err.add_note(l, li)} else {err.add_info(li)};
-    if let Some(r) = tloc.clone() {err.add_note(r, ri)} else {err.add_info(ri)};
+    let mut err = Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
+    if let Some(l) = vloc {err.add_note(l, li)} else {err.add_info(li)};
+    if let Some(r) = tloc {err.add_note(r, ri)} else {err.add_info(ri)};
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -1982,12 +1982,12 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
         }
     }
 }
-pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<Location>), (target, tloc): (Type, Option<Location>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     let li = format!("source type is {}", val.data_type);
     let ri = format!("target type is {target}");
-    let mut err = Diagnostic::error(loc.clone(), 312, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
-    if let Some(l) = vloc.clone() {err.add_note(l, li)} else {err.add_info(li)};
-    if let Some(r) = tloc.clone() {err.add_note(r, ri)} else {err.add_info(ri)};
+    let mut err = Diagnostic::error(loc, 312, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
+    if let Some(l) = vloc {err.add_note(l, li)} else {err.add_info(li)};
+    if let Some(r) = tloc {err.add_note(r, ri)} else {err.add_info(ri)};
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -2245,8 +2245,8 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
         }
     }
 }
-pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
+pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+    let err = Diagnostic::error(merge_spans(vloc, iloc), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc, format!("object type is {}", val.data_type)).note(iloc, format!("attribute is {id}"));
     match val.data_type.clone() {
         Type::Borrow(b) => {
             val.data_type = *b;
@@ -2341,13 +2341,13 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
         _ => None
     }
 }
-pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Location>, mut args: Vec<(Value<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<SourceSpan>, mut args: Vec<(Value<'ctx>, SourceSpan)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Borrow(b) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc.clone(), 313, Some({
+                    let err = Diagnostic::error(loc, 313, Some({
                         let mut out = "target type is (".to_string();
                         for t in &v {out += &format!("{t}, ");}
                         out.truncate(out.len() - 2);
@@ -2371,9 +2371,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                         Type::Borrow(Box::new(t.clone()))
                                     ))
                                 }
-                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
                             }
-                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
                         },
                         _ => Err(err)
                     }
@@ -2387,7 +2387,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
         Type::Reference(b, m) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc.clone(), 313, Some({
+                    let err = Diagnostic::error(loc, 313, Some({
                         let mut out = "target type is (".to_string();
                         for t in &v {out += &format!("{t}, ");}
                         out.truncate(out.len() - 2);
@@ -2413,9 +2413,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                         Type::Reference(Box::new(t.clone()), m)
                                     ))
                                 }
-                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
                             }
-                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
                         },
                         _ => Err(err)
                     }
@@ -2432,7 +2432,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
             }
         },
         Type::Function(ret, params) => {
-            let mut err = Diagnostic::error(loc.clone(), 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc.clone(), {
+            let mut err = Diagnostic::error(loc, 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc, {
                 let mut out = "argument types are (".to_string();
                 args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
                 out.truncate(out.len() - 2);
@@ -2458,7 +2458,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                 ), cparen.as_ref().unwrap_or(&loc).clone())).collect()
             } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
                 let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}, v.data_type);
-                (if let Ok(val) = impl_convert(Default::default(), (v.clone(), None), (t.clone(), None), ctx) {
+                (if let Ok(val) = impl_convert(unreachable_span(), (v.clone(), None), (t.clone(), None), ctx) {
                     if *c && val.inter_val.is_none() {
                         good = false;
                         err.add_note(l, format!("{}{} argument must be const, but argument is not", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}));
@@ -2486,7 +2486,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
         },
         Type::BoundMethod(base, ret, params, m) => {
             let mut avec = Vec::with_capacity(args.len() + 1);
-            avec.push((Value::new(None, None, Type::Reference(base, m)), loc.clone()));
+            avec.push((Value::new(None, None, Type::Reference(base, m)), loc));
             avec.append(&mut args);
             if let Some(StructValue(sv)) = target.comp_val {
                 let tv = ctx.builder.build_extract_value(sv, 0, "").unwrap();
@@ -2533,7 +2533,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
             }
         } else {Ok(Value::error())},
         Type::Tuple(v) => {
-            let err = Diagnostic::error(loc.clone(), 313, Some({
+            let err = Diagnostic::error(loc, 313, Some({
                 let mut out = "target type is (".to_string();
                 for t in &v {out += &format!("{t}, ");}
                 out.truncate(out.len() - 2);
@@ -2557,9 +2557,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                 t.clone()
                             ))
                         }
-                        else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                        else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
                     }
-                    else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                    else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
                 },
                 _ => Err(err)
             }

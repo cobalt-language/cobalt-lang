@@ -1,5 +1,4 @@
 use crate::*;
-use codespan_reporting::files::Files;
 use std::fmt::{Display, Formatter, Result};
 #[derive(Default, Clone)]
 pub struct TreePrefix(bitvec::vec::BitVec);
@@ -25,13 +24,13 @@ impl<T: AST + Clone + 'static> ASTClone for T {
     }
 }
 pub trait AST: ASTClone + std::fmt::Debug {
-    fn loc(&self) -> Location;
+    fn loc(&self) -> SourceSpan;
     // AST properties
     fn is_const(&self) -> bool {false}
     fn expl_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> bool {false}
     // pretty printing
     fn to_code(&self) -> String;
-    fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix) -> Result;
+    fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> Result;
     // prepasses
     fn varfwd_prepass<'ctx>(&self, _ctx: &CompCtx<'ctx>) {} // runs once, inserts uninit symbols with correct names
     fn constinit_prepass<'ctx>(&self, _ctx: &CompCtx, _needs_another: &mut bool) {} // runs while needs_another is set to true, pretty much only for ConstDefAST
@@ -58,33 +57,30 @@ pub trait AST: ASTClone + std::fmt::Debug {
         val
     }
 }
+#[repr(transparent)]
+pub struct FileAST<T: AST>(T);
 impl Display for dyn AST {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        if f.alternate() {
-            let files = errors::files::FILES.read().unwrap();
-            let (file, slice) = self.loc();
-            let start = files.location(file, slice.start).unwrap();
-            let end = files.location(file, slice.end).unwrap();
-            write!(f, "({0}:{1}:{2}..{0}:{3}:{4})", files.name(file).unwrap(), start.line_number, start.column_number, end.line_number, end.column_number)?;
-        }
         let mut pre = TreePrefix::new();
-        self.print_impl(f, &mut pre)
+        self.print_impl(f, &mut pre, None)
     }
 }
 impl Clone for Box<dyn AST> {
     fn clone(&self) -> Self {self.clone_ast()}
 }
-pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, last: bool) -> Result {
+pub fn print_ast_child(f: &mut Formatter, pre: &mut TreePrefix, ast: &dyn AST, last: bool, file: Option<CobaltFile>) -> Result {
     write!(f, "{}{}", pre, if last {"└── "} else {"├── "})?;
     if f.alternate() {
-        let files = errors::files::FILES.read().unwrap();
-        let (file, slice) = ast.loc();
-        let start = files.location(file, slice.start).unwrap();
-        let end = files.location(file, slice.end).unwrap();
-        write!(f, "({0}:{1}:{2}..{0}:{3}:{4}): ", files.name(file).unwrap(), start.line_number, start.column_number, end.line_number, end.column_number)?;
+        if let Some(Err(e)) = (|| -> Option<Result> {
+            let file = file?;
+            let slice = ast.loc();
+            let (sl, sc) = file.source_loc(slice.offset()).ok()?;
+            let (el, ec) = file.source_loc(slice.offset() + slice.len()).ok()?;
+            Some(write!(f, "({}:{}..{}:{}) ", sl, sc, el, ec))
+        })() {return Err(e)};
     }
     pre.push(last);
-    let res = ast.print_impl(f, pre);
+    let res = ast.print_impl(f, pre, file);
     pre.pop();
     res
 }
