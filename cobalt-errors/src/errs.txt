@@ -1,0 +1,129 @@
+
+020: empty character literal
+021: externally linked variable has a non-runtime type
+030: @static on a global variable does nothing
+031: respecifying @static does nothing
+032: respecifying @extern does nothing
+033: respecifying @stack does nothing
+090: import does not refer to anything
+101: invalid character in source file
+102: unterminated multiline comment
+103: function-like @ directives must have closed parameters
+104: expected a name after @
+110: unknown version specification
+130: unterminated character literal
+131: unterminated string literal
+132: unexpected non-hex character in hex escape sequence
+133: invalid Unicode codepoint
+134: unexpected characters in character literal
+200: unexpected top-level token
+201: expected module body
+202: expected semicolon after module assignment
+203: expected a semicolon
+210: expected token in identifier
+211: identifier cannot contain consecutive periods
+212: identifier cannot contain consecutive names
+213: unexpected token in type
+214: identifier cannot end in a period
+215: subimport in group import cannot be global
+216: unterminated group import
+230: expected type specification or value after variable definition
+231: expected semicolon after variable definition
+233: variable definition must have a type specification and/or value
+234: expected parameters or assignment after function definition
+235: function declaration requires explicit parameters and return type
+238: unexpected end of parameter list
+239: function parameters cannot be global variables
+240: expected function return type
+241: expected ')' or ',' after function parameter
+242: function parameters must have explicit types
+243: function declaration requires an explicit return type
+244: expected function body or semicolon
+245: functions are defined with '='
+246: all parameters after the first default parameter must have defaults
+250: unmatched '('
+251: unmatched ')'
+252: unmatched '['
+253: unmatched ']'
+254: unmatched '{'
+255: unmatched '}'
+256: unexpected token after ')'
+257: unexpected token after ']'
+258: unexpected token after '}'
+261: expected condition for 'if' expression
+262: expected condition for 'while' expression
+263: unexpected 'else'
+264: operator is not a postfix operator
+265: operator is not a prefix operator
+270: unexpected token after literal
+271: unexpected token after variable name
+272: unexpected token after intrinsic
+273: expected an identifier, literal, or intrinisic (should be unreachable)
+275: module definitions aren't allowed here
+276: import statements aren't allowed here
+277: local definitions can't have global names
+278: expected '{' following '::' in type definition
+280: expected a ';' before the next statement
+281: annotations must be used on a variable or function definition
+282: annotations can't be used on a module
+283: annotations can't be used on an import statement
+290: expected an expression
+291: expected a type
+292: error when parsing integral type
+310: operator is not defined for these types
+311: invalid implicit conversion
+312: invalid explicit conversion
+313: invalid arguments to call
+314: function parameter's default value must be constant
+315: no common type available
+316: bit casts must be done on statically sized types
+317: bit cast target must be same size as source
+318: subscript is not defined for these types
+319: array value types do not match
+320: value does not exist
+321: value is not a module
+322: module does not contain variable
+323: redefinition of variable
+324: value cannot be determined at compile-time
+325: redefinition of values in module
+326: value is not a type
+327: variable must not have a const-only type
+328: value does not have this attribute
+380: tuple element access requires a constant index
+381: tuple index out of bounds
+390: unknown literal suffix
+391: unknown intrinisc
+392: array literal is too long
+393: methods and getters require the first parameter to be convertible from a reference to self
+394: variable is uninitialized
+410: unknown annotation
+411: @static annotation cannot have arguments
+412: @link annotation requires an argument
+413: unknown linkage type for @link
+414: linkage type cannot be respecified on a variable or function definition
+415: @linkas annotation requires an argument
+416: @linkas cannot be respecified
+417: @extern cannot be specified for non-static local variables
+418: @link cannot be specified for non-static local variables
+419: @linkas cannot be specified for non-static local variables
+420: @cconv annotation cannot be respecified
+421: @cconv annotation requires an argument
+422: unknown calling convention for @cconv annotation
+423: respecification of @inline annotation
+424: unknown inlining specification
+425: unknwon argument for @C annotation
+426: @target annotation requires arguments
+427: error in target glob
+428: invalid visibility specifier
+429: visibility cannot be specified for local variables
+430: invalid arguments to @asm intrinsic
+431: @alloca must create runtime type
+432: invalid call to inline assembly
+433: invalid return specification for @asm intrinsic
+434: @alloca requires all arguments except for the first to be integral
+435: @alloca intrinsic requires arguments
+436: @stack must be specified on local variables
+437: @stack annotation does not take arguments
+438: @getter and @method annotations do not take arguments
+439: redefinition of method type
+900: const function parameters aren't implemented yet
