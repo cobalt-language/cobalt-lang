@@ -12,7 +12,7 @@ impl AST for CastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
         let oic = ctx.is_const.replace(true);
@@ -45,7 +45,7 @@ impl AST for BitCastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
         let oic = ctx.is_const.replace(true);
@@ -54,12 +54,12 @@ impl AST for BitCastAST {
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
-                    errs.push(Diagnostic::error(self.loc, 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size(ctx))).note(self.target.loc(), format!("target type is {t}, which has a size of {}", t.size(ctx))));
+                    errs.push(Diagnostic::error(self.loc, 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size(ctx))).note(self.target.loc(), format!("target type is {t}, which has a size of {}", t.size(ctx))).into());
                     return (Value::error(), errs)
                 }
             },
             _ => {
-                errs.push(Diagnostic::error(self.loc, 316, None).note(self.val.loc(), format!("source type is {}", val.data_type)).note(self.target.loc(), format!("target type is {t}")));
+                errs.push(Diagnostic::error(self.loc, 316, None).note(self.val.loc(), format!("source type is {}", val.data_type)).note(self.target.loc(), format!("target type is {t}")).into());
                 return (Value::error(), errs)
             }
         }
@@ -89,7 +89,7 @@ impl NullAST {
 impl AST for NullAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::null(), vec![])}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::null(), vec![])}
     fn to_code(&self) -> String {"null".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "null")}
 }
@@ -103,7 +103,7 @@ impl ErrorTypeAST {
 impl AST for ErrorTypeAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::make_type(Type::Error), vec![])}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::make_type(Type::Error), vec![])}
     fn to_code(&self) -> String {"<error type>".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "error type")}
 }
@@ -117,7 +117,7 @@ impl TypeLiteralAST {
 impl AST for TypeLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {(Value::make_type(Type::TypeData), vec![])}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::make_type(Type::TypeData), vec![])}
     fn to_code(&self) -> String {"type".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "type (literal)")}
 }
@@ -133,7 +133,7 @@ impl AST for ParenAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {self.base.is_const()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.base.res_type(ctx)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {self.base.codegen(ctx)}
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {self.base.codegen(ctx)}
     fn to_code(&self) -> String {format!("({})", self.base.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {self.base.print_impl(f, pre, file)}
 }

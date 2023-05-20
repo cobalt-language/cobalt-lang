@@ -253,13 +253,13 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let file = FILES.add_file(0, name.to_string(), code.clone());
-    let (toks, errs) = cobalt_parser::lex(&code, 0, &ctx.flags);
-    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+    let (toks, errs) = cobalt_parser::lex(&code, &ctx.flags);
+    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     overall_fail |= fail;
     fail = false;
     let (mut ast, errs) = cobalt_parser::parse(toks.as_slice(), &ctx.flags);
-    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);
@@ -270,7 +270,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut overall_fail: bool) -> anyhow::Result<()> {
     let (_, errs) = ast.codegen(ctx);
     let mut fail = false;
-    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(ast.file.unwrap()));}
     overall_fail |= fail;
     if fail && !opts.continue_comp {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));

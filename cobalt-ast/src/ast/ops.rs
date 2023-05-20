@@ -19,7 +19,7 @@ impl AST for BinOpAST {
         }
         else {types::utils::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.op.as_str() {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
@@ -145,7 +145,7 @@ impl AST for PostfixAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
         (types::utils::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
@@ -175,7 +175,7 @@ impl AST for PrefixAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
         (types::utils::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
@@ -203,7 +203,7 @@ impl SubAST {
 impl AST for SubAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
         if target.data_type == Type::Error || index.data_type == Type::Error {return (Value::error(), errs)}
@@ -238,14 +238,14 @@ impl AST for DotAST {
             x => types::utils::attr_type(x, &self.name.0, ctx)
         }
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let r = self.obj.codegen_errs(ctx, &mut errs);
         let v = match r {
             Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, n)), ..} => {
                 let (e, v) = ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or_else(
-                    || (Some(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("no variable {} in {n}", self.name.0))), Value::error()),
-                    |Symbol(x, d)| (if !d.init {Some(Diagnostic::error(self.name.1.clone(), 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name.0))))} else {None}, x.clone())
+                    || (Some(CobaltError::from(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("no variable {} in {n}", self.name.0)))), Value::error()),
+                    |Symbol(x, d)| (if !d.init {Some(CobaltError::from(Diagnostic::error(self.name.1.clone(), 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name.0)))))} else {None}, x.clone())
                 );
                 errs.extend(e);
                 v
@@ -256,12 +256,12 @@ impl AST for DotAST {
                         v.clone()
                     }
                     else {
-                        errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
+                        errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)).into());
                         Value::error()
                     }
                 }
                 else {
-                    errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)));
+                    errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)).into());
                     Value::error()
                 }
             }

@@ -261,7 +261,7 @@ impl AST for FnDefAST {
         ctx.is_const.set(oic);
         out
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
         let ret = types::utils::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
@@ -286,10 +286,10 @@ impl AST for FnDefAST {
             match ann.as_str() {
                 "link" => {
                     if let Some((_, prev)) = link_type.clone() {
-                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()).into())
                     }
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc, 412, None)); None},
+                        None => {errs.push(Diagnostic::error(loc, 412, None).into()); None},
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
@@ -299,26 +299,26 @@ impl AST for FnDefAST {
                         Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
                         Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}")))); None},
+                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}"))).into()); None},
                     }.map(|x| (x, loc))
                 },
                 "linkas" => {
                     if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()).into())
                     }
                     if let Some(arg) = arg {
                         linkas = Some((arg.clone(), loc))
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 415, None))
+                        errs.push(Diagnostic::error(loc, 415, None).into())
                     }
                 },
                 "cconv" => {
                     if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()).into())
                     }
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc, 421, None)); None},
+                        None => {errs.push(Diagnostic::error(loc, 421, None).into()); None},
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
@@ -334,18 +334,18 @@ impl AST for FnDefAST {
                         Some(x) => {
                             match x.parse::<u32>() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Diagnostic::error(loc, 422, Some(format!("unknown calling convention {x:?}")))); None}
+                                Err(_) => {errs.push(Diagnostic::error(loc, 422, Some(format!("unknown calling convention {x:?}"))).into()); None}
                             }
                         }
                     }.map(|cc| (cc, loc)));
                 },
                 "extern" => {
                     if let Some(prev) = is_extern.clone() {
-                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                     }
                     is_extern = Some(loc);
                     if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()).into())
                     }
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
                         None => {errs.pop(); None},
@@ -364,20 +364,20 @@ impl AST for FnDefAST {
                         Some(x) => {
                             match x.parse::<u32>() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Diagnostic::error(loc, 422, Some(format!("unknown calling convention {x:?}")))); None}
+                                Err(_) => {errs.push(Diagnostic::error(loc, 422, Some(format!("unknown calling convention {x:?}"))).into()); None}
                             }
                         }
                     }.map(|cc| (cc, loc)));
                 },
                 "inline" => {
                     if let Some((_, prev)) = inline.clone() {
-                        errs.push(Diagnostic::error(loc, 423, None).note(prev, "previous specification here".to_string()))
+                        errs.push(Diagnostic::error(loc, 423, None).note(prev, "previous specification here".to_string()).into())
                     }
                     if let Some(arg) = arg {
                         match arg.as_str() {
                             "always" | "true" | "1" => inline = Some((true, loc)),
                             "never" | "false" | "0" => inline = Some((false, loc)),
-                            x => errs.push(Diagnostic::error(loc, 424, Some(format!("expected 'always' or 'never', got {x:?}"))))
+                            x => errs.push(Diagnostic::error(loc, 424, Some(format!("expected 'always' or 'never', got {x:?}"))).into())
                         }
                     }
                     else {
@@ -389,20 +389,20 @@ impl AST for FnDefAST {
                         Some("") | None => {},
                         Some("extern") => {
                             if let Some(prev) = is_extern.clone() {
-                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                             }
                             is_extern = Some(loc);
                         },
                         Some(x) => {
-                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))).into())
                         }
                     }
                     if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 420, None).note(prev, "previously defined here".to_string()).into())
                     }
                     cconv = Some((0, loc));
                     if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()).into())
                     }
                     linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc))
                 },
@@ -412,53 +412,53 @@ impl AST for FnDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "method" if self.in_struct => {
                     if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc, 439, None).note(l, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 439, None).note(l, "previously defined here".to_string()).into());
                     }
                     else {
                         if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc, 438, Some(format!("unexpected argument {arg:?}"))));
+                            errs.push(Diagnostic::error(loc, 438, Some(format!("unexpected argument {arg:?}"))).into());
                         }
                         if params.is_empty() {
-                            errs.push(Diagnostic::error(loc, 393, Some("expected at least one self parameter for method".to_string())));
+                            errs.push(Diagnostic::error(loc, 393, Some("expected at least one self parameter for method".to_string())).into());
                         }
                         else {
                             let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
                             let err = format!("{self_t} is not convertible to {}", params[0].0);
                             if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
-                                errs.push(Diagnostic::error(loc, 393, Some("invalid type for self parameter for method".to_string())).note(self.params[0].2.loc(), err));
+                                errs.push(Diagnostic::error(loc, 393, Some("invalid type for self parameter for method".to_string())).note(self.params[0].2.loc(), err).into());
                             }
                             else {
                                 fn_type = Some((MethodType::Normal, loc));
@@ -468,20 +468,20 @@ impl AST for FnDefAST {
                 },
                 "getter" if self.in_struct => {
                     if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc, 439, None).note(l, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 439, None).note(l, "previously defined here".to_string()).into());
                     }
                     else {
                         if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc, 438, Some(format!("unexpected argument {arg:?}"))));
+                            errs.push(Diagnostic::error(loc, 438, Some(format!("unexpected argument {arg:?}"))).into());
                         }
                         if params.is_empty() {
-                            errs.push(Diagnostic::error(loc, 393, Some("expected at least one self parameter for getter".to_string())));
+                            errs.push(Diagnostic::error(loc, 393, Some("expected at least one self parameter for getter".to_string())).into());
                         }
                         else {
                             let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
                             let err = format!("{self_t} is not convertible to {}", params[0].0);
                             if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
-                                errs.push(Diagnostic::error(loc, 393, Some("invalid type for self parameter for getter".to_string())).note(self.params[0].2.loc(), err));
+                                errs.push(Diagnostic::error(loc, 393, Some("invalid type for self parameter for getter".to_string())).note(self.params[0].2.loc(), err).into());
                             }
                             else {
                                 fn_type = Some((MethodType::Getter, loc));
@@ -489,7 +489,7 @@ impl AST for FnDefAST {
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for function definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for function definition"))).into())
             }
         }
         let fty = Type::Function(Box::new(ret), params);
@@ -533,7 +533,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(Diagnostic::error(a.loc(), 314, None).into());
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -603,7 +603,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(Diagnostic::error(a.loc(), 314, None).into());
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -648,7 +648,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(Diagnostic::error(a.loc(), 314, None).into());
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -718,7 +718,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(Diagnostic::error(a.loc(), 314, None).into());
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -749,7 +749,7 @@ impl AST for FnDefAST {
                                 Ok(val) => 
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                        errs.push(Diagnostic::error(a.loc(), 314, None).into());
                                         InterData::Null
                                     }
                                 Err(e) => {
@@ -766,7 +766,7 @@ impl AST for FnDefAST {
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                     (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -774,7 +774,7 @@ impl AST for FnDefAST {
                     if let Some(loc) = d {
                         err.add_note(loc, "previously defined here".to_string());
                     }
-                    errs.push(err);
+                    errs.push(err.into());
                     (Value::error(), errs)
                 }
             }
@@ -866,7 +866,7 @@ impl AST for CallAST {
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (types::utils::call(val, self.loc, Some(self.cparen.clone()), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
@@ -917,7 +917,7 @@ impl AST for IntrinsicAST {
             _ => Type::Error
         }
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.name.as_str() {
             "asm" => {
                 let oic = ctx.is_const.replace(true);
@@ -938,7 +938,7 @@ impl AST for IntrinsicAST {
                                     errs.push(Diagnostic::error(self.loc, 430, None)
                                         .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                         .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                        .info("both arguments should be constant strings (i8 const*)".to_string()));
+                                        .info("both arguments should be constant strings (i8 const*)".to_string()).into());
                                     (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
                                 }
                             }
@@ -947,7 +947,7 @@ impl AST for IntrinsicAST {
                             errs.push(Diagnostic::error(self.loc, 430, None)
                                 .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .info("both arguments should be constant strings (i8 const*)".to_string()));
+                                .info("both arguments should be constant strings (i8 const*)".to_string()).into());
                             (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
                         }
                     },
@@ -966,7 +966,7 @@ impl AST for IntrinsicAST {
                                         errs.push(Diagnostic::error(self.loc, 430, None)
                                             .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                             .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                            .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                                            .info("arguments should be a type, then two constant strings (i8 const*)".to_string()).into());
                                         (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
                                     }
                                 }
@@ -975,7 +975,7 @@ impl AST for IntrinsicAST {
                                 errs.push(Diagnostic::error(self.loc, 430, None)
                                     .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                     .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                    .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                                    .info("arguments should be a type, then two constant strings (i8 const*)".to_string()).into());
                                 (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
                             }
                         }
@@ -984,7 +984,7 @@ impl AST for IntrinsicAST {
                                 .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
                                 .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
+                                .info("arguments should be a type, then two constant strings (i8 const*)".to_string()).into());
                             (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
                         }
                     },
@@ -992,7 +992,7 @@ impl AST for IntrinsicAST {
                         errs.push(Diagnostic::error(self.loc, 430, Some(format!("expected 2 or 3 arguments, got {x}")))
                             .info("acceptable forms are:".to_string())
                             .info("constraint, body".to_string())
-                            .info("return, constraint, body".to_string()));
+                            .info("return, constraint, body".to_string()).into());
                         (Value::error(), errs)
                     }
                 }
@@ -1000,7 +1000,7 @@ impl AST for IntrinsicAST {
             "alloca" => {
                 let mut errs = vec![];
                 let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
-                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc, 435, None)]);}
+                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc, 435, None).into()]);}
                 let ty = if args.front().unwrap().data_type == Type::TypeData {if let Some(InterData::Type(t)) = args.pop_front().unwrap().inter_val {Some(t)} else {None}} else {None};
                 if args.is_empty() {
                     if let Some(ty) = ty {
@@ -1008,7 +1008,7 @@ impl AST for IntrinsicAST {
                             (Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(ty, true)), vec![])
                         }
                         else {
-                            (Value::new(None, None, Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc, 431, Some(format!("type is {}", *ty)))])
+                            (Value::new(None, None, Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc, 431, Some(format!("type is {}", *ty))).into()])
                         }
                     }
                     else {
@@ -1044,7 +1044,7 @@ impl AST for IntrinsicAST {
                                     break;
                                 },
                                 x => {
-                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 434, Some(format!("argument type is {x}"))));
+                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 434, Some(format!("argument type is {x}"))).into());
                                     break;
                                 }
                             }
@@ -1055,7 +1055,7 @@ impl AST for IntrinsicAST {
                             (Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(ty, true)), errs)
                         }
                         else {
-                            errs.push(Diagnostic::error(self.loc, 431, Some(format!("type is {}", *ty))));
+                            errs.push(Diagnostic::error(self.loc, 431, Some(format!("type is {}", *ty))).into());
                             (Value::new(None, None, Type::Pointer(ty, true)), errs)
                         }
                     }
@@ -1064,7 +1064,7 @@ impl AST for IntrinsicAST {
                     }
                 }
             },
-            x => (Value::error(), vec![Diagnostic::error(self.loc, 391, Some(format!("unknown intrinsic {x:?}")))])
+            x => (Value::error(), vec![Diagnostic::error(self.loc, 391, Some(format!("unknown intrinsic {x:?}"))).into()])
         }
     }
     fn to_code(&self) -> String {

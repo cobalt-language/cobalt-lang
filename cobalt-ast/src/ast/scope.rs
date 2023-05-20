@@ -10,8 +10,8 @@ pub struct ModuleAST {
 impl AST for ModuleAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        let mut errs = vec![];
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+        let mut errs = Vec::<CobaltError>::new();
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
@@ -23,38 +23,38 @@ impl AST for ModuleAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         if target_match == 0 {return (Value::null(), errs)}
@@ -62,11 +62,11 @@ impl AST for ModuleAST {
             match v.lookup_mod(&self.name) {
                 Ok((m, i, _)) => Box::new(VarMap {parent: Some(v), symbols: m, imports: i}),
                 Err(UndefVariable::NotAModule(x)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                     Box::new(VarMap::new(Some(v)))
                 },
                 Err(UndefVariable::DoesNotExist(x)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x - 1].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x)))).into());
                     Box::new(VarMap::new(Some(v)))
                 }
             }
@@ -125,7 +125,7 @@ impl ImportAST {
 impl AST for ImportAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut target_match = 2u8;
         let mut vis_spec = None;
@@ -138,44 +138,44 @@ impl AST for ImportAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         if target_match == 0 {return (Value::null(), errs)}
         ctx.with_vars(|v| {
             let vec = v.verify(&self.name);
-            errs.extend(vec.into_iter().map(|l| Diagnostic::warning(l, 90, None)));
+            errs.extend(vec.into_iter().map(|l| Diagnostic::warning(l, 90, None)).map(CobaltError::from));
             v.imports.push((self.name.clone(), vis_spec.map_or(ctx.export.get(), |(v, _)| v)))
         });
         (Value::null(), errs)

@@ -80,16 +80,16 @@ fn driver() -> anyhow::Result<()> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let _file = FILES.add_file(0, "".to_string(), arg.clone());
-                    let (toks, errs) = lex(arg.as_str(), 0, &flags);
-                    for err in errs {eprintln!("{err}");}
+                    let file = FILES.add_file(0, "".to_string(), arg.clone());
+                    let (toks, errs) = lex(arg.as_str(), &flags);
+                    for err in errs {eprintln!("{}", err.with_file(file));}
                     for tok in toks {println!("{tok}");}
                 }
                 else {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let _file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (toks, errs) = lex(code.as_str(), 0, &flags);
-                    for err in errs {eprintln!("{err}");}
+                    let file = FILES.add_file(0, arg.clone(), code.clone());
+                    let (toks, errs) = lex(code.as_str(), &flags);
+                    for err in errs {eprintln!("{}", err.with_file(file));}
                     for tok in toks {println!("{tok}");}
                 }
             }
@@ -125,22 +125,22 @@ fn driver() -> anyhow::Result<()> {
                 else if nfcl {
                     nfcl = false;
                     let file = FILES.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, mut errs) = lex(arg.as_str(), 0, &flags);
+                    let (toks, mut errs) = lex(arg.as_str(), &flags);
                     let (mut ast, mut es) = parse(toks.as_slice(), &flags);
                     ast.file = Some(file);
                     errs.append(&mut es);
-                    for err in errs {eprintln!("{err}");}
+                    for err in errs {eprintln!("{}", err.with_file(file));}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
                 else {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (toks, mut errs) = lex(code.as_str(), 0, &flags);
+                    let (toks, mut errs) = lex(code.as_str(), &flags);
                     let (mut ast, mut es) = parse(toks.as_slice(), &flags);
                     ast.file = Some(file);
                     errs.append(&mut es);
-                    for err in errs {eprintln!("{err}");}
+                    for err in errs {eprintln!("{}", err.with_file(file));}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
@@ -199,14 +199,14 @@ fn driver() -> anyhow::Result<()> {
             let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
-            for err in errs {eprintln!("{err}");}
+            let (toks, errs) = lex(code.as_str(), &ctx.flags);
+            for err in errs {eprintln!("{}", err.with_file(file));}
             let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
             ast.file = Some(file);
-            for err in errs {eprintln!("{err}");}
+            for err in errs {eprintln!("{}", err.with_file(file));}
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {eprintln!("{err}");}
+            for err in errs {eprintln!("{}", err.with_file(file));}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 fail = true;
@@ -483,21 +483,21 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            let (toks, errs) = lex(code.as_str(), &ctx.flags);
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
             ast.file = Some(file);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
@@ -721,21 +721,21 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            let (toks, errs) = lex(code.as_str(), &ctx.flags);
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
             ast.file = Some(file);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
@@ -883,13 +883,13 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            let (toks, errs) = lex(code.as_str(), &ctx.flags);
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
             ast.file = Some(file);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 anyhow::bail!(CompileErrors)

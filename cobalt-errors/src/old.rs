@@ -1,7 +1,10 @@
-use miette::SourceSpan;
+use miette::{SourceSpan};
+use thiserror::Error;
+use miette::Diagnostic as MDiagnostic;
 /// Dummy diagnostic so stuff still compiled. It will be removed
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error, MDiagnostic)]
 #[deprecated]
+#[error("code: {0}")]
 pub struct Diagnostic(pub u64);
 impl Diagnostic {
     pub fn code(&self) -> u64 {self.0}
@@ -14,4 +17,3 @@ impl Diagnostic {
     pub fn add_note(&mut self, _loc: SourceSpan, _message: String) -> &mut Self {self}
     pub fn add_info(&mut self, _message: String) -> &mut Self {self}
 }
-impl std::fmt::Display for Diagnostic {fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {panic!()}}

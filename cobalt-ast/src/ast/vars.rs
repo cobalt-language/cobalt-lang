@@ -110,7 +110,7 @@ impl AST for VarDefAST {
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut is_static = false;
         let mut link_type = None;
@@ -124,22 +124,22 @@ impl AST for VarDefAST {
             match ann.as_str() {
                 "static" => {
                     if let Some(arg) = arg {
-                        errs.push(Diagnostic::error(loc, 411, Some(format!("unexpected argument {arg:?} to @static annotation"))))
+                        errs.push(Diagnostic::error(loc, 411, Some(format!("unexpected argument {arg:?} to @static annotation"))).into())
                     }
                     if self.global {
-                        errs.push(Diagnostic::warning(loc, 30, None))
+                        errs.push(Diagnostic::warning(loc, 30, None).into())
                     }
                     if is_static {
-                        errs.push(Diagnostic::warning(loc, 31, None))
+                        errs.push(Diagnostic::warning(loc, 31, None).into())
                     }
                     is_static = true;
                 },
                 "link" => {
                     if let Some((_, prev)) = link_type.clone() {
-                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()).into())
                     }
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc, 412, None)); None},
+                        None => {errs.push(Diagnostic::error(loc, 412, None).into()); None},
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
@@ -149,23 +149,23 @@ impl AST for VarDefAST {
                         Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
                         Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}")))); None},
+                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}"))).into()); None},
                     }.map(|x| (x, loc))
                 },
                 "linkas" => {
                     if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()).into())
                     }
                     if let Some(arg) = arg {
                         linkas = Some((arg.clone(), loc))
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 415, None))
+                        errs.push(Diagnostic::error(loc, 415, None).into())
                     }
                 },
                 "extern" => {
                     if let Some(prev) = is_extern.clone() {
-                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                     }
                     is_extern = Some(loc);
                 },
@@ -174,12 +174,12 @@ impl AST for VarDefAST {
                         Some("") | None => {},
                         Some("extern") => {
                             if let Some(prev) = is_extern.clone() {
-                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                             }
                             is_extern = Some(loc);
                         },
                         Some(x) => {
-                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))).into())
                         }
                     }
                     linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
@@ -190,62 +190,62 @@ impl AST for VarDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if !self.global {
-                        errs.push(Diagnostic::error(loc, 429, None));
+                        errs.push(Diagnostic::error(loc, 429, None).into());
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if !self.global {
-                        errs.push(Diagnostic::error(loc, 429, None));
+                        errs.push(Diagnostic::error(loc, 429, None).into());
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "stack" => {
                     if let Some(l) = stack.clone() {
-                        errs.push(Diagnostic::error(loc, 33, None).note(l, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 33, None).note(l, "previously defined here".to_string()).into());
                     }
                     else {
                         stack = Some(loc);
                         if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc, 437, Some(format!("unexpected argument {arg:?}"))));
+                            errs.push(Diagnostic::error(loc, 437, Some(format!("unexpected argument {arg:?}"))).into());
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
             if let Some(loc) = stack {
-                errs.push(Diagnostic::error(loc, 436, None));
+                errs.push(Diagnostic::error(loc, 436, None).into());
             }
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
@@ -275,14 +275,14 @@ impl AST for VarDefAST {
                         }
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }; None}),
                     None,
                     Type::Reference(Box::new(dt), false)
                 ), VariableData::with_vis(self.loc, vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -290,7 +290,7 @@ impl AST for VarDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 }
@@ -335,13 +335,13 @@ impl AST for VarDefAST {
                 else {
                     val.inter_val = None;
                     if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }
                     ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -349,7 +349,7 @@ impl AST for VarDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 }
@@ -459,7 +459,7 @@ impl AST for VarDefAST {
                                 f.delete();
                             }
                             if dt != Type::Error {
-                                errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                                errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
                         }
@@ -470,7 +470,7 @@ impl AST for VarDefAST {
                 else {
                     let old_scope = ctx.push_scope(&self.name);
                     if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }
                     let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
@@ -498,7 +498,7 @@ impl AST for VarDefAST {
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -506,7 +506,7 @@ impl AST for VarDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 } 
@@ -514,13 +514,13 @@ impl AST for VarDefAST {
         }
         else {
             if let Some(loc) = is_extern {
-                errs.push(Diagnostic::error(loc, 417, None))
+                errs.push(Diagnostic::error(loc, 417, None).into())
             }
             if let Some((_, loc)) = link_type {
-                errs.push(Diagnostic::error(loc, 418, None))
+                errs.push(Diagnostic::error(loc, 418, None).into())
             }
             if let Some((_, loc)) = linkas {
-                errs.push(Diagnostic::error(loc, 419, None))
+                errs.push(Diagnostic::error(loc, 419, None).into())
             }
             let old_scope = ctx.push_scope(&self.name);
             let val = self.val.codegen_errs(ctx, &mut errs);
@@ -562,13 +562,13 @@ impl AST for VarDefAST {
             }
             else {
                 if dt != Type::Error {
-                    errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                    errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                 }
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                     (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -576,7 +576,7 @@ impl AST for VarDefAST {
                     if let Some(loc) = d {
                         err.add_note(loc, "previously defined here".to_string());
                     }
-                    errs.push(err);
+                    errs.push(err.into());
                     (Value::error(), errs)
                 }
             }
@@ -705,7 +705,7 @@ impl AST for MutDefAST {
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut is_static = false;
         let mut link_type = None;
@@ -718,22 +718,22 @@ impl AST for MutDefAST {
             match ann.as_str() {
                 "static" => {
                     if let Some(arg) = arg {
-                        errs.push(Diagnostic::error(loc, 411, Some(format!("unexpected argument {arg:?} to @static annotation"))))
+                        errs.push(Diagnostic::error(loc, 411, Some(format!("unexpected argument {arg:?} to @static annotation"))).into())
                     }
                     if self.global {
-                        errs.push(Diagnostic::warning(loc, 30, None))
+                        errs.push(Diagnostic::warning(loc, 30, None).into())
                     }
                     if is_static {
-                        errs.push(Diagnostic::warning(loc, 31, None))
+                        errs.push(Diagnostic::warning(loc, 31, None).into())
                     }
                     is_static = true;
                 },
                 "link" => {
                     if let Some((_, prev)) = link_type.clone() {
-                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 414, None).note(prev, "previously defined here".to_string()).into())
                     }
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc, 412, None)); None},
+                        None => {errs.push(Diagnostic::error(loc, 412, None).into()); None},
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
@@ -743,18 +743,18 @@ impl AST for MutDefAST {
                         Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
                         Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}")))); None},
+                        Some(x) => {errs.push(Diagnostic::error(loc, 413, Some(format!("unknown link type {x:?}"))).into()); None},
                     }.map(|x| (x, loc))
                 },
                 "linkas" => {
                     if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::error(loc, 416, None).note(prev, "previously defined here".to_string()).into())
                     }
                     if let Some(arg) = arg {
                         linkas = Some((arg.clone(), loc))
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 415, None))
+                        errs.push(Diagnostic::error(loc, 415, None).into())
                     }
                 },
                 "c" | "C" => {
@@ -762,19 +762,19 @@ impl AST for MutDefAST {
                         Some("") | None => {},
                         Some("extern") => {
                             if let Some(prev) = is_extern.clone() {
-                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                                errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                             }
                             is_extern = Some(loc);
                         },
                         Some(x) => {
-                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
+                            errs.push(Diagnostic::error(loc, 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))).into())
                         }
                     }
                     linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
                 },
                 "extern" => {
                     if let Some(prev) = is_extern.clone() {
-                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()))
+                        errs.push(Diagnostic::warning(loc, 22, None).note(prev, "previously defined here".to_string()).into())
                     }
                     is_extern = Some(loc);
                 },
@@ -784,44 +784,44 @@ impl AST for MutDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if self.global {
-                        errs.push(Diagnostic::error(loc, 429, None));
+                        errs.push(Diagnostic::error(loc, 429, None).into());
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if self.global {
-                        errs.push(Diagnostic::error(loc, 429, None));
+                        errs.push(Diagnostic::error(loc, 429, None).into());
                     }
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -855,14 +855,14 @@ impl AST for MutDefAST {
                         }
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }; None}),
                     None,
                     Type::Reference(Box::new(dt), false)
                 ), VariableData::with_vis(self.loc, vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -870,7 +870,7 @@ impl AST for MutDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 }
@@ -915,13 +915,13 @@ impl AST for MutDefAST {
                 else {
                     val.inter_val = None;
                     if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }
                     ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -929,7 +929,7 @@ impl AST for MutDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 }
@@ -1039,7 +1039,7 @@ impl AST for MutDefAST {
                                 f.delete();
                             }
                             if dt != Type::Error {
-                                errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                                errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                             }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
                         }
@@ -1050,7 +1050,7 @@ impl AST for MutDefAST {
                 else {
                     let old_scope = ctx.push_scope(&self.name);
                     if dt != Type::Error {
-                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()));
+                        errs.push(Diagnostic::error(self.loc, 327, None).note(self.type_.as_ref().unwrap_or(&self.val).loc(), format!("variable type is {dt}")).info("consider using const for const-only values".to_string()).into());
                     }
                     let val = self.val.codegen_errs(ctx, &mut errs);
                     let t2 = val.data_type.clone();
@@ -1078,7 +1078,7 @@ impl AST for MutDefAST {
                 } {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                        errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                         (Value::error(), errs)
                     },
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -1086,7 +1086,7 @@ impl AST for MutDefAST {
                         if let Some(loc) = d {
                             err.add_note(loc, "previously defined here".to_string());
                         }
-                        errs.push(err);
+                        errs.push(err.into());
                         (Value::error(), errs)
                     }
                 } 
@@ -1094,13 +1094,13 @@ impl AST for MutDefAST {
         }
         else {
             if let Some(loc) = is_extern {
-                errs.push(Diagnostic::error(loc, 417, None))
+                errs.push(Diagnostic::error(loc, 417, None).into())
             }
             if let Some((_, loc)) = link_type {
-                errs.push(Diagnostic::error(loc, 418, None))
+                errs.push(Diagnostic::error(loc, 418, None).into())
             }
             if let Some((_, loc)) = linkas {
-                errs.push(Diagnostic::error(loc, 419, None))
+                errs.push(Diagnostic::error(loc, 419, None).into())
             }
             let old_scope = ctx.push_scope(&self.name);
             let val = self.val.codegen_errs(ctx, &mut errs);
@@ -1145,15 +1145,15 @@ impl AST for MutDefAST {
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                     (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                    let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
+                    let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))).into());
                     if let Some(loc) = d {
                         err.add_note(loc, "previously defined here".to_string());
                     }
-                    errs.push(err);
+                    errs.push(err.into());
                     (Value::error(), errs)
                 }
             }
@@ -1204,7 +1204,7 @@ impl AST for ConstDefAST {
         });
         ctx.prepass.set(pp);
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut vis_spec = None;
         let mut target_match = 2u8;
@@ -1217,38 +1217,38 @@ impl AST for ConstDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -1279,7 +1279,7 @@ impl AST for ConstDefAST {
         match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {fwd: ctx.prepass.get(), init: true /*FIXME*/, ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
-                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                 (Value::error(), errs)
             },
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -1287,7 +1287,7 @@ impl AST for ConstDefAST {
                 if let Some(loc) = d {
                     err.add_note(loc, "previously defined here".to_string());
                 }
-                errs.push(err);
+                errs.push(err.into());
                 (Value::error(), errs)
             }
         }
@@ -1404,7 +1404,7 @@ impl AST for TypeDefAST {
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut vis_spec = None;
         let mut target_match = 2u8;
@@ -1417,38 +1417,38 @@ impl AST for TypeDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(Diagnostic::error(loc, 427, Some(format!("error at byte {}: {}", err.pos, err.msg))).into())
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc, 426, None));
+                        errs.push(Diagnostic::error(loc, 426, None).into());
                     }
                 },
                 "export" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
                 "private" => {
                     if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()));
+                        errs.push(Diagnostic::error(loc, 428, None).note(vs, "previously defined here".to_string()).into());
                     }
                     else {
                         match arg.as_deref() {
                             None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            Some(x) => errs.push(Diagnostic::error(loc, 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))).into())
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))))
+                x => errs.push(Diagnostic::error(loc, 410, Some(format!("unknown annotation {x:?} for variable definition"))).into())
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -1474,13 +1474,13 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|x| x.0 == 394), ..VariableData::with_vis(self.loc, vs)}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData {fwd: ctx.prepass.get(), init: true /*FIXME*/, ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => {
                 (x.0.clone(), errs)
             },
             Err(RedefVariable::NotAModule(x, _)) => {
                 noms.remove(&mangled);
-                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))).into());
                 (Value::error(), errs)
             },
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
@@ -1489,7 +1489,7 @@ impl AST for TypeDefAST {
                 if let Some(loc) = d {
                     err.add_note(loc, "previously defined here".to_string());
                 }
-                errs.push(err);
+                errs.push(err.into());
                 (Value::error(), errs)
             }
         }
@@ -1532,10 +1532,10 @@ impl AST for VarGetAST {
         if let Some(Symbol(x, _)) = ctx.lookup(&self.name, self.global) {x.data_type.clone()}
         else {Type::Error}
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match ctx.lookup(&self.name, self.global) {
-            Some(Symbol(x, d)) => (x.clone(), if d.init {vec![]} else {vec![Diagnostic::error(self.loc, 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name)))]}),
-            None => (Value::error(), vec![Diagnostic::error(self.loc, 320, Some(format!("{} does not exist", self.name)))])
+            Some(Symbol(x, d)) => (x.clone(), if d.init {vec![]} else {vec![Diagnostic::error(self.loc, 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name))).into()]}),
+            None => (Value::error(), vec![Diagnostic::error(self.loc, 320, Some(format!("{} does not exist", self.name))).into()])
         }
     }
     fn to_code(&self) -> String {

@@ -228,12 +228,12 @@ pub fn attr_type<'ctx>(target: Type, attr: &str, ctx: &CompCtx<'ctx>) -> Type {
         _ => Type::Error
     }
 }
-pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan), (mut rhs, rloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan), (mut rhs, rloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let ln = lhs.data_type.to_string();
     let rn = rhs.data_type.to_string();
-    let err = Diagnostic::error(loc, 310, Some(format!("binary operator {op} is not defined for values of types {ln} and {rn}")))
+    let err = CobaltError::from(Diagnostic::error(loc, 310, Some(format!("binary operator {op} is not defined for values of types {ln} and {rn}")))
         .note(lloc, format!("left value is of type {ln}"))
-        .note(rloc, format!("right value is of type {rn}"));
+        .note(rloc, format!("right value is of type {rn}")));
     match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Borrow(l), r) => {
             lhs.data_type = *l;
@@ -403,7 +403,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                     return Ok(lhs);
                 }
                 match ls.cmp(&rs) {
-                    Ordering::Less => return Err(err.info(format!("integer cannot be shortened from {rs} bits to {ls}"))),
+                    Ordering::Less => return Err(err),
                     Ordering::Greater => if let Some(IntValue(rv)) = rhs.comp_val {
                         let lt = ctx.context.custom_width_int_type(ls as u32);
                         rhs.comp_val = Some(if ru {ctx.builder.build_int_z_extend(rv, lt, "")} else {ctx.builder.build_int_s_extend(rv, lt, "")}.into());
@@ -1331,10 +1331,10 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         _ => Err(err)
     }
 }
-pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc, 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
-        .note(vloc, format!("value is of type {n}"));
+    let err = CobaltError::from(Diagnostic::error(loc, 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
+        .note(vloc, format!("value is of type {n}")));
     match val.data_type {
         Type::Borrow(x) => {
             val.data_type = *x;
@@ -1526,10 +1526,10 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         _ => Err(err)
     }
 }
-pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc, 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
-        .note(vloc, format!("value is of type {n}"));
+    let err = CobaltError::from(Diagnostic::error(loc, 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
+        .note(vloc, format!("value is of type {n}")));
     match val.data_type {
         Type::TypeData => match op {
             "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
@@ -1568,10 +1568,10 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
         _ => Err(err)
     }
 }
-pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let b = val.data_type.to_string();
     let s = idx.data_type.to_string();
-    let err = Diagnostic::error(vloc, 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc, format!("base type is {b}")).note(iloc, format!("subscript type is {s}"));
+    let err = CobaltError::from(Diagnostic::error(vloc, 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc, format!("base type is {b}")).note(iloc, format!("subscript type is {s}")));
     match idx.data_type {
         Type::Borrow(x) => {
             idx.data_type = *x;
@@ -1753,12 +1753,12 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                 },
                 Type::TypeData => match idx.data_type {
                     Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
-                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None).into())},
                     _ => Err(err)
                 },
                 Type::Null => match idx.data_type {
                     Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Null), None))),
-                    Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None).into())},
                     _ => Err(err)
                 },
                 Type::Tuple(v) => {
@@ -1770,7 +1770,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                         }
                         match idx.data_type {
                             Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), None))),
-                            Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                            Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None).into())},
                             _ => Err(err)
                         }
                     }
@@ -1781,12 +1781,13 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
         }
     }
 }
-pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let li = format!("source type is {}", val.data_type);
     let ri = format!("target type is {target}");
     let mut err = Diagnostic::error(loc, 311, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
     if let Some(l) = vloc {err.add_note(l, li)} else {err.add_info(li)};
     if let Some(r) = tloc {err.add_note(r, ri)} else {err.add_info(ri)};
+    let err = CobaltError::from(err);
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -1982,12 +1983,13 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
         }
     }
 }
-pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let li = format!("source type is {}", val.data_type);
     let ri = format!("target type is {target}");
     let mut err = Diagnostic::error(loc, 312, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
     if let Some(l) = vloc {err.add_note(l, li)} else {err.add_info(li)};
     if let Some(r) = tloc {err.add_note(r, ri)} else {err.add_info(ri)};
+    let err = CobaltError::from(err);
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -2245,8 +2247,8 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
         }
     }
 }
-pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let err = Diagnostic::error(merge_spans(vloc, iloc), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc, format!("object type is {}", val.data_type)).note(iloc, format!("attribute is {id}"));
+pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::from(Diagnostic::error(merge_spans(vloc, iloc), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc, format!("object type is {}", val.data_type)).note(iloc, format!("attribute is {id}")));
     match val.data_type.clone() {
         Type::Borrow(b) => {
             val.data_type = *b;
@@ -2266,7 +2268,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             }
                             Ok(v)
                         },
-                        MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                        MethodType::Static => Err(err),
                         MethodType::Getter => types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
                     }
                 } else {Err(err)})
@@ -2295,7 +2297,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                         }
                         Ok(v)
                     },
-                    MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                    MethodType::Static => Err(err),
                     MethodType::Getter => {
                         val.comp_val = val.addr(ctx).map(From::from);
                         val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
@@ -2341,13 +2343,13 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
         _ => None
     }
 }
-pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<SourceSpan>, mut args: Vec<(Value<'ctx>, SourceSpan)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<SourceSpan>, mut args: Vec<(Value<'ctx>, SourceSpan)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Borrow(b) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc, 313, Some({
+                    let err = CobaltError::from(Diagnostic::error(loc, 313, Some({
                         let mut out = "target type is (".to_string();
                         for t in &v {out += &format!("{t}, ");}
                         out.truncate(out.len() - 2);
@@ -2359,7 +2361,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         out.truncate(out.len() - 2);
                         out.push(')');
                         out
-                    });
+                    }));
                     match args.as_slice() {
                         [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                             if let Some(InterData::Int(idx)) = inter_val {
@@ -2371,9 +2373,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                                         Type::Borrow(Box::new(t.clone()))
                                     ))
                                 }
-                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())).into())}
                             }
-                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
+                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())).into())}
                         },
                         _ => Err(err)
                     }
@@ -2387,7 +2389,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
         Type::Reference(b, m) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc, 313, Some({
+                    let err = CobaltError::from(Diagnostic::error(loc, 313, Some({
                         let mut out = "target type is (".to_string();
                         for t in &v {out += &format!("{t}, ");}
                         out.truncate(out.len() - 2);
@@ -2401,7 +2403,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         out.truncate(out.len() - 2);
                         out.push(')');
                         out
-                    });
+                    }));
                     match args.as_slice() {
                         [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                             if let Some(InterData::Int(idx)) = inter_val {
@@ -2413,9 +2415,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                                         Type::Reference(Box::new(t.clone()), m)
                                     ))
                                 }
-                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())).into())}
                             }
-                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
+                            else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())).into())}
                         },
                         _ => Err(err)
                     }
@@ -2471,8 +2473,8 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     Value::error()
                 }, c)
             }).partition::<Vec<_>, _>(|(_, c)| **c);
-            if !good {return Err(err)}
-            if !c.is_empty() {return Err(Diagnostic::error(loc, 900, None))}
+            if !good {return Err(err.into())}
+            if !c.is_empty() {return Err(Diagnostic::error(loc, 900, None).into())}
             good = true;
             let val: Option<inkwell::values::PointerValue> = target.comp_val.and_then(|v| v.try_into().ok());
             let args: Vec<BasicMetadataValueEnum> = r.into_iter().filter_map(|(Value {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
@@ -2514,7 +2516,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     err.add_note(l, e);
                 }
             }
-            if !good {return Err(err)}
+            if !good {return Err(err.into())}
             if let Some(llt) = r.llvm_type(ctx) {
                 let fty = llt.fn_type(&params, false);
                 let asm = ctx.context.create_inline_asm(fty, b, c, true, true, None, false);
@@ -2533,7 +2535,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             }
         } else {Ok(Value::error())},
         Type::Tuple(v) => {
-            let err = Diagnostic::error(loc, 313, Some({
+            let err = CobaltError::from(Diagnostic::error(loc, 313, Some({
                 let mut out = "target type is (".to_string();
                 for t in &v {out += &format!("{t}, ");}
                 out.truncate(out.len() - 2);
@@ -2545,7 +2547,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 out.truncate(out.len() - 2);
                 out.push(')');
                 out
-            });
+            }));
             match args.as_slice() {
                 [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                     if let Some(InterData::Int(idx)) = inter_val {
@@ -2557,9 +2559,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                                 t.clone()
                             ))
                         }
-                        else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                        else {Err(Diagnostic::error(*aloc, 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())).into())}
                     }
-                    else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())))}
+                    else {Err(Diagnostic::error(*aloc, 380, Some("argument is not const".to_string())).into())}
                 },
                 _ => Err(err)
             }
@@ -2570,7 +2572,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             out.truncate(out.len() - 2);
             out.push(')');
             out
-        }))
+        }).into())
     }
 }
 pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {

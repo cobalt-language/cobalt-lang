@@ -2344,11 +2344,11 @@ fn parse_tl(mut toks: &[Token], flags: &Flags, is_tl: bool) -> (Vec<Box<dyn AST>
     }
     (outs, if toks.is_empty() {None} else {Some(i + 1)}, errs)
 }
-pub fn parse(toks: &[Token], flags: &Flags) -> (TopLevelAST, Vec<Diagnostic>) {
+pub fn parse(toks: &[Token], flags: &Flags) -> (TopLevelAST, Vec<CobaltError>) {
     if toks.is_empty() {
         return (TopLevelAST::new(unreachable_span(), vec![]), vec![])
     }
     let start = toks[0].loc; // already bounds checked
     let (out, _, errs) = parse_tl(toks, flags, true);
-    (TopLevelAST::new(start, out), errs)
+    (TopLevelAST::new(start, out), errs.into_iter().map(CobaltError::from).collect())
 }

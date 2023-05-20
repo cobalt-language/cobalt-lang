@@ -158,12 +158,12 @@ fn parse_macro(it: &mut std::iter::Peekable<std::str::Chars>, loc: &mut usize, f
     }
     else {None};
     (if let Some(params) = params {
-        let (toks, mut es) = lex(&params, param_start.unwrap() + usize::from(flags.up), flags);
+        let (toks, mut es) = lex_impl(&params, param_start.unwrap() + usize::from(flags.up), flags);
         errs.append(&mut es);
         vec![Token::new((start..(*loc + 1)).into(), Macro(name, Some((params.to_string(), toks))))]
     } else {vec![Token::new((start..(*loc + 1)).into(), Macro(name, None))]}, errs)
 }
-pub fn lex(data: &str, mut loc: usize, flags: &Flags) -> (Vec<Token>, Vec<Diagnostic>) {
+fn lex_impl(data: &str, mut loc: usize, flags: &Flags) -> (Vec<Token>, Vec<Diagnostic>) {
     let mut outs = vec![];
     let mut errs = vec![];
     let mut it = data.chars().peekable();
@@ -695,4 +695,8 @@ pub fn lex(data: &str, mut loc: usize, flags: &Flags) -> (Vec<Token>, Vec<Diagno
         if flags.up {loc += c.len_utf8()};
     }
     (outs, errs)
+}
+pub fn lex(data: &str, flags: &Flags) -> (Vec<Token>, Vec<CobaltError>) {
+    let (toks, errs) = lex_impl(data, 0, flags);
+    (toks, errs.into_iter().map(CobaltError::from).collect())
 }

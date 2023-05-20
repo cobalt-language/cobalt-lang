@@ -37,19 +37,19 @@ pub trait AST: ASTClone + std::fmt::Debug {
     fn fwddef_prepass<'ctx>(&self, _ctx: &CompCtx) {} // create forward definitions for functions in LLVM
     // code generation
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type;
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>);
-    fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>);
+    fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let old_is_const = ctx.is_const.replace(true);
         let res = self.codegen(ctx);
         ctx.is_const.set(old_is_const);
         res
     }
-    fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<Diagnostic>) -> Value<'ctx> {
+    fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<CobaltError>) -> Value<'ctx> {
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);
         val
     }
-    fn const_codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<Diagnostic>) -> Value<'ctx> {
+    fn const_codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<CobaltError>) -> Value<'ctx> {
         let old_is_const = ctx.is_const.replace(true);
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);

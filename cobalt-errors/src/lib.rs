@@ -1,10 +1,12 @@
-pub use miette::SourceSpan;
+pub use miette::{SourceSpan, Report};
 #[allow(deprecated)]
 pub mod old;
 pub use old::Diagnostic;
 pub mod files;
 pub use files::{FILES, CobaltFile};
 pub mod color;
+pub mod error;
+pub use error::*;
 
 pub type FileId = (usize, usize);
 pub fn unreachable_span() -> SourceSpan {(usize::MAX, usize::MAX).into()}

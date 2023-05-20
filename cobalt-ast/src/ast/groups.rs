@@ -7,7 +7,7 @@ pub struct BlockAST {
 impl AST for BlockAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         let mut out = Value::null();
         let mut errs = vec![];
@@ -46,7 +46,7 @@ pub struct GroupAST {
 impl AST for GroupAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
         let mut errs = vec![];
         self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
@@ -84,7 +84,7 @@ pub struct TopLevelAST {
 impl AST for TopLevelAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.flags.prepass {
             self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
             let mut again = true;
