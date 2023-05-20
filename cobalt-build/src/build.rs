@@ -1,4 +1,3 @@
-use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io::{Write, BufWriter};
@@ -249,21 +248,19 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     }
     let mut fail = false;
     let mut overall_fail = false;
-    let mut stdout = &mut StandardStream::stdout(ColorChoice::Always);
-    let config = term::Config::default();
     let name = path.to_str().expect("File name must be valid UTF-8");
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
-    let files = &mut *FILES.write().unwrap();
-    let file = files.add_file(0, name.to_string(), code.clone());
-    let (toks, errs) = cobalt_parser::lex(&code, (file, 0), &ctx.flags);
-    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+    let file = FILES.add_file(0, name.to_string(), code.clone());
+    let (toks, errs) = cobalt_parser::lex(&code, 0, &ctx.flags);
+    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     overall_fail |= fail;
     fail = false;
-    let (ast, errs) = cobalt_parser::parse(toks.as_slice(), &ctx.flags);
-    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+    let (mut ast, errs) = cobalt_parser::parse(toks.as_slice(), &ctx.flags);
+    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+    ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);
     Ok((([out_path, head_path], overall_fail), Some(ast)))
@@ -271,12 +268,9 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
 /// Finish building the file
 /// This picks up where `build_file_1` left off
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut overall_fail: bool) -> anyhow::Result<()> {
-    let files = &*FILES.read().unwrap();
-    let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-    let config = term::Config::default();
     let (_, errs) = ast.codegen(ctx);
     let mut fail = false;
-    for err in errs {term::emit(&mut stdout, &config, files, &err.0).unwrap(); fail |= err.is_err();}
+    for err in errs {eprintln!("{err}"); fail |= err.is_err();}
     overall_fail |= fail;
     if fail && !opts.continue_comp {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));

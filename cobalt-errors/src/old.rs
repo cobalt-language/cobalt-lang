@@ -14,3 +14,4 @@ impl Diagnostic {
     pub fn add_note(&mut self, _loc: SourceSpan, _message: String) -> &mut Self {self}
     pub fn add_info(&mut self, _message: String) -> &mut Self {self}
 }
+impl std::fmt::Display for Diagnostic {fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {panic!()}}

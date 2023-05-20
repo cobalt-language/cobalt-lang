@@ -1,7 +1,5 @@
 use inkwell::targets::*;
 use inkwell::execution_engine::FunctionLookupError;
-use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
 use std::process::{Command, exit};
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
@@ -48,12 +46,6 @@ fn driver() -> anyhow::Result<()> {
         "help" | "--help" | "-h" => {
             match args.get(2) {
                 None => println!("{HELP}"),
-                Some(x) if x.len() == 5 && (x.as_bytes()[0] == b'E' || x.as_bytes()[0] == b'W') && x.bytes().skip(1).all(|x| (b'0'..=b'9').contains(&x)) => {
-                    match cobalt_errors::info::lookup(x[1..].parse().unwrap()).map(|x| x.help) {
-                        None | Some("") => eprintln!("no help message available for {x}"),
-                        Some(x) => println!("{x}")
-                    }
-                },
                 Some(x) => {
                     eprintln!("unknown help category {x:?}");
                     exit(1)
@@ -70,8 +62,6 @@ fn driver() -> anyhow::Result<()> {
         }
         "lex" if cfg!(debug_assertions) => {
             let mut nfcl = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
             let flags = Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.is_empty() {continue;}
@@ -90,19 +80,17 @@ fn driver() -> anyhow::Result<()> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let files = &mut *FILES.write().unwrap();
-                    let file = files.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, errs) = lex(arg.as_str(), (file, 0), &flags);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
+                    let _file = FILES.add_file(0, "".to_string(), arg.clone());
+                    let (toks, errs) = lex(arg.as_str(), 0, &flags);
+                    for err in errs {eprintln!("{err}");}
+                    for tok in toks {println!("{tok}");}
                 }
                 else {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let files = &mut *FILES.write().unwrap();
-                    let file = files.add_file(0, arg.clone(), code.clone());
-                    let (toks, errs) = lex(code.as_str(), (file, 0), &flags);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-                    for tok in toks {term::emit(&mut stdout, &config, files, &Diagnostic::note().with_message(format!("{tok}")).with_labels(vec![Label::primary(tok.loc.0, tok.loc.1)]))?;}
+                    let _file = FILES.add_file(0, arg.clone(), code.clone());
+                    let (toks, errs) = lex(code.as_str(), 0, &flags);
+                    for err in errs {eprintln!("{err}");}
+                    for tok in toks {println!("{tok}");}
                 }
             }
             if nfcl {
@@ -112,8 +100,6 @@ fn driver() -> anyhow::Result<()> {
         "parse" if cfg!(debug_assertions) => {
             let mut nfcl = false;
             let mut loc = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
             let flags = Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.is_empty() {continue;}
@@ -138,23 +124,23 @@ fn driver() -> anyhow::Result<()> {
                 }
                 else if nfcl {
                     nfcl = false;
-                    let files = &mut *FILES.write().unwrap();
-                    let file = files.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, mut errs) = lex(arg.as_str(), (file, 0), &flags);
-                    let (ast, mut es) = parse(toks.as_slice(), &flags);
+                    let file = FILES.add_file(0, "<command line>".to_string(), arg.clone());
+                    let (toks, mut errs) = lex(arg.as_str(), 0, &flags);
+                    let (mut ast, mut es) = parse(toks.as_slice(), &flags);
+                    ast.file = Some(file);
                     errs.append(&mut es);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+                    for err in errs {eprintln!("{err}");}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
                 else {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let files = &mut *FILES.write().unwrap();
-                    let file = files.add_file(0, arg.clone(), code.clone());
-                    let (toks, mut errs) = lex(code.as_str(), (file, 0), &flags);
-                    let (ast, mut es) = parse(toks.as_slice(), &flags);
+                    let file = FILES.add_file(0, arg.clone(), code.clone());
+                    let (toks, mut errs) = lex(code.as_str(), 0, &flags);
+                    let (mut ast, mut es) = parse(toks.as_slice(), &flags);
+                    ast.file = Some(file);
                     errs.append(&mut es);
-                    for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+                    for err in errs {eprintln!("{err}");}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
                 }
@@ -207,22 +193,20 @@ fn driver() -> anyhow::Result<()> {
                 std::io::stdin().read_to_string(&mut s)?;
                 s
             } else {Path::new(in_file).read_to_string_anyhow()?};
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
             let mut flags = Flags::default();
             flags.dbg_mangle = true;
             let ink_ctx = inkwell::context::Context::create();
             let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
-            let files = &mut *FILES.write().unwrap();
-            let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
-            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
+            for err in errs {eprintln!("{err}");}
+            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            ast.file = Some(file);
+            for err in errs {eprintln!("{err}");}
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?;}
+            for err in errs {eprintln!("{err}");}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 fail = true;
@@ -498,24 +482,22 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
-            let files = &mut *FILES.write().unwrap();
-            let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            ast.file = Some(file);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
@@ -738,25 +720,22 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
-            let flags = Flags::default();
-            let files = &mut *FILES.write().unwrap();
-            let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), (file, 0), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (ast, errs) = parse(toks.as_slice(), &flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            ast.file = Some(file);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             let (_, errs) = ast.codegen(&ctx);
             overall_fail |= fail;
             fail = false;
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
@@ -903,16 +882,14 @@ fn driver() -> anyhow::Result<()> {
                 ctx.load(&mut file)?;
             }
             let mut fail = false;
-            let mut stdout = &mut StandardStream::stdout(ColorChoice::Auto);
-            let config = term::Config::default();
-            let files = &mut *FILES.write().unwrap();
-            let file = files.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), (file, 0), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
-            let (ast, errs) = parse(toks.as_slice(), &ctx.flags);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let (toks, errs) = lex(code.as_str(), 0, &ctx.flags);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
+            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            ast.file = Some(file);
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             let (_, errs) = ast.codegen(&ctx);
-            for err in errs {term::emit(&mut stdout, &config, files, &err.0)?; fail |= err.is_err();}
+            for err in errs {eprintln!("{err}"); fail |= err.is_err();}
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 anyhow::bail!(CompileErrors)
