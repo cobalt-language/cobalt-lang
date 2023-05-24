@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use os_str_bytes::OsStrBytes;
 use cobalt_ast::ast::*;
 use cobalt_utils::CellExt as Cell;
-use cobalt_errors::{FILES, error, warning};
+use cobalt_errors::*;
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -254,12 +254,12 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let file = FILES.add_file(0, name.to_string(), code.clone());
     let (toks, errs) = cobalt_parser::lex(&code, &ctx.flags);
-    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
+    for err in errs {fail |= err.is_err(); eprintln!("{}", Report::from(err).with_source_code(file));}
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     overall_fail |= fail;
     fail = false;
     let (mut ast, errs) = cobalt_parser::parse(toks.as_slice(), &ctx.flags);
-    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(file));}
+    for err in errs {fail |= err.is_err(); eprintln!("{}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);

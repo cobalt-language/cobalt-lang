@@ -36,7 +36,7 @@ impl AST for IntLiteralAST {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for integer literal"))).into()])
+            Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "integer", suf: x.to_string()}])
         }
     }
     fn to_code(&self) -> String {
@@ -80,7 +80,7 @@ impl AST for FloatLiteralAST {
             Some(("f16", _)) => (Value::interpreted(FloatValue(ctx.context.f16_type().const_float(self.val)), InterData::Float(self.val), Type::Float16), vec![]),
             Some(("f32", _)) => (Value::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
             Some(("f128", _)) => (Value::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for float literal"))).into()])
+            Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "floating-point", suf: x.to_string()}])
         }
     }
     fn to_code(&self) -> String {
@@ -132,7 +132,7 @@ impl AST for CharLiteralAST {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for character literal"))).into()])
+            Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "character", suf: x.to_string()}])
         }
     }
     fn to_code(&self) -> String {
@@ -177,7 +177,7 @@ impl AST for StringLiteralAST {
                 gv.set_linkage(inkwell::module::Linkage::Private);
                 (Value::interpreted(gv.as_pointer_value().const_cast(ctx.context.i8_type().ptr_type(inkwell::AddressSpace::from(0u16))).into(), InterData::Str(self.val.clone()), Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, false)), Some(self.val.len() as u32))), false)), vec![])
             },
-            Some((x, loc)) => (Value::error(), vec![Diagnostic::error(*loc, 390, Some(format!("unknown suffix {x} for string literal"))).into()])
+            Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "string", suf: x.to_string()}])
         }
     }
     fn to_code(&self) -> String {
@@ -234,7 +234,7 @@ impl AST for ArrayLiteralAST {
         let mut elems = vec![];
         let mut ty = Type::Null;
         let mut first = true;
-        let mut elem_loc: SourceSpan = unreachable_span();
+        let mut elem_loc = unreachable_span();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
@@ -258,13 +258,18 @@ impl AST for ArrayLiteralAST {
                     elem_loc = val.loc();
                 }
                 else {
-                    errs.push(Diagnostic::error(val.loc(), 300, Some(format!("expected {ty}, got value of type {dt}"))).note(elem_loc, format!("type set to {ty} here")).into());
+                    errs.push(CobaltError::ArrayElementsDontMatch {
+                        loc: val.loc(),
+                        prev: elem_loc,
+                        current: ty.to_string(),
+                        new: dt.to_string()
+                    });
                 }
             }
             elems.push(v);
         }
         if elems.len() > u32::MAX as usize {
-            errs.push(Diagnostic::error(self.loc(), 300, Some(format!("this array has {} elements, the max is 4294967295", elems.len()))).into());
+            errs.push(CobaltError::ArrayTooLong {loc: self.vals[u32::MAX as usize + 1].loc(), len: elems.len()});
             elems.truncate(u32::MAX as usize);
         }
         let elems = elems.into_iter().enumerate().filter_map(|(n, v)| types::utils::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();

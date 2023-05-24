@@ -1,3 +1,4 @@
+#![allow(deprecated)] // this is all going to be rewritten anyway
 pub mod lexer;
 pub mod ast;
 mod ops;

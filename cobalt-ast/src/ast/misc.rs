@@ -1,4 +1,6 @@
 use crate::*;
+use std::rc::Rc;
+use std::cell::Cell;
 #[derive(Debug, Clone)]
 pub struct CastAST {
     loc: SourceSpan,
@@ -51,15 +53,47 @@ impl AST for BitCastAST {
         let oic = ctx.is_const.replace(true);
         let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
+        loop {
+            match val.data_type {
+                Type::Borrow(b) => val.data_type = *b,
+                Type::Reference(b, _) => {
+                    if !ctx.is_const.get() && b.register(ctx) {
+                        if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = val.comp_val {
+                            val.address = Rc::new(Cell::new(Some(pv)));
+                            val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
+                        }
+                    }
+                    val.data_type = *b;
+                },
+                x => {
+                    val.data_type = x;
+                    break;
+                }
+            }
+        }
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
-                    errs.push(Diagnostic::error(self.loc, 317, None).note(self.val.loc(), format!("source type is {}, which has a size of {}", val.data_type, val.data_type.size(ctx))).note(self.target.loc(), format!("target type is {t}, which has a size of {}", t.size(ctx))).into());
+                    errs.push(CobaltError::DifferentBitCastSizes {
+                        loc: self.loc,
+                        from_ty: val.data_type.to_string(),
+                        from_sz: s,
+                        from_loc: self.val.loc(),
+                        to_ty: t.to_string(),
+                        to_sz: d,
+                        to_loc: self.target.loc()
+                    });
                     return (Value::error(), errs)
                 }
             },
             _ => {
-                errs.push(Diagnostic::error(self.loc, 316, None).note(self.val.loc(), format!("source type is {}", val.data_type)).note(self.target.loc(), format!("target type is {t}")).into());
+                errs.push(CobaltError::UnsizedBitCast {
+                    loc: self.loc,
+                    from_ty: val.data_type.to_string(),
+                    from_loc: self.val.loc(),
+                    to_ty: t.to_string(),
+                    to_loc: self.target.loc()
+                });
                 return (Value::error(), errs)
             }
         }

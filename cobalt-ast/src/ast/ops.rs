@@ -244,24 +244,40 @@ impl AST for DotAST {
         let v = match r {
             Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, n)), ..} => {
                 let (e, v) = ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or_else(
-                    || (Some(CobaltError::from(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("no variable {} in {n}", self.name.0)))), Value::error()),
-                    |Symbol(x, d)| (if !d.init {Some(CobaltError::from(Diagnostic::error(self.name.1.clone(), 394, Some(format!("the value of {} cannot be determined, likely because of a cyclical dependency", self.name.0)))))} else {None}, x.clone())
+                    || (Some(CobaltError::VariableDoesNotExist {
+                        name: self.name.0.clone(),
+                        module: n,
+                        container: "module",
+                        loc: self.name.1
+                    }), Value::error()),
+                    |Symbol(x, d)| (if !d.init {Some(CobaltError::UninitializedGlobal {
+                        name: self.name.0.clone(),
+                        loc: self.name.1.clone()
+                    })} else {None}, x.clone())
                 );
                 errs.extend(e);
                 v
             },
             Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} => {
-                if let Type::Nominal(n) = *t {
-                    if let Some(v) = ctx.nominals.borrow()[&n].2.get(&self.name.0) {
-                        v.clone()
-                    }
+                if let Type::Nominal(n) = &*t {
+                    if let Some(v) = ctx.nominals.borrow()[n].2.get(&self.name.0) {v.clone()}
                     else {
-                        errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)).into());
+                        errs.push(CobaltError::VariableDoesNotExist {
+                            name: self.name.0.clone(),
+                            module: n.to_string(),
+                            container: "type",
+                            loc: self.name.1
+                        });
                         Value::error()
                     }
                 }
                 else {
-                    errs.push(Diagnostic::error(self.name.1.clone(), 322, None).note(self.name.1.clone(), format!("variable name is {}", self.name.0)).into());
+                    errs.push(CobaltError::VariableDoesNotExist {
+                        name: self.name.0.clone(),
+                        module: t.to_string(),
+                        container: "type",
+                        loc: self.name.1
+                    });
                     Value::error()
                 }
             }
