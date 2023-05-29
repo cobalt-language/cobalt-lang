@@ -1,16 +1,60 @@
-use crate::{CobaltFile, old};
+use crate::CobaltFile;
 use thiserror::Error;
 use miette::{Diagnostic, SourceSpan};
+
+/// Zero-copy type to capture an error of what the parser found
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParserFound {
+    Eof,
+    Char(char),
+    Str(String)
+}
+impl std::fmt::Display for ParserFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Eof => f.write_str("EOF"),
+            Self::Char(c) => write!(f, r#""{c}""#),
+            Self::Str(s) => write!(f, r#""{s}""#)
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum CobaltError {
     #[error(transparent)]
     OtherFile(#[from] Box<SourcedCobaltError>),
-    #[error("error in glob pattern")]
-    GlobPatternError {
-        pos: usize,
-        msg: String,
-        #[label("error at byte {pos} of glob: {msg}")]
+    
+    // Parser errors
+    #[error("unclosed multiline comment")]
+    UnclosedComment {
+        #[label("comment starts here")]
+        loc: SourceSpan
+    },
+    #[error("expected {ex}, found {found}")]
+    ExpectedFound {
+        ex: &'static str,
+        found: ParserFound,
+        #[label]
+        loc: SourceSpan
+    },
+    #[error("unexpected global name")]
+    UnexpectedGlobal {
+        #[label("global name begins here")]
+        loc: SourceSpan
+    },
+    #[error("expected {expected}, found {found}")]
+    UnmatchedDelimiter {
+        expected: char,
+        found: ParserFound,
+        #[label("to match this opening here")]
+        start: SourceSpan,
+        #[label]
+        end: SourceSpan
+    },
+    #[error("unexpected decimal digit in {lit} literal")]
+    UnexpectedDecimal {
+        lit: &'static str,
+        #[label]
         loc: SourceSpan
     },
 
@@ -103,6 +147,13 @@ pub enum CobaltError {
     },
 
     // Misc stuff
+    #[error("error in glob pattern")]
+    GlobPatternError {
+        pos: usize,
+        msg: String,
+        #[label("error at byte {pos} of glob: {msg}")]
+        loc: SourceSpan
+    },
     #[error("value cannot be determined at compile-time")]
     NotCompileTime {
         #[label]
@@ -345,15 +396,11 @@ impl CobaltError {
         self.severity().map_or(true, |s| s == miette::Severity::Error)
     }
 }
-
 impl From<SourcedCobaltError> for CobaltError {
     #[inline]
     fn from(err: SourcedCobaltError) -> Self {Self::OtherFile(Box::new(err))}
 }
-#[allow(deprecated)]
-impl From<old::Diagnostic> for CobaltError {
-    fn from(_: old::Diagnostic) -> Self {panic!()}
-}
+
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
 pub struct SourcedCobaltError {
     err: CobaltError,

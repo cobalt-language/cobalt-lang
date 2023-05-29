@@ -10,7 +10,7 @@ use cobalt_ast::{CompCtx, AST};
 use cobalt_errors::*;
 use cobalt_build::*;
 use cobalt_utils::Flags;
-use cobalt_parser::{lex, parse};
+use cobalt_parser::parse_tl;
 
 const HELP: &str = "co- Cobalt compiler and build system
 A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
@@ -61,47 +61,9 @@ fn driver() -> anyhow::Result<()> {
             #[cfg(debug_assertions)]
             println!("Debug Build");
         }
-        "lex" if cfg!(debug_assertions) => {
-            let mut nfcl = false;
-            let flags = Flags::default();
-            for arg in args.into_iter().skip(2) {
-                if arg.is_empty() {continue;}
-                if arg.as_bytes()[0] == b'-' {
-                    for c in arg.chars().skip(1) {
-                        match c {
-                            'c' => {
-                                if nfcl {
-                                    warning!("reuse of -c flag");
-                                }
-                                nfcl = true;
-                            }
-                            x => warning!("unknown flag -{x}")
-                        }
-                    }
-                }
-                else if nfcl {
-                    nfcl = false;
-                    let file = FILES.add_file(0, "".to_string(), arg.clone());
-                    let (toks, errs) = lex(arg.as_str(), &flags);
-                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                    for tok in toks {println!("{tok}");}
-                }
-                else {
-                    let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (toks, errs) = lex(code.as_str(), &flags);
-                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                    for tok in toks {println!("{tok}");}
-                }
-            }
-            if nfcl {
-                error!("-c flag must be followed by code");
-            }
-        },
         "parse" if cfg!(debug_assertions) => {
             let mut nfcl = false;
             let mut loc = false;
-            let flags = Flags::default();
             for arg in args.into_iter().skip(2) {
                 if arg.is_empty() {continue;}
                 if arg.as_bytes()[0] == b'-' {
@@ -126,10 +88,8 @@ fn driver() -> anyhow::Result<()> {
                 else if nfcl {
                     nfcl = false;
                     let file = FILES.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (toks, mut errs) = lex(arg.as_str(), &flags);
-                    let (mut ast, mut es) = parse(toks.as_slice(), &flags);
+                    let (mut ast, errs) = parse_tl(&arg);
                     ast.file = Some(file);
-                    errs.append(&mut es);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
@@ -137,10 +97,8 @@ fn driver() -> anyhow::Result<()> {
                 else {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (toks, mut errs) = lex(code.as_str(), &flags);
-                    let (mut ast, mut es) = parse(toks.as_slice(), &flags);
+                    let (mut ast, errs) = parse_tl(&code);
                     ast.file = Some(file);
-                    errs.append(&mut es);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if loc {print!("{:#}", ast)}
                     else {print!("{}", ast)}
@@ -200,9 +158,7 @@ fn driver() -> anyhow::Result<()> {
             let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
             let mut fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), &ctx.flags);
-            for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
             ctx.module.set_triple(&TargetMachine::get_default_triple());
@@ -484,12 +440,7 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), &ctx.flags);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            overall_fail |= fail;
-            fail = false;
-            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             overall_fail |= fail;
@@ -722,12 +673,7 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), &ctx.flags);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            overall_fail |= fail;
-            fail = false;
-            if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             overall_fail |= fail;
@@ -884,9 +830,7 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let file = FILES.add_file(0, in_file.to_string(), code.clone());
-            let (toks, errs) = lex(code.as_str(), &ctx.flags);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            let (mut ast, errs) = parse(toks.as_slice(), &ctx.flags);
+            let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             let (_, errs) = ast.codegen(&ctx);

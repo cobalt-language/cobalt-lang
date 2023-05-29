@@ -77,12 +77,11 @@ impl GroupAST {
 }
 #[derive(Debug, Clone)]
 pub struct TopLevelAST {
-    loc: SourceSpan,
     pub file: Option<CobaltFile>,
     pub vals: Vec<Box<dyn AST>>
 }
 impl AST for TopLevelAST {
-    fn loc(&self) -> SourceSpan {self.loc}
+    fn loc(&self) -> SourceSpan {unreachable_span()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.flags.prepass {
@@ -119,7 +118,7 @@ impl AST for TopLevelAST {
     }
 }
 impl TopLevelAST {
-    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {loc, vals, file: None}}
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {vals, file: None}}
     pub fn run_passes<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
         let mut again = true;

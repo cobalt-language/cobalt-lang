@@ -1,9 +1,5 @@
 /// Convenience re-exports so miette doesn't have to be a dependency
 pub use miette::{SourceSpan, Report};
-/// Old-style Diagnostics
-#[allow(deprecated)]
-pub mod old;
-pub use old::Diagnostic;
 /// File registry
 pub mod files;
 pub use files::{FILES, CobaltFile};

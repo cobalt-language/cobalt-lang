@@ -1,4 +1,3 @@
-#![allow(unused_mut, unused_variables)]
 use crate::*;
 use inkwell::values::{AsValueRef, GlobalValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
@@ -291,7 +290,7 @@ impl AST for VarDefAST {
                         }
                     }
                 },
-                x => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
+                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -921,7 +920,7 @@ impl AST for MutDefAST {
                         }
                     }
                 },
-                x => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
+                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -1375,7 +1374,7 @@ impl AST for ConstDefAST {
                         }
                     }
                 },
-                x => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "constant"})
+                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "constant"})
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
@@ -1601,7 +1600,7 @@ impl AST for TypeDefAST {
                         }
                     }
                 },
-                x => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "type"})
+                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "type"})
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
