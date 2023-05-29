@@ -1,8 +1,0 @@
-  × value of type `<int literal>` has no attribute `x`
-   ╭─[/tmp/.psub.wyBATjospx:1:1]
- 1 │ let x = (1).x;
-   ·         ─┬─ ┬
-   ·          │  ╰── attribute is `x`
-   ·          ╰── value type is `<int literal>`
-   ╰────
-

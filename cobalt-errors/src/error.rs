@@ -57,6 +57,17 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan
     },
+    #[error("Unicode escape sequences can be at most 6 characters long")]
+    UnicodeSequenceTooLong {
+        #[label]
+        loc: SourceSpan
+    },
+    #[error("U+{val:0>4X} is not a valid Unicode codepoint")]
+    InvalidCodepoint {
+        val: u32,
+        #[label]
+        loc: SourceSpan
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
@@ -222,6 +233,12 @@ pub enum CobaltError {
         loc: SourceSpan,
         #[label("element type previously determined to be {current} here")]
         prev: SourceSpan
+    },
+    #[error("expected UTF-8 string")]
+    NonUtf8String {
+        pos: usize,
+        #[label("this string should be valid UTF-8, but there was an error at byte {pos}")]
+        loc: SourceSpan
     },
 
     // @asm issues

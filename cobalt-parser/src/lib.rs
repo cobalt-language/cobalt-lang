@@ -2,6 +2,7 @@ use cobalt_errors::*;
 use cobalt_ast::{*, ast::*};
 use unicode_ident::*;
 use either::Either;
+mod utils;
 
 /// General parsing return, return a value, the span it covers, the remaining string, and any
 /// errors that were encountered
@@ -676,6 +677,392 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         }
         else {None}
     }
+    fn strlit<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        if !src.starts_with('"') {return None}
+        let begin = start;
+        src = &src[1..];
+        start += 1;
+        let mut errs = vec![];
+        let mut out = vec![];
+        let mut happy = false;
+        while let Some(idx) = src.find(['\\', '"']) {
+            out.extend_from_slice(&src.as_bytes()[..idx]);
+            src = &src[idx..];
+            start += idx;
+            if src.as_bytes()[0] == b'"' {
+                happy = true;
+                src = &src[1..];
+                start += 1;
+                break
+            }
+            src = &src[1..];
+            start += 1;
+            match src.chars().next() {
+                None => break,
+                Some(c @ ('n' | 'r' | 't' | 'a' | '0')) => {
+                    src = &src[1..];
+                    start += 1;
+                    out.push(match c {
+                        'n' => b'\n',
+                        'r' => b'\r',
+                        't' => b'\t',
+                        '0' => b'\0',
+                        'a' => 0x07,
+                        'e' => 0x1b,
+                        _ => unreachable!()
+                    });
+                }
+                Some('x') => {
+                    let mut byte = 0u8;
+                    src = &src[1..];
+                    start += 1;
+                    if let Some(c) = src.chars().next() {
+                        if let Some(d) = c.to_digit(16) {
+                            byte = (d as u8) << 4;
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        else {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: "hexadecimal character in escape code",
+                                found: got.0,
+                                loc: (start, got.1).into(),
+                            });
+                            src = &src[c.len_utf8()..];
+                            start += c.len_utf8();
+                        }
+                    }
+                    else {break}
+                    if let Some(c) = src.chars().next() {
+                        if let Some(d) = c.to_digit(16) {
+                            byte |= d as u8;
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        else {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: "hexadecimal character in escape code",
+                                found: got.0,
+                                loc: (start, got.1).into(),
+                            });
+                            src = &src[c.len_utf8()..];
+                            start += c.len_utf8();
+                        }
+                    }
+                    else {break}
+                    out.push(byte);
+                },
+                Some('c') => {
+                    let mut byte = 0u8;
+                    src = &src[1..];
+                    start += 1;
+                    if let Some(c) = src.chars().next() {
+                        if let Some(d) = c.to_digit(16) {
+                            byte = (d as u8) << 4;
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        else {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: "hexadecimal character in escape code",
+                                found: got.0,
+                                loc: (start, got.1).into(),
+                            });
+                            src = &src[c.len_utf8()..];
+                            start += c.len_utf8();
+                        }
+                    }
+                    else {break}
+                    if let Some(c) = src.chars().next() {
+                        if let Some(d) = c.to_digit(16) {
+                            byte |= d as u8;
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        else {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: "hexadecimal character in escape code",
+                                found: got.0,
+                                loc: (start, got.1).into(),
+                            });
+                            src = &src[c.len_utf8()..];
+                            start += c.len_utf8();
+                        }
+                    }
+                    else {break}
+                    out.extend(utils::CharBytesIterator::from_u8(byte));
+                },
+                Some('u') => {
+                    let mut cp = 0u32;
+                    src = &src[1..];
+                    start += 1;
+                    let open = start;
+                    if !src.starts_with('{') {
+                        let got = got(src);
+                        errs.push(CobaltError::ExpectedFound {
+                            ex: r#""{" for unicode escape"#,
+                            found: got.0,
+                            loc: (start, got.1).into()
+                        });
+                        continue
+                    }
+                    src = &src[1..];
+                    start += 1;
+                    let mut happy = false;
+                    let mut rem = false;
+                    let mut chars = 0;
+                    while let Some(c) = src.chars().next() {
+                        if let Some(d) = c.to_digit(16) {
+                            if chars < 6 {
+                                cp <<= 4;
+                                cp |= d;
+                                src = &src[1..];
+                                start += 1;
+                            }
+                            else {
+                                errs.push(CobaltError::UnicodeSequenceTooLong {loc: (open + 1, 7).into()});
+                                break
+                            }
+                        }
+                        else if c == '}' {
+                            happy = true;
+                            rem = true;
+                            src = &src[1..];
+                            start += 1;
+                            break
+                        }
+                        else {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: "hexadecimal character in escape code",
+                                found: got.0,
+                                loc: (start, got.1).into(),
+                            });
+                            src = &src[c.len_utf8()..];
+                            start += c.len_utf8();
+                            rem = true;
+                            break
+                        }
+                        chars += 1;
+                    }
+                    if !rem {break}
+                    if !happy {
+                        let got = got(src);
+                        errs.push(CobaltError::UnmatchedDelimiter {
+                            expected: '}',
+                            found: got.0,
+                            start: (open, 1).into(),
+                            end: (start, got.1).into()
+                        });
+                    }
+                    out.extend(utils::CharBytesIterator::from_u32(cp).unwrap_or_else(|| {
+                        errs.push(CobaltError::InvalidCodepoint {
+                            val: cp,
+                            loc: ((open + 1)..(start - 1)).into()
+                        });
+                        utils::CharBytesIterator::from_u8(0)
+                    }));
+                },
+                Some(c) => {
+                    out.extend(utils::CharBytesIterator::from_char(c));
+                    src = &src[c.len_utf8()..];
+                    start += c.len_utf8();
+                }
+            }
+        }
+        if !happy {
+            errs.push(CobaltError::UnmatchedDelimiter {
+                expected: '"',
+                found: ParserFound::Eof,
+                start: (begin, 1).into(),
+                end: start.into()
+            });
+        }
+        let end = start;
+        process(ignored, &mut src, &mut start, &mut errs);
+        let suf = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map(|(suf, loc)| (suf.to_string(), loc));
+        Some((Box::new(StringLiteralAST::new((begin..end).into(), out, suf)), (begin..start).into(), src, errs))
+    }
+    fn chrlit<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        if !src.starts_with('\'') {return None}
+        let begin = start;
+        src = &src[1..];
+        start += 1;
+        let mut errs = vec![];
+        let ch = 'main: {
+            if src.starts_with('\\') {
+                src = &src[1..];
+                start += 1;
+                match src.chars().next() {
+                    None => {
+                        errs.push(CobaltError::UnmatchedDelimiter {
+                            expected: '\'',
+                            found: ParserFound::Eof,
+                            start: (begin, 1).into(),
+                            end: start.into()
+                        });
+                        0u32
+                    },
+                    Some(c @ ('n' | 'r' | 't' | 'a' | '0')) => {
+                        src = &src[1..];
+                        start += 1;
+                        (match c {
+                            'n' => b'\n',
+                            'r' => b'\r',
+                            't' => b'\t',
+                            '0' => b'\0',
+                            'a' => 0x07,
+                            'e' => 0x1b,
+                            _ => unreachable!()
+                        }) as u32
+                    },
+                    Some('c') => {
+                        let mut byte = 0u32;
+                        src = &src[1..];
+                        start += 1;
+                        if let Some(c) = src.chars().next() {
+                            if let Some(d) = c.to_digit(16) {
+                                byte = d << 4;
+                                src = &src[1..];
+                                start += 1;
+                            }
+                            else {
+                                let got = got(src);
+                                errs.push(CobaltError::ExpectedFound {
+                                    ex: "hexadecimal character in escape code",
+                                    found: got.0,
+                                    loc: (start, got.1).into(),
+                                });
+                                src = &src[c.len_utf8()..];
+                                start += c.len_utf8();
+                            }
+                        }
+                        else {break 'main 0}
+                        if let Some(c) = src.chars().next() {
+                            if let Some(d) = c.to_digit(16) {
+                                byte |= d;
+                                src = &src[1..];
+                                start += 1;
+                            }
+                            else {
+                                let got = got(src);
+                                errs.push(CobaltError::ExpectedFound {
+                                    ex: "hexadecimal character in escape code",
+                                    found: got.0,
+                                    loc: (start, got.1).into(),
+                                });
+                                src = &src[c.len_utf8()..];
+                                start += c.len_utf8();
+                            }
+                        }
+                        else {break 'main byte as u32}
+                        byte as u32
+                    },
+                    Some('u') => {
+                        let mut cp = 0u32;
+                        src = &src[1..];
+                        start += 1;
+                        let open = start;
+                        if !src.starts_with('{') {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: r#""{" for unicode escape"#,
+                                found: got.0,
+                                loc: (start, got.1).into()
+                            });
+                            break 'main 0
+                        }
+                        src = &src[1..];
+                        start += 1;
+                        let mut happy = false;
+                        let mut rem = false;
+                        let mut chars = 0;
+                        while let Some(c) = src.chars().next() {
+                            if let Some(d) = c.to_digit(16) {
+                                if chars < 6 {
+                                    cp <<= 4;
+                                    cp |= d;
+                                    src = &src[1..];
+                                    start += 1;
+                                }
+                                else {
+                                    errs.push(CobaltError::UnicodeSequenceTooLong {loc: (open + 1, 7).into()});
+                                    break
+                                }
+                            }
+                            else if c == '}' {
+                                happy = true;
+                                rem = true;
+                                src = &src[1..];
+                                start += 1;
+                                break
+                            }
+                            else {
+                                let got = got(src);
+                                errs.push(CobaltError::ExpectedFound {
+                                    ex: "hexadecimal character in escape code",
+                                    found: got.0,
+                                    loc: (start, got.1).into(),
+                                });
+                                src = &src[c.len_utf8()..];
+                                start += c.len_utf8();
+                                rem = true;
+                                break
+                            }
+                            chars += 1;
+                        }
+                        if !rem {break 'main cp}
+                        if !happy {
+                            let got = got(src);
+                            errs.push(CobaltError::UnmatchedDelimiter {
+                                expected: '}',
+                                found: got.0,
+                                start: (open, 1).into(),
+                                end: (start, got.1).into()
+                            });
+                        }
+                        if cp < 0x200000 {cp} else {
+                            errs.push(CobaltError::InvalidCodepoint {
+                                val: cp,
+                                loc: ((open + 1)..(start - 1)).into()
+                            });
+                            0
+                        }
+                    },
+                    Some(c) => c as u32
+                }
+            }
+            else if src.starts_with('\'') {b'\'' as u32}
+            else {
+                src.chars().next().map_or(0, |c| {
+                    src = &src[c.len_utf8()..];
+                    start += c.len_utf8();
+                    c as u32
+                })
+            }
+        };
+        if src.starts_with('\'') {
+            src = &src[1..];
+            start += 1;
+        }
+        else {
+            let got = got(src);
+            errs.push(CobaltError::UnmatchedDelimiter {
+                expected: '\'',
+                found: got.0,
+                start: (begin, 1).into(),
+                end: (start, got.1).into()
+            });
+        }
+        let end = start;
+        process(ignored, &mut src, &mut start, &mut errs);
+        let suf = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map(|(suf, loc)| (suf.to_string(), loc));
+        Some((Box::new(CharLiteralAST::new((begin..end).into(), ch, suf)), (begin..start).into(), src, errs))
+    }
     fn parens<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
@@ -732,8 +1119,11 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     None // the None is unneccessary, but it makes the code prettier
         .or_else(|| parens(src, start))
         .or_else(|| blocks(src, start))
+        .or_else(|| strlit(src, start))
+        .or_else(|| chrlit(src, start))
+        .or_else(||    num(src, start))
         .or_else(|| varget(src, start))
-        .or_else(|| num(src, start))
+    // the order for these isn't hugely important, but it should (in theory) put the slower calls later
 }
 fn expr<'a>(_assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     atom(src, start) // TODO: finish expression parsing

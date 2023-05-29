@@ -1032,9 +1032,25 @@ impl AST for IntrinsicAST {
                         if is_str(&a0.data_type) && is_str(&a1.data_type) {
                             match (a0, a1) {
                                 (
-                                    Value {inter_val: Some(InterData::Str(c)), ..},
-                                    Value {inter_val: Some(InterData::Str(b)), ..}
-                                ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))), errs),
+                                    Value {inter_val: Some(InterData::Array(c)), ..},
+                                    Value {inter_val: Some(InterData::Array(b)), ..}
+                                ) => {
+                                    let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: self.args[0].loc()
+                                        });
+                                        String::new()
+                                    });
+                                    let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: self.args[1].loc()
+                                        });
+                                        String::new()
+                                    });
+                                    (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))), errs)
+                                },
                                 (a0, a1) => {
                                     errs.push(CobaltError::InvalidInlineAsm2 {
                                         loc1: self.args[0].loc(), type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
@@ -1060,9 +1076,25 @@ impl AST for IntrinsicAST {
                             if is_str(&a1.data_type) && is_str(&a2.data_type) {
                                 match (a1, a2) {
                                     (
-                                        Value {inter_val: Some(InterData::Str(c)), ..},
-                                        Value {inter_val: Some(InterData::Str(b)), ..}
-                                    ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)), errs),
+                                        Value {inter_val: Some(InterData::Array(c)), ..},
+                                        Value {inter_val: Some(InterData::Array(b)), ..}
+                                    ) => {
+                                        let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: self.args[1].loc()
+                                            });
+                                            String::new()
+                                        });
+                                        let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: self.args[2].loc()
+                                            });
+                                            String::new()
+                                        });
+                                        (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)), errs)
+                                    },
                                     (a1, a2) => {
                                         errs.push(CobaltError::InvalidInlineAsm3 {
                                             loc1: self.args[0].loc(), type1: "type".to_string(), const1: true,
@@ -1198,7 +1230,8 @@ impl AST for IntrinsicAST {
 }
 fn is_str(ty: &Type) -> bool {
     match ty {
-        Type::Pointer(b, _) => **b == Type::Int(8, false),
+        Type::Pointer(b, _) => **b == Type::Int(8, true),
+        Type::Array(b, _) => **b == Type::Int(8, true),
         Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, false)} else {false}
         _ => false
     }

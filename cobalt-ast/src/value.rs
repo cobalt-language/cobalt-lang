@@ -18,7 +18,6 @@ pub enum InterData<'ctx> {
     Null,
     Int(i128),
     Float(f64),
-    Str(String),
     Array(Vec<InterData<'ctx>>),
     Function(FnData<'ctx>),
     InlineAsm(String, String),
@@ -31,11 +30,6 @@ impl<'ctx> InterData<'ctx> {
             InterData::Null => out.write_all(&[1]),
             InterData::Int(v) => out.write_all(&[2]).and_then(|_| out.write_all(&v.to_be_bytes())),
             InterData::Float(v) => out.write_all(&[3]).and_then(|_| out.write_all(&v.to_be_bytes())),
-            InterData::Str(v) => {
-                out.write_all(&[4])?;
-                out.write_all(v.as_bytes())?;
-                out.write_all(&[0])
-            },
             InterData::Array(v) => {
                 out.write_all(&[5])?;
                 out.write_all(&(v.len() as u32).to_be_bytes())?; // length
@@ -98,11 +92,6 @@ impl<'ctx> InterData<'ctx> {
                 let mut bytes = [0; 8];
                 buf.read_exact(&mut bytes)?;
                 Some(InterData::Float(f64::from_be_bytes(bytes)))
-            },
-            4 => {
-                let mut vec = Vec::new();
-                buf.read_until(0, &mut vec)?;
-                Some(InterData::Str(String::from_utf8(vec).expect("Interpreted strings should be valid UTF-8")))
             },
             5 => {
                 let mut bytes = [0; 4];
