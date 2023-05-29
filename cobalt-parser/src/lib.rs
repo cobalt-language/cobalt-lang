@@ -7,6 +7,19 @@ mod utils;
 /// General parsing return, return a value, the span it covers, the remaining string, and any
 /// errors that were encountered
 type ParserReturn<'a, T> = Option<(T, SourceSpan, &'a str, Vec<CobaltError>)>;
+/// Get what comes at the start of a string.
+/// If it is a valid identifier, return the full identifier, otherwise return the character
+fn got(src: &str) -> (ParserFound, usize) {
+    let mut it = src.char_indices();
+    if let Some((_, c)) = it.next() {
+        if is_xid_start(c) {
+            let idx = it.skip_while(|x| is_xid_continue(x.1)).next().map_or(src.len(), |x| x.0);
+            (ParserFound::Str((&src[..idx]).into()), idx)
+        }
+        else {(ParserFound::Char(c), c.len_utf8())}
+    }
+    else {(ParserFound::Eof, 0)}
+}
 
 /// Parse an identifier.
 fn ident<'a>(allow_empty: bool, src: &'a str, start: usize) -> ParserReturn<'a, &'a str> {
@@ -71,10 +84,12 @@ fn ignored<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, ()> {
     }
     good.then_some(((), (start..current).into(), src, errs))
 }
+/// Used for parsing a keyword, followed by some whitespace
 fn start_match<'a>(kw: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, ()> {
     let kwl = kw.len();
     src.starts_with(kw).then(move || ignored(&src[kwl..], start + kw.len())).flatten().map(move |(found, span, rem, errs)| (found, (span.offset() - kwl, span.len() + kwl).into(), rem, errs))
 }
+/// A local identifier is just an ident
 fn local_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedName> {
     let mut errs = vec![];
     let old = start;
@@ -92,6 +107,7 @@ fn local_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedNa
     }
     Some((DottedName::new(name, false), (old..start).into(), src, errs))
 }
+/// A global identifier is an optional '.', and then a series of idents separated by '.'s
 fn global_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedName> {
     let old = start;
     let global = if src.starts_with('.') {src = &src[1..]; start += 1; true} else {false};
@@ -130,6 +146,7 @@ fn global_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedN
     }
     Some((DottedName::new(name, global), (old..start).into(), src, errs))
 }
+/// Take a parser function and update `src`, `start`, and `errs`
 fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, src: &mut &'a str, start: &mut usize, errs: &mut Vec<CobaltError>) -> Option<(T, SourceSpan)> {
     let (found, span, rem, mut es) = parser(*src, *start)?;
     *start += span.len();
@@ -137,6 +154,7 @@ fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, sr
     errs.append(&mut es);
     Some((found, span))
 }
+/// Parse an annotation
 fn annotation<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, (&'a str, Option<&'a str>, SourceSpan)> {
     src.starts_with('@').then_some(())?;
     src = &src[1..];
@@ -179,8 +197,10 @@ fn annotation<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, (&'a str, 
     process(ignored, &mut src, &mut end.clone(), &mut errs);
     Some(((name, arg, (start..end).into()), (start..end).into(), &src, errs))
 }
+/// Location of the declarations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum DeclLoc {Local, Method, Global}
+/// Parse declarations: `let`, `mut`, `const`, `type`, and `fn`
 fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, SourceSpan)>>, mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     let id_parser = if loc == DeclLoc::Global {global_id} else {local_id};
     let mut errs = vec![];
@@ -472,17 +492,8 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
         _ => None
     }
 }
-fn got(src: &str) -> (ParserFound, usize) {
-    let mut it = src.char_indices();
-    if let Some((_, c)) = it.next() {
-        if is_xid_start(c) {
-            let idx = it.skip_while(|x| is_xid_continue(x.1)).next().map_or(src.len(), |x| x.0);
-            (ParserFound::Str((&src[..idx]).into()), idx)
-        }
-        else {(ParserFound::Char(c), c.len_utf8())}
-    }
-    else {(ParserFound::Eof, 0)}
-}
+/// Parse a statement
+/// A statement is a local declaration, import, or expression
 fn stmt<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     let mut errs = vec![];
     process(ignored, &mut src, &mut start, &mut errs);
@@ -494,6 +505,8 @@ fn stmt<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>
         .or_else(move || declarations(DeclLoc::Local, Some(anns), src, start))
         .or_else(|| expr(true, ";", src_, start_))
 }
+/// Parse an atom
+/// An atom cannot be subdivided
 fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     fn varget<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let global = if src.starts_with('.') {
@@ -1070,9 +1083,9 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         src = &src[1..];
         start += 1;
         process(ignored, &mut src, &mut start, &mut errs);
-        let ast = process(|src, start| expr(true, ")", src, start), &mut src, &mut start, &mut errs)?.0;
+        let ast = process(|src, start| expr(true, ")", src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
         process(ignored, &mut src, &mut start, &mut errs);
-        if src.ends_with(')') {
+        if src.starts_with(')') {
             src = &src[1..];
             start += 1;
         }
@@ -1100,8 +1113,11 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
             stmts.push(val);
             process(ignored, &mut src, &mut start, &mut errs);
             if src.as_bytes().first() != Some(&b';') {break}
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
         }
-        if src.ends_with('}') {
+        if src.starts_with('}') {
             src = &src[1..];
             start += 1;
         }
@@ -1125,9 +1141,20 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         .or_else(|| varget(src, start))
     // the order for these isn't hugely important, but it should (in theory) put the slower calls later
 }
+/// Parse an expression
+/// Depending on the location, assignments may or may not be allowed
+/// Also specify a recovery string, if any of the characters in it are found, stop parsing
 fn expr<'a>(_assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     atom(src, start) // TODO: finish expression parsing
 }
+/// Parse a CompoundDottedNameSegment (CDNS)
+/// A CDNS can be:
+/// - an identifier
+///   - import x;
+/// - a glob (\*)
+///   - import *;
+/// - a brace-delimited, comma-separated list of CDNS-lists
+///   - import {a, b};
 fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedNameSegment> {
     use CompoundDottedNameSegment::*;
     if let Some((found, span, rem, errs)) = ident(false, src, start) {return Some((Identifier(found.to_string(), span), span, rem, errs))}
@@ -1228,6 +1255,9 @@ fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDott
         _ => None
     }
 }
+/// Parse a CompoundDottedName (CDN)
+/// A CDN is a CDNS-list with an optional leading period to specify an import from absolute scope
+/// A CDNS-list is a period-separated sequence of CDNSs
 fn cdn<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedName> {
     let old = start;
     let global = if src.starts_with('.') {src = &src[1..]; start += 1; true} else {false};
@@ -1267,6 +1297,8 @@ fn cdn<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDotte
     }
     Some((CompoundDottedName::new(name, global), (old..start).into(), src, errs))
 }
+/// Parse an import statement
+/// An import has the form `import <CDN>`
 fn import<'a>(anns: &[(&'a str, Option<&'a str>, SourceSpan)], src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     let old = start;
     start_match("import", src, start).and_then(|(_, start_span, mut src, mut errs)| {
@@ -1276,6 +1308,11 @@ fn import<'a>(anns: &[(&'a str, Option<&'a str>, SourceSpan)], src: &'a str, mut
         Some((Box::new(ImportAST::new((old, 6).into(), name, anns)) as Box<dyn AST>, (old..start).into(), src, errs))
     })
 }
+/// Parse a single top-level item
+/// That could be:
+/// - a global declaration
+/// - a module
+/// - an import
 fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     let old = start;
     let mut errs = vec![];
@@ -1374,6 +1411,7 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
         }
     }
 }
+/// Parse a Vec of top-level items
 fn top_levels<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Vec<Box<dyn AST>>> {
     let mut errs = vec![];
     let old = start;
@@ -1384,6 +1422,8 @@ fn top_levels<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Vec<Bo
         Some(Some(ast))
     }).filter_map(|x| x).collect(), (old..start).into(), src, errs))
 }
+/// Top-level parser entry point
+/// Delegates to `top_levels`, recovering if unexpected characters are found
 pub fn parse_tl(mut src: &str) -> (TopLevelAST, Vec<CobaltError>) {
     let mut asts = vec![];
     let mut errs = vec![];
