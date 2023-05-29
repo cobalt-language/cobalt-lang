@@ -1144,17 +1144,283 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
 /// Parse an expression
 /// Depending on the location, assignments may or may not be allowed
 /// Also specify a recovery string, if any of the characters in it are found, stop parsing
-fn expr<'a>(_assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
-    atom(src, start) // TODO: finish expression parsing
+fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    // TODO: Macros would be more DRY, maybe switch to them?
+    fn mul_div<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(atom, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with(['*', '/', '%']) {
+            let loc = start;
+            let op = src[..1].to_string();
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(atom, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, op, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, op, rhs)| Box::new(BinOpAST::new((loc, 1).into(), op, lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn add_sub<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(mul_div, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with(['+', '-']) {
+            let loc = start;
+            let add = src.starts_with('+');
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(mul_div, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, add, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, add, rhs)| Box::new(BinOpAST::new((loc, 1).into(), if add {"+"} else {"-"}.to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn shift<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(add_sub, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with("<<") || src.starts_with(">>") {
+            let loc = start;
+            let ls = src.starts_with("<<");
+            src = &src[2..];
+            start += 2;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(add_sub, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, ls, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, ls, rhs)| Box::new(BinOpAST::new((loc, 2).into(), if ls {"<<"} else {">>"}.to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn cmp<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(shift, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with('>') || src.starts_with('<') {
+            let loc = start;
+            let gt = src.starts_with('>');
+            src = &src[1..];
+            start += 1;
+            let eq = src.starts_with('=');
+            if eq {
+                src = &src[1..];
+                start += 1;
+            }
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(shift, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, gt, eq, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, gt, eq, rhs)| Box::new(BinOpAST::new((loc, 1 + eq as usize).into(), format!("{}{}", if gt {">"} else {"<"}, if eq {"="} else {""}), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn eq<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(cmp, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with("==") || src.starts_with("!=") {
+            let loc = start;
+            let inv = src.starts_with('!');
+            src = &src[2..];
+            start += 2;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(cmp, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, inv, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, inv, rhs)| Box::new(BinOpAST::new((loc, 2).into(), if inv {"!="} else {"=="}.to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn bit_and<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(eq, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with('&') {
+            let loc = start;
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(eq, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "&".to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn bit_xor<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(bit_and, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with('^') {
+            let loc = start;
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(bit_and, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "^".to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn bit_or<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(bit_xor, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with('|') {
+            let loc = start;
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(bit_xor, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "|".to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn casts<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(bit_or, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with(':') {
+            let loc = start;
+            let bit = src.as_bytes().get(1) == Some(&b'?');
+            src = &src[(1 + bit as usize)..];
+            start += 1 + bit as usize;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(bit_or, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, bit, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, bit, rhs)|
+            if bit {Box::new(BitCastAST::new((loc, 2).into(), lhs, rhs)) as _}
+            else {Box::new(CastAST::new((loc, 1).into(), lhs, rhs)) as _}
+        );
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn log_and<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(casts, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with("&?") {
+            let loc = start;
+            src = &src[2..];
+            start += 2;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(casts, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 2).into(), "&?".to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn log_or<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let first = process(log_and, &mut src, &mut start, &mut errs)?.0;
+        let mut rest = vec![];
+        process(ignored, &mut src, &mut start, &mut errs);
+        while src.starts_with("|?") {
+            let loc = start;
+            src = &src[2..];
+            start += 2;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(log_and, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            rest.push((loc, rhs));
+        }
+        let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 2).into(), "|?".to_string(), lhs, rhs)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    fn assignments<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        // rtl associativity is pain
+        // it's not as simple as just going through backwards, because we don't know the end
+        // no, we have to take the AST node, along with optional operator data, with the invariant
+        // that only the last element in `vals` has None in the second value, and that all others
+        // have operator data
+        let begin = start;
+        let mut errs = vec![];
+        let mut vals = vec![(process(log_or, &mut src, &mut start, &mut errs)?.0, None)];
+        process(ignored, &mut src, &mut start, &mut errs);
+        // match one of "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="
+        while let Some(len) = (src.starts_with('=')).then_some(1).or_else(|| (src.as_bytes().get(1) == Some(&b'=')).then(||
+            src.starts_with(['+', '-', '*', '/', '%', '&', '|', '^']).then_some(2).or_else(||
+            (src.starts_with("<<") || src.starts_with(">>")).then_some(3))
+        ).flatten()) {
+            let loc = start;
+            let op = src[..len].to_string();
+            vals.last_mut().unwrap().1 = Some(((loc, len), op));
+            src = &src[len..];
+            start += len;
+            process(ignored, &mut src, &mut start, &mut errs);
+            let rhs = process(log_and, &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            vals.push((rhs, None));
+        }
+        let last = vals.pop().unwrap().0;
+        let ast = vals.into_iter().map(|(a, d)| (a, d.unwrap())).rfold(last, |rhs, (lhs, (loc, op))| Box::new(BinOpAST::new(loc.into(), op, lhs, rhs)));
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    (if assigns {assignments} else {log_or})(src, start)
 }
 /// Parse a CompoundDottedNameSegment (CDNS)
 /// A CDNS can be:
 /// - an identifier
-///   - import x;
+///   - `import x`;
 /// - a glob (\*)
-///   - import *;
+///   - `import *`;
 /// - a brace-delimited, comma-separated list of CDNS-lists
-///   - import {a, b};
+///   - `import {a, b}`;
 fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedNameSegment> {
     use CompoundDottedNameSegment::*;
     if let Some((found, span, rem, errs)) = ident(false, src, start) {return Some((Identifier(found.to_string(), span), span, rem, errs))}

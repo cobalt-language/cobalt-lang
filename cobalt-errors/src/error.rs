@@ -68,6 +68,11 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan
     },
+    #[error("expected an expression")]
+    ExpectedExpr {
+        #[label]
+        loc: SourceSpan
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
