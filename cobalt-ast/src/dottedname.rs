@@ -1,16 +1,16 @@
-use crate::Location;
+use crate::{SourceSpan, unreachable_span};
 use std::fmt::*;
 use std::io::{self, Read, Write, BufRead};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DottedName {
-    pub ids: Vec<(String, Location)>,
+    pub ids: Vec<(String, SourceSpan)>,
     pub global: bool
 }
 impl DottedName {
-    pub fn new(ids: Vec<(String, Location)>, global: bool) -> Self {DottedName {ids, global}}
-    pub fn absolute(ids: Vec<(String, Location)>) -> Self {Self::new(ids, true)}
-    pub fn relative(ids: Vec<(String, Location)>) -> Self {Self::new(ids, false)}
-    pub fn local(id: (String, Location)) -> Self {Self::new(vec![id], false)}
+    pub fn new(ids: Vec<(String, SourceSpan)>, global: bool) -> Self {DottedName {ids, global}}
+    pub fn absolute(ids: Vec<(String, SourceSpan)>) -> Self {Self::new(ids, true)}
+    pub fn relative(ids: Vec<(String, SourceSpan)>) -> Self {Self::new(ids, false)}
+    pub fn local(id: (String, SourceSpan)) -> Self {Self::new(vec![id], false)}
     pub fn start(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[..(len + 1)].to_vec()}}
     pub fn end(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[len..].to_vec()}}
 }
@@ -28,8 +28,8 @@ impl Display for DottedName {
 }
 #[derive(Clone, Debug)]
 pub enum CompoundDottedNameSegment {
-    Identifier(String, Location),
-    Glob(Location),
+    Identifier(String, SourceSpan),
+    Glob(SourceSpan),
     Group(Vec<Vec<CompoundDottedNameSegment>>)
 }
 impl CompoundDottedNameSegment {
@@ -69,9 +69,9 @@ impl CompoundDottedNameSegment {
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
                 if name.last() == Some(&0) {name.pop();}
-                Ok(Some(Identifier(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), Default::default())))
+                Ok(Some(Identifier(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), unreachable_span())))
             },
-            2 => Ok(Some(Glob(Default::default()))),
+            2 => Ok(Some(Glob(unreachable_span()))),
             3 => {
                 let mut out = vec![];
                 loop {

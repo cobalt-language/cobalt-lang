@@ -39,7 +39,7 @@ impl std::ops::Add for SizeType {
 }
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Type {
-    IntLiteral, Char,
+    IntLiteral, Intrinsic(String),
     Int(u16, bool),
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
@@ -55,7 +55,7 @@ impl Display for Type {
             Int(1, _) => write!(f, "bool"),
             Int(size, false) => write!(f, "i{size}"),
             Int(size, true) => write!(f, "u{size}"),
-            Char => write!(f, "char"),
+            Intrinsic(s) => write!(f, "@{s}"),
             Float16 => write!(f, "f16"),
             Float32 => write!(f, "f32"),
             Float64 => write!(f, "f64"),
@@ -116,7 +116,6 @@ impl Type {
         match self {
             IntLiteral => Static(8),
             Int(size, _) => Static(((size + 7) / 8) as u32),
-            Char => Static(4),
             Float16 => Static(2),
             Float32 => Static(4),
             Float64 => Static(8),
@@ -124,7 +123,7 @@ impl Type {
             Null => Static(0),
             Array(b, Some(s)) => b.size(ctx).map_static(|x| x * s),
             Array(_, None) => Dynamic,
-            Function(..) | Module | TypeData | InlineAsm(_) | Error => Meta,
+            Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => Meta,
             BoundMethod(..) => Static(ctx.flags.word_size as u32 * 2),
             Pointer(b, _) | Reference(b, _) => match **b {
                 Type::Array(_, None) => Static(ctx.flags.word_size as u32 * 2),
@@ -151,13 +150,12 @@ impl Type {
                 17..=32 => 4,
                 33.. => 8
             },
-            Char => 4,
             Float16 => 2,
             Float32 => 4,
             Float64 | Float128 => 8,
             Null => 1,
             Array(b, _) => b.align(ctx),
-            Function(..) | Module | TypeData | InlineAsm(_) | Error => 0,
+            Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => 0,
             Pointer(..) | Reference(..) | BoundMethod(..) => ctx.flags.word_size,
             Borrow(b) => b.align(ctx),
             Tuple(v) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
@@ -168,12 +166,11 @@ impl Type {
         match self {
             IntLiteral => Some(IntType(ctx.context.i64_type())),
             Int(size, _) => Some(IntType(ctx.context.custom_width_int_type(*size as u32))),
-            Char => Some(IntType(ctx.context.i32_type())),
             Float16 => Some(FloatType(ctx.context.f16_type())),
             Float32 => Some(FloatType(ctx.context.f32_type())),
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(..) | Module | TypeData | InlineAsm(_) | Error => None,
+            Null | Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => None,
             BoundMethod(base, ret, params, _) => Some(ctx.context.struct_type(&[Type::Pointer(base.clone(), false).llvm_type(ctx)?, Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone())), false).llvm_type(ctx)?], false).into()),
             Array(_, Some(_)) => None,
             Array(_, None) => None,
@@ -198,7 +195,7 @@ impl Type {
     }
     pub fn register<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
+            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
             Borrow(b) => b.register(ctx),
             Tuple(v) => v.iter().all(|x| x.register(ctx)),
             Nominal(n) => ctx.nominals.borrow()[n].0.register(ctx),
@@ -207,7 +204,7 @@ impl Type {
     }
     pub fn copyable<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Char | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) | BoundMethod(..) => true,
+            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) | BoundMethod(..) => true,
             Tuple(v) => v.iter().all(|x| x.copyable(ctx)),
             Nominal(n) => ctx.nominals.borrow()[n].0.copyable(ctx),
             _ => false
@@ -256,7 +253,11 @@ impl Type {
                 if *u {v = -v;}
                 out.write_all(&v.to_be_bytes())
             },
-            Char => out.write_all(&[2]),
+            Intrinsic(s) => {
+                out.write_all(&[2])?;
+                out.write_all(s.as_bytes())?;
+                out.write_all(&[0])
+            },
             Float16 => out.write_all(&[3]),
             Float32 => out.write_all(&[4]),
             Float64 => out.write_all(&[5]),
@@ -344,7 +345,12 @@ impl Type {
                 let v = i16::from_be_bytes(bytes);
                 Type::Int(v.unsigned_abs(), v < 0)
             },
-            2 => Type::Char,
+            2 => {
+                let mut vec = vec![];
+                buf.read_until(0, &mut vec)?;
+                if vec.last() == Some(&0) {vec.pop();}
+                Type::Intrinsic(String::from_utf8(vec).expect("intrinsic name should be valid UTF-8"))
+            },
             3 => Type::Float16,
             4 => Type::Float32,
             5 => Type::Float64,

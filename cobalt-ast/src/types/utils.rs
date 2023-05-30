@@ -1,5 +1,6 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
+use std::collections::VecDeque;
 use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
@@ -228,12 +229,13 @@ pub fn attr_type<'ctx>(target: Type, attr: &str, ctx: &CompCtx<'ctx>) -> Type {
         _ => Type::Error
     }
 }
-pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mut rhs, rloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let ln = lhs.data_type.to_string();
-    let rn = rhs.data_type.to_string();
-    let err = Diagnostic::error(loc.clone(), 310, Some(format!("binary operator {op} is not defined for values of types {ln} and {rn}")))
-        .note(lloc.clone(), format!("left value is of type {ln}"))
-        .note(rloc.clone(), format!("right value is of type {rn}"));
+pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan), (mut rhs, rloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::BinOpNotDefined {
+        lhs: lhs.data_type.to_string(),
+        rhs: rhs.data_type.to_string(),
+        op: op.to_string(),
+        lloc, rloc, oloc: loc
+    };
     match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Borrow(l), r) => {
             lhs.data_type = *l;
@@ -403,7 +405,7 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
                     return Ok(lhs);
                 }
                 match ls.cmp(&rs) {
-                    Ordering::Less => return Err(err.info(format!("integer cannot be shortened from {rs} bits to {ls}"))),
+                    Ordering::Less => return Err(err),
                     Ordering::Greater => if let Some(IntValue(rv)) = rhs.comp_val {
                         let lt = ctx.context.custom_width_int_type(ls as u32);
                         rhs.comp_val = Some(if ru {ctx.builder.build_int_z_extend(rv, lt, "")} else {ctx.builder.build_int_s_extend(rv, lt, "")}.into());
@@ -852,11 +854,11 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
             )),
             _ => Err(err)
         },
-        (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(Default::default(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
+        (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(unreachable_span(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
         (Type::IntLiteral, x @ Type::Int(..)) => {
             let t = x.clone();
             lhs.data_type = Type::IntLiteral;
-            bin_op(loc, (impl_convert(Default::default(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
+            bin_op(loc, (impl_convert(unreachable_span(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
         },
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
@@ -1331,10 +1333,12 @@ pub fn bin_op<'ctx>(loc: Location, (mut lhs, lloc): (Value<'ctx>, Location), (mu
         _ => Err(err)
     }
 }
-pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc.clone(), 310, Some(format!("postfix operator {op} is not defined for value of type {n}")))
-        .note(vloc.clone(), format!("value is of type {n}"));
+pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::PreOpNotDefined {
+        val: val.data_type.to_string(),
+        op: op.to_string(),
+        vloc, oloc: loc
+    };
     match val.data_type {
         Type::Borrow(x) => {
             val.data_type = *x;
@@ -1526,10 +1530,12 @@ pub fn pre_op<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Location), op:
         _ => Err(err)
     }
 }
-pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let n = val.data_type.to_string();
-    let err = Diagnostic::error(loc, 310, Some(format!("prefix operator {op} is not defined for value of type {n}")))
-        .note(vloc, format!("value is of type {n}"));
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::PostOpNotDefined {
+        val: val.data_type.to_string(),
+        op: op.to_string(),
+        vloc, oloc: loc
+    };
     match val.data_type {
         Type::TypeData => match op {
             "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
@@ -1568,10 +1574,12 @@ pub fn post_op<'ctx>(loc: Location, (val, vloc): (Value<'ctx>, Location), op: &s
         _ => Err(err)
     }
 }
-pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc): (Value<'ctx>, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let b = val.data_type.to_string();
-    let s = idx.data_type.to_string();
-    let err = Diagnostic::error(vloc.clone(), 318, Some(format!("cannot subscript value of type {b} with value of type {s}"))).note(vloc.clone(), format!("base type is {b}")).note(iloc.clone(), format!("subscript type is {s}"));
+pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::SubscriptNotDefined {
+        val: val.data_type.to_string(),
+        sub: idx.data_type.to_string(),
+        vloc, sloc: iloc
+    };
     match idx.data_type {
         Type::Borrow(x) => {
             idx.data_type = *x;
@@ -1753,12 +1761,12 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                 },
                 Type::TypeData => match idx.data_type {
                     Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
-                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
                 },
                 Type::Null => match idx.data_type {
                     Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Null), None))),
-                    Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                    Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
                 },
                 Type::Tuple(v) => {
@@ -1770,7 +1778,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
                         }
                         match idx.data_type {
                             Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), None))),
-                            Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), Some(v as u32))))} else {Err(Diagnostic::error(iloc, 324, None))},
+                            Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Tuple(vec)), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                             _ => Err(err)
                         }
                     }
@@ -1781,12 +1789,14 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, Location), (mut idx, iloc)
         }
     }
 }
-pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<Location>), (target, tloc): (Type, Option<Location>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let li = format!("source type is {}", val.data_type);
-    let ri = format!("target type is {target}");
-    let mut err = Diagnostic::error(loc.clone(), 311, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
-    if let Some(l) = vloc.clone() {err.add_note(l, li)} else {err.add_info(li)};
-    if let Some(r) = tloc.clone() {err.add_note(r, ri)} else {err.add_info(ri)};
+pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::InvalidConversion {
+        is_expl: false,
+        val: val.data_type.to_string(),
+        ty: target.to_string(),
+        vloc, tloc,
+        oloc: loc
+    };
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -1982,12 +1992,14 @@ pub fn impl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
         }
     }
 }
-pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<Location>), (target, tloc): (Type, Option<Location>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let li = format!("source type is {}", val.data_type);
-    let ri = format!("target type is {target}");
-    let mut err = Diagnostic::error(loc.clone(), 312, Some(format!("cannot convert value of type {} to {target}", val.data_type)));
-    if let Some(l) = vloc.clone() {err.add_note(l, li)} else {err.add_info(li)};
-    if let Some(r) = tloc.clone() {err.add_note(r, ri)} else {err.add_info(ri)};
+pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::InvalidConversion {
+        is_expl: true,
+        val: val.data_type.to_string(),
+        ty: target.to_string(),
+        vloc, tloc,
+        oloc: loc
+    };
     if val.data_type == target {Ok(val)}
     else if target == Type::Null {Ok(Value::null())}
     else if target == Type::Error {Ok(Value::error())}
@@ -2245,8 +2257,12 @@ pub fn expl_convert<'ctx>(loc: Location, (mut val, vloc): (Value<'ctx>, Option<L
         }
     }
 }
-pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, Location), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
-    let err = Diagnostic::error((vloc.0, vloc.1.start..iloc.1.end), 328, Some(format!("no attribute {id} on value of type {}", val.data_type))).note(vloc.clone(), format!("object type is {}", val.data_type)).note(iloc.clone(), format!("attribute is {id}"));
+pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::AttrNotDefined {
+        val: val.data_type.to_string(),
+        attr: id.to_string(),
+        vloc, aloc: iloc
+    };
     match val.data_type.clone() {
         Type::Borrow(b) => {
             val.data_type = *b;
@@ -2266,7 +2282,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                             }
                             Ok(v)
                         },
-                        MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                        MethodType::Static => Err(err),
                         MethodType::Getter => types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
                     }
                 } else {Err(err)})
@@ -2295,7 +2311,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, Location), (id, iloc): (&str, L
                         }
                         Ok(v)
                     },
-                    MethodType::Static => Err(err.info(format!("{id} is a static method"))),
+                    MethodType::Static => Err(err),
                     MethodType::Getter => {
                         val.comp_val = val.addr(ctx).map(From::from);
                         val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
@@ -2341,25 +2357,19 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
         _ => None
     }
 }
-pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Location>, mut args: Vec<(Value<'ctx>, Location)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, Diagnostic> {
+pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<SourceSpan>, mut args: Vec<(Value<'ctx>, SourceSpan)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Borrow(b) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc.clone(), 313, Some({
-                        let mut out = "target type is (".to_string();
-                        for t in &v {out += &format!("{t}, ");}
-                        out.truncate(out.len() - 2);
-                        out += ")^";
-                        out
-                    })).info({
-                        let mut out = "argument types are (".to_string();
-                        args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
-                        out.truncate(out.len() - 2);
-                        out.push(')');
-                        out
-                    });
+                    let err = CobaltError::CannotCallWithArgs {
+                        val: format!("({})^", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")),
+                        loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
+                        args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                        aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
+                        nargs: vec![]
+                    };
                     match args.as_slice() {
                         [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                             if let Some(InterData::Int(idx)) = inter_val {
@@ -2371,9 +2381,12 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                         Type::Borrow(Box::new(t.clone()))
                                     ))
                                 }
-                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(CobaltError::TupleIdxOutOfBounds {
+                                    idx, len: v.len(),
+                                    tloc: loc, iloc: *aloc
+                                })}
                             }
-                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                            else {Err(CobaltError::NotCompileTime {loc: *aloc})}
                         },
                         _ => Err(err)
                     }
@@ -2387,21 +2400,13 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
         Type::Reference(b, m) => {
             match *b {
                 Type::Tuple(v) => {
-                    let err = Diagnostic::error(loc.clone(), 313, Some({
-                        let mut out = "target type is (".to_string();
-                        for t in &v {out += &format!("{t}, ");}
-                        out.truncate(out.len() - 2);
-                        out += ") ";
-                        out += if m {"mut"} else {"const"};
-                        out.push('&');
-                        out
-                    })).info({
-                        let mut out = "argument types are (".to_string();
-                        args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
-                        out.truncate(out.len() - 2);
-                        out.push(')');
-                        out
-                    });
+                    let err = CobaltError::CannotCallWithArgs {
+                        val: format!("({}) {}&", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", "), if m {"mut"} else {"const"}),
+                        loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
+                        args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                        aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
+                        nargs: vec![]
+                    };
                     match args.as_slice() {
                         [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                             if let Some(InterData::Int(idx)) = inter_val {
@@ -2413,9 +2418,12 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                         Type::Reference(Box::new(t.clone()), m)
                                     ))
                                 }
-                                else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                                else {Err(CobaltError::TupleIdxOutOfBounds {
+                                    idx, len: v.len(),
+                                    tloc: loc, iloc: *aloc
+                                })}
                             }
-                            else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                            else {Err(CobaltError::NotCompileTime {loc: *aloc})}
                         },
                         _ => Err(err)
                     }
@@ -2432,47 +2440,50 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
             }
         },
         Type::Function(ret, params) => {
-            let mut err = Diagnostic::error(loc.clone(), 313, Some(format!("function type is {}", Type::Function(ret.clone(), params.clone())))).note(loc.clone(), {
-                let mut out = "argument types are (".to_string();
-                args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
-                out.truncate(out.len() - 2);
-                out.push(')');
-                out
-            });
-            let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
+            let mut err = CobaltError::CannotCallWithArgs {
+                val: format!("fn ({}): {ret}", params.iter().map(|(t, _)| t.to_string()).collect::<Vec<_>>().join(", ")),
+                loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
+                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
+                nargs: vec![]
+            };
+            let mut push_arg = |arg: ArgError| {if let CobaltError::CannotCallWithArgs {nargs, ..} = &mut err {nargs.push(arg)}};
             let mut good = true;
             let p = params.len();
             let mut a = args.len();
+            let defaults = if let Some(InterData::Function(FnData {defaults, ..})) = target.inter_val {defaults} else {vec![]};
             if a > p {
-                if let Some(cparen) = cparen.as_ref() {err.add_note(cparen.clone(), format!("expected {p} parameters, got {a}"));}
-                else {err.add_info(format!("expected {p} paramters, get {a}"));}
-                args.truncate(p);
+                push_arg(ArgError::WrongNumArgs {found: a, expected: p, loc: args[p].1});
                 a = p;
             }
-            let (c, r) = args.into_iter().chain(if let Some(InterData::Function(FnData {defaults, ..})) = target.inter_val {
+            if a < p {
                 let d = defaults.len();
-                defaults.iter().zip(params.iter().skip(p - d)).skip(a + d - p).map(|(v, (t, c))| (Value::new(
-                    if *c {None} else {t.into_compiled(&v, ctx)},
-                    Some(v.clone()),
-                    t.clone()
-                ), cparen.as_ref().unwrap_or(&loc).clone())).collect()
-            } else {vec![]}).zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
-                let e = format!("expected value of type {t} in {}{} argument, got {}", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}, v.data_type);
-                (if let Ok(val) = impl_convert(Default::default(), (v.clone(), None), (t.clone(), None), ctx) {
+                args.extend(&mut defaults.into_iter().enumerate().skip(p - a).map(|(n, v)| {
+                    let (pty, pc) = &params[p - d + n];
+                    (Value::new(pc.then(|| pty.into_compiled(&v, ctx)).flatten(), Some(v), pty.clone()), cparen.unwrap_or(loc))
+                }));
+                a = args.len();
+            }
+            if a < p {
+                push_arg(ArgError::WrongNumArgs {found: a, expected: p, loc: cparen.unwrap_or(loc)});
+                args.resize_with(p, || (Value::error(), cparen.unwrap_or(loc)));
+            }
+            let (c, r) = args.iter().zip(params.iter()).enumerate().map(|(n, ((v, l), (t, c)))| {
+                (if let Ok(val) = impl_convert(unreachable_span(), (v.clone(), None), (t.clone(), None), ctx) {
                     if *c && val.inter_val.is_none() {
                         good = false;
-                        err.add_note(l, format!("{}{} argument must be const, but argument is not", n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]}));
+                        push_arg(ArgError::ArgMustBeConst {n, loc: *l})
                     }
                     val
                 }
                 else {
                     good = false;
-                    err.add_note(l, e);
+                    push_arg(ArgError::InvalidArg {n, val: v.data_type.to_string(), ty: t.to_string(), loc: *l});
                     Value::error()
                 }, c)
             }).partition::<Vec<_>, _>(|(_, c)| **c);
             if !good {return Err(err)}
-            if !c.is_empty() {return Err(Diagnostic::error(loc, 900, None))}
+            if !c.is_empty() {return Err(CobaltError::ConstFnsArentSupported {loc})}
             good = true;
             let val: Option<inkwell::values::PointerValue> = target.comp_val.and_then(|v| v.try_into().ok());
             let args: Vec<BasicMetadataValueEnum> = r.into_iter().filter_map(|(Value {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
@@ -2486,7 +2497,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
         },
         Type::BoundMethod(base, ret, params, m) => {
             let mut avec = Vec::with_capacity(args.len() + 1);
-            avec.push((Value::new(None, None, Type::Reference(base, m)), loc.clone()));
+            avec.push((Value::new(None, None, Type::Reference(base, m)), loc));
             avec.append(&mut args);
             if let Some(StructValue(sv)) = target.comp_val {
                 let tv = ctx.builder.build_extract_value(sv, 0, "").unwrap();
@@ -2500,18 +2511,18 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
             let mut comp_args = Vec::with_capacity(args.len());
-            let suffixes = ["st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th"]; // 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th, 9th, 0th
+            let mut err = CobaltError::InvalidInlineAsmCall {loc, args: vec![]};
+            let mut push_arg = |arg: InvalidAsmArg| if let CobaltError::InvalidInlineAsmCall {args, ..} = &mut err {args.push(arg)};
             let mut good = true;
-            let mut err = Diagnostic::error(loc, 432, None);
-            for (n, (arg, l)) in args.into_iter().enumerate() {
-                let e = format!("cannot pass value of type {}({}{} argument) to assembly", arg.data_type, n + 1, if  n % 100 / 10 == 1 {"th"} else {suffixes[n % 10]});
+            for (arg, l) in args {
+                let n = arg.data_type.to_string();
                 if let Some((ty, val)) = prep_asm(arg, ctx) {
                     params.push(ty);
                     comp_args.push(val);
                 }
                 else {
                     good = false;
-                    err.add_note(l, e);
+                    push_arg(InvalidAsmArg(n, l));
                 }
             }
             if !good {return Err(err)}
@@ -2533,19 +2544,13 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
             }
         } else {Ok(Value::error())},
         Type::Tuple(v) => {
-            let err = Diagnostic::error(loc.clone(), 313, Some({
-                let mut out = "target type is (".to_string();
-                for t in &v {out += &format!("{t}, ");}
-                out.truncate(out.len() - 2);
-                out.push(')');
-                out
-            })).info({
-                let mut out = "argument types are (".to_string();
-                args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
-                out.truncate(out.len() - 2);
-                out.push(')');
-                out
-            });
+            let err = CobaltError::CannotCallWithArgs {
+                val: format!("({})", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")),
+                loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
+                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
+                nargs: vec![]
+            };
             match args.as_slice() {
                 [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
                     if let Some(InterData::Int(idx)) = inter_val {
@@ -2557,20 +2562,224 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: Location, cparen: Option<Locatio
                                 t.clone()
                             ))
                         }
-                        else {Err(Diagnostic::error(aloc.clone(), 381, Some(format!("index is {idx}"))).note(loc, format!("tuple length is {}", v.len())))}
+                        else {Err(CobaltError::TupleIdxOutOfBounds {
+                            idx, len: v.len(),
+                            tloc: loc, iloc: *aloc
+                        })}
                     }
-                    else {Err(Diagnostic::error(aloc.clone(), 380, Some("argument is not const".to_string())))}
+                    else {Err(CobaltError::NotCompileTime {loc: *aloc})}
                 },
                 _ => Err(err)
             }
         },
-        t => Err(Diagnostic::error(loc, 313, Some(format!("target type is {t}"))).info({
-            let mut out = "argument types are (".to_string();
-            args.iter().for_each(|(Value {data_type, ..}, _)| out += format!("{data_type}, ").as_str());
-            out.truncate(out.len() - 2);
-            out.push(')');
-            out
-        }))
+        Type::Intrinsic(name) => match name.as_str() {
+            "asm" => {
+                let mut args = args.into_iter().collect::<VecDeque<_>>();
+                match args.len() {
+                    2 => {
+                        let (a0, loc0) = args.pop_front().unwrap();
+                        let (a1, loc1) = args.pop_front().unwrap();
+                        if is_str(&a0.data_type) && is_str(&a1.data_type) {
+                            match (a0, a1) {
+                                (
+                                    Value {inter_val: Some(InterData::Array(c)), ..},
+                                    Value {inter_val: Some(InterData::Array(b)), ..}
+                                ) => {
+                                    let mut errs = vec![];
+                                    let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: loc0
+                                        });
+                                        String::new()
+                                    });
+                                    let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: loc1
+                                        });
+                                        String::new()
+                                    });
+                                    if !errs.is_empty() {
+                                        return Err(CobaltError::InvalidIntrinsicCall {
+                                            name: "asm",
+                                            loc, errs
+                                        });
+                                    }
+                                    Ok(Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))))
+                                },
+                                (a0, a1) => Err(CobaltError::InvalidInlineAsm2 {
+                                    loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                    loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some()
+                                })
+                            }
+                        }
+                        else {
+                            Err(CobaltError::InvalidInlineAsm2 {
+                                loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some()
+                            })
+                        }
+                    },
+                    3 => {
+                        let (a0, loc0) = args.pop_front().unwrap();
+                        let (a1, loc1) = args.pop_front().unwrap();
+                        let (a2, loc2) = args.pop_front().unwrap();
+                        if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(r)), ..} = a0 {
+                            if is_str(&a1.data_type) && is_str(&a2.data_type) {
+                                match (a1, a2) {
+                                    (
+                                        Value {inter_val: Some(InterData::Array(c)), ..},
+                                        Value {inter_val: Some(InterData::Array(b)), ..}
+                                    ) => {
+                                        let mut errs = vec![];
+                                        let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: loc1
+                                            });
+                                            String::new()
+                                        });
+                                        let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: loc2
+                                            });
+                                            String::new()
+                                        });
+                                        if !errs.is_empty() {
+                                            return Err(CobaltError::InvalidIntrinsicCall {
+                                                name: "asm",
+                                                loc, errs
+                                            });
+                                        }
+                                        Ok(Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)))
+                                    },
+                                    (a1, a2) => Err(CobaltError::InvalidInlineAsm3 {
+                                        loc1: loc0, type1: "type".to_string(), const1: true,
+                                        loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                        loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                                    })
+                                }
+                            }
+                            else {
+                                Err(CobaltError::InvalidInlineAsm3 {
+                                    loc1: loc0, type1: "type".to_string(), const1: true,
+                                    loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                    loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                                })
+                            }
+                        }
+                        else {
+                            Err(CobaltError::InvalidInlineAsm3 {
+                                loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                            })
+                        }
+                    },
+                    x => {
+                        Err(CobaltError::InvalidInlineAsm {
+                            nargs: x,
+                            loc
+                        })
+                    }
+                }
+            },
+            "alloca" => {
+                let mut args = args.into_iter().collect::<VecDeque<_>>();
+                if args.is_empty() {
+                    return Err(CobaltError::AllocaNeedsArgs {loc})
+                }
+                let loc0 = args.front().unwrap().1;
+                let ty = (args.front().unwrap().0.data_type == Type::TypeData).then(|| args.pop_front().unwrap().0.into_type()).flatten();
+                if args.is_empty() {
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            Ok(Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(Box::new(ty), true)))
+                        }
+                        else {
+                            Err(CobaltError::NonRuntimeAllocaType {ty: ty.to_string(), loc: loc0})
+                        }
+                    }
+                    else {
+                        unreachable!()
+                    }
+                }
+                else {
+                    let mut val = None;
+                    let mut errs = vec![];
+                    for (mut arg, loc) in args {
+                        loop {
+                            match arg.data_type {
+                                Type::Borrow(b) => arg.data_type = *b,
+                                Type::Reference(b, _) => {
+                                    if b.register(ctx) && !ctx.is_const.get() {
+                                        if let Some(PointerValue(v)) = arg.comp_val {
+                                            arg.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                                        }
+                                    }
+                                    arg.data_type = *b;
+                                },
+                                x @ (Type::Int(..) | Type::IntLiteral) => {
+                                    arg.data_type = x;
+                                    if !ctx.is_const.get() {
+                                        if let Some(IntValue(v)) = arg.value(ctx) {
+                                            if let Some(v2) = val {
+                                                val = Some(ctx.builder.build_int_mul(v, v2, ""));
+                                            }
+                                            else {
+                                                val = Some(v);
+                                            }
+                                        }
+                                    }
+                                    break;
+                                },
+                                x => {
+                                    errs.push(CobaltError::NonIntegralAllocaArg {ty: x.to_string(), loc});
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            if !errs.is_empty() {
+                                return Err(CobaltError::InvalidIntrinsicCall {
+                                    name: "alloca",
+                                    loc, errs
+                                })
+                            }
+                            Ok(Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(Box::new(ty), true)))
+                        }
+                        else {
+                            errs.push(CobaltError::NonRuntimeAllocaType {ty: ty.to_string(), loc: loc0});
+                            Err(CobaltError::InvalidIntrinsicCall {
+                                name: "alloca",
+                                loc, errs
+                            })
+                        }
+                    }
+                    else {
+                        if !errs.is_empty() {
+                            return Err(CobaltError::InvalidIntrinsicCall {
+                                name: "alloca",
+                                loc, errs
+                            })
+                        }
+                        Ok(Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Null), true)))
+                    }
+                }
+            },
+            x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
+        },
+        t => Err(CobaltError::CannotCallWithArgs {
+            val: t.to_string(),
+            loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
+            args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+            aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
+            nargs: vec![]
+        })
     }
 }
 pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
@@ -2584,5 +2793,13 @@ pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
         (Type::Float64, Type::Float16 | Type::Float32) | (Type::Float16 | Type::Float32, Type::Float64) => Some(Type::Float64),
         (Type::Float128, Type::Float16 | Type::Float32 | Type::Float64) | (Type::Float16 | Type::Float32 | Type::Float64, Type::Float128) => Some(Type::Float128),
         _ => None
+    }
+}
+fn is_str(ty: &Type) -> bool {
+    match ty {
+        Type::Pointer(b, _) => **b == Type::Int(8, true),
+        Type::Array(b, _) => **b == Type::Int(8, true),
+        Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, true)} else {false}
+        _ => false
     }
 }

@@ -9,7 +9,7 @@ pub enum UndefVariable {
 #[derive(Debug, Clone)]
 pub enum RedefVariable<'ctx> {
     NotAModule(usize, Symbol<'ctx>),
-    AlreadyExists(usize, Option<Location>, Symbol<'ctx>)
+    AlreadyExists(usize, Option<SourceSpan>, Symbol<'ctx>)
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableData {
@@ -17,10 +17,10 @@ pub struct VariableData {
     pub export: bool,
     pub init: bool,
     pub fwd: bool,
-    pub loc: Option<Location>,
+    pub loc: Option<SourceSpan>,
 }
 impl VariableData {
-    pub fn new(loc: Location) -> Self {
+    pub fn new(loc: SourceSpan) -> Self {
         VariableData {
             good: true,
             export: true,
@@ -29,7 +29,7 @@ impl VariableData {
             loc: Some(loc)
         }
     }
-    pub fn with_vis(loc: Location, export: bool) -> Self {
+    pub fn with_vis(loc: SourceSpan, export: bool) -> Self {
         VariableData {
             good: true,
             export,
@@ -38,7 +38,7 @@ impl VariableData {
             loc: Some(loc)
         }
     }
-    pub fn uninit(loc: Location) -> Self {
+    pub fn uninit(loc: SourceSpan) -> Self {
         VariableData {
             good: false,
             export: true,
@@ -47,7 +47,7 @@ impl VariableData {
             loc: Some(loc)
         }
     }
-    pub fn uninit_vis(loc: Location, export: bool) -> Self {
+    pub fn uninit_vis(loc: SourceSpan, export: bool) -> Self {
         VariableData {
             good: false,
             export,
@@ -131,7 +131,7 @@ impl<'ctx> VarMap<'ctx> {
                     *v = sym;
                     Ok(&*v)
                 }
-                else {Err(RedefVariable::AlreadyExists(idx, x.get().1.loc.clone(), sym))}
+                else {Err(RedefVariable::AlreadyExists(idx, x.get().1.loc, sym))}
             },
             Entry::Vacant(x) => Ok(&*x.insert(sym))
         }
@@ -156,7 +156,7 @@ impl<'ctx> VarMap<'ctx> {
                     i.append(&mut sym.1);
                     Ok(x.into_mut().as_mod().unwrap())
                 },
-                Symbol(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc.clone(), Value::make_mod(sym.0, sym.1, mod_name).into()))
+                Symbol(_, d) => Err(RedefVariable::AlreadyExists(idx, d.loc, Value::make_mod(sym.0, sym.1, mod_name).into()))
             },
             Entry::Vacant(x) => Ok(x.insert(Value::make_mod(sym.0, sym.1, mod_name).into()).as_mod().unwrap())
         }
@@ -284,7 +284,7 @@ impl<'ctx> VarMap<'ctx> {
             })).or_else(|| self.parent.as_ref().and_then(|p| p.lookup(name, global)))
         }
     }
-    pub fn verify_in_mod<'vm>((symbols, imports): (&'vm HashMap<String, Symbol<'ctx>>, &'vm Vec<(CompoundDottedName, bool)>), pattern: &[CompoundDottedNameSegment], root: &'vm VarMap<'ctx>) -> Vec<Location> {
+    pub fn verify_in_mod<'vm>((symbols, imports): (&'vm HashMap<String, Symbol<'ctx>>, &'vm Vec<(CompoundDottedName, bool)>), pattern: &[CompoundDottedNameSegment], root: &'vm VarMap<'ctx>) -> Vec<SourceSpan> {
         use CompoundDottedNameSegment::*;
         match pattern.first() {
             None => vec![],
@@ -320,7 +320,7 @@ impl<'ctx> VarMap<'ctx> {
             }
         }
     }
-    pub fn verify(&self, pattern: &CompoundDottedName) -> Vec<Location> {
+    pub fn verify(&self, pattern: &CompoundDottedName) -> Vec<SourceSpan> {
         let root = self.root();
         if pattern.global && self.parent.as_ref().and_then(|p| p.parent.as_ref()).is_some() {root.verify(pattern)}
         else {

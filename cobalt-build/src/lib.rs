@@ -10,6 +10,7 @@ use cobalt_ast::*;
 use std::io::{self, prelude::*, ErrorKind};
 use path_calculate::*;
 use std::path::{Path, PathBuf};
+use cobalt_errors::error;
 
 #[derive(Debug, Error)]
 #[error("compiler errors were encountered")]

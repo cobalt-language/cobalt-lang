@@ -1,27 +1,27 @@
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct IfAST {
-    loc: Location,
+    loc: SourceSpan,
     pub cond: Box<dyn AST>,
     pub if_true: Box<dyn AST>,
     pub if_false: Option<Box<dyn AST>>
 }
 impl IfAST {
-    pub fn new(loc: Location, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
+    pub fn new(loc: SourceSpan, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
 }
 impl AST for IfAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
         else {self.if_true.res_type(ctx)}
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
         let cv = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
-            errs.push(e);
+            errs.push(e.into());
             Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
         });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
@@ -40,13 +40,13 @@ impl AST for IfAST {
                     if let Some(ty) = types::utils::common(&if_true.data_type, &if_false.data_type) {
                         ctx.builder.position_at_end(itb);
                         let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
+                            errs.push(e.into());
                             Value::error()
                         });
                         ctx.builder.build_unconditional_branch(mb);
                         ctx.builder.position_at_end(ifb);
                         let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
+                            errs.push(e.into());
                             Value::error()
                         });
                         ctx.builder.build_unconditional_branch(mb);
@@ -110,33 +110,33 @@ impl AST for IfAST {
         if let Some(val) = self.if_false.as_ref() {format!("if ({}) ({}) else ({})", self.cond, self.if_true, val)}
         else {format!("if ({}) ({})", self.cond, self.if_true)}
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         if let Some(val) = self.if_false.as_ref() {
             writeln!(f, "if/else")?;
-            print_ast_child(f, pre, &*self.cond, false)?;
-            print_ast_child(f, pre, &*self.if_true, false)?;
-            print_ast_child(f, pre, &**val, true)
+            print_ast_child(f, pre, &*self.cond, false, file)?;
+            print_ast_child(f, pre, &*self.if_true, false, file)?;
+            print_ast_child(f, pre, &**val, true, file)
         }
         else {
             writeln!(f, "if")?;
-            print_ast_child(f, pre, &*self.cond, false)?;
-            print_ast_child(f, pre, &*self.if_true, true)
+            print_ast_child(f, pre, &*self.cond, false, file)?;
+            print_ast_child(f, pre, &*self.if_true, true, file)
         }
     }
 }
 #[derive(Debug, Clone)]
 pub struct WhileAST {
-    loc: Location,
+    loc: SourceSpan,
     cond: Box<dyn AST>,
     body: Box<dyn AST>
 }
 impl WhileAST {
-    pub fn new(loc: Location, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {WhileAST {loc, cond, body}}
+    pub fn new(loc: SourceSpan, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {WhileAST {loc, cond, body}}
 }
 impl AST for WhileAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
             let cond = ctx.context.append_basic_block(f, "cond");
@@ -146,7 +146,7 @@ impl AST for WhileAST {
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
             let val = types::utils::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
-                errs.push(e);
+                errs.push(e.into());
                 Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
             }).into_value(ctx).unwrap_or(ctx.context.bool_type().const_int(0, false).into());
             ctx.builder.build_conditional_branch(val.into_int_value(), body, exit);
@@ -162,9 +162,9 @@ impl AST for WhileAST {
     fn to_code(&self) -> String {
         format!("while ({}) ({})", self.cond, self.body)
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "while")?;
-        print_ast_child(f, pre, &*self.cond, false)?;
-        print_ast_child(f, pre, &*self.body, true)
+        print_ast_child(f, pre, &*self.cond, false, file)?;
+        print_ast_child(f, pre, &*self.body, true, file)
     }
 }

@@ -1,14 +1,16 @@
 use crate::*;
-use codespan_reporting::files::Files;
 #[derive(Debug, Clone)]
 pub struct BlockAST {
-    loc: Location,
+    loc: SourceSpan,
     pub vals: Vec<Box<dyn AST>>
 }
+impl BlockAST {
+    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {BlockAST {loc, vals}}
+}
 impl AST for BlockAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         let mut out = Value::null();
         let mut errs = vec![];
@@ -26,28 +28,30 @@ impl AST for BlockAST {
         }
         out + "}"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "block")?;
         let mut count = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, count == 1)?;
+            print_ast_child(f, pre, &**val, count == 1, file)?;
             count -= 1;
         }
         Ok(())
     }
 }
-impl BlockAST {
-    pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {BlockAST {loc, vals}}
-}
 #[derive(Debug, Clone)]
 pub struct GroupAST {
-    loc: Location,
     pub vals: Vec<Box<dyn AST>>
 }
+impl GroupAST {
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
+        assert!(!vals.is_empty());
+        GroupAST {vals}
+    }
+}
 impl AST for GroupAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {merge_spans(self.vals[0].loc(), self.vals.last().unwrap().loc())}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
         let mut errs = vec![];
         self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
@@ -63,28 +67,25 @@ impl AST for GroupAST {
         }
         out + ")"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "group")?;
         let mut count = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, count == 1)?;
+            print_ast_child(f, pre, &**val, count == 1, file)?;
             count -= 1;
         }
         Ok(())
     }
 }
-impl GroupAST {
-    pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {GroupAST {loc, vals}}
-}
 #[derive(Debug, Clone)]
 pub struct TopLevelAST {
-    loc: Location,
+    pub file: Option<CobaltFile>,
     pub vals: Vec<Box<dyn AST>>
 }
 impl AST for TopLevelAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {unreachable_span()}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.flags.prepass {
             self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
             let mut again = true;
@@ -108,18 +109,18 @@ impl AST for TopLevelAST {
         }
         out
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        writeln!(f, "{}", errors::files::FILES.read().unwrap().name(self.loc.0).unwrap())?;
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
+        if let Some(ref file) = self.file {writeln!(f, "{}", file.name())?} else {f.write_str("<file not set>\n")?};
         let mut count = self.vals.len();
         for val in self.vals.iter() {
-            print_ast_child(f, pre, &**val, count == 1)?;
+            print_ast_child(f, pre, &**val, count == 1, file)?;
             count -= 1;
         }
         Ok(())
     }
 }
 impl TopLevelAST {
-    pub fn new(loc: Location, vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {loc, vals}}
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {TopLevelAST {vals, file: None}}
     pub fn run_passes<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
         let mut again = true;
@@ -132,6 +133,7 @@ impl TopLevelAST {
 }
 impl std::fmt::Display for TopLevelAST {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self as &dyn AST)
+        let mut pre = TreePrefix::new();
+        self.print_impl(f, &mut pre, self.file)
     }
 }

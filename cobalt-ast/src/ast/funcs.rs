@@ -6,7 +6,6 @@ use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
 use llvm_sys::core::{LLVMGetInsertBlock, LLVMIsABasicBlock};
 use llvm_sys::prelude::LLVMValueRef;
-use std::collections::LinkedList;
 use glob::Pattern;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
@@ -17,23 +16,23 @@ pub enum ParamType {
 type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
 #[derive(Debug, Clone)]
 pub struct FnDefAST {
-    loc: Location,
+    loc: SourceSpan,
     pub name: DottedName,
     pub ret: Box<dyn AST>,
     pub params: Vec<Parameter>,
     pub body: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, Location)>,
+    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
     pub in_struct: bool
 }
 impl FnDefAST {
-    pub fn new(loc: Location, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, Location)>, in_struct: bool) -> Self {FnDefAST {loc, name, ret, params, body, annotations, in_struct}}
+    pub fn new(loc: SourceSpan, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, SourceSpan)>, in_struct: bool) -> Self {FnDefAST {loc, name, ret, params, body, annotations, in_struct}}
 }
 impl AST for FnDefAST {
-    fn loc(&self) -> Location {self.loc.clone()}
+    fn loc(&self) -> SourceSpan {self.loc}
     fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert(Default::default(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(Default::default(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -43,6 +42,7 @@ impl AST for FnDefAST {
         let mut fn_type = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
+            let loc = *loc;
             match ann.as_str() {
                 "link" => {
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
@@ -60,7 +60,7 @@ impl AST for FnDefAST {
                 },
                 "linkas" => {
                     if let Some(arg) = arg {
-                        linkas = Some((arg.clone(), loc.clone()))
+                        linkas = Some((arg.clone(), loc))
                     }
                 },
                 "cconv" => {
@@ -111,7 +111,7 @@ impl AST for FnDefAST {
                 },
                 "c" | "C" => {
                     cconv = Some(0);
-                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
+                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc))
                 },
                 "target" => {
                     if let Some(arg) = arg {
@@ -196,7 +196,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty.clone(),
-                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
                 }
             }
             else if **ret == Type::Null {
@@ -229,7 +229,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty.clone(),
-                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
                 }
             }
             else {
@@ -248,19 +248,19 @@ impl AST for FnDefAST {
                         mt
                     })),
                     fty
-                ), VariableData {fwd: true, ..VariableData::with_vis(self.loc.clone(), vs)})));
+                ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
             }
         }
         else {unreachable!()};
     }
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert(Default::default(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(Default::default(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
+        let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
         ctx.is_const.set(oic);
         out
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
         let ret = types::utils::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
@@ -281,13 +281,16 @@ impl AST for FnDefAST {
         let mut fn_type = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
+            let loc = *loc;
             match ann.as_str() {
                 "link" => {
-                    if let Some((_, prev)) = link_type.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 414, None).note(prev, "previously defined here".to_string()))
+                    if let Some((_, prev)) = link_type {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "link",
+                            loc, prev
+                        });
                     }
-                    link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc.clone(), 412, None)); None},
+                    link_type = match arg.as_deref() {
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
@@ -297,26 +300,51 @@ impl AST for FnDefAST {
                         Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
                         Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        Some(x) => {errs.push(Diagnostic::error(loc.clone(), 413, Some(format!("unknown link type {x:?}")))); None},
-                    }.map(|x| (x, loc.clone()))
+                        _ => {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "link",
+                                found: arg.clone(),
+                                expected: Some("link type"),
+                                loc
+                            });
+                            None
+                        }
+                    }.map(|x| (x, loc))
                 },
                 "linkas" => {
-                    if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 416, None).note(prev, "previously defined here".to_string()))
+                    if let Some((_, prev)) = linkas {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "linkas",
+                            loc, prev
+                        });
                     }
-                    if let Some(arg) = arg {
-                        linkas = Some((arg.clone(), loc.clone()))
-                    }
+                    if let Some(arg) = arg {linkas = Some((arg.clone(), loc))}
                     else {
-                        errs.push(Diagnostic::error(loc.clone(), 415, None))
+                        errs.push(CobaltError::InvalidAnnArgument {
+                            name: "linkas",
+                            found: arg.clone(),
+                            expected: Some("linkage name"),
+                            loc
+                        });
                     }
                 },
                 "cconv" => {
                     if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "cconv",
+                            loc, prev
+                        });
                     }
-                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
-                        None => {errs.push(Diagnostic::error(loc.clone(), 421, None)); None},
+                    cconv = cconv.or(match arg.as_deref() {
+                        None => {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "cconv",
+                                found: None,
+                                expected: Some("calling convention"),
+                                loc
+                            });
+                            None
+                        },
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
@@ -330,22 +358,38 @@ impl AST for FnDefAST {
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
                         Some(x) => {
-                            match x.parse::<u32>() {
+                            match x.parse() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Diagnostic::error(loc.clone(), 422, Some(format!("unknown calling convention {x:?}")))); None}
+                                Err(_) => {
+                                    errs.push(CobaltError::InvalidAnnArgument {
+                                        name: "cconv",
+                                        found: arg.clone(),
+                                        expected: Some("calling convention"),
+                                        loc
+                                    });
+                                    None
+                                }
                             }
                         }
-                    }.map(|cc| (cc, loc.clone())));
+                    }.map(|cc| (cc, loc)));
                 },
                 "extern" => {
-                    if let Some(prev) = is_extern.clone() {
-                        errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
+                    is_extern = Some(loc);
+                    if arg.is_some() {
+                        errs.push(CobaltError::InvalidAnnArgument {
+                            name: "extern",
+                            found: arg.clone(),
+                            expected: None,
+                            loc
+                        });
                     }
-                    is_extern = Some(loc.clone());
                     if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "cconv",
+                            loc, prev
+                        });
                     }
-                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                    cconv = cconv.or(match arg.as_deref() {
                         None => {errs.pop(); None},
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
@@ -360,49 +404,51 @@ impl AST for FnDefAST {
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
                         Some(x) => {
-                            match x.parse::<u32>() {
+                            match x.parse() {
                                 Ok(v) => Some(v),
-                                Err(_) => {errs.push(Diagnostic::error(loc.clone(), 422, Some(format!("unknown calling convention {x:?}")))); None}
+                                Err(_) => {
+                                    errs.push(CobaltError::InvalidAnnArgument {
+                                        name: "cconv",
+                                        found: None,
+                                        expected: Some("calling convention"),
+                                        loc
+                                    });
+                                    None
+                                }
                             }
                         }
-                    }.map(|cc| (cc, loc.clone())));
+                    }.map(|cc| (cc, loc)));
                 },
                 "inline" => {
-                    if let Some((_, prev)) = inline.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 423, None).note(prev, "previous specification here".to_string()))
+                    if let Some((_, prev)) = inline {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "inline",
+                            loc, prev
+                        });
                     }
-                    if let Some(arg) = arg {
-                        match arg.as_str() {
-                            "always" | "true" | "1" => inline = Some((true, loc.clone())),
-                            "never" | "false" | "0" => inline = Some((false, loc.clone())),
-                            x => errs.push(Diagnostic::error(loc.clone(), 424, Some(format!("expected 'always' or 'never', got {x:?}"))))
-                        }
-                    }
-                    else {
-                        inline = Some((true, loc.clone()))
+                    match arg.as_deref() {
+                        Some("always" | "true" | "1") | None => inline = Some((true, loc)),
+                        Some("never" | "false" | "0") => inline = Some((false, loc)),
+                        _ => errs.push(CobaltError::InvalidAnnArgument {
+                            name: "cconv",
+                            found: arg.clone(),
+                            expected: Some("always or never"),
+                            loc
+                        })
                     }
                 },
                 "c" | "C" => {
                     match arg.as_ref().map(|x| x.as_str()) {
                         Some("") | None => {},
-                        Some("extern") => {
-                            if let Some(prev) = is_extern.clone() {
-                                errs.push(Diagnostic::warning(loc.clone(), 22, None).note(prev, "previously defined here".to_string()))
-                            }
-                            is_extern = Some(loc.clone());
-                        },
-                        Some(x) => {
-                            errs.push(Diagnostic::error(loc.clone(), 425, Some(format!("expected no argument or 'extern' as argument to @C annotation, got {x:?}"))))
-                        }
+                        Some("extern") => is_extern = Some(loc),
+                        Some(_) => errs.push(CobaltError::InvalidAnnArgument {
+                            name: "C",
+                            found: arg.clone(),
+                            expected: Some(r#"no argument or "extern""#),
+                            loc
+                        })
                     }
-                    if let Some((_, prev)) = cconv.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 420, None).note(prev, "previously defined here".to_string()))
-                    }
-                    cconv = Some((0, loc.clone()));
-                    if let Some((_, prev)) = linkas.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 416, None).note(prev, "previously defined here".to_string()))
-                    }
-                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc.clone()))
+                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
                 },
                 "target" => {
                     if let Some(arg) = arg {
@@ -410,84 +456,137 @@ impl AST for FnDefAST {
                         let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
                         match Pattern::new(arg) {
                             Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(Diagnostic::error(loc.clone(), 427, Some(format!("error at byte {}: {}", err.pos, err.msg))))
+                            Err(err) => errs.push(CobaltError::GlobPatternError {pos: err.pos, msg: err.msg.to_string(), loc})
                         }
                     }
                     else {
-                        errs.push(Diagnostic::error(loc.clone(), 426, None));
+                        errs.push(CobaltError::InvalidAnnArgument {
+                            name: "target",
+                            found: arg.clone(),
+                            expected: Some("target glob"),
+                            loc
+                        });
                     }
                 },
                 "export" => {
-                    if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    if let Some((_, prev)) = vis_spec {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "export",
+                            loc, prev
+                        });
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((false, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((false, loc)),
+                            Some(_) => errs.push(CobaltError::InvalidAnnArgument {
+                                name: "export",
+                                found: arg.clone(),
+                                expected: Some(r#"no argument, "true", or "false""#),
+                                loc
+                            })
                         }
                     }
                 },
                 "private" => {
-                    if let Some((_, vs)) = vis_spec.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 428, None).note(vs, "previously defined here".to_string()));
+                    if let Some((_, prev)) = vis_spec {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "private",
+                            loc, prev
+                        });
                     }
                     else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc.clone())),
-                            Some("false") | Some("0") => vis_spec = Some((true, loc.clone())),
-                            Some(x) => errs.push(Diagnostic::error(loc.clone(), 428, Some(format!("expected an argument like 'true' or 'false', got '{x}'"))))
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
+                            Some("false") | Some("0") => vis_spec = Some((true, loc)),
+                            Some(_) => errs.push(CobaltError::InvalidAnnArgument {
+                                name: "private",
+                                found: arg.clone(),
+                                expected: Some(r#"no argument, "true", or "false""#),
+                                loc
+                            })
                         }
                     }
                 },
                 "method" if self.in_struct => {
-                    if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 439, None).note(l, "previously defined here".to_string()));
+                    if let Some((_, prev)) = fn_type {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "method",
+                            loc, prev
+                        });
                     }
                     else {
-                        if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc.clone(), 438, Some(format!("unexpected argument {arg:?}"))));
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "method",
+                                found: arg.clone(),
+                                expected: None,
+                                loc
+                            });
                         }
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
                         if params.is_empty() {
-                            errs.push(Diagnostic::error(loc.clone(), 393, Some("expected at least one self parameter for method".to_string())));
+                            errs.push(CobaltError::InvalidSelfParam {
+                                loc: self.loc,
+                                self_t: self_t.to_string(),
+                                param: None,
+                            });
                         }
                         else {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            let err = format!("{self_t} is not convertible to {}", params[0].0);
+                            let s = self_t.to_string();
                             if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
-                                errs.push(Diagnostic::error(loc.clone(), 393, Some("invalid type for self parameter for method".to_string())).note(self.params[0].2.loc(), err));
+                                errs.push(CobaltError::InvalidSelfParam {
+                                    loc: self.params[0].2.loc(),
+                                    self_t: s,
+                                    param: Some(params[0].0.to_string())
+                                });
                             }
                             else {
-                                fn_type = Some((MethodType::Normal, loc.clone()));
+                                fn_type = Some((MethodType::Normal, loc));
                             }
                         }
                     }
                 },
                 "getter" if self.in_struct => {
-                    if let Some((_, l)) = fn_type.clone() {
-                        errs.push(Diagnostic::error(loc.clone(), 439, None).note(l, "previously defined here".to_string()));
+                    if let Some((_, prev)) = fn_type {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "getter",
+                            loc, prev
+                        });
                     }
                     else {
-                        if let Some(arg) = arg.as_deref() {
-                            errs.push(Diagnostic::error(loc.clone(), 438, Some(format!("unexpected argument {arg:?}"))));
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "getter",
+                                found: arg.clone(),
+                                expected: None,
+                                loc
+                            });
                         }
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
                         if params.is_empty() {
-                            errs.push(Diagnostic::error(loc.clone(), 393, Some("expected at least one self parameter for getter".to_string())));
+                            errs.push(CobaltError::InvalidSelfParam {
+                                loc: self.loc,
+                                self_t: self_t.to_string(),
+                                param: None,
+                            });
                         }
                         else {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            let err = format!("{self_t} is not convertible to {}", params[0].0);
+                            let s = self_t.to_string();
                             if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
-                                errs.push(Diagnostic::error(loc.clone(), 393, Some("invalid type for self parameter for getter".to_string())).note(self.params[0].2.loc(), err));
+                                errs.push(CobaltError::InvalidSelfParam {
+                                    loc: self.params[0].2.loc(),
+                                    self_t: s,
+                                    param: Some(params[0].0.to_string())
+                                });
                             }
                             else {
-                                fn_type = Some((MethodType::Getter, loc.clone()));
+                                fn_type = Some((MethodType::Getter, loc));
                             }
                         }
                     }
                 },
-                x => errs.push(Diagnostic::error(loc.clone(), 410, Some(format!("unknown annotation {x:?} for function definition"))))
+                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "function"})
             }
         }
         let fty = Type::Function(Box::new(ret), params);
@@ -531,7 +630,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -544,7 +643,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty.clone(),
-                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
+                    ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -560,7 +659,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
                                         Some(param),
                                         None,
                                         ty.clone(),
@@ -568,7 +667,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
                                         None,
                                         None,
                                         ty.clone(),
@@ -601,7 +700,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -614,7 +713,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty
-                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                    ), VariableData::with_vis(self.loc, vs)))).clone()
                 }
             }
             else if **ret == Type::Null {
@@ -646,7 +745,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -659,7 +758,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty.clone()
-                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone();
+                    ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -675,7 +774,7 @@ impl AST for FnDefAST {
                                 if !is_const {
                                     let param = f.get_nth_param(param_count).unwrap();
                                     param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
                                         Some(param),
                                         None,
                                         ty.clone()
@@ -683,7 +782,7 @@ impl AST for FnDefAST {
                                     param_count += 1;
                                 }
                                 else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), Default::default())), Symbol(Value::new(
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
                                         None,
                                         None,
                                         ty.clone()
@@ -716,7 +815,7 @@ impl AST for FnDefAST {
                                     Ok(val) => 
                                         if let Some(val) = val.inter_val {val}
                                         else {
-                                            errs.push(Diagnostic::error(a.loc(), 314, None));
+                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
                                             InterData::Null
                                         }
                                     Err(e) => {
@@ -729,7 +828,7 @@ impl AST for FnDefAST {
                             mt
                         })),
                         fty
-                    ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                    ), VariableData::with_vis(self.loc, vs)))).clone()
                 }
             }
             else {
@@ -747,7 +846,7 @@ impl AST for FnDefAST {
                                 Ok(val) => 
                                     if let Some(val) = val.inter_val {val}
                                     else {
-                                        errs.push(Diagnostic::error(a.loc(), 314, None));
+                                        errs.push(CobaltError::NotCompileTime {loc: a.loc()});
                                         InterData::Null
                                     }
                                 Err(e) => {
@@ -760,19 +859,22 @@ impl AST for FnDefAST {
                         mt
                     })),
                     fty
-                ), VariableData::with_vis(self.loc.clone(), vs)))).clone()
+                ), VariableData::with_vis(self.loc, vs)))).clone()
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(Diagnostic::error(self.name.ids[x].1.clone(), 321, Some(format!("{} is not a module", self.name.start(x)))));
+                    errs.push(CobaltError::NotAModule {
+                        loc: self.name.ids[x].1,
+                        name: self.name.start(x).to_string()
+                    });
                     (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                    let mut err = Diagnostic::error(self.name.ids[x].1.clone(), 323, Some(format!("{} has already been defined", self.name.start(x))));
-                    if let Some(loc) = d {
-                        err.add_note(loc, "previously defined here".to_string());
-                    }
-                    errs.push(err);
+                    errs.push(CobaltError::RedefVariable {
+                        loc: self.name.ids[x].1,
+                        name: self.name.start(x).to_string(),
+                        prev: d
+                    });
                     (Value::error(), errs)
                 }
             }
@@ -805,7 +907,7 @@ impl AST for FnDefAST {
         }
         out + format!("): {} = {}", self.ret, self.body.to_code()).as_str()
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "function: {}", self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
@@ -825,17 +927,17 @@ impl AST for FnDefAST {
             if let Some(val) = default {
                 write!(f, "{pre}├── type: ")?;
                 pre.push(false);
-                ty.print_impl(f, pre)?;
+                ty.print_impl(f, pre, file)?;
                 pre.pop();
                 write!(f, "{pre}└── default: ")?;
                 pre.push(true);
-                val.print_impl(f, pre)?;
+                val.print_impl(f, pre, file)?;
                 pre.pop();
             }
             else {
                 write!(f, "{pre}└── type: ")?;
                 pre.push(true);
-                ty.print_impl(f, pre)?;
+                ty.print_impl(f, pre, file)?;
                 pre.pop();
             }
             pre.pop();
@@ -843,30 +945,29 @@ impl AST for FnDefAST {
         pre.pop();
         write!(f, "{pre}├── return: ")?;
         pre.push(false);
-        self.ret.print_impl(f, pre)?;
+        self.ret.print_impl(f, pre, file)?;
         pre.pop();
-        print_ast_child(f, pre, &*self.body, true)
+        print_ast_child(f, pre, &*self.body, true, file)
     }
 }
 #[derive(Debug, Clone)]
 pub struct CallAST {
-    loc: Location,
-    pub cparen: Location,
+    pub cparen: SourceSpan,
     pub target: Box<dyn AST>,
     pub args: Vec<Box<dyn AST>>
 }
 impl CallAST {
-    pub fn new(loc: Location, cparen: Location, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, cparen, target, args}}
+    pub fn new(cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {cparen, target, args}}
 }
 impl AST for CallAST {
-    fn loc(&self) -> Location {(self.loc.0, self.loc.1.start..self.cparen.1.end)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
     fn expl_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.loc.clone(), Some(self.cparen.clone()), self.args.iter().map(|a| {
+        (types::utils::call(val, self.target.loc(), Some(self.cparen.clone()), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
@@ -884,12 +985,12 @@ impl AST for CallAST {
         }
         out + ")"
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
+    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "call")?;
         let mut count = self.args.len();
-        print_ast_child(f, pre, &*self.target, count == 0)?;
+        print_ast_child(f, pre, &*self.target, count == 0, file)?;
         for arg in self.args.iter() {
-            print_ast_child(f, pre, &**arg, count <= 1)?;
+            print_ast_child(f, pre, &**arg, count <= 1, file)?;
             count -= 1;
         }
         Ok(())
@@ -897,200 +998,16 @@ impl AST for CallAST {
 }
 #[derive(Debug, Clone)]
 pub struct IntrinsicAST {
-    loc: Location,
+    loc: SourceSpan,
     pub name: String,
-    pub args: Vec<Box<dyn AST>>
 }
 impl IntrinsicAST {
-    pub fn new(loc: Location, name: String, args: Vec<Box<dyn AST>>) -> Self {IntrinsicAST {loc, name, args}}
+    pub fn new(loc: SourceSpan, name: String) -> Self {IntrinsicAST {loc, name}}
 }
 impl AST for IntrinsicAST {
-    fn loc(&self) -> Location {self.loc.clone()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
-        match self.name.as_str() {
-            "asm" => Type::InlineAsm(self.args.first().map_or(Box::new(Type::Null), |v| {
-                if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = v.const_codegen(ctx).0 {t}
-                else {Box::new(Type::Null)}
-            })),
-            _ => Type::Error
-        }
-    }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<Diagnostic>) {
-        match self.name.as_str() {
-            "asm" => {
-                let oic = ctx.is_const.replace(true);
-                let mut errs = vec![];
-                let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
-                ctx.is_const.set(oic);
-                match args.len() {
-                    2 => {
-                        let a0 = args.pop_front().unwrap();
-                        let a1 = args.pop_front().unwrap();
-                        if is_str(&a0.data_type) && is_str(&a1.data_type) {
-                            match (a0, a1) {
-                                (
-                                    Value {inter_val: Some(InterData::Str(c)), ..},
-                                    Value {inter_val: Some(InterData::Str(b)), ..}
-                                ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))), errs),
-                                (a0, a1) => {
-                                    errs.push(Diagnostic::error(self.loc.clone(), 430, None)
-                                        .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                        .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                        .info("both arguments should be constant strings (i8 const*)".to_string()));
-                                    (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
-                                }
-                            }
-                        }
-                        else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 430, None)
-                                .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .info("both arguments should be constant strings (i8 const*)".to_string()));
-                            (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
-                        }
-                    },
-                    3 => {
-                        let a0 = args.pop_front().unwrap();
-                        let a1 = args.pop_front().unwrap();
-                        let a2 = args.pop_front().unwrap();
-                        if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(r)), ..} = a0 {
-                            if is_str(&a1.data_type) && is_str(&a2.data_type) {
-                                match (a1, a2) {
-                                    (
-                                        Value {inter_val: Some(InterData::Str(c)), ..},
-                                        Value {inter_val: Some(InterData::Str(b)), ..}
-                                    ) => (Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)), errs),
-                                    (a1, a2) => {
-                                        errs.push(Diagnostic::error(self.loc.clone(), 430, None)
-                                            .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                            .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                            .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
-                                        (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
-                                    }
-                                }
-                            }
-                            else {
-                                errs.push(Diagnostic::error(self.loc.clone(), 430, None)
-                                    .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                    .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                    .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
-                                (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(r)), errs)
-                            }
-                        }
-                        else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 430, None)
-                                .note(self.args[0].loc(), format!("first argument type is {} ({})", a0.data_type, if a0.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .note(self.args[1].loc(), format!("second argument type is {} ({})", a1.data_type, if a1.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .note(self.args[2].loc(), format!("third argument type is {} ({})", a2.data_type, if a2.inter_val.is_some() {"constant"} else {"runtime-only"}))
-                                .info("arguments should be a type, then two constant strings (i8 const*)".to_string()));
-                            (Value::metaval(InterData::InlineAsm(String::new(), String::new()), Type::InlineAsm(Box::new(Type::Null))), errs)
-                        }
-                    },
-                    x => {
-                        errs.push(Diagnostic::error(self.loc.clone(), 430, Some(format!("expected 2 or 3 arguments, got {x}")))
-                            .info("acceptable forms are:".to_string())
-                            .info("constraint, body".to_string())
-                            .info("return, constraint, body".to_string()));
-                        (Value::error(), errs)
-                    }
-                }
-            },
-            "alloca" => {
-                let mut errs = vec![];
-                let mut args = self.args.iter().map(|a| a.codegen_errs(ctx, &mut errs)).collect::<LinkedList<_>>();
-                if args.is_empty() {return (Value::error(), vec![Diagnostic::error(self.loc.clone(), 435, None)]);}
-                let ty = if args.front().unwrap().data_type == Type::TypeData {if let Some(InterData::Type(t)) = args.pop_front().unwrap().inter_val {Some(t)} else {None}} else {None};
-                if args.is_empty() {
-                    if let Some(ty) = ty {
-                        if let Some(llt) = ty.llvm_type(ctx) {
-                            (Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(ty, true)), vec![])
-                        }
-                        else {
-                            (Value::new(None, None, Type::Pointer(Box::new(Type::Null), true)), vec![Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty)))])
-                        }
-                    }
-                    else {
-                        unreachable!()
-                    }
-                }
-                else {
-                    let mut val = None;
-                    for (n, mut arg) in args.into_iter().enumerate() {
-                        loop {
-                            match arg.data_type {
-                                Type::Borrow(b) => arg.data_type = *b,
-                                Type::Reference(b, _) => {
-                                    if b.register(ctx) && !ctx.is_const.get() {
-                                        if let Some(PointerValue(v)) = arg.comp_val {
-                                            arg.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
-                                        }
-                                    }
-                                    arg.data_type = *b;
-                                },
-                                x @ (Type::Int(..) | Type::IntLiteral) => {
-                                    arg.data_type = x;
-                                    if !ctx.is_const.get() {
-                                        if let Some(IntValue(v)) = arg.value(ctx) {
-                                            if let Some(v2) = val {
-                                                val = Some(ctx.builder.build_int_mul(v, v2, ""));
-                                            }
-                                            else {
-                                                val = Some(v);
-                                            }
-                                        }
-                                    }
-                                    break;
-                                },
-                                x => {
-                                    errs.push(Diagnostic::error(self.args[n + usize::from(ty.is_some())].loc(), 434, Some(format!("argument type is {x}"))));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if let Some(ty) = ty {
-                        if let Some(llt) = ty.llvm_type(ctx) {
-                            (Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(ty, true)), errs)
-                        }
-                        else {
-                            errs.push(Diagnostic::error(self.loc.clone(), 431, Some(format!("type is {}", *ty))));
-                            (Value::new(None, None, Type::Pointer(ty, true)), errs)
-                        }
-                    }
-                    else {
-                        (Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Null), true)), errs)
-                    }
-                }
-            },
-            x => (Value::error(), vec![Diagnostic::error(self.loc.clone(), 391, Some(format!("unknown intrinsic {x:?}")))])
-        }
-    }
-    fn to_code(&self) -> String {
-        let mut out = format!("{}(", self.name);
-        let mut count = self.args.len();
-        for arg in self.args.iter() {
-            out += arg.to_code().as_str();
-            if count > 1 {
-                out += ", ";
-            }
-            count -= 1;
-        }
-        out + ")"
-    }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix) -> std::fmt::Result {
-        let mut count = self.args.len();
-        writeln!(f, "intrinsic: {}", self.name)?;
-        for arg in self.args.iter() {
-            print_ast_child(f, pre, &**arg, count <= 1)?;
-            count -= 1;
-        }
-        Ok(())
-    }
-}
-fn is_str(ty: &Type) -> bool {
-    match ty {
-        Type::Pointer(b, _) => **b == Type::Int(8, false),
-        Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, false)} else {false}
-        _ => false
-    }
+    fn loc(&self) -> SourceSpan {self.loc}
+    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Intrinsic(self.name.clone())}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
+    fn to_code(&self) -> String {format!("@{}", self.name)}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
 }
