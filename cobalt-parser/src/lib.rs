@@ -85,9 +85,16 @@ fn ignored<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, ()> {
     good.then_some(((), (start..current).into(), src, errs))
 }
 /// Used for parsing a keyword, followed by some whitespace
-fn start_match<'a>(kw: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, ()> {
+fn start_match<'a>(kw: &'static str, mut src: &'a str, mut start: usize) -> ParserReturn<'a, ()> {
+    let begin = start;
     let kwl = kw.len();
-    src.starts_with(kw).then(move || ignored(&src[kwl..], start + kw.len())).flatten().map(move |(found, span, rem, errs)| (found, (span.offset() - kwl, span.len() + kwl).into(), rem, errs))
+    src.starts_with(kw).then_some(())?;
+    src = &src[kwl..];
+    start += kwl;
+    (!src.chars().next().map_or(false, is_xid_continue)).then_some(())?;
+    let mut errs = vec![];
+    process(ignored, &mut src, &mut start, &mut errs);
+    Some(((), (begin..start).into(), src, errs))
 }
 /// A local identifier is just an ident
 fn local_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedName> {
@@ -423,7 +430,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                     process(ignored, &mut src, &mut start, &mut errs);
                     res
                 }).flatten();
-                match src.as_bytes().get(0).copied() {
+                match src.as_bytes().first().copied() {
                     Some(b')') => {},
                     Some(b',') => {
                         src = &src[1..];
@@ -1145,11 +1152,191 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
 /// Depending on the location, assignments may or may not be allowed
 /// Also specify a recovery string, if any of the characters in it are found, stop parsing
 fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn postfix<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let ast = process(atom, &mut src, &mut start, &mut errs)?.0;
+        enum PostfixType {
+            Operator(String, usize),
+            Subscript(Box<dyn AST>, usize),
+            Call(Vec<Box<dyn AST>>, SourceSpan)
+        }
+        let mut ops = vec![];
+        loop {
+            process(ignored, &mut src, &mut start, &mut errs);
+            match src.as_bytes().first().copied() {
+                Some(c @ (b'!' | b'?' | b'^')) => {
+                    ops.push(PostfixType::Operator((match c {
+                        b'!' => "!",
+                        b'?' => "?",
+                        b'^' => "^",
+                        _ => unreachable!()
+                    }).to_string(), start));
+                    src = &src[1..];
+                    start += 1;
+                },
+                Some(c @ (b'&' | b'*')) => {
+                    ops.push(PostfixType::Operator((match c {
+                        b'&' => "const&",
+                        b'*' => "const*",
+                        _ => unreachable!()
+                    }).to_string(), start));
+                    src = &src[1..];
+                    start += 1;
+                },
+                Some(b'c') if src.starts_with("const") => {
+                    let src_ = src;
+                    let start_ = start;
+                    src = &src[5..];
+                    start += 5;
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    match src.as_bytes().first().copied() {
+                        Some(c @ (b'&' | b'*')) => {
+                            ops.push(PostfixType::Operator((match c {
+                                b'&' => "const&",
+                                b'*' => "const*",
+                                _ => unreachable!()
+                            }).to_string(), start));
+                            src = &src[1..];
+                            start += 1;
+                        },
+                        _ => {
+                            src = src_;
+                            start = start_;
+                            break
+                        }
+                    }
+                },
+                Some(b'm') if src.starts_with("mut") => {
+                    let src_ = src;
+                    let start_ = start;
+                    src = &src[3..];
+                    start += 3;
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    match src.as_bytes().first().copied() {
+                        Some(c @ (b'&' | b'*')) => {
+                            ops.push(PostfixType::Operator((match c {
+                                b'&' => "mut&",
+                                b'*' => "mut*",
+                                _ => unreachable!()
+                            }).to_string(), start));
+                            src = &src[1..];
+                            start += 1;
+                        },
+                        _ => {
+                            src = src_;
+                            start = start_;
+                            break
+                        }
+                    }
+                },
+                Some(b'(') => {
+                    let open = start;
+                    src = &src[1..];
+                    start += 1;
+                    let mut args = vec![];
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    let cparen;
+                    loop {
+                        if src.starts_with(')') {
+                            cparen = (start, 1).into();
+                            src = &src[1..];
+                            start += 1;
+                            break
+                        }
+                        if src.is_empty() {
+                            cparen = start.into();
+                            errs.push(CobaltError::UnmatchedDelimiter {
+                                expected: ')',
+                                found: ParserFound::Eof,
+                                start: (open, 1).into(),
+                                end: start.into()
+                            });
+                            break
+                        }
+                        args.push(process(|src, start| expr(true, ",)", src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                            errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                            Box::new(NullAST::new(start.into())) as _
+                        }, |x| x.0));
+                        process(ignored, &mut src, &mut start, &mut errs);
+                        if !src.starts_with([',', ')']) {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: r#""," between function arguments"#,
+                                found: got.0,
+                                loc: (start, got.1).into()
+                            });
+                            let idx = src.find([',', ')']).unwrap_or(src.len());
+                            src = &src[idx..];
+                            start += idx;
+                        }
+                        if src.starts_with(',') {
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        process(ignored, &mut src, &mut start, &mut errs);
+                    }
+                    ops.push(PostfixType::Call(args, cparen))
+                },
+                Some(b'[') => {
+                    let open = start;
+                    src = &src[1..];
+                    start += 1;
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    let sub = process(|src, start| expr(true, ",", src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    if src.starts_with(']') {
+                        src = &src[1..];
+                        start += 1;
+                    }
+                    else {
+                        let got = got(src);
+                        errs.push(CobaltError::UnmatchedDelimiter {
+                            expected: ']',
+                            found: got.0,
+                            start: (open, 1).into(),
+                            end: (start, got.1).into()
+                        });
+                    }
+                    ops.push(PostfixType::Subscript(sub, start));
+                },
+                _ => break
+            }
+        }
+        let ast = ops.into_iter().fold(ast, |ast, op| match op {
+            PostfixType::Operator(op, loc) => Box::new(PostfixAST::new((loc, op.len()).into(), op, ast)) as _,
+            PostfixType::Subscript(sub, loc) => Box::new(SubAST::new(merge_spans(ast.loc(), loc.into()), ast, sub)) as _,
+            PostfixType::Call(args, cparen) => Box::new(CallAST::new(cparen, ast, args)) as _
+        });
+        Some((ast, (begin..start).into(), src, errs))
+    }  
+    fn prefix<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut ops = vec![];
+        let mut errs = vec![];
+        loop {
+            if src.starts_with("++") || src.starts_with("--") {
+                ops.push((start, src[..2].to_string()));
+                src = &src[2..];
+                start += 2;
+            }
+            else if src.starts_with(['+', '-', '~', '*', '&', '!']) {
+                ops.push((start, src[..1].to_string()));
+                src = &src[1..];
+                start += 1;
+            }
+            else {break}
+            process(ignored, &mut src, &mut start, &mut errs);
+        }
+        let ast = process(postfix, &mut src, &mut start, &mut errs)?.0;
+        let ast = ops.into_iter().rfold(ast, |ast, (loc, op)| Box::new(PrefixAST::new((loc, op.len()).into(), op, ast)) as _);
+        Some((ast, (begin..start).into(), src, errs))
+    }
     // TODO: Macros would be more DRY, maybe switch to them?
     fn mul_div<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
-        let first = process(atom, &mut src, &mut start, &mut errs)?.0;
+        let first = process(prefix, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
         while src.starts_with(['*', '/', '%']) {
@@ -1158,7 +1345,7 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
             src = &src[1..];
             start += 1;
             process(ignored, &mut src, &mut start, &mut errs);
-            let rhs = process(atom, &mut src, &mut start, &mut errs).map_or_else(|| {
+            let rhs = process(prefix, &mut src, &mut start, &mut errs).map_or_else(|| {
                 errs.push(CobaltError::ExpectedExpr {loc: start.into()});
                 Box::new(NullAST::new(start.into())) as _
             }, |x| x.0);
@@ -1424,7 +1611,7 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
 fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedNameSegment> {
     use CompoundDottedNameSegment::*;
     if let Some((found, span, rem, errs)) = ident(false, src, start) {return Some((Identifier(found.to_string(), span), span, rem, errs))}
-    match *src.as_bytes().get(0)? {
+    match *src.as_bytes().first()? {
         b'*' => Some((Glob((start, 1).into()), (start, 1).into(), &src[1..], vec![])),
         b'{' => {
             let begin = start;
@@ -1618,14 +1805,22 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
             loop {
                 match src.as_bytes().first() {
                     Some(b'=') => {
+                        src = &src[1..];
+                        start += 1;
                         process(ignored, &mut src, &mut start, &mut errs);
                         let import = process(cdn, &mut src, &mut start, &mut errs).unwrap().0;
                         let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
                         break Some((Box::new(ModuleAST::new((begin, 6).into(), name, vec![Box::new(ImportAST::new(start_span, import, vec![]))], anns)) as Box<dyn AST>, (old..start).into(), src, errs))
                     },
                     Some(b'{') => {
+                        src = &src[1..];
+                        start += 1;
                         let asts = process(top_levels, &mut src, &mut start, &mut errs).unwrap().0;
-                        if src.as_bytes().first() != Some(&b'}') {
+                        if src.as_bytes().first() == Some(&b'}') {
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        else {
                             let got = got(src);
                             errs.push(CobaltError::ExpectedFound {
                                 ex: r#""}" after module body"#,
@@ -1637,6 +1832,8 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
                         break Some((Box::new(ModuleAST::new((begin, 6).into(), name, asts, anns)), (old..start).into(), src, errs))
                     },
                     Some(b';') => {
+                        src = &src[1..];
+                        start += 1;
                         let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
                         break Some((Box::new(ModuleAST::new((begin, 6).into(), name, vec![], anns)), (old..start).into(), src, errs))
                     },
@@ -1683,7 +1880,11 @@ fn top_levels<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Vec<Bo
     let old = start;
     Some((std::iter::from_fn(|| {
         process(ignored, &mut src, &mut start, &mut errs);
-        if src.starts_with(';') {return Some(None)}
+        if src.starts_with(';') {
+            src = &src[1..];
+            start += 1;
+            return Some(None)
+        }
         let ast = process(top_level, &mut src, &mut start, &mut errs)?.0;
         Some(Some(ast))
     }).filter_map(|x| x).collect(), (old..start).into(), src, errs))

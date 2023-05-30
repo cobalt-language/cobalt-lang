@@ -953,23 +953,22 @@ impl AST for FnDefAST {
 }
 #[derive(Debug, Clone)]
 pub struct CallAST {
-    loc: SourceSpan,
     pub cparen: SourceSpan,
     pub target: Box<dyn AST>,
     pub args: Vec<Box<dyn AST>>
 }
 impl CallAST {
-    pub fn new(loc: SourceSpan, cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {loc, cparen, target, args}}
+    pub fn new(cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {cparen, target, args}}
 }
 impl AST for CallAST {
-    fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.cparen)}
+    fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
     fn expl_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.loc, Some(self.cparen.clone()), self.args.iter().map(|a| {
+        (types::utils::call(val, self.target.loc(), Some(self.cparen.clone()), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
