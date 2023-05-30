@@ -112,7 +112,7 @@ impl AST for CharLiteralAST {
     fn is_const(&self) -> bool {true}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
-            None | Some(("", _)) => Type::Char,
+            None | Some(("", _)) => Type::Int(32, true),
             Some(("isize", _)) => Type::Int(64, false),
             Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
             Some(("usize", _)) => Type::Int(64, true),

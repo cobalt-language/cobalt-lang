@@ -193,6 +193,14 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan
     },
+    #[error("couldn't call `@{name}`")]
+    InvalidIntrinsicCall {
+        name: &'static str,
+        #[label]
+        loc: SourceSpan,
+        #[related]
+        errs: Vec<CobaltError>
+    },
     #[error("bit cast target must be the same size as the source")]
     DifferentBitCastSizes {
         #[label]

@@ -1,5 +1,6 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
+use std::collections::VecDeque;
 use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
@@ -2571,6 +2572,207 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 _ => Err(err)
             }
         },
+        Type::Intrinsic(name) => match name.as_str() {
+            "asm" => {
+                let mut args = args.into_iter().collect::<VecDeque<_>>();
+                match args.len() {
+                    2 => {
+                        let (a0, loc0) = args.pop_front().unwrap();
+                        let (a1, loc1) = args.pop_front().unwrap();
+                        if is_str(&a0.data_type) && is_str(&a1.data_type) {
+                            match (a0, a1) {
+                                (
+                                    Value {inter_val: Some(InterData::Array(c)), ..},
+                                    Value {inter_val: Some(InterData::Array(b)), ..}
+                                ) => {
+                                    let mut errs = vec![];
+                                    let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: loc0
+                                        });
+                                        String::new()
+                                    });
+                                    let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                        errs.push(CobaltError::NonUtf8String {
+                                            pos: e.utf8_error().valid_up_to(),
+                                            loc: loc1
+                                        });
+                                        String::new()
+                                    });
+                                    if !errs.is_empty() {
+                                        return Err(CobaltError::InvalidIntrinsicCall {
+                                            name: "asm",
+                                            loc, errs
+                                        });
+                                    }
+                                    Ok(Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(Box::new(Type::Null))))
+                                },
+                                (a0, a1) => Err(CobaltError::InvalidInlineAsm2 {
+                                    loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                    loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some()
+                                })
+                            }
+                        }
+                        else {
+                            Err(CobaltError::InvalidInlineAsm2 {
+                                loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some()
+                            })
+                        }
+                    },
+                    3 => {
+                        let (a0, loc0) = args.pop_front().unwrap();
+                        let (a1, loc1) = args.pop_front().unwrap();
+                        let (a2, loc2) = args.pop_front().unwrap();
+                        if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(r)), ..} = a0 {
+                            if is_str(&a1.data_type) && is_str(&a2.data_type) {
+                                match (a1, a2) {
+                                    (
+                                        Value {inter_val: Some(InterData::Array(c)), ..},
+                                        Value {inter_val: Some(InterData::Array(b)), ..}
+                                    ) => {
+                                        let mut errs = vec![];
+                                        let c = String::from_utf8(c.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: loc1
+                                            });
+                                            String::new()
+                                        });
+                                        let b = String::from_utf8(b.into_iter().map(|x| if let InterData::Int(v) = x {v as u8} else {unreachable!()}).collect::<Vec<_>>()).unwrap_or_else(|e| {
+                                            errs.push(CobaltError::NonUtf8String {
+                                                pos: e.utf8_error().valid_up_to(),
+                                                loc: loc2
+                                            });
+                                            String::new()
+                                        });
+                                        if !errs.is_empty() {
+                                            return Err(CobaltError::InvalidIntrinsicCall {
+                                                name: "asm",
+                                                loc, errs
+                                            });
+                                        }
+                                        Ok(Value::metaval(InterData::InlineAsm(c, b), Type::InlineAsm(r)))
+                                    },
+                                    (a1, a2) => Err(CobaltError::InvalidInlineAsm3 {
+                                        loc1: loc0, type1: "type".to_string(), const1: true,
+                                        loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                        loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                                    })
+                                }
+                            }
+                            else {
+                                Err(CobaltError::InvalidInlineAsm3 {
+                                    loc1: loc0, type1: "type".to_string(), const1: true,
+                                    loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                    loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                                })
+                            }
+                        }
+                        else {
+                            Err(CobaltError::InvalidInlineAsm3 {
+                                loc1: loc0, type1: a0.data_type.to_string(), const1: a0.inter_val.is_some(),
+                                loc2: loc1, type2: a1.data_type.to_string(), const2: a1.inter_val.is_some(),
+                                loc3: loc2, type3: a2.data_type.to_string(), const3: a2.inter_val.is_some()
+                            })
+                        }
+                    },
+                    x => {
+                        Err(CobaltError::InvalidInlineAsm {
+                            nargs: x,
+                            loc
+                        })
+                    }
+                }
+            },
+            "alloca" => {
+                let mut args = args.into_iter().collect::<VecDeque<_>>();
+                if args.is_empty() {
+                    return Err(CobaltError::AllocaNeedsArgs {loc})
+                }
+                let loc0 = args.front().unwrap().1;
+                let ty = (args.front().unwrap().0.data_type == Type::TypeData).then(|| args.pop_front().unwrap().0.into_type()).flatten();
+                if args.is_empty() {
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            Ok(Value::compiled(ctx.builder.build_alloca(llt, "").into(), Type::Pointer(Box::new(ty), true)))
+                        }
+                        else {
+                            Err(CobaltError::NonRuntimeAllocaType {ty: ty.to_string(), loc: loc0})
+                        }
+                    }
+                    else {
+                        unreachable!()
+                    }
+                }
+                else {
+                    let mut val = None;
+                    let mut errs = vec![];
+                    for (mut arg, loc) in args {
+                        loop {
+                            match arg.data_type {
+                                Type::Borrow(b) => arg.data_type = *b,
+                                Type::Reference(b, _) => {
+                                    if b.register(ctx) && !ctx.is_const.get() {
+                                        if let Some(PointerValue(v)) = arg.comp_val {
+                                            arg.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                                        }
+                                    }
+                                    arg.data_type = *b;
+                                },
+                                x @ (Type::Int(..) | Type::IntLiteral) => {
+                                    arg.data_type = x;
+                                    if !ctx.is_const.get() {
+                                        if let Some(IntValue(v)) = arg.value(ctx) {
+                                            if let Some(v2) = val {
+                                                val = Some(ctx.builder.build_int_mul(v, v2, ""));
+                                            }
+                                            else {
+                                                val = Some(v);
+                                            }
+                                        }
+                                    }
+                                    break;
+                                },
+                                x => {
+                                    errs.push(CobaltError::NonIntegralAllocaArg {ty: x.to_string(), loc});
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(ty) = ty {
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            if !errs.is_empty() {
+                                return Err(CobaltError::InvalidIntrinsicCall {
+                                    name: "alloca",
+                                    loc, errs
+                                })
+                            }
+                            Ok(Value::compiled(ctx.builder.build_array_alloca(llt, val.unwrap(), "").into(), Type::Pointer(Box::new(ty), true)))
+                        }
+                        else {
+                            errs.push(CobaltError::NonRuntimeAllocaType {ty: ty.to_string(), loc: loc0});
+                            Err(CobaltError::InvalidIntrinsicCall {
+                                name: "alloca",
+                                loc, errs
+                            })
+                        }
+                    }
+                    else {
+                        if !errs.is_empty() {
+                            return Err(CobaltError::InvalidIntrinsicCall {
+                                name: "alloca",
+                                loc, errs
+                            })
+                        }
+                        Ok(Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Null), true)))
+                    }
+                }
+            },
+            x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
+        },
         t => Err(CobaltError::CannotCallWithArgs {
             val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
@@ -2591,5 +2793,13 @@ pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
         (Type::Float64, Type::Float16 | Type::Float32) | (Type::Float16 | Type::Float32, Type::Float64) => Some(Type::Float64),
         (Type::Float128, Type::Float16 | Type::Float32 | Type::Float64) | (Type::Float16 | Type::Float32 | Type::Float64, Type::Float128) => Some(Type::Float128),
         _ => None
+    }
+}
+fn is_str(ty: &Type) -> bool {
+    match ty {
+        Type::Pointer(b, _) => **b == Type::Int(8, true),
+        Type::Array(b, _) => **b == Type::Int(8, true),
+        Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, true)} else {false}
+        _ => false
     }
 }

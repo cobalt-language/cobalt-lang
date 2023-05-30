@@ -523,6 +523,14 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         } else {false};
         ident(false, src, start).map(|(name, loc, rem, errs)| (Box::new(VarGetAST::new(loc, name.to_string(), global)) as _, if global {(loc.offset() - 1, loc.len() + 1).into()} else {loc}, rem, errs))
     }
+    fn intrin<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        src.starts_with('@').then_some(())?;
+        let begin = start;
+        src = &src[1..];
+        start += 1;
+        let name = process(|src, start| ident(true, src, start), &mut src, &mut start, &mut vec![]).unwrap().0;
+        Some((Box::new(IntrinsicAST::new((begin..start).into(), name.to_string())), (begin..start).into(), src, vec![]))
+    }
     fn num<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let mut errs = vec![];
         let begin = start;
@@ -1144,6 +1152,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         .or_else(|| blocks(src, start))
         .or_else(|| strlit(src, start))
         .or_else(|| chrlit(src, start))
+        .or_else(|| intrin(src, start))
         .or_else(||    num(src, start))
         .or_else(|| varget(src, start))
     // the order for these isn't hugely important, but it should (in theory) put the slower calls later
