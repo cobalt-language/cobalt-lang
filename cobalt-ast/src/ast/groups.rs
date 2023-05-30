@@ -4,6 +4,9 @@ pub struct BlockAST {
     loc: SourceSpan,
     pub vals: Vec<Box<dyn AST>>
 }
+impl BlockAST {
+    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {BlockAST {loc, vals}}
+}
 impl AST for BlockAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
@@ -35,16 +38,18 @@ impl AST for BlockAST {
         Ok(())
     }
 }
-impl BlockAST {
-    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {BlockAST {loc, vals}}
-}
 #[derive(Debug, Clone)]
 pub struct GroupAST {
-    loc: SourceSpan,
     pub vals: Vec<Box<dyn AST>>
 }
+impl GroupAST {
+    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
+        assert!(!vals.is_empty());
+        GroupAST {vals}
+    }
+}
 impl AST for GroupAST {
-    fn loc(&self) -> SourceSpan {self.loc}
+    fn loc(&self) -> SourceSpan {merge_spans(self.vals[0].loc(), self.vals.last().unwrap().loc())}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
@@ -71,9 +76,6 @@ impl AST for GroupAST {
         }
         Ok(())
     }
-}
-impl GroupAST {
-    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {GroupAST {loc, vals}}
 }
 #[derive(Debug, Clone)]
 pub struct TopLevelAST {

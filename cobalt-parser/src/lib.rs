@@ -223,7 +223,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(false, ":;", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
@@ -231,7 +231,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten().unwrap_or_else(|| Box::new(NullAST::new(ty.as_ref().map_or(start_span, |x| x.loc()))));
@@ -249,7 +249,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(false, ":;", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
@@ -257,7 +257,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten().unwrap_or_else(|| Box::new(NullAST::new(ty.as_ref().map_or(start_span, |x| x.loc()))));
@@ -275,7 +275,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(false, ":;", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
@@ -283,7 +283,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten().unwrap_or_else(|| Box::new(NullAST::new(ty.as_ref().map_or(start_span, |x| x.loc()))));
@@ -301,7 +301,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten().unwrap_or_else(|| Box::new(NullAST::new(start_span)));
@@ -409,7 +409,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                     src = &src[1..];
                     start += 1;
                     process(ignored, &mut src, &mut start, &mut errs);
-                    let res = process(|src, start| expr(false, ":;", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                    let res = process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                     process(ignored, &mut src, &mut start, &mut errs);
                     res
                 }).flatten().unwrap_or_else(|| {
@@ -426,7 +426,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                     src = &src[1..];
                     start += 1;
                     process(ignored, &mut src, &mut start, &mut errs);
-                    let res = process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
+                    let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
                     process(ignored, &mut src, &mut start, &mut errs);
                     res
                 }).flatten();
@@ -468,7 +468,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                process(|src, start| expr(false, "=;", src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
                     let got = got(src);
                     errs.push(CobaltError::ExpectedFound {
                         ex: "return type",
@@ -483,7 +483,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
-                process(|src, start| expr(true, ";", src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
                     let got = got(src);
                     errs.push(CobaltError::ExpectedFound {
                         ex: "function body",
@@ -510,7 +510,7 @@ fn stmt<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>
     None
         .or_else(|| import(&anns, src, start))
         .or_else(move || declarations(DeclLoc::Local, Some(anns), src, start))
-        .or_else(|| expr(true, ";", src_, start_))
+        .or_else(|| expr(1, src_, start_))
 }
 /// Parse an atom
 /// An atom cannot be subdivided
@@ -1098,8 +1098,48 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         src = &src[1..];
         start += 1;
         process(ignored, &mut src, &mut start, &mut errs);
-        let ast = process(|src, start| expr(true, ")", src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
+        let mut ast = process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
         process(ignored, &mut src, &mut start, &mut errs);
+        if src.starts_with(',') {
+            let mut vals = vec![ast];
+            src = &src[1..];
+            start += 1;
+            process(ignored, &mut src, &mut start, &mut errs);
+            loop {
+                if src.starts_with(')') {break}
+                if src.is_empty() {
+                    errs.push(CobaltError::UnmatchedDelimiter {
+                        expected: ')',
+                        found: ParserFound::Eof,
+                        start: (begin, 1).into(),
+                        end: start.into()
+                    });
+                    break
+                }
+                vals.push(process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                    errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                    Box::new(NullAST::new(start.into())) as _
+                }, |x| x.0));
+                process(ignored, &mut src, &mut start, &mut errs);
+                if !src.starts_with([',', ')']) {
+                    let got = got(src);
+                    errs.push(CobaltError::ExpectedFound {
+                        ex: r#""," between tuple elements"#,
+                        found: got.0,
+                        loc: (start, got.1).into()
+                    });
+                    let idx = src.find([',', ')']).unwrap_or(src.len());
+                    src = &src[idx..];
+                    start += idx;
+                }
+                if src.starts_with(',') {
+                    src = &src[1..];
+                    start += 1;
+                }
+                process(ignored, &mut src, &mut start, &mut errs);
+            }
+            ast = Box::new(TupleLiteralAST::new(vals));
+        }
         if src.starts_with(')') {
             src = &src[1..];
             start += 1;
@@ -1147,20 +1187,75 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         }
         Some((Box::new(BlockAST::new((begin..start).into(), stmts)), (begin..start).into(), src, errs))
     }
+    fn arrays<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        src.starts_with('[').then_some(())?;
+        let begin = start;
+        let mut vals = vec![];
+        let mut errs = vec![];
+        src = &src[1..];
+        start += 1;
+        process(ignored, &mut src, &mut start, &mut errs);
+        let end;
+        loop {
+            if src.starts_with(']') {
+                end = start;
+                src = &src[1..];
+                start += 1;
+                break
+            }
+            if src.is_empty() {
+                end = start;
+                errs.push(CobaltError::UnmatchedDelimiter {
+                    expected: ']',
+                    found: ParserFound::Eof,
+                    start: (begin, 1).into(),
+                    end: start.into()
+                });
+                break
+            }
+            vals.push(process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0));
+            process(ignored, &mut src, &mut start, &mut errs);
+            if !src.starts_with([',', ']']) {
+                let got = got(src);
+                errs.push(CobaltError::ExpectedFound {
+                    ex: r#""," between array elements"#,
+                    found: got.0,
+                    loc: (start, got.1).into()
+                });
+                let idx = src.find([',', ']']).unwrap_or(src.len());
+                src = &src[idx..];
+                start += idx;
+            }
+            if src.starts_with(',') {
+                src = &src[1..];
+                start += 1;
+            }
+            process(ignored, &mut src, &mut start, &mut errs);
+        }
+        Some((Box::new(ArrayLiteralAST::new((begin, 1).into(), (end, 1).into(), vals)), (begin..start).into(), src, errs))
+    }
     None // the None is unneccessary, but it makes the code prettier
         .or_else(|| parens(src, start))
         .or_else(|| blocks(src, start))
         .or_else(|| strlit(src, start))
         .or_else(|| chrlit(src, start))
         .or_else(|| intrin(src, start))
+        .or_else(|| arrays(src, start))
         .or_else(||    num(src, start))
         .or_else(|| varget(src, start))
     // the order for these isn't hugely important, but it should (in theory) put the slower calls later
+    // TODO: trie-based lookup to eliminate inaccessible paths
 }
 /// Parse an expression
-/// Depending on the location, assignments may or may not be allowed
-/// Also specify a recovery string, if any of the characters in it are found, stop parsing
-fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+/// The mode specifies how much can be parsed:
+/// - 0 starts at `log_or`
+/// - 1 starts at `assigns`
+/// - 2 starts at `compound`
+/// - anything higher is truncated
+fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
     fn postfix<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
@@ -1263,7 +1358,7 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
                             });
                             break
                         }
-                        args.push(process(|src, start| expr(true, ",)", src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                        args.push(process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
                             errs.push(CobaltError::ExpectedExpr {loc: start.into()});
                             Box::new(NullAST::new(start.into())) as _
                         }, |x| x.0));
@@ -1292,7 +1387,7 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
                     src = &src[1..];
                     start += 1;
                     process(ignored, &mut src, &mut start, &mut errs);
-                    let sub = process(|src, start| expr(true, ",", src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
+                    let sub = process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
                     process(ignored, &mut src, &mut start, &mut errs);
                     if src.starts_with(']') {
                         src = &src[1..];
@@ -1576,7 +1671,7 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 2).into(), "|?".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn assignments<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn assigns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         // rtl associativity is pain
         // it's not as simple as just going through backwards, because we don't know the end
         // no, we have to take the AST node, along with optional operator data, with the invariant
@@ -1607,7 +1702,25 @@ fn expr<'a>(assigns: bool, _recovery: &'static str, src: &'a str, start: usize) 
         let ast = vals.into_iter().map(|(a, d)| (a, d.unwrap())).rfold(last, |rhs, (lhs, (loc, op))| Box::new(BinOpAST::new(loc.into(), op, lhs, rhs)));
         Some((ast, (begin..start).into(), src, errs))
     }
-    (if assigns {assignments} else {log_or})(src, start)
+    fn compound<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        let mut ast = process(assigns, &mut src, &mut start, &mut errs)?.0;
+        process(ignored, &mut src, &mut start, &mut errs);
+        if src.starts_with(';') {
+            let mut asts = vec![ast];
+            while src.starts_with(';') {
+                src = &src[1..];
+                start += 1;
+                process(ignored, &mut src, &mut start, &mut errs);
+                asts.push(process(assigns, &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0));
+                process(ignored, &mut src, &mut start, &mut errs);
+            }
+            ast = Box::new(GroupAST::new(asts));
+        }
+        Some((ast, (begin..start).into(), src, errs))
+    }
+    [log_or, assigns, compound][std::cmp::min(mode, 2) as usize](src, start)
 }
 /// Parse a CompoundDottedNameSegment (CDNS)
 /// A CDNS can be:
@@ -1920,4 +2033,26 @@ pub fn parse_tl(mut src: &str) -> (TopLevelAST, Vec<CobaltError>) {
         }
     }
     (TopLevelAST::new(asts), errs)
+}
+/// Alternate parser entry point
+/// Calls `expr`, but hides all of the parsing details
+/// `mode` can be 0, 1, or 2
+/// if `mode >= 1`, assignments are parsed
+/// if `mode >= 2`, componud expressions (expressions separated by `;`) are parsed
+/// Setting `mode` to a number greater than 2 does nothing
+pub fn parse_expr(mut src: &str, mode: u8) -> (Box<dyn AST>, Vec<CobaltError>) {
+    let mut start = 0;
+    let mut errs = vec![];
+    process(ignored, &mut src, &mut start, &mut errs);
+    let ast = process(move |src, start| expr(mode, src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(0.into())) as _, |x| x.0);
+    process(ignored, &mut src, &mut start, &mut errs);
+    if !src.is_empty() {
+        let g = got(src);
+        errs.push(CobaltError::ExpectedFound {
+            ex: "end of expression",
+            found: g.0,
+            loc: (start, g.1).into()
+        });
+    }
+    (ast, errs)
 }

@@ -42,7 +42,7 @@ pub enum CobaltError {
         #[label("global name begins here")]
         loc: SourceSpan
     },
-    #[error("expected {expected}, found {found}")]
+    #[error(r#"expected "{expected}", found {found}"#)]
     UnmatchedDelimiter {
         expected: char,
         found: ParserFound,
