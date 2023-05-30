@@ -213,7 +213,7 @@ impl<'ctx> Value<'ctx> {
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
                 }
-                else if **ret == Type::Null {
+                else if ret.size(ctx) == SizeType::Static(0) {
                     let mut good = true;
                     let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                     if good {

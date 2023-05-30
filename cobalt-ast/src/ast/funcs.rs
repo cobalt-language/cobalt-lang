@@ -199,7 +199,7 @@ impl AST for FnDefAST {
                     ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
                 }
             }
-            else if **ret == Type::Null {
+            else if ret.size(ctx) == SizeType::Static(0) {
                 let mut good = true;
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
@@ -716,7 +716,7 @@ impl AST for FnDefAST {
                     ), VariableData::with_vis(self.loc, vs)))).clone()
                 }
             }
-            else if **ret == Type::Null {
+            else if ret.size(ctx) == SizeType::Static(0) {
                 let mut good = true;
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {

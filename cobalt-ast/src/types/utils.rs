@@ -2488,7 +2488,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             let val: Option<inkwell::values::PointerValue> = target.comp_val.and_then(|v| v.try_into().ok());
             let args: Vec<BasicMetadataValueEnum> = r.into_iter().filter_map(|(Value {comp_val, ..}, _)| comp_val.map(|v| v.into()).or_else(|| {good = false; None})).collect();
             let aty: Vec<BasicMetadataTypeEnum> = args.iter().map(|v| BasicValueEnum::try_from(*v).unwrap().get_type().into()).collect();
-            let fty = if *ret == Type::Null {Some(ctx.context.void_type().fn_type(&aty, false))} else {ret.llvm_type(ctx).map(|t| t.fn_type(&aty, false))};
+            let fty = if ret.size(ctx) == SizeType::Static(0) {Some(ctx.context.void_type().fn_type(&aty, false))} else {ret.llvm_type(ctx).map(|t| t.fn_type(&aty, false))};
             Ok(Value::new(
                 val.and_then(|v| ctx.builder.build_indirect_call(fty?, v, args.as_slice(), "").try_as_basic_value().left()),
                 None,
