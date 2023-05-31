@@ -162,47 +162,50 @@ fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, sr
     Some((found, span))
 }
 /// Parse an annotation
-fn annotation<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, (&'a str, Option<&'a str>, SourceSpan)> {
+fn annotation<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, (&'a str, Option<&'a str>, SourceSpan)> {
+    let begin = start;
     src.starts_with('@').then_some(())?;
     src = &src[1..];
-    let mut end = start + 1;
+    start += 1;
     let mut errs = vec![];
-    let name = process(move |src, start| ident(false, src, start), &mut src, &mut end, &mut errs).map_or_else(|| {
-        panic!("annotation cannot have an empty name");
-    }, |x| x.0);
-    let s = src;
-    let e = end;
-    process(ignored, &mut src, &mut end, &mut errs);
+    let name = process(move |src, start| ident(true, src, start), &mut src, &mut start, &mut errs).unwrap().0;
+    let src_ = src;
+    let start_ = start;
+    process(ignored, &mut src, &mut start, &mut errs);
     let arg = if src.starts_with('(') {
-        end += 1;
-        let ps = end;
+        src = &src[1..];
+        start += 1;
         let mut depth = 1;
-        let mut s = &src[end..];
-        while let Some(next) = s.find(['(', ')']) {
-            match s.as_bytes()[next] {
+        while let Some(next) = src.find(['(', ')']) {
+            match src.as_bytes()[next] {
                 b'(' => depth += 1,
                 b')' => depth -= 1,
                 _ => unreachable!()
             }
-            end += next;
-            s = &s[(next + 1)..];
+            start += next + 1;
+            src = &src[(next + 1)..];
             if depth == 0 {break}
-            end += 1;
         }
         if depth > 0 {
-            panic!("unclosed annotation argument")
+            let got = got(src);
+            errs.push(CobaltError::UnmatchedDelimiter {
+                expected: ')',
+                found: got.0,
+                start: (start_ + 1, 1).into(),
+                end: (start, got.1).into()
+            });
         }
-        let pe = end;
-        end += 1;
-        Some(&src[ps..pe])
+        let arg = &src_[1..(start - start_ - 1)];
+        Some(arg)
     }
     else {
-        src = s;
-        end = e;
+        src = src_;
+        start = start_;
         None
     };
-    process(ignored, &mut src, &mut end.clone(), &mut errs);
-    Some(((name, arg, (start..end).into()), (start..end).into(), &src, errs))
+    let end = start;
+    process(ignored, &mut src, &mut start, &mut errs);
+    Some(((name, arg, (begin..end).into()), (begin..start).into(), src, errs))
 }
 /// Location of the declarations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1894,11 +1897,11 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
     let anns: Vec<_> = std::iter::from_fn(|| process(annotation, &mut src, &mut start, &mut errs)).map(|x| x.0).collect();
     match *src.as_bytes().first()? {
         b'i' => {
-            let (out, mut span) = process(|src, start| import(&anns, src, start), &mut src, &mut start, &mut errs)?;
+            let out = process(|src, start| import(&anns, src, start), &mut src, &mut start, &mut errs)?.0;
             process(ignored, &mut src, &mut start, &mut errs);
             if src.starts_with(';') {
                 src = &src[1..];
-                span = (span.offset(), span.len() + 1).into();
+                start += 1;
             }
             else {
                 let got = got(src);
@@ -1908,7 +1911,7 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
                     loc: (start, got.1).into()
                 });
             }
-            Some((out, span, src, errs))
+            Some((out, (old..start).into(), src, errs))
         },
         b'm' if src.starts_with("module") => {
             let begin = start;
@@ -1978,11 +1981,11 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
             }
         },
         _ => {
-            let (out, mut span) = process(|src, start| declarations(DeclLoc::Global, Some(anns), src, start), &mut src, &mut start, &mut errs)?;
+            let out = process(|src, start| declarations(DeclLoc::Global, Some(anns), src, start), &mut src, &mut start, &mut errs)?.0;
             process(ignored, &mut src, &mut start, &mut errs);
             if src.starts_with(';') {
                 src = &src[1..];
-                span = (span.offset(), span.len() + 1).into();
+                start += 1;
             }
             else {
                 let got = got(src);
@@ -1992,7 +1995,7 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
                     loc: (start, got.1).into()
                 });
             }
-            Some((out, span, src, errs))
+            Some((out, (old..start).into(), src, errs))
         }
     }
 }
