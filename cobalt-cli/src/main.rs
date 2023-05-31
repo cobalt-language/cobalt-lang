@@ -3,8 +3,11 @@ use inkwell::execution_engine::FunctionLookupError;
 use std::process::{Command, exit};
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
+use std::fmt;
 use anyhow::Context;
 use anyhow_std::*;
+use const_format::{formatcp, str_index};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use cobalt_ast::{CompCtx, AST};
 use cobalt_errors::*;
@@ -12,19 +15,39 @@ use cobalt_build::*;
 use cobalt_utils::Flags;
 use cobalt_parser::parse_tl;
 
-const HELP: &str = "co- Cobalt compiler and build system
-A program can be compiled using the `co aot' subcommand, or JIT compiled using the `co jit' subcommand";
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputType {
+    #[default]
+    #[value(name = "exe")]
     Executable,
+    #[value(name = "lib")]
     Library,
+    #[value(name = "obj")]
     Object,
+    #[value(name = "asm")]
     Assembly,
+    #[value(name = "llvm")]
     Llvm,
+    #[value(name = "bc")]
     Bitcode,
+    #[value(name = "header")]
     Header,
+    #[value(name = "header-obj")]
     HeaderObj
+}
+impl fmt::Display for OutputType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Executable => "exe",
+            Self::Library => "lib",
+            Self::Object => "obj",
+            Self::Assembly => "asm",
+            Self::Llvm => "llvm",
+            Self::Bitcode => "bc",
+            Self::Header => "header",
+            Self::HeaderObj => "header-obj"
+        })
+    }
 }
 
 const INIT_NEEDED: InitializationConfig = InitializationConfig {
@@ -35,144 +58,263 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
+static LONG_VERSION: &'static str = formatcp!("{}\nLLVM version {}{}{}",
+    env!("CARGO_PKG_VERSION"), cobalt_ast::LLVM_VERSION,
+    if cfg!(has_git) {formatcp!("\nGit commit {} on branch {}", str_index!(env!("GIT_COMMIT"), ..6), env!("GIT_BRANCH"))} else {""},
+    if cfg!(debug_assertions) {"\nDebug Build"} else {""}
+);
+#[derive(Debug, Clone, Parser)]
+#[command(name = "co", author, long_version = LONG_VERSION)]
+enum Cli {
+    /// Print version information
+    Version,
+    /// Test parser (debug-only)
+    #[cfg(debug_assertions)]
+    Parse {
+        /// input file to parse
+        files: Vec<String>,
+        /// raw string to parse
+        #[arg(short)]
+        code: Vec<String>,
+        /// print locations of AST nodes
+        #[arg(short)]
+        locs: bool
+    },
+    /// Test LLVM generation
+    #[cfg(debug_assertions)]
+    Llvm {
+        /// input file to compile
+        input: String
+    },
+    /// Parse a Cobalt header
+    #[cfg(debug_assertions)]
+    ParseHeader {
+        /// header files to parse
+        #[arg(required = true)]
+        inputs: Vec<String>
+    },
+    /// AOT compile a file
+    Aot {
+        /// input file to compile
+        input: String,
+        /// output file
+        #[arg(short, long)]
+        output: Option<String>,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// target triple to build
+        #[arg(short, long)]
+        triple: Option<String>,
+        /// type of file to emit
+        #[arg(short, long, default_value_t)]
+        emit: OutputType,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// continue compilation of errors are encountered
+        #[arg(short, long = "continue")]
+        continue_if_err: bool,
+        /// emit symbols with debug mangling
+        #[arg(short, long = "debug")]
+        debug_mangle: bool,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool
+    },
+    /// JIT compile and run a file
+    Jit {
+        /// input file to compile
+        input: String,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// continue compilation of errors are encountered
+        #[arg(short, long = "continue")]
+        continue_if_err: bool,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        #[arg(last = true)]
+        args: Vec<String>
+    },
+    /// Check a file for errors
+    Check {
+        /// input file to compile
+        input: String,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool
+    },
+    /// project-related utilities
+    #[command(subcommand, alias = "proj")]
+    Project(ProjSubcommand),
+    /// package-related utilities
+    #[command(subcommand, alias = "pkg")]
+    Package(PkgSubcommand)
+}
+#[derive(Debug, Clone, Subcommand)]
+enum ProjSubcommand {
+    /// Track the given projects
+    ///
+    /// If none are given, the current directory and its parents are searched
+    Track {
+        projects: Option<Vec<String>>
+    },
+    /// Untrack the given projects
+    ///
+    /// If none are given, the current directory and its parents are searched
+    Untrack {
+        projects: Option<Vec<String>>
+    },
+    /// List the currently tracked projects
+    List {
+        #[arg(short, long)]
+        machine: bool
+    },
+    /// Build a project
+    Build {
+        /// project file or its directory
+        project_dir: Option<String>,
+        /// directory that source files are relative to
+        #[arg(short, long = "source")]
+        source_dir: Option<String>,
+        /// directory to output build artifacts
+        #[arg(short, long = "build")]
+        build_dir: Option<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        /// target triple to build for
+        #[arg(short, long)]
+        triple: Option<String>,
+        /// targets to build
+        #[arg(short = 'T', long = "target")]
+        targets: Vec<String>,
+        /// rebuild all files, even those that are up to date
+        #[arg(short, long)]
+        rebuild: bool
+    },
+    /// Build and run a target in a project
+    #[command(alias = "exec")]
+    Run {
+        /// project file or its directory
+        project_dir: Option<String>,
+        /// directory that source files are relative to
+        #[arg(short, long = "source")]
+        source_dir: Option<String>,
+        /// directory to output build artifacts
+        #[arg(short, long = "build")]
+        build_dir: Option<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        /// targets to build
+        #[arg(short = 'T', long)]
+        target: Option<String>,
+        /// rebuild all files, even those that are up to date
+        #[arg(short, long)]
+        rebuild: bool,
+        #[arg(last = true)]
+        args: Vec<String>
+    },
+}
+#[derive(Debug, Clone, Subcommand)]
+enum PkgSubcommand {
+    /// Update all registries
+    Update,
+    /// Install packages
+    Install {
+        /// packages to install
+        #[arg(required = true)]
+        packages: Vec<String>
+    },
+}
 
-
+#[inline(always)]
 fn driver() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() == 1 {
-        println!("{}", HELP);
-        return Ok(());
-    }
-    match args[1].as_str() {
-        "help" | "--help" | "-h" => {
-            match args.get(2) {
-                None => println!("{HELP}"),
-                Some(x) => {
-                    eprintln!("unknown help category {x:?}");
-                    exit(1)
-                }
+    match Cli::parse() {
+        Cli::Version => println!("co {LONG_VERSION}"),
+        #[cfg(debug_assertions)]
+        Cli::Parse {files, code, locs} => {
+            for code in code {
+                let file = FILES.add_file(0, "<command line>".to_string(), code.clone());
+                let (mut ast, errs) = parse_tl(&code);
+                ast.file = Some(file);
+                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                if locs {print!("{:#}", ast)}
+                else {print!("{}", ast)}
+            }
+            for arg in files {
+                let code = Path::new(&arg).read_to_string_anyhow()?;
+                let file = FILES.add_file(0, arg.clone(), code.clone());
+                let (mut ast, errs) = parse_tl(&code);
+                ast.file = Some(file);
+                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                if locs {print!("{:#}", ast)}
+                else {print!("{}", ast)}
             }
         },
-        "version" | "--version" | "-v" | "-V" => {
-            println!("Cobalt version {}", env!("CARGO_PKG_VERSION"));
-            println!("LLVM version {}", cobalt_ast::LLVM_VERSION);
-            #[cfg(has_git)]
-            println!("Git commit {} on branch {}", &env!("GIT_COMMIT")[..6], env!("GIT_BRANCH"));
-            #[cfg(debug_assertions)]
-            println!("Debug Build");
-        }
-        "parse" if cfg!(debug_assertions) => {
-            let mut nfcl = false;
-            let mut loc = false;
-            for arg in args.into_iter().skip(2) {
-                if arg.is_empty() {continue;}
-                if arg.as_bytes()[0] == b'-' {
-                    for c in arg.chars().skip(1) {
-                        match c {
-                            'c' => {
-                                if nfcl {
-                                    warning!("reuse of -c flag");
-                                }
-                                nfcl = true;
-                            },
-                            'l' => {
-                                if loc {
-                                    warning!("reuse of -l flag");
-                                }
-                                loc = true;
-                            },
-                            x => warning!("unknown flag -{}", x)
-                        }
-                    }
-                }
-                else if nfcl {
-                    nfcl = false;
-                    let file = FILES.add_file(0, "<command line>".to_string(), arg.clone());
-                    let (mut ast, errs) = parse_tl(&arg);
-                    ast.file = Some(file);
-                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                    if loc {print!("{:#}", ast)}
-                    else {print!("{}", ast)}
-                }
-                else {
-                    let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (mut ast, errs) = parse_tl(&code);
-                    ast.file = Some(file);
-                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                    if loc {print!("{:#}", ast)}
-                    else {print!("{}", ast)}
-                }
-            }
-            if nfcl {
-                error!("-c flag must be followed by code");
-            }
-        },
-        "llvm" if cfg!(debug_assertions) => {
-            let mut in_file: Option<&str> = None;
-            {
-                let it = args.iter().skip(2).filter(|x| !x.is_empty());
-                for arg in it {
-                    if arg.is_empty() {continue;}
-                    if arg.as_bytes()[0] == b'-' {
-                        if arg.as_bytes().len() == 1 {
-                            if in_file.is_some() {
-                                error!("respecification of input file");
-                                exit(1)
-                            }
-                            in_file = Some("-");
-                        }
-                        else if arg.as_bytes()[1] == b'-' {
-                            error!("unknown flag --{}", &arg[2..]);
-                            exit(1)
-                        }
-                        else {
-                            for c in arg.chars().skip(1) {
-                                error!("unknown flag -{c}");
-                                exit(1)
-                            }
-                        }
-                    }
-                    else {
-                        if in_file.is_some() {
-                            error!("respecification of input file");
-                            exit(1)
-                        }
-                        in_file = Some(arg.as_str());
-                    }
-                }
-            }
-            if in_file.is_none() {
-                error!("no input file given");
-                exit(1)
-            }
-            let in_file = in_file.unwrap();
-            let code = if in_file == "-" {
+        #[cfg(debug_assertions)]
+        Cli::Llvm {input} => {
+            let code = if input == "-" {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 s
-            } else {Path::new(in_file).read_to_string_anyhow()?};
+            } else {Path::new(&input).read_to_string_anyhow()?};
             let mut flags = Flags::default();
             flags.dbg_mangle = true;
             let ink_ctx = inkwell::context::Context::create();
-            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
-            let mut fail = false;
-            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            let file = FILES.add_file(0, input, code.clone());
             let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let (_, errs) = ast.codegen(&ctx);
             for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            if let Err(msg) = ctx.module.verify() {
-                error!("\n{}", msg.to_string());
-                fail = true;
-            }
+            if let Err(msg) = ctx.module.verify() {error!("\n{}", msg.to_string())}
             print!("{}", ctx.module.to_string());
-            exit(if fail {101} else {0})
         },
-        "parse-header" if cfg!(debug_assertions) => {
-            for fname in std::env::args().skip(2) {
+        #[cfg(debug_assertions)]
+        Cli::ParseHeader {inputs} => {
+            for fname in inputs {
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::new(&ink_ctx, "<anon>");
                 let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
@@ -182,239 +324,34 @@ fn driver() -> anyhow::Result<()> {
                 }
             }
         },
-        "aot" => {
-            let mut output_type: Option<OutputType> = None;
-            let mut in_file: Option<&str> = None;
-            let mut out_file: Option<&str> = None;
-            let mut linked: Vec<&str> = vec![];
-            let mut link_dirs: Vec<String> = vec![];
-            let mut triple: Option<TargetTriple> = None;
-            let mut continue_if_err = false;
-            let mut no_default_link = false;
-            let mut debug_mangle = false;
-            let mut profile: Option<&str> = None;
-            let mut headers: Vec<&str> = vec![];
-            let mut linker_args: Vec<&str> = vec![];
-            {
-                let mut it = args.iter().skip(2).filter(|x| !x.is_empty());
-                while let Some(arg) = it.next() {
-                    if arg.is_empty() {continue;}
-                    if arg.as_bytes()[0] == b'-' {
-                        if arg.as_bytes().len() == 1 {
-                            if in_file.is_some() {
-                                error!("respecification of input file");
-                                exit(1)
-                            }
-                            in_file = Some("-");
-                        }
-                        else if arg.as_bytes()[1] == b'-' {
-                            match &arg[2..] {
-                                "continue" => {
-                                    if continue_if_err {
-                                        warning!("reuse of --continue flag");
-                                    }
-                                    continue_if_err = true;
-                                },
-                                "emit-asm" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Assembly);
-                                },
-                                "emit-obj" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Object);
-                                },
-                                "emit-llvm" | "emit-ir" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Llvm);
-                                },
-                                "emit-bc" | "emit-bitcode" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Bitcode);
-                                },
-                                "lib" | "emit-lib" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Library);
-                                },
-                                "exe" | "executable" | "emit-exe" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Executable);
-                                },
-                                "header" | "emit-header" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::Header);
-                                },
-                                "header-obj" | "emit-header-obj" => {
-                                    if output_type.is_some() {
-                                        error!("respecification of output type");
-                                        exit(1)
-                                    }
-                                    output_type = Some(OutputType::HeaderObj);
-                                },
-                                "no-default-link" => {
-                                    if no_default_link {
-                                        warning!("reuse of --no-default-link flag");
-                                    }
-                                    no_default_link = true;
-                                },
-                                "debug-mangle" => {
-                                    if debug_mangle {
-                                        warning!("reuse of --debug-mangle flag");
-                                    }
-                                    debug_mangle = true;
-                                },
-                                x => {
-                                    error!("unknown flag --{x}");
-                                    exit(1)
-                                }
-                            }
-                        }
-                        else {
-                            for c in arg.chars().skip(1) {
-                                match c {
-                                    'p' => {
-                                        if profile.is_some() {
-                                            warning!("respecification of optimization profile");
-                                        }
-                                        if let Some(x) = it.next() {
-                                            profile = Some(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected profile after -p flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'c' => {
-                                        if continue_if_err {
-                                            warning!("reuse of -c flag");
-                                        }
-                                        continue_if_err = true;
-                                    },
-                                    'o' => {
-                                        if out_file.is_some() {
-                                            error!("respecification of input file");
-                                            exit(1)
-                                        }
-                                        if let Some(x) = it.next() {
-                                            out_file = Some(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected file after -o flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'l' => {
-                                        if let Some(x) = it.next() {
-                                            linked.push(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected library after -l flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'L' => {
-                                        if let Some(x) = it.next() {
-                                            link_dirs.push(x.clone());
-                                        }
-                                        else {
-                                            error!("expected directory after -L flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    't' => {
-                                        if triple.is_some() {
-                                            error!("respecification of target triple");
-                                            exit(1)
-                                        }
-                                        if let Some(x) = it.next().map(|x| TargetTriple::create(x)) {
-                                            triple = Some(x);
-                                        }
-                                        else {
-                                            error!("expected target triple after -t flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'X' => {
-                                        linker_args.extend(it.next().map(|x| x.as_str()).unwrap_or("").split(','));
-                                    },
-                                    'h' => {
-                                        if let Some(x) = it.next() {
-                                            headers.push(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected header file after -h flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    x => {
-                                        error!("unknown flag -{x}");
-                                        exit(1)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        if in_file.is_some() {
-                            error!("respecification of input file");
-                            exit(1)
-                        }
-                        in_file = Some(arg.as_str());
-                    }
-                }
-            }
+        Cli::Aot {input, output, linked, mut link_dirs, headers, triple, emit, profile, continue_if_err, debug_mangle, no_default_link} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            if in_file.is_none() {
-                error!("no input file given");
-                exit(1)
-            }
-            let in_file = in_file.unwrap();
-            let code = if in_file == "-" {
+            let code = if input == "-" {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
                 s
-            } else {Path::new(in_file).read_to_string_anyhow()?};
-            let output_type = output_type.unwrap_or(OutputType::Executable);
+            } else {Path::new(&input).read_to_string_anyhow()?};
             if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
             else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
-            let triple = triple.unwrap_or_else(TargetMachine::get_default_triple);
-            let out_file = out_file.map(String::from).unwrap_or_else(|| match output_type {
-                OutputType::Executable => format!("{}{}", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), if triple.as_str().to_str().unwrap_or("").contains("windows") {".exe"} else {""}),
-                OutputType::Library => libs::format_lib(in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file), &triple),
-                OutputType::Object => format!("{}.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Assembly => format!("{}.s", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Llvm => format!("{}.ll", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Bitcode => format!("{}.bc", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::Header => format!("{}.coh", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
-                OutputType::HeaderObj => format!("{}.coh.o", in_file.rfind('.').map(|i| &in_file[..i]).unwrap_or(in_file)),
+            let triple = triple.unwrap_or_else(|| TargetMachine::get_default_triple().as_str().to_string_lossy().into_owned());
+            let trip = TargetTriple::create(&triple);
+            let output = output.map(String::from).unwrap_or_else(|| match emit {
+                OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
+                OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
+                OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::Bitcode => format!("{}.bc", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::Header => format!("{}.coh", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::HeaderObj => format!("{}.coh.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
             });
-            let out_file = if out_file == "-" {None} else {Some(out_file)};
-            let target_machine = Target::from_triple(&triple).unwrap().create_target_machine(
-                &triple,
+            let output = if output == "-" {None} else {Some(output)};
+            let target_machine = Target::from_triple(&trip).unwrap().create_target_machine(
+                &trip,
                 "",
                 "",
                 inkwell::OptimizationLevel::None,
@@ -425,8 +362,8 @@ fn driver() -> anyhow::Result<()> {
             flags.dbg_mangle = debug_mangle;
             let ink_ctx = inkwell::context::Context::create();
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
-            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
-            ctx.module.set_triple(&triple);
+            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            ctx.module.set_triple(&trip);
             let libs = if !linked.is_empty() {
                 let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
                 notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
@@ -439,7 +376,7 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let file = FILES.add_file(0, input.to_string(), code.clone());
             let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
@@ -457,66 +394,66 @@ fn driver() -> anyhow::Result<()> {
             }
             if fail || overall_fail {anyhow::bail!(CompileErrors)}
             let pm = inkwell::passes::PassManager::create(());
-            opt::load_profile(profile, &pm);
+            opt::load_profile(profile.as_deref(), &pm);
             pm.run_on(&ctx.module);
-            match output_type {
+            match emit {
                 OutputType::Header =>
-                    if let Some(out) = out_file {
+                    if let Some(out) = output {
                         let mut file = std::fs::File::create(out)?;
                         ctx.save(&mut file)?;
                     }
                     else {ctx.save(&mut std::io::stdout())?}
                 OutputType::HeaderObj => {
-                    let mut obj = libs::new_object(&triple);
+                    let mut obj = libs::new_object(&trip);
                     libs::populate_header(&mut obj, &ctx);
                     let vec = obj.write()?;
-                    if let Some(out) = out_file {
+                    if let Some(out) = output {
                         let mut file = std::fs::File::create(out)?;
                         file.write_all(&vec)?;
                     }
                     else {std::io::stdout().write_all(&vec)?}
                 }
                 OutputType::Llvm =>
-                    if let Some(out) = out_file {std::fs::write(out, ctx.module.to_string().as_bytes())?}
+                    if let Some(out) = output {std::fs::write(out, ctx.module.to_string().as_bytes())?}
                     else {println!("{}", ctx.module.to_string())},
                 OutputType::Bitcode =>
-                    if let Some(out) = out_file {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
+                    if let Some(out) = output {std::fs::write(out, ctx.module.write_bitcode_to_memory().as_slice())?}
                     else {std::io::stdout().write_all(ctx.module.write_bitcode_to_memory().as_slice())?},
                 OutputType::Assembly => {
                     let code = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap();
-                    if let Some(out) = out_file {std::fs::write(out, code.as_slice())?}
+                    if let Some(out) = output {std::fs::write(out, code.as_slice())?}
                     else {std::io::stdout().write_all(code.as_slice())?}
                 }
                 _ => {
                     let mb = target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap();
-                    match output_type {
+                    match emit {
                         OutputType::Executable => {
-                            if out_file.is_none() {
+                            if output.is_none() {
                                 eprintln!("cannot output executable to stdout");
                                 exit(4)
                             }
                             let tmp = temp_file::with_contents(mb.as_slice());
                             let mut cc = cc::CompileCommand::new();
                             cc.obj(tmp.path());
-                            cc.output(out_file.unwrap());
+                            cc.output(output.unwrap());
                             cc.link_libs(libs.into_iter().map(|(l, _)| l));
-                            cc.target(triple.as_str().to_str().unwrap());
+                            cc.target(&triple);
                             let res = cc.build()?.status_anyhow()?;
                             std::mem::drop(tmp);
                             exit(res.code().unwrap_or(-1));
                         },
                         OutputType::Library => {
-                            if let Some(out_file) = out_file {
-                                let mut obj = libs::new_object(&triple);
+                            if let Some(output) = output {
+                                let mut obj = libs::new_object(&trip);
                                 libs::populate_header(&mut obj, &ctx);
                                 let tmp1 = temp_file::with_contents(&obj.write()?);
                                 let tmp2 = temp_file::with_contents(mb.as_slice());
                                 let mut cc = cc::CompileCommand::new();
                                 cc.lib(true);
                                 cc.objs([tmp1.path(), tmp2.path()]);
-                                cc.output(&out_file);
+                                cc.output(&output);
                                 cc.link_libs(libs.into_iter().map(|(l, _)| l));
-                                cc.target(triple.as_str().to_str().unwrap());
+                                cc.target(&triple);
                                 let res = cc.build()?.status_anyhow()?;
                                 std::mem::drop(tmp1);
                                 std::mem::drop(tmp2);
@@ -525,127 +462,21 @@ fn driver() -> anyhow::Result<()> {
                             else {error!("cannot output library to stdout!"); exit(4)}
                         },
                         OutputType::Object =>
-                            if let Some(out) = out_file {std::fs::write(out, mb.as_slice())?}
+                            if let Some(out) = output {std::fs::write(out, mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
                         x => unreachable!("{x:?} has already been handled")
                     }
                 }
             }
+
         },
-        "jit" => {
-            let mut in_file: Option<String> = None;
-            let mut linked: Vec<String> = vec![];
-            let mut link_dirs: Vec<String> = vec![];
-            let mut continue_if_err = false;
-            let mut no_default_link = false;
-            let mut headers: Vec<String> = vec![];
-            let mut profile: Option<String> = None;
-            let mut args = Vec::<String>::new();
-            {
-                let mut it = std::env::args().filter(|x| !x.is_empty());
-                args.push(it.by_ref().take(2).map(|x| format!("{x} ")).collect::<String>());
-                while let Some(arg) = it.next() {
-                    if arg.is_empty() {continue;}
-                    if arg.as_bytes()[0] == b'-' {
-                        if arg.as_bytes().len() == 1 {
-                            if in_file.is_some() {
-                                error!("respecification of input file");
-                                exit(1)
-                            }
-                            in_file = Some("-".to_string());
-                        }
-                        else if arg.as_bytes()[1] == b'-' {
-                            match &arg[2..] {
-                                "" => args.extend(it.by_ref()),
-                                "continue" => {
-                                    if continue_if_err {
-                                        warning!("reuse of --continue flag");
-                                    }
-                                    continue_if_err = true;
-                                },
-                                "no-default-link" => {
-                                    if no_default_link {
-                                        warning!("reuse of --no-default-link flag");
-                                    }
-                                    no_default_link = true;
-                                },
-                                x => {
-                                    error!("unknown flag --{x}");
-                                    exit(1)
-                                }
-                            }
-                        }
-                        else {
-                            for c in arg.chars().skip(1) {
-                                match c {
-                                    'p' => {
-                                        if profile.is_some() {
-                                            warning!("respecification of optimization profile");
-                                        }
-                                        if let Some(x) = it.next() {
-                                            profile = Some(x);
-                                        }
-                                        else {
-                                            error!("expected profile after -p flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'c' => {
-                                        if continue_if_err {
-                                            warning!("reuse of -c flag");
-                                        }
-                                        continue_if_err = true;
-                                    },
-                                    'l' => {
-                                        if let Some(x) = it.next() {
-                                            linked.push(x);
-                                        }
-                                        else {
-                                            error!("expected library after -l flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'L' => {
-                                        if let Some(x) = it.next() {
-                                            link_dirs.push(x);
-                                        }
-                                        else {
-                                            error!("expected directory after -L flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'h' => {
-                                        if let Some(x) = it.next() {
-                                            headers.push(x);
-                                        }
-                                        else {
-                                            error!("expected header file after -h flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    x => {
-                                        error!("unknown flag -{x}");
-                                        exit(1)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        if in_file.is_some() {
-                            error!("respecification of input file");
-                            exit(1)
-                        }
-                        in_file = Some(arg);
-                    }
-                }
-            }
+        Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, mut args} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = match in_file.as_deref().unwrap_or("-") {
+            let (input, code) = match input.as_str() {
                 "-" => {
                     let mut s = String::new();
                     std::io::stdin().read_to_string(&mut s)?;
@@ -657,7 +488,7 @@ fn driver() -> anyhow::Result<()> {
                 }
             };
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = CompCtx::new(&ink_ctx, in_file);
+            let mut ctx = CompCtx::new(&ink_ctx, input);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let libs = if !linked.is_empty() {
@@ -672,7 +503,7 @@ fn driver() -> anyhow::Result<()> {
             }
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let file = FILES.add_file(0, input.to_string(), code.clone());
             let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
@@ -715,90 +546,13 @@ fn driver() -> anyhow::Result<()> {
                 exit(ec);
             }
         },
-        "check" => {
-            let mut in_file: Option<&str> = None;
-            let mut linked: Vec<&str> = vec![];
-            let mut link_dirs: Vec<String> = vec![];
-            let mut headers: Vec<&str> = vec![];
-            let mut no_default_link = false;
-            {
-                let mut it = args.iter().skip(2).filter(|x| !x.is_empty());
-                while let Some(arg) = it.next() {
-                    if arg.as_bytes()[0] == b'-' {
-                        if arg.as_bytes().len() == 1 {
-                            if in_file.is_some() {
-                                error!("respecification of input file");
-                                exit(1)
-                            }
-                            in_file = Some("-");
-                        }
-                        else if arg.as_bytes()[1] == b'-' {
-                            match &arg[2..] {
-                                "no-default-link" => {
-                                    if no_default_link {
-                                        warning!("reuse of --no-default-link flag");
-                                    }
-                                    no_default_link = true;
-                                },
-                                x => {
-                                    error!("unknown flag --{x}");
-                                    exit(1)
-                                }
-                            }
-                        }
-                        else {
-                            for c in arg.chars().skip(1) {
-                                match c {
-                                    'l' => {
-                                        if let Some(x) = it.next() {
-                                            linked.push(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected library after -l flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'L' => {
-                                        if let Some(x) = it.next() {
-                                            link_dirs.push(x.clone());
-                                        }
-                                        else {
-                                            error!("expected directory after -L flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    'h' => {
-                                        if let Some(x) = it.next() {
-                                            headers.push(x.as_str());
-                                        }
-                                        else {
-                                            error!("expected header file after -h flag");
-                                            exit(1)
-                                        }
-                                    },
-                                    x => {
-                                        error!("unknown flag -{x}");
-                                        exit(1)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        if in_file.is_some() {
-                            error!("respecification of input file");
-                            exit(1)
-                        }
-                        in_file = Some(arg.as_str());
-                    }
-                }
-            }
+        Cli::Check {input, linked, mut link_dirs, headers, no_default_link} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            let (in_file, code) = if let Some(f) = in_file {(f, Path::new(f).read_to_string_anyhow()?)}
+            let (input, code) = if input != "-" {(input.as_str(), Path::new(&input).read_to_string_anyhow()?)}
             else {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -817,7 +571,7 @@ fn driver() -> anyhow::Result<()> {
             let mut flags = Flags::default();
             let ink_ctx = inkwell::context::Context::create();
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
-            let ctx = CompCtx::with_flags(&ink_ctx, in_file, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, input, flags);
             ctx.module.set_triple(&triple);
             if !linked.is_empty() {
                 let (_, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
@@ -829,7 +583,7 @@ fn driver() -> anyhow::Result<()> {
                 ctx.load(&mut file)?;
             }
             let mut fail = false;
-            let file = FILES.add_file(0, in_file.to_string(), code.clone());
+            let file = FILES.add_file(0, input.to_string(), code.clone());
             let (mut ast, errs) = parse_tl(&code);
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
@@ -841,99 +595,56 @@ fn driver() -> anyhow::Result<()> {
             }
             if fail {anyhow::bail!(CompileErrors)}
         },
-        "proj" | "project" => match args.get(2).map(String::as_str) {
-            Some("track") => {
-                if args.len() == 3 {
-                    'found: {
-                        for path in std::env::current_dir()?.ancestors() {
-                            let cfg_path = path.join("cobalt.toml");
-                            if !cfg_path.exists() {continue}
-                            if let Some(proj) = std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()) {
-                                let mut vecs = load_projects()?;
-                                track_project(&proj.name, cfg_path, &mut vecs);
-                                save_projects(vecs)?;
-                                break 'found
-                            }
+        Cli::Project(cmd) => match cmd {
+            ProjSubcommand::Track {projects: None} => {
+                'found: {
+                    for path in std::env::current_dir()?.ancestors() {
+                        let cfg_path = path.join("cobalt.toml");
+                        if !cfg_path.exists() {continue}
+                        if let Some(proj) = std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()) {
+                            let mut vecs = load_projects()?;
+                            track_project(&proj.name, cfg_path, &mut vecs);
+                            save_projects(vecs)?;
+                            break 'found
                         }
-                        anyhow::bail!("couldn't find cobalt.toml in currnet or parent directories");
                     }
-                }
-                else {
-                    let mut vec = load_projects()?;
-                    for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
-                        if arg.as_bytes()[0] == b'-' {
-                            error!("'track' subcommand does not accept flags");
-                            exit(1);
-                        }
-                        let mut path: PathBuf = arg.into();
-                        if path.is_dir() {path.push("cobalt.toml");}
-                        track_project(&toml::from_str::<build::Project>(&Path::new(&path).read_to_string_anyhow()?)?.name, path, &mut vec);
-                    }
-                    save_projects(vec)?;
+                    anyhow::bail!("couldn't find cobalt.toml in currnet or parent directories");
                 }
             },
-            Some("untrack") => {
-                if args.len() == 3 {
-                    'found: {
-                        for path in std::env::current_dir()?.ancestors() {
-                            let cfg_path = path.join("cobalt.toml");
-                            if !cfg_path.exists() {continue}
-                            if std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()).is_some() {
-                                let mut vecs = load_projects()?;
-                                vecs.retain(|[_, p]| Path::new(p) != cfg_path);
-                                save_projects(vecs)?;
-                                break 'found
-                            }
-                        }
-                        error!("couldn't find cobalt.toml in currnet or parent directories");
-                    }
+            ProjSubcommand::Track {projects: Some(projs)} => {
+                let mut vec = load_projects()?;
+                for arg in projs {
+                    let mut path: PathBuf = arg.into();
+                    if path.is_dir() {path.push("cobalt.toml");}
+                    track_project(&toml::from_str::<build::Project>(&Path::new(&path).read_to_string_anyhow()?)?.name, path, &mut vec);
                 }
-                else {
-                    let mut vec = load_projects()?;
-                    for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
-                        if arg.as_bytes()[0] == b'-' {
-                            error!("'untrack' subcommand does not accept flags");
-                            exit(1);
+                save_projects(vec)?;
+            },
+            ProjSubcommand::Untrack {projects: None} => {
+                'found: {
+                    for path in std::env::current_dir()?.ancestors() {
+                        let cfg_path = path.join("cobalt.toml");
+                        if !cfg_path.exists() {continue}
+                        if std::fs::read_to_string(&cfg_path).ok().and_then(|x| toml::from_str::<build::Project>(&x).ok()).is_some() {
+                            let mut vecs = load_projects()?;
+                            vecs.retain(|[_, p]| Path::new(p) != cfg_path);
+                            save_projects(vecs)?;
+                            break 'found
                         }
-                        let mut path: PathBuf = arg.into();
-                        if path.is_dir() {path.push("cobalt.toml");}
-                        vec.retain(|[_, p]| Path::new(p) != path);
                     }
-                    save_projects(vec)?;
+                    error!("couldn't find cobalt.toml in currnet or parent directories");
                 }
             },
-            Some("list") => {
-                let mut machine = false;
-                for arg in args.into_iter().skip(3).filter(|x| !x.is_empty()) {
-                    if arg.as_bytes()[0] == b'-' && arg.len() > 1 {
-                        if arg.as_bytes()[1] == b'-' {
-                            if matches!(&arg[2..], "machine" | "machine-readable") {
-                                if machine {warning!("reuse of --machine flag")}
-                                machine = true;
-                            }
-                            else {
-                                error!("unknown flag {arg}");
-                                exit(1);
-                            }
-                        }
-                        else {
-                            for c in arg[1..].chars() {
-                                if c == 'm' {
-                                    if machine {warning!("reuse of --machine flag")}
-                                    machine = true;
-                                }
-                                else {
-                                    error!("unknown flag -{c}");
-                                    exit(1);
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        error!("positional arguments are not allowed for this command");
-                        exit(1);
-                    }
+            ProjSubcommand::Untrack {projects: Some(projs)} => {
+                let mut vec = load_projects()?;
+                for arg in projs {
+                    let mut path: PathBuf = arg.into();
+                    if path.is_dir() {path.push("cobalt.toml");}
+                    vec.retain(|[_, p]| Path::new(p) != path);
                 }
+                save_projects(vec)?;
+            },
+            ProjSubcommand::List {machine} => {
                 let vecs = load_projects()?;
                 if machine {vecs.iter().for_each(|[n, p]| println!("{n}\t{p}"))}
                 else {
@@ -941,134 +652,8 @@ fn driver() -> anyhow::Result<()> {
                     vecs.iter().for_each(|[n, p]| println!("{n}{} => {p}", " ".repeat(padding - n.chars().count())));
                 }
             },
-            Some("build") => {
-                let mut project_dir: Option<&str> = None;
-                let mut source_dir: Option<&str> = None;
-                let mut build_dir: Option<&str> = None;
-                let mut profile: Option<&str> = None;
-                let mut link_dirs: Vec<String> = vec![];
-                let mut no_default_link = false;
-                let mut triple: Option<TargetTriple> = None;
-                let mut targets: Vec<&str> = vec![];
-                let mut rebuild = false;
-                {
-                    let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
-                    while let Some(arg) = it.next() {
-                        if arg.as_bytes()[0] == b'-' {
-                            if arg.as_bytes().len() == 1 {
-                                if project_dir.is_some() {
-                                    error!("respecification of project directory");
-                                    exit(1)
-                                }
-                                project_dir = Some("-");
-                            }
-                            else if arg.as_bytes()[1] == b'-' {
-                                match &arg[2..] {
-                                    "no-default-link" => {
-                                        if no_default_link {
-                                            warning!("reuse of --no-default-link flag");
-                                        }
-                                        no_default_link = true;
-                                    },
-                                    "rebuild" => {
-                                        if rebuild {
-                                            warning!("reuse of -r flag");
-                                        }
-                                        rebuild = true;
-                                    },
-                                    x => {
-                                        error!("unknown flag --{x}");
-                                        exit(1)
-                                    }
-                                }
-                            }
-                            else {
-                                for c in arg.chars().skip(1) {
-                                    match c {
-                                        'p' => {
-                                            if profile.is_some() {
-                                                warning!("respecification of optimization profile");
-                                            }
-                                            if let Some(x) = it.next() {
-                                                profile = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected profile after -p flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        's' => {
-                                            if profile.is_some() {
-                                                error!("respecification of source directory");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                source_dir = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected source directory after -s flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'b' => {
-                                            if profile.is_some() {
-                                                warning!("respecification of build directory");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                build_dir = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected build directory after -b flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        't' => {
-                                            if profile.is_some() {
-                                                error!("respecification of target triple");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                triple = Some(TargetTriple::create(x.as_str()));
-                                            }
-                                            else {
-                                                error!("expected target triple after -t flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'T' => {
-                                            if let Some(x) = it.next() {
-                                                targets.push(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected build target after -T flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'r' => {
-                                            if rebuild {
-                                                warning!("reuse of -r flag");
-                                            }
-                                            rebuild = true;
-                                        },
-                                        x => {
-                                            error!("unknown flag -{x}");
-                                            exit(1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else {
-                            if project_dir.is_some() {
-                                error!("respecification of project directory");
-                                exit(1)
-                            }
-                            project_dir = Some(arg.as_str());
-                        }
-                    }
-                }
-                let (project_data, project_dir) = match project_dir {
+            ProjSubcommand::Build {project_dir, source_dir, build_dir, profile, mut link_dirs, no_default_link, triple, targets, rebuild} => {
+                let (project_data, project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
@@ -1117,7 +702,7 @@ fn driver() -> anyhow::Result<()> {
                     if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                     else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
                 }
-                let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
+                let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(|| {
                     let mut dir = project_dir.clone();
                     dir.push("build");
@@ -1126,150 +711,18 @@ fn driver() -> anyhow::Result<()> {
                 if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
                 else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
                 build::build(project_data, if targets.is_empty() {None} else {Some(targets.into_iter().map(String::from).collect())}, &build::BuildOptions {
-                    source_dir,
-                    build_dir: build_dir.as_path(),
-                    profile: profile.unwrap_or("default"),
-                    triple: &triple.unwrap_or_else(TargetMachine::get_default_triple),
+                    source_dir: &source_dir,
+                    build_dir: &build_dir,
+                    profile: profile.as_deref().unwrap_or("default"),
+                    triple: &triple.map_or_else(TargetMachine::get_default_triple, |x| TargetTriple::create(&x)),
                     continue_build: false,
                     continue_comp: false,
                     rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
             },
-            Some("run" | "exec") => {
-                let mut project_dir: Option<&str> = None;
-                let mut source_dir: Option<&str> = None;
-                let mut build_dir: Option<&str> = None;
-                let mut profile: Option<&str> = None;
-                let mut link_dirs: Vec<String> = vec![];
-                let mut no_default_link = false;
-                let mut triple: Option<TargetTriple> = None;
-                let mut target: Option<&str> = None;
-                let mut cmd_args: Vec<String> = vec![];
-                let mut rebuild = false;
-                {
-                    let mut it = args.iter().skip(3).filter(|x| !x.is_empty());
-                    while let Some(arg) = it.next() {
-                        if arg.as_bytes()[0] == b'-' {
-                            if arg.as_bytes().len() == 1 {
-                                if project_dir.is_some() {
-                                    error!("respecification of project directory");
-                                    exit(1)
-                                }
-                                project_dir = Some("-");
-                            }
-                            else if arg.as_bytes()[1] == b'-' {
-                                match &arg[2..] {
-                                    "" => cmd_args.extend(it.by_ref().cloned()),
-                                    "no-default-link" => {
-                                        if no_default_link {
-                                            warning!("reuse of --no-default-link flag");
-                                        }
-                                        no_default_link = true;
-                                    },
-                                    "rebuild" => {
-                                        if rebuild {
-                                            warning!("reuse of -r flag");
-                                        }
-                                        rebuild = true;
-                                    },
-                                    x => {
-                                        error!("unknown flag --{x}");
-                                        exit(1)
-                                    }
-                                }
-                            }
-                            else {
-                                for c in arg.chars().skip(1) {
-                                    match c {
-                                        'p' => {
-                                            if profile.is_some() {
-                                                warning!("respecification of optimization profile");
-                                            }
-                                            if let Some(x) = it.next() {
-                                                profile = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected profile after -p flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        's' => {
-                                            if profile.is_some() {
-                                                error!("respecification of source directory");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                source_dir = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected source directory after -s flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'b' => {
-                                            if profile.is_some() {
-                                                warning!("respecification of build directory");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                build_dir = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected build directory after -b flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        't' => {
-                                            if profile.is_some() {
-                                                warning!("respecification of target triple");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                triple = Some(TargetTriple::create(x.as_str()));
-                                            }
-                                            else {
-                                                error!("expected target triple after -t flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'T' => {
-                                            if target.is_some() {
-                                                error!("respecification of build target");
-                                                exit(1)
-                                            }
-                                            if let Some(x) = it.next() {
-                                                target = Some(x.as_str());
-                                            }
-                                            else {
-                                                error!("expected build target after -T flag");
-                                                exit(1)
-                                            }
-                                        },
-                                        'r' => {
-                                            if rebuild {
-                                                warning!("reuse of -r flag");
-                                            }
-                                            rebuild = true;
-                                        },
-                                        x => {
-                                            error!("unknown flag -{x}");
-                                            exit(1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else {
-                            if project_dir.is_some() {
-                                error!("respecification of project directory");
-                                exit(1)
-                            }
-                            project_dir = Some(arg.as_str());
-                        }
-                    }
-                }
-                let (project_data, project_dir) = match project_dir {
+            ProjSubcommand::Run {project_dir, source_dir, build_dir, profile, mut link_dirs, no_default_link, target, rebuild, args} => {
+                let (project_data, project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
@@ -1314,6 +767,17 @@ fn driver() -> anyhow::Result<()> {
                         (toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?, path)
                     }
                 };
+                if !no_default_link {
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                }
+                let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
+                let build_dir: PathBuf = build_dir.map_or_else(|| {
+                    let mut dir = project_dir.clone();
+                    dir.push("build");
+                    dir
+                }, PathBuf::from);
+                Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(|| {
                     let exes = project_data.targets.iter().filter_map(|(k, x)| (x.target_type == build::TargetType::Executable).then_some(k.as_str())).collect::<Vec<_>>();
                     match exes.len() {
@@ -1322,70 +786,31 @@ fn driver() -> anyhow::Result<()> {
                         x => anyhow::bail!("{x} executable targets available, please select one: {exes:?}")
                     }
                 }, |t| {
-                    if project_data.targets.get(t).map(|x| x.target_type) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
+                    if project_data.targets.get(&t).map(|x| x.target_type) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
                     Ok(t.to_string())
                 })?;
-                if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
-                }
-                let source_dir: &Path = source_dir.map_or(project_dir.as_path(), Path::new);
-                let build_dir: PathBuf = build_dir.map_or_else(|| {
-                    let mut dir = project_dir.clone();
-                    dir.push("build");
-                    dir
-                }, PathBuf::from);
-                if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
-                else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
-                let default = TargetMachine::get_default_triple();
+                let triple = TargetMachine::get_default_triple();
                 build::build(project_data, Some(vec![target.clone()]), &build::BuildOptions {
-                    source_dir,
-                    build_dir: build_dir.as_path(),
-                    profile: profile.unwrap_or("default"),
-                    triple: triple.as_ref().unwrap_or(&default),
+                    source_dir: &source_dir,
+                    build_dir: &build_dir,
+                    profile: profile.as_deref().unwrap_or("default"),
+                    triple: &triple,
                     continue_build: false,
                     continue_comp: false,
                     rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
                 let mut exe_path = build_dir;
-                if triple.as_ref().and_then(|t| t.as_str().to_str().ok()).map_or(false, |t| t.contains("windows")) {target.push_str(".exe");}
+                if triple.as_str().to_str().ok().map_or(false, |t| t.contains("windows")) {target.push_str(".exe");}
                 exe_path.push(target);
-                exit(Command::new(exe_path).args(cmd_args).status()?.code().unwrap_or(-1))
+                exit(Command::new(exe_path).args(args).status()?.code().unwrap_or(-1))
             },
-            Some(x) => {
-                error!("unknown subcommand '{x}'");
-                exit(1);
-            },
-            None => {
-                error!("project subcommand requires a subcommand");
-                exit(1);
-            }
         },
-        "pkg" | "package" => match args.get(2).map(String::as_str) {
-            Some("update") => {
-                if args.len() > 3 {anyhow::bail!("arguments cannot be passed here")};
-                pkg::update_packages()?
-            },
-            Some("install") => {
-                pkg::install(args.iter().skip(3).map(|x|
-                    if x.starts_with('-') {Err(anyhow::anyhow!(r#"argument cannot start with "-" here"#))}
-                    else {anyhow::Ok(x.parse()?)}
-                ).collect::<anyhow::Result<Vec<_>>>()?, &Default::default())?;}, // TODO: give all of this a proper CLI
-            Some(x) => {
-                error!("unknown subcommand '{x}'");
-                exit(1);
-            },
-            None => {
-                error!("project subcommand requires a subcommand");
-                exit(1);
-            }
+        Cli::Package(cmd) => match cmd {
+            PkgSubcommand::Update => pkg::update_packages()?,
+            PkgSubcommand::Install {packages} => {pkg::install(packages.into_iter().map(|x| x.parse()).collect::<Result<Vec<_>, _>>()?, &Default::default())?;}
         },
-        x => {
-            error!("unknown subcommand '{x}'");
-            exit(1);
-        }
-    };
+    }
     Ok(())
 }
 fn main() {
