@@ -1,6 +1,6 @@
 [package]
 name = "cobalt-cli"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +10,7 @@ cobalt-build.path = "../cobalt-build"
 cobalt-errors.path = "../cobalt-errors"
 cobalt-utils.path = "../cobalt-utils"
 inkwell = "0.2.0"
-toml = "0.7.3"
+toml = "0.7.4"
 temp-file = "0.1.7"
 anyhow = "1.0.71"
 anyhow-std = "0.1.3"
