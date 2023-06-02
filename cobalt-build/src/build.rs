@@ -253,7 +253,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let (mut ast, errs) = cobalt_parser::parse_tl(&code);
     let file = FILES.add_file(0, name.to_string(), code.clone());
-    for err in errs {fail |= err.is_err(); eprintln!("{}", Report::from(err).with_source_code(file));}
+    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);
@@ -263,7 +263,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
 /// This picks up where `build_file_1` left off
 fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path, head_path): (&Path, &Path), mut fail: bool) -> anyhow::Result<()> {
     let (_, errs) = ast.codegen(ctx);
-    for err in errs {fail |= err.is_err(); eprintln!("{}", err.with_file(ast.file.unwrap()));}
+    for err in errs {fail |= err.is_err(); eprintln!("{:?}", err.with_file(ast.file.unwrap()));}
     if fail && !opts.continue_comp {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));
         anyhow::bail!(CompileErrors)
@@ -446,18 +446,20 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
             Dependency::Package(PkgDepSpec {version, targets}) => to_install.push(pkg::InstallSpec {name: target.clone(), version: version.clone(), targets: targets.clone()})
         }
     }
-    let plan = pkg::install(to_install.iter().cloned(), &pkg::InstallOptions {target: opts.triple.as_str().to_str().unwrap().to_string(), ..Default::default()})?;
-    let mut installed_path = cobalt_dir()?;
-    installed_path.push("installed");
-    to_install.into_iter().try_for_each(|pkg::InstallSpec {name, targets, ..}| targets.unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|target| {
-        let mut path = installed_path.clone();
-        path.push(&name);
-        path.push(plan[&(name.as_str(), target.as_str())].to_string());
-        path.push(&target);
-        conflicts.append(&mut libs::load_lib(&path, ctx)?);
-        out.push(path);
-        anyhow::Ok(())
-    }))?;
+    if !to_install.is_empty() {
+        let plan = pkg::install(to_install.iter().cloned(), &pkg::InstallOptions {target: opts.triple.as_str().to_str().unwrap().to_string(), ..Default::default()})?;
+        let mut installed_path = cobalt_dir()?;
+        installed_path.push("installed");
+        to_install.into_iter().try_for_each(|pkg::InstallSpec {name, targets, ..}| targets.unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|target| {
+            let mut path = installed_path.clone();
+            path.push(&name);
+            path.push(plan[&(name.as_str(), target.as_str())].to_string());
+            path.push(&target);
+            conflicts.append(&mut libs::load_lib(&path, ctx)?);
+            out.push(path);
+            anyhow::Ok(())
+        }))?;
+    }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
     for lib in notfound {anyhow::bail!("couldn't find {lib}")}

@@ -127,7 +127,9 @@ impl DependencyGraph {
     /// rebuilt.
     pub fn clear(&mut self) {self.packages.clear()}
     /// Build the dependency tree from the installation specification
+    #[allow(unreachable_code, unused_variables)]
     pub fn build_tree<I: IntoIterator<Item = pkg::InstallSpec>>(&mut self, pkgs: I) -> anyhow::Result<()> {
+        unimplemented!("package management is hard, okay?");
         let mut node = PkgNode::default();
         node.dependents = 1;
         node.version = Version::new(1, 0, 0);
@@ -154,6 +156,7 @@ impl DependencyGraph {
                 else {anyhow::bail!(pkg::InstallError::NoDefaultTarget(STRINGS.resolve(&idef)))}
             }
         }
+        self.packages.insert((ientry, ientry), node);
         let mut queue: VecDeque<(Id, Id)> = [(ientry, ientry)].into();
         while let Some((p, t)) = queue.pop_front() {unsafe {(*(&mut self.packages as *mut HashMap<(Id, Id), PkgNode>)).get_mut(&(p, t))}.unwrap().update(p, t, self, &mut queue)?}
         Ok(())
