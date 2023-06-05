@@ -9,6 +9,7 @@ impl BlockAST {
 }
 impl AST for BlockAST {
     fn loc(&self) -> SourceSpan {self.loc}
+    fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
@@ -50,6 +51,7 @@ impl GroupAST {
 }
 impl AST for GroupAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.vals[0].loc(), self.vals.last().unwrap().loc())}
+    fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.vals.last().map(|x| x.res_type(ctx)).unwrap_or(Type::Null)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
@@ -84,6 +86,7 @@ pub struct TopLevelAST {
 }
 impl AST for TopLevelAST {
     fn loc(&self) -> SourceSpan {unreachable_span()}
+    fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.flags.prepass {

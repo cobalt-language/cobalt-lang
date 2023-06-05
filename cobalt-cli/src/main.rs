@@ -282,8 +282,8 @@ fn driver() -> anyhow::Result<()> {
                 let (mut ast, errs) = parse_tl(&code);
                 ast.file = Some(file);
                 for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                if locs {print!("{:#}", ast)}
-                else {print!("{}", ast)}
+                if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
+                else {print!("({} nodes)\n{ast}", ast.nodes())}
             }
             for arg in files {
                 let code = Path::new(&arg).read_to_string_anyhow()?;
@@ -291,8 +291,8 @@ fn driver() -> anyhow::Result<()> {
                 let (mut ast, errs) = parse_tl(&code);
                 ast.file = Some(file);
                 for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                if locs {print!("{:#}", ast)}
-                else {print!("{}", ast)}
+                if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
+                else {print!("({} nodes)\n{ast}", ast.nodes())}
             }
         },
         #[cfg(debug_assertions)]

@@ -12,6 +12,7 @@ impl CastAST {
 }
 impl AST for CastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
+    fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
     fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -45,6 +46,7 @@ impl BitCastAST {
 }
 impl AST for BitCastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
+    fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
     fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -165,6 +167,7 @@ impl ParenAST {
 }
 impl AST for ParenAST {
     fn loc(&self) -> SourceSpan {self.loc}
+    fn nodes(&self) -> usize {self.base.nodes() + 1}
     fn is_const(&self) -> bool {self.base.is_const()}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.base.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {self.base.codegen(ctx)}

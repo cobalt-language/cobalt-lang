@@ -29,6 +29,7 @@ impl FnDefAST {
 }
 impl AST for FnDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
+    fn nodes(&self) -> usize {self.ret.nodes() + self.body.nodes() + self.params.iter().map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes())).sum::<usize>() + 1}
     fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
         let oic = ctx.is_const.replace(true);
         let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
@@ -961,6 +962,7 @@ impl CallAST {
 }
 impl AST for CallAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
+    fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn expl_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())

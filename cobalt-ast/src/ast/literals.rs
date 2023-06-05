@@ -210,6 +210,7 @@ impl ArrayLiteralAST {
 }
 impl AST for ArrayLiteralAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.start, self.end)}
+    fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
@@ -340,6 +341,7 @@ impl AST for TupleLiteralAST {
         let end = self.vals.last().unwrap().loc();
         merge_spans(start, end)
     }
+    fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
         Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
