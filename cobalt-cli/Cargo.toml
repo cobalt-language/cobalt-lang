@@ -19,6 +19,11 @@ miette = { version = "5.9.0", features = ["fancy"] }
 clap = { version = "4.3.0", features = ["derive"] }
 const_format = "0.2.31"
 
+[build-dependencies]
+lazy_static = "1.4"
+regex = "1.8"
+semver = "1.0"
+
 [[bin]]
 name = "co"
 path = "src/main.rs"

@@ -5,8 +5,6 @@ pub mod types;
 pub mod varmap;
 pub mod value;
 
-pub const LLVM_VERSION: &'static str = env!("LLVM_VERSION");
-
 pub use dottedname::*;
 pub use context::*;
 pub use ast::AST;
