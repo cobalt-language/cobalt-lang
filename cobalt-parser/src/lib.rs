@@ -20,8 +20,22 @@ fn got(src: &str) -> (ParserFound, usize) {
     }
     else {(ParserFound::Eof, 0)}
 }
+/// Take a parser function and update `src`, `start`, and `errs`
+fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, src: &mut &'a str, start: &mut usize, errs: &mut Vec<CobaltError>) -> Option<(T, SourceSpan)> {
+    let (found, span, rem, mut es) = parser(*src, *start)?;
+    *start += span.len();
+    *src = rem;
+    errs.append(&mut es);
+    Some((found, span))
+}
 
-/// Parse an identifier.
+/// Things an identifier cannot be
+const KEYWORDS: &'static [&'static str] = &[
+    "let", "mut", "const", "type", "fn", "module", "import", "if", "else", "while", // currently in use
+    "trait", "spec", "break", "continue" // future-proofing
+];
+
+/// Parse an identifier
 fn ident<'a>(allow_empty: bool, src: &'a str, start: usize) -> ParserReturn<'a, &'a str> {
     let mut it = src.char_indices();
     let first = it.next();
@@ -30,7 +44,12 @@ fn ident<'a>(allow_empty: bool, src: &'a str, start: usize) -> ParserReturn<'a, 
     if !(is_xid_start(first) || first == '$' || first == '_') {return allow_empty.then_some(("", start.into(), src, vec![]))}
     let idx = it.skip_while(|x| is_xid_continue(x.1)).next().map_or(src.len(), |x| x.0);
     let (id, rem) = src.split_at(idx);
-    Some((id, (start, idx).into(), rem, vec![]))
+    let (id, errs) = if KEYWORDS.contains(&id) {("<error>", vec![CobaltError::ExpectedFound {
+        ex: "identifier",
+        found: ParserFound::Str(id.into()),
+        loc: (start, idx).into()
+    }])} else {(id, vec![])};
+    Some((id, (start, idx).into(), rem, errs))
 }
 /// Parse any kind of whitepace
 fn whitespace<'a>(src: &'a str, start: usize) -> ParserReturn<'a, ()> {
@@ -152,14 +171,6 @@ fn global_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedN
         }
     }
     Some((DottedName::new(name, global), (old..start).into(), src, errs))
-}
-/// Take a parser function and update `src`, `start`, and `errs`
-fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, src: &mut &'a str, start: &mut usize, errs: &mut Vec<CobaltError>) -> Option<(T, SourceSpan)> {
-    let (found, span, rem, mut es) = parser(*src, *start)?;
-    *start += span.len();
-    *src = rem;
-    errs.append(&mut es);
-    Some((found, span))
 }
 /// Parse an annotation
 fn annotation<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, (&'a str, Option<&'a str>, SourceSpan)> {
@@ -1723,7 +1734,78 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         }
         Some((ast, (begin..start).into(), src, errs))
     }
-    [log_or, assigns, compound][std::cmp::min(mode, 2) as usize](src, start)
+    fn cflow<'a>(mut next: impl for<'b> FnMut(&'b str, usize) -> ParserReturn<'b, Box<dyn AST>> + Copy, mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+        let begin = start;
+        let mut errs = vec![];
+        if process(|src, start| start_match("if", src, start), &mut src, &mut start, &mut errs).is_some() {
+            process(ignored, &mut src, &mut start, &mut errs);
+            let cond = match src.as_bytes().get(0) {
+                Some(b'(') | Some(b'{') => process(atom, &mut src, &mut start, &mut errs).unwrap().0,
+                _ => {
+                    let got = got(src);
+                    errs.push(CobaltError::ExpectedFound {
+                        ex: r#""(" or "{" for `if` condition"#,
+                        found: got.0,
+                        loc: (start, got.1).into()
+                    });
+                    Box::new(NullAST::new(start.into())) as _
+                }
+            };
+            process(ignored, &mut src, &mut start, &mut errs);
+            let if_true = process(next, &mut src, &mut start, &mut errs).map_or_else(|| {
+                let got = got(src);
+                errs.push(CobaltError::ExpectedFound {
+                    ex: r#"`if` body"#,
+                    found: got.0,
+                    loc: (start, got.1).into()
+                });
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            process(ignored, &mut src, &mut start, &mut errs);
+            let if_false = process(|src, start| start_match("else", src, start), &mut src, &mut start, &mut errs).map(|_| {
+                process(next, &mut src, &mut start, &mut errs).map_or_else(|| {
+                    let got = got(src);
+                    errs.push(CobaltError::ExpectedFound {
+                        ex: r#"`else` body"#,
+                        found: got.0,
+                        loc: (start, got.1).into()
+                    });
+                    Box::new(NullAST::new(start.into())) as _
+                }, |x| x.0)
+            });
+            let ast = Box::new(IfAST::new((begin..start).into(), cond, if_true, if_false));
+            Some((ast, (begin..start).into(), src, errs))
+        }
+        else if process(|src, start| start_match("while", src, start), &mut src, &mut start, &mut errs).is_some() {
+            process(ignored, &mut src, &mut start, &mut errs);
+            let cond = match src.as_bytes().get(0) {
+                Some(b'(') | Some(b'{') => process(atom, &mut src, &mut start, &mut errs).unwrap().0,
+                _ => {
+                    let got = got(src);
+                    errs.push(CobaltError::ExpectedFound {
+                        ex: r#""(" or "{" for `while` condition"#,
+                        found: got.0,
+                        loc: (start, got.1).into()
+                    });
+                    Box::new(NullAST::new(start.into())) as _
+                }
+            };
+            process(ignored, &mut src, &mut start, &mut errs);
+            let body = process(next, &mut src, &mut start, &mut errs).map_or_else(|| {
+                let got = got(src);
+                errs.push(CobaltError::ExpectedFound {
+                    ex: r#"`while` body"#,
+                    found: got.0,
+                    loc: (start, got.1).into()
+                });
+                Box::new(NullAST::new(start.into())) as _
+            }, |x| x.0);
+            let ast = Box::new(WhileAST::new((begin..start).into(), cond, body));
+            Some((ast, (begin..start).into(), src, errs))
+        }
+        else {next(src, start)}
+    }
+    cflow([log_or, assigns, compound][std::cmp::min(mode, 2) as usize], src, start)
 }
 /// Parse a CompoundDottedNameSegment (CDNS)
 /// A CDNS can be:
