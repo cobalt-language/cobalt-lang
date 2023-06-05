@@ -150,6 +150,10 @@ enum Cli {
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
+        /// argv[0] to pass to program
+        #[arg(short, long)]
+        this: Option<String>,
+        /// arguments to pass to program
         #[arg(last = true)]
         args: Vec<String>
     },
@@ -470,12 +474,13 @@ fn driver() -> anyhow::Result<()> {
             }
 
         },
-        Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, mut args} => {
+        Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, this, mut args} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
+            args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
             let (input, code) = match input.as_str() {
                 "-" => {
                     let mut s = String::new();
