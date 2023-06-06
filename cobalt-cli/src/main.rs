@@ -68,31 +68,10 @@ static LONG_VERSION: &'static str = formatcp!("{}\nLLVM version {}{}{}",
 enum Cli {
     /// Print version information
     Version,
-    /// Test parser (debug-only)
+    /// Debug compiler stuff
     #[cfg(debug_assertions)]
-    Parse {
-        /// input file to parse
-        files: Vec<String>,
-        /// raw string to parse
-        #[arg(short)]
-        code: Vec<String>,
-        /// print locations of AST nodes
-        #[arg(short)]
-        locs: bool
-    },
-    /// Test LLVM generation
-    #[cfg(debug_assertions)]
-    Llvm {
-        /// input file to compile
-        input: String
-    },
-    /// Parse a Cobalt header
-    #[cfg(debug_assertions)]
-    ParseHeader {
-        /// header files to parse
-        #[arg(required = true)]
-        inputs: Vec<String>
-    },
+    #[command(alias = "dbg", subcommand)]
+    Debug(DbgSubcommand),
     /// AOT compile a file
     Aot {
         /// input file to compile
@@ -180,6 +159,35 @@ enum Cli {
     /// package-related utilities
     #[command(subcommand, alias = "pkg")]
     Package(PkgSubcommand)
+}
+#[cfg(debug_assertions)]
+#[derive(Debug, Clone, Subcommand)]
+enum DbgSubcommand {
+    /// Test parser
+    #[cfg(debug_assertions)]
+    Parse {
+        /// input file to parse
+        files: Vec<String>,
+        /// raw string to parse
+        #[arg(short)]
+        code: Vec<String>,
+        /// print locations of AST nodes
+        #[arg(short)]
+        locs: bool
+    },
+    /// Test LLVM generation
+    #[cfg(debug_assertions)]
+    Llvm {
+        /// input file to compile
+        input: String
+    },
+    /// Parse a Cobalt header
+    #[cfg(debug_assertions)]
+    ParseHeader {
+        /// header files to parse
+        #[arg(required = true)]
+        inputs: Vec<String>
+    },
 }
 #[derive(Debug, Clone, Subcommand)]
 enum ProjSubcommand {
@@ -276,55 +284,56 @@ fn driver() -> anyhow::Result<()> {
     match Cli::parse() {
         Cli::Version => println!("co {LONG_VERSION}"),
         #[cfg(debug_assertions)]
-        Cli::Parse {files, code, locs} => {
-            for code in code {
-                let file = FILES.add_file(0, "<command line>".to_string(), code.clone());
-                let (mut ast, errs) = parse_tl(&code);
-                ast.file = Some(file);
-                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
-                else {print!("({} nodes)\n{ast}", ast.nodes())}
-            }
-            for arg in files {
-                let code = Path::new(&arg).read_to_string_anyhow()?;
-                let file = FILES.add_file(0, arg.clone(), code.clone());
-                let (mut ast, errs) = parse_tl(&code);
-                ast.file = Some(file);
-                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-                if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
-                else {print!("({} nodes)\n{ast}", ast.nodes())}
-            }
-        },
-        #[cfg(debug_assertions)]
-        Cli::Llvm {input} => {
-            let code = if input == "-" {
-                let mut s = String::new();
-                std::io::stdin().read_to_string(&mut s)?;
-                s
-            } else {Path::new(&input).read_to_string_anyhow()?};
-            let mut flags = Flags::default();
-            flags.dbg_mangle = true;
-            let ink_ctx = inkwell::context::Context::create();
-            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
-            let file = FILES.add_file(0, input, code.clone());
-            let (mut ast, errs) = parse_tl(&code);
-            ast.file = Some(file);
-            for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let (_, errs) = ast.codegen(&ctx);
-            for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
-            if let Err(msg) = ctx.module.verify() {error!("\n{}", msg.to_string())}
-            print!("{}", ctx.module.to_string());
-        },
-        #[cfg(debug_assertions)]
-        Cli::ParseHeader {inputs} => {
-            for fname in inputs {
+        Cli::Debug(cmd) => match cmd {
+            DbgSubcommand::Parse {files, code, locs} => {
+                for code in code {
+                    let file = FILES.add_file(0, "<command line>".to_string(), code.clone());
+                    let (mut ast, errs) = parse_tl(&code);
+                    ast.file = Some(file);
+                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
+                    else {print!("({} nodes)\n{ast}", ast.nodes())}
+                }
+                for arg in files {
+                    let code = Path::new(&arg).read_to_string_anyhow()?;
+                    let file = FILES.add_file(0, arg.clone(), code.clone());
+                    let (mut ast, errs) = parse_tl(&code);
+                    ast.file = Some(file);
+                    for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
+                    else {print!("({} nodes)\n{ast}", ast.nodes())}
+                }
+            },
+            DbgSubcommand::Llvm {input} => {
+                let code = if input == "-" {
+                    let mut s = String::new();
+                    std::io::stdin().read_to_string(&mut s)?;
+                    s
+                } else {Path::new(&input).read_to_string_anyhow()?};
+                let mut flags = Flags::default();
+                flags.dbg_mangle = true;
                 let ink_ctx = inkwell::context::Context::create();
-                let ctx = CompCtx::new(&ink_ctx, "<anon>");
-                let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
-                match ctx.load(&mut file) {
-                    Ok(_) => ctx.with_vars(|v| v.dump()),
-                    Err(e) => eprintln!("error loading {fname}: {e}")
+                let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+                let file = FILES.add_file(0, input, code.clone());
+                let (mut ast, errs) = parse_tl(&code);
+                ast.file = Some(file);
+                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                ctx.module.set_triple(&TargetMachine::get_default_triple());
+                let (_, errs) = ast.codegen(&ctx);
+                for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                if let Err(msg) = ctx.module.verify() {error!("\n{}", msg.to_string())}
+                print!("{}", ctx.module.to_string());
+            },
+            #[cfg(debug_assertions)]
+            DbgSubcommand::ParseHeader {inputs} => {
+                for fname in inputs {
+                    let ink_ctx = inkwell::context::Context::create();
+                    let ctx = CompCtx::new(&ink_ctx, "<anon>");
+                    let mut file = BufReader::new(match std::fs::File::open(&fname) {Ok(f) => f, Err(e) => {eprintln!("error opening {fname}: {e}"); continue}});
+                    match ctx.load(&mut file) {
+                        Ok(_) => ctx.with_vars(|v| v.dump()),
+                        Err(e) => eprintln!("error loading {fname}: {e}")
+                    }
                 }
             }
         },
