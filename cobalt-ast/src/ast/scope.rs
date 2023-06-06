@@ -9,7 +9,7 @@ pub struct ModuleAST {
 }
 impl AST for ModuleAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = Vec::<CobaltError>::new();
         let mut target_match = 2u8;
@@ -85,14 +85,14 @@ impl AST for ModuleAST {
                 Err(UndefVariable::NotAModule(x)) => {
                     errs.push(CobaltError::NotAModule {
                         name: self.name.start(x).to_string(),
-                        loc: self.name.ids[x - 1].1.clone()
+                        loc: self.name.ids[x - 1].1
                     });
                     Box::new(VarMap::new(Some(v)))
                 },
                 Err(UndefVariable::DoesNotExist(x)) => {
                     errs.push(CobaltError::RedefVariable {
                         name: self.name.start(x).to_string(),
-                        loc: self.name.ids[x - 1].1.clone(),
+                        loc: self.name.ids[x - 1].1,
                         prev: None
                     });
                     Box::new(VarMap::new(Some(v)))
@@ -152,7 +152,7 @@ impl ImportAST {
 }
 impl AST for ImportAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut target_match = 2u8;

@@ -17,7 +17,7 @@ impl VarDefAST {
 }
 impl AST for VarDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
-    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+    fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
@@ -108,7 +108,7 @@ impl AST for VarDefAST {
             Type::Reference(Box::new(dt), false)
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
+    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut is_static = false;
@@ -667,7 +667,7 @@ impl MutDefAST {
 }
 impl AST for MutDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
-    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+    fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
@@ -758,7 +758,7 @@ impl AST for MutDefAST {
             Type::Reference(Box::new(dt), false)
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
+    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut is_static = false;
@@ -1293,9 +1293,9 @@ impl ConstDefAST {
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.val.res_type(ctx)}
-    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));}
-    fn constinit_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>, needs_another: &mut bool) {
+    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
+    fn varfwd_prepass(&self, ctx: &CompCtx) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));}
+    fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
         for err in self.codegen(ctx).1 {
@@ -1453,7 +1453,7 @@ impl TypeDefAST {
 impl AST for TypeDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
-    fn varfwd_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+    fn varfwd_prepass(&self, ctx: &CompCtx) {
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));
         let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
@@ -1478,7 +1478,7 @@ impl AST for TypeDefAST {
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
         ctx.prepass.set(pp);
     }
-    fn constinit_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>, needs_another: &mut bool) {
+    fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
         for err in self.codegen(ctx).1 {
@@ -1512,7 +1512,7 @@ impl AST for TypeDefAST {
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
         ctx.prepass.set(pp);
     }
-    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+    fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
@@ -1681,7 +1681,7 @@ impl VarGetAST {
 }
 impl AST for VarGetAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         if let Some(Symbol(x, _)) = ctx.lookup(&self.name, self.global) {x.data_type.clone()}
         else {Type::Error}
     }

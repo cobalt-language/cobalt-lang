@@ -13,7 +13,7 @@ fn got(src: &str) -> (ParserFound, usize) {
     let mut it = src.char_indices();
     if let Some((_, c)) = it.next() {
         if is_xid_start(c) {
-            let idx = it.skip_while(|x| is_xid_continue(x.1)).next().map_or(src.len(), |x| x.0);
+            let idx = it.find(|x| !is_xid_continue(x.1)).map_or(src.len(), |x| x.0);
             (ParserFound::Str((&src[..idx]).into()), idx)
         }
         else {(ParserFound::Char(c), c.len_utf8())}
@@ -22,7 +22,7 @@ fn got(src: &str) -> (ParserFound, usize) {
 }
 /// Take a parser function and update `src`, `start`, and `errs`
 fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, src: &mut &'a str, start: &mut usize, errs: &mut Vec<CobaltError>) -> Option<(T, SourceSpan)> {
-    let (found, span, rem, mut es) = parser(*src, *start)?;
+    let (found, span, rem, mut es) = parser(src, *start)?;
     *start += span.len();
     *src = rem;
     errs.append(&mut es);
@@ -30,19 +30,18 @@ fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, sr
 }
 
 /// Things an identifier cannot be
-const KEYWORDS: &'static [&'static str] = &[
+const KEYWORDS: &[&str] = &[
     "let", "mut", "const", "type", "fn", "module", "import", "if", "else", "while", // currently in use
     "trait", "spec", "break", "continue" // future-proofing
 ];
 
 /// Parse an identifier
-fn ident<'a>(allow_empty: bool, src: &'a str, start: usize) -> ParserReturn<'a, &'a str> {
+fn ident(allow_empty: bool, src: &str, start: usize) -> ParserReturn<&str> {
     let mut it = src.char_indices();
-    let first = it.next();
-    if first.is_none() {return None}
-    let first = first.unwrap().1;
+    let first = it.next()?;
+    let first = first.1;
     if !(is_xid_start(first) || first == '$' || first == '_') {return allow_empty.then_some(("", start.into(), src, vec![]))}
-    let idx = it.skip_while(|x| is_xid_continue(x.1)).next().map_or(src.len(), |x| x.0);
+    let idx = it.find(|x| !is_xid_continue(x.1)).map_or(src.len(), |x| x.0);
     let (id, rem) = src.split_at(idx);
     let (id, errs) = if KEYWORDS.contains(&id) {("<error>", vec![CobaltError::ExpectedFound {
         ex: "identifier",
@@ -52,17 +51,17 @@ fn ident<'a>(allow_empty: bool, src: &'a str, start: usize) -> ParserReturn<'a, 
     Some((id, (start, idx).into(), rem, errs))
 }
 /// Parse any kind of whitepace
-fn whitespace<'a>(src: &'a str, start: usize) -> ParserReturn<'a, ()> {
-    let idx = src.char_indices().skip_while(|x| x.1.is_whitespace()).next().map_or(src.len(), |x| x.0);
+fn whitespace(src: &str, start: usize) -> ParserReturn<()> {
+    let idx = src.char_indices().find(|x| !x.1.is_whitespace()).map_or(src.len(), |x| x.0);
     (idx > 0).then_some(((), (start, idx).into(), &src[idx..], vec![]))
 }
 /// Parse a comment
-fn comment<'a>(src: &'a str, start: usize) -> ParserReturn<'a, ()> {
+fn comment(src: &str, start: usize) -> ParserReturn<()> {
     let mut it = src.char_indices();
     if it.next() != Some((0, '#')) {return None}
     match it.next() {
         Some((1, '=')) => {
-            if let Some(c) = it.by_ref().skip_while(|x| x.1 == '=').next().map(|x| x.0 + 1) {
+            if let Some(c) = it.by_ref().find(|x| x.1 != '=').map(|x| x.0 + 1) {
                 if let Some(idx) = src[(c + 1)..].find(&("=".repeat(c) + "#")) {
                     let final_len = idx + 2 * (c + 1);
                     Some(((), (start, final_len).into(), &src[final_len..], vec![]))
@@ -73,14 +72,14 @@ fn comment<'a>(src: &'a str, start: usize) -> ParserReturn<'a, ()> {
         },
         Some((1, '\n')) => Some(((), (start, 1).into(), &src[1..], vec![])),
         Some(_) => {
-            let idx = it.skip_while(|x| x.1 != '\n').next().map_or(src.len(), |x| x.0 - 1);
+            let idx = it.find(|x| x.1 == '\n').map_or(src.len(), |x| x.0 - 1);
             Some(((), (start, idx).into(), &src[idx..], vec![]))
         },
         None => Some(((), (start, 1).into(), "", vec![]))
     }
 }
 /// Match anything that should be ignored: whitespace or comments
-fn ignored<'a>(mut src: &'a str, start: usize) -> ParserReturn<'a, ()> {
+fn ignored(mut src: &str, start: usize) -> ParserReturn<()> {
     let mut cont = true;
     let mut good = false;
     let mut errs = vec![];
@@ -116,7 +115,7 @@ fn start_match<'a>(kw: &'static str, mut src: &'a str, mut start: usize) -> Pars
     Some(((), (begin..start).into(), src, errs))
 }
 /// A local identifier is just an ident
-fn local_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedName> {
+fn local_id(mut src: &str, mut start: usize) -> ParserReturn<DottedName> {
     let mut errs = vec![];
     let old = start;
     if src.starts_with('.') {
@@ -134,7 +133,7 @@ fn local_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedNa
     Some((DottedName::new(name, false), (old..start).into(), src, errs))
 }
 /// A global identifier is an optional '.', and then a series of idents separated by '.'s
-fn global_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedName> {
+fn global_id(mut src: &str, mut start: usize) -> ParserReturn<DottedName> {
     let old = start;
     let global = if src.starts_with('.') {src = &src[1..]; start += 1; true} else {false};
     let mut errs = vec![];
@@ -173,7 +172,7 @@ fn global_id<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, DottedN
     Some((DottedName::new(name, global), (old..start).into(), src, errs))
 }
 /// Parse an annotation
-fn annotation<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, (&'a str, Option<&'a str>, SourceSpan)> {
+fn annotation(mut src: &str, mut start: usize) -> ParserReturn<(&str, Option<&str>, SourceSpan)> {
     let begin = start;
     src.starts_with('@').then_some(())?;
     src = &src[1..];
@@ -233,7 +232,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             start += start_span.len();
             let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
             process(ignored, &mut src, &mut start, &mut errs);
-            let ty = src.starts_with(":").then(|| {
+            let ty = src.starts_with(':').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -241,7 +240,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
-            let val = src.starts_with("=").then(|| {
+            let val = src.starts_with('=').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -259,7 +258,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             start += start_span.len();
             let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
             process(ignored, &mut src, &mut start, &mut errs);
-            let ty = src.starts_with(":").then(|| {
+            let ty = src.starts_with(':').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -267,7 +266,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
-            let val = src.starts_with("=").then(|| {
+            let val = src.starts_with('=').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -285,7 +284,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             start += start_span.len();
             let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
             process(ignored, &mut src, &mut start, &mut errs);
-            let ty = src.starts_with(":").then(|| {
+            let ty = src.starts_with(':').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -293,7 +292,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 process(ignored, &mut src, &mut start, &mut errs);
                 res
             }).flatten();
-            let val = src.starts_with("=").then(|| {
+            let val = src.starts_with('=').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -311,7 +310,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             start += start_span.len();
             let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
             process(ignored, &mut src, &mut start, &mut errs);
-            let val = src.starts_with("=").then(|| {
+            let val = src.starts_with('=').then(|| {
                 src = &src[1..];
                 start += 1;
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -346,7 +345,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                         });
                     }
                     Some(Some(ast))
-                }).filter_map(|x| x).collect::<Vec<_>>();
+                }).flatten().collect::<Vec<_>>();
                 process(ignored, &mut src, &mut start, &mut errs);
                 if src.starts_with('}') {
                     src = &src[1..];
@@ -388,7 +387,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 src = &src[1..];
                 start += 1;
             }
-            fn param<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>)> {
+            fn param(mut src: &str, mut start: usize) -> ParserReturn<ast::funcs::Parameter> {
                 let mut errs = vec![];
                 let begin = start;
                 loop {
@@ -419,7 +418,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                     ("", s.into())
                 });
                 process(ignored, &mut src, &mut start, &mut errs);
-                let ty = src.starts_with(":").then(|| {
+                let ty = src.starts_with(':').then(|| {
                     src = &src[1..];
                     start += 1;
                     process(ignored, &mut src, &mut start, &mut errs);
@@ -436,7 +435,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                     process(ignored, &mut src, &mut start, &mut errs);
                     Box::new(ErrorTypeAST::new(iloc))
                 });
-                let val = src.starts_with("=").then(|| {
+                let val = src.starts_with('=').then(|| {
                     src = &src[1..];
                     start += 1;
                     process(ignored, &mut src, &mut start, &mut errs);
@@ -515,7 +514,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
 }
 /// Parse a statement
 /// A statement is a local declaration, import, or expression
-fn stmt<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+fn stmt(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
     let mut errs = vec![];
     process(ignored, &mut src, &mut start, &mut errs);
     let src_ = src;
@@ -528,8 +527,8 @@ fn stmt<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>
 }
 /// Parse an atom
 /// An atom cannot be subdivided
-fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
-    fn varget<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+fn atom(src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
+    fn varget(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let global = if src.starts_with('.') {
             src = &src[1..];
             start += 1;
@@ -537,7 +536,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         } else {false};
         ident(false, src, start).map(|(name, loc, rem, errs)| (Box::new(VarGetAST::new(loc, name.to_string(), global)) as _, if global {(loc.offset() - 1, loc.len() + 1).into()} else {loc}, rem, errs))
     }
-    fn intrin<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn intrin(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         src.starts_with('@').then_some(())?;
         let begin = start;
         src = &src[1..];
@@ -545,7 +544,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let name = process(|src, start| ident(true, src, start), &mut src, &mut start, &mut vec![]).unwrap().0;
         Some((Box::new(IntrinsicAST::new((begin..start).into(), name.to_string())), (begin..start).into(), src, vec![]))
     }
-    fn num<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn    num(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let mut errs = vec![];
         let begin = start;
         if src.starts_with('0') {
@@ -560,12 +559,12 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         src = &src[1..];
                         start += 1;
                     }
-                    if src.chars().next().map(|c| c.is_digit(10)).unwrap_or(false) {
+                    if src.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                         errs.push(CobaltError::UnexpectedDecimal {
                             loc: (start, 1).into(),
                             lit: "octal"
                         });
-                        let idx = src.find(|c: char| !c.is_digit(10)).unwrap_or(src.len()); // recovery: skip all decimal digits
+                        let idx = src.find(|c: char| !c.is_ascii_digit()).unwrap_or(src.len()); // recovery: skip all decimal digits
                         start += idx;
                         src = &src[idx..];
                     }
@@ -580,12 +579,12 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         }
                         Either::Right(val)
                     } else {Either::Left(val)};
-                    if src.chars().next().map(|c| c.is_digit(10)).unwrap_or(false) {
+                    if src.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                         errs.push(CobaltError::UnexpectedDecimal {
                             loc: (start, 1).into(),
                             lit: "octal"
                         });
-                        let idx = src.find(|c: char| !c.is_digit(10)).unwrap_or(src.len()); // recovery: skip all decimal digits
+                        let idx = src.find(|c: char| !c.is_ascii_digit()).unwrap_or(src.len()); // recovery: skip all decimal digits
                         start += idx;
                         src = &src[idx..];
                     }
@@ -601,7 +600,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         src = &src[1..];
                         start += 1;
                     }
-                    if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_digit(16)) {
+                    if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_ascii_hexdigit()) {
                         let mut val = val as f64;
                         let mut exp = 0.0625f64;
                         while let Some(d) = src.chars().next().and_then(|c| c.to_digit(16)) {
@@ -623,12 +622,12 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         src = &src[1..];
                         start += 1;
                     }
-                    if src.chars().next().map(|c| c.is_digit(10)).unwrap_or(false) {
+                    if src.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                         errs.push(CobaltError::UnexpectedDecimal {
                             loc: (start, 1).into(),
                             lit: "binary"
                         });
-                        let idx = src.find(|c: char| !c.is_digit(10)).unwrap_or(src.len()); // recovery: skip all decimal digits
+                        let idx = src.find(|c: char| !c.is_ascii_digit()).unwrap_or(src.len()); // recovery: skip all decimal digits
                         start += idx;
                         src = &src[idx..];
                     }
@@ -643,12 +642,12 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         }
                         Either::Right(val)
                     } else {Either::Left(val)};
-                    if src.chars().next().map(|c: char| c.is_digit(10)).unwrap_or(false) {
+                    if src.chars().next().map(|c: char| c.is_ascii_digit()).unwrap_or(false) {
                         errs.push(CobaltError::UnexpectedDecimal {
                             loc: (start, 1).into(),
                             lit: "binary"
                         });
-                        let idx = src.find(|c: char| !c.is_digit(10)).unwrap_or(src.len()); // recovery: skip all decimal digits
+                        let idx = src.find(|c: char| !c.is_ascii_digit()).unwrap_or(src.len()); // recovery: skip all decimal digits
                         start += idx;
                         src = &src[idx..];
                     }
@@ -662,7 +661,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                         src = &src[1..];
                         start += 1;
                     }
-                    if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_digit(10)) {
+                    if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_ascii_digit()) {
                         let mut val = val as f64;
                         let mut exp = 0.1f64;
                         while let Some(d) = src.chars().next().and_then(|c| c.to_digit(10)) {
@@ -697,7 +696,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                 src = &src[1..];
                 start += 1;
             }
-            let val = if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_digit(10)) {
+            let val = if src.starts_with('.') && src[1..].starts_with(|c: char| c.is_ascii_digit()) {
                 let mut val = val as f64;
                 let mut exp = 0.1f64;
                 while let Some(d) = src.chars().next().and_then(|c| c.to_digit(10)) {
@@ -719,7 +718,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         }
         else {None}
     }
-    fn strlit<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn strlit(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         if !src.starts_with('"') {return None}
         let begin = start;
         src = &src[1..];
@@ -929,7 +928,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let suf = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map(|(suf, loc)| (suf.to_string(), loc));
         Some((Box::new(StringLiteralAST::new((begin..end).into(), out, suf)), (begin..start).into(), src, errs))
     }
-    fn chrlit<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn chrlit(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         if !src.starts_with('\'') {return None}
         let begin = start;
         src = &src[1..];
@@ -1001,8 +1000,8 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
                                 start += c.len_utf8();
                             }
                         }
-                        else {break 'main byte as u32}
-                        byte as u32
+                        else {break 'main byte}
+                        byte
                     },
                     Some('u') => {
                         let mut cp = 0u32;
@@ -1105,7 +1104,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         let suf = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map(|(suf, loc)| (suf.to_string(), loc));
         Some((Box::new(CharLiteralAST::new((begin..end).into(), ch, suf)), (begin..start).into(), src, errs))
     }
-    fn parens<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn parens(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         if !src.starts_with('(') {return None}
@@ -1169,7 +1168,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         }
         Some((Box::new(ParenAST::new((begin..start).into(), ast)), (begin..start).into(), src, errs))
     }
-    fn blocks<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn blocks(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         if !src.starts_with('{') {return None}
@@ -1201,7 +1200,7 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
         }
         Some((Box::new(BlockAST::new((begin..start).into(), stmts)), (begin..start).into(), src, errs))
     }
-    fn arrays<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn arrays(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         src.starts_with('[').then_some(())?;
         let begin = start;
         let mut vals = vec![];
@@ -1269,8 +1268,8 @@ fn atom<'a>(src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
 /// - 1 starts at `assigns`
 /// - 2 starts at `compound`
 /// - anything higher is truncated
-fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AST>> {
-    fn postfix<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
+    fn postfix(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let ast = process(atom, &mut src, &mut start, &mut errs)?.0;
@@ -1428,7 +1427,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         });
         Some((ast, (begin..start).into(), src, errs))
     }  
-    fn prefix<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn prefix(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut ops = vec![];
         let mut errs = vec![];
@@ -1451,7 +1450,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         Some((ast, (begin..start).into(), src, errs))
     }
     // TODO: Macros would be more DRY, maybe switch to them?
-    fn mul_div<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn mul_div(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(prefix, &mut src, &mut start, &mut errs)?.0;
@@ -1472,7 +1471,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, op, rhs)| Box::new(BinOpAST::new((loc, 1).into(), op, lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn add_sub<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn add_sub(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(mul_div, &mut src, &mut start, &mut errs)?.0;
@@ -1493,7 +1492,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, add, rhs)| Box::new(BinOpAST::new((loc, 1).into(), if add {"+"} else {"-"}.to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn shift<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn shift(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(add_sub, &mut src, &mut start, &mut errs)?.0;
@@ -1514,7 +1513,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, ls, rhs)| Box::new(BinOpAST::new((loc, 2).into(), if ls {"<<"} else {">>"}.to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn cmp<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn cmp(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(shift, &mut src, &mut start, &mut errs)?.0;
@@ -1540,7 +1539,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, gt, eq, rhs)| Box::new(BinOpAST::new((loc, 1 + eq as usize).into(), format!("{}{}", if gt {">"} else {"<"}, if eq {"="} else {""}), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn eq<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn eq(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(cmp, &mut src, &mut start, &mut errs)?.0;
@@ -1561,7 +1560,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, inv, rhs)| Box::new(BinOpAST::new((loc, 2).into(), if inv {"!="} else {"=="}.to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn bit_and<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn bit_and(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(eq, &mut src, &mut start, &mut errs)?.0;
@@ -1581,7 +1580,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "&".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn bit_xor<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn bit_xor(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(bit_and, &mut src, &mut start, &mut errs)?.0;
@@ -1601,7 +1600,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "^".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn bit_or<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn bit_or(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(bit_xor, &mut src, &mut start, &mut errs)?.0;
@@ -1621,7 +1620,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 1).into(), "|".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn casts<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn casts(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(bit_or, &mut src, &mut start, &mut errs)?.0;
@@ -1645,7 +1644,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         );
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn log_and<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn log_and(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(casts, &mut src, &mut start, &mut errs)?.0;
@@ -1665,7 +1664,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 2).into(), "&?".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn log_or<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn log_or(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let first = process(log_and, &mut src, &mut start, &mut errs)?.0;
@@ -1685,7 +1684,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = rest.into_iter().fold(first, |lhs, (loc, rhs)| Box::new(BinOpAST::new((loc, 2).into(), "|?".to_string(), lhs, rhs)) as _);
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn assigns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn assigns(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         // rtl associativity is pain
         // it's not as simple as just going through backwards, because we don't know the end
         // no, we have to take the AST node, along with optional operator data, with the invariant
@@ -1716,7 +1715,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         let ast = vals.into_iter().map(|(a, d)| (a, d.unwrap())).rfold(last, |rhs, (lhs, (loc, op))| Box::new(BinOpAST::new(loc.into(), op, lhs, rhs)));
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn compound<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn compound(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let mut ast = process(assigns, &mut src, &mut start, &mut errs)?.0;
@@ -1734,12 +1733,12 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         }
         Some((ast, (begin..start).into(), src, errs))
     }
-    fn cflow<'a>(mut next: impl for<'b> FnMut(&'b str, usize) -> ParserReturn<'b, Box<dyn AST>> + Copy, mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+    fn cflow(mut next: impl FnMut(&str, usize) -> ParserReturn<Box<dyn AST>> + Copy, mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         if process(|src, start| start_match("if", src, start), &mut src, &mut start, &mut errs).is_some() {
             process(ignored, &mut src, &mut start, &mut errs);
-            let cond = match src.as_bytes().get(0) {
+            let cond = match src.as_bytes().first() {
                 Some(b'(') | Some(b'{') => process(atom, &mut src, &mut start, &mut errs).unwrap().0,
                 _ => {
                     let got = got(src);
@@ -1778,7 +1777,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
         }
         else if process(|src, start| start_match("while", src, start), &mut src, &mut start, &mut errs).is_some() {
             process(ignored, &mut src, &mut start, &mut errs);
-            let cond = match src.as_bytes().get(0) {
+            let cond = match src.as_bytes().first() {
                 Some(b'(') | Some(b'{') => process(atom, &mut src, &mut start, &mut errs).unwrap().0,
                 _ => {
                     let got = got(src);
@@ -1815,7 +1814,7 @@ fn expr<'a>(mode: u8, src: &'a str, start: usize) -> ParserReturn<'a, Box<dyn AS
 ///   - `import *`;
 /// - a brace-delimited, comma-separated list of CDNS-lists
 ///   - `import {a, b}`;
-fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedNameSegment> {
+fn cdns(mut src: &str, mut start: usize) -> ParserReturn<CompoundDottedNameSegment> {
     use CompoundDottedNameSegment::*;
     if let Some((found, span, rem, errs)) = ident(false, src, start) {return Some((Identifier(found.to_string(), span), span, rem, errs))}
     match *src.as_bytes().first()? {
@@ -1827,7 +1826,7 @@ fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDott
             src = &src[1..];
             start += 1;
             process(ignored, &mut src, &mut start, &mut errs);
-            if src.starts_with('}') {return Some((Group(vec![]), (begin..(start + 1)).into(), &src[1..], errs))}
+            if let Some(rem) = src.strip_prefix('}') {return Some((Group(vec![]), (begin..(start + 1)).into(), rem, errs))}
             {
                 let mut name = vec![process(cdns, &mut src, &mut start, &mut errs)?.0];
                 process(ignored, &mut src, &mut start, &mut errs);
@@ -1918,7 +1917,7 @@ fn cdns<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDott
 /// Parse a CompoundDottedName (CDN)
 /// A CDN is a CDNS-list with an optional leading period to specify an import from absolute scope
 /// A CDNS-list is a period-separated sequence of CDNSs
-fn cdn<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, CompoundDottedName> {
+fn cdn(mut src: &str, mut start: usize) -> ParserReturn<CompoundDottedName> {
     let old = start;
     let global = if src.starts_with('.') {src = &src[1..]; start += 1; true} else {false};
     let mut errs = vec![];
@@ -1973,7 +1972,7 @@ fn import<'a>(anns: &[(&'a str, Option<&'a str>, SourceSpan)], src: &'a str, mut
 /// - a global declaration
 /// - a module
 /// - an import
-fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn AST>> {
+fn top_level(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
     let old = start;
     let mut errs = vec![];
     let anns: Vec<_> = std::iter::from_fn(|| process(annotation, &mut src, &mut start, &mut errs)).map(|x| x.0).collect();
@@ -2082,7 +2081,7 @@ fn top_level<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Box<dyn
     }
 }
 /// Parse a Vec of top-level items
-fn top_levels<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Vec<Box<dyn AST>>> {
+fn top_levels(mut src: &str, mut start: usize) -> ParserReturn<Vec<Box<dyn AST>>> {
     let mut errs = vec![];
     let old = start;
     Some((std::iter::from_fn(|| {
@@ -2094,7 +2093,7 @@ fn top_levels<'a>(mut src: &'a str, mut start: usize) -> ParserReturn<'a, Vec<Bo
         }
         let ast = process(top_level, &mut src, &mut start, &mut errs)?.0;
         Some(Some(ast))
-    }).filter_map(|x| x).collect(), (old..start).into(), src, errs))
+    }).flatten().collect(), (old..start).into(), src, errs))
 }
 /// Top-level parser entry point
 /// Delegates to `top_levels`, recovering if unexpected characters are found

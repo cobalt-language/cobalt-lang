@@ -112,7 +112,7 @@ impl Display for Type {
     }
 }
 impl Type {
-    pub fn size<'ctx>(&self, ctx: &CompCtx<'ctx>) -> SizeType {
+    pub fn size(&self, ctx: &CompCtx) -> SizeType {
         match self {
             IntLiteral => Static(8),
             Int(size, _) => Static(((size + 7) / 8) as u32),
@@ -141,7 +141,7 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx)
         }
     }
-    pub fn align<'ctx>(&self, ctx: &CompCtx<'ctx>) -> u16 {
+    pub fn align(&self, ctx: &CompCtx) -> u16 {
         match self {
             IntLiteral => 8,
             Int(size, _) => match size {
@@ -193,7 +193,7 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx)
         }
     }
-    pub fn register<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
+    pub fn register(&self, ctx: &CompCtx) -> bool {
         match self {
             IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
             Borrow(b) => b.register(ctx),
@@ -202,7 +202,7 @@ impl Type {
             _ => false
         }
     }
-    pub fn copyable<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {
+    pub fn copyable(&self, ctx: &CompCtx) -> bool {
         match self {
             IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) | BoundMethod(..) => true,
             Tuple(v) => v.iter().all(|x| x.copyable(ctx)),

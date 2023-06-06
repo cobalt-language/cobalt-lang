@@ -246,11 +246,9 @@ impl<'ctx> VarMap<'ctx> {
                 if pattern.len() == 1 {if x == name {symbols.get(name).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
                     Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
                 }))} else {None}}
-                else {
-                    if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _)) = symbols.get(x.as_str()) {
-                        Self::satisfy((s, i), name, &pattern[1..], root)
-                    } else {None}
-                },
+                else if let Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _)) = symbols.get(x.as_str()) {
+                    Self::satisfy((s, i), name, &pattern[1..], root)
+                } else {None},
             Glob(_) =>
                 if pattern.len() == 1 {symbols.get(name).or_else(|| imports.iter().filter_map(|(i, _)| if i.ends_with(name) {Some(i)} else {None}).find_map(|i| {
                     Self::satisfy(if i.global {(&root.symbols, &root.imports)} else {(symbols, imports)}, name, &i.ids, root)
@@ -288,14 +286,14 @@ impl<'ctx> VarMap<'ctx> {
         use CompoundDottedNameSegment::*;
         match pattern.first() {
             None => vec![],
-            Some(Identifier(x, l)) => match Self::lookup_in_mod((symbols, imports), &x, root) {
+            Some(Identifier(x, l)) => match Self::lookup_in_mod((symbols, imports), x, root) {
                 Some(_) if pattern.len() == 1 => vec![],
                 Some(Symbol(Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, i, _)), ..}, _)) => Self::verify_in_mod((s, i), &pattern[1..], root),
-                _ => vec![l.clone()]
+                _ => vec![*l]
             },
             Some(Glob(l)) =>
                 if pattern.len() == 1 {
-                    if symbols.is_empty() && imports.is_empty() {vec![l.clone()]}
+                    if symbols.is_empty() && imports.is_empty() {vec![*l]}
                     else {vec![]}
                 }
                 else {
