@@ -340,6 +340,7 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
+    cc.link_dir("$ORIGIN");
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
     match t.target_type {
         TargetType::Executable => {

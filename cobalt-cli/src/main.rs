@@ -330,8 +330,8 @@ fn driver() -> anyhow::Result<()> {
         Cli::Aot {input, output, linked, mut link_dirs, headers, triple, emit, profile, continue_if_err, debug_mangle, no_default_link} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
             let code = if input == "-" {
                 let mut s = String::new();
@@ -471,8 +471,8 @@ fn driver() -> anyhow::Result<()> {
         Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, this, mut args} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
             args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
             let (input, code) = match input.as_str() {
@@ -540,8 +540,8 @@ fn driver() -> anyhow::Result<()> {
         Cli::Check {input, linked, mut link_dirs, headers, no_default_link} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages"].into_iter().map(String::from));}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib"].into_iter().map(String::from));}
             }
             let (input, code) = if input != "-" {(input.as_str(), Path::new(&input).read_to_string_anyhow()?)}
             else {
@@ -690,8 +690,8 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", ].into_iter().map(String::from));}
                 }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(|| {
@@ -759,8 +759,8 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
                 }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(|| {
