@@ -11,7 +11,7 @@ impl IfAST {
 }
 impl AST for IfAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
         else {self.if_true.res_type(ctx)}
     }
@@ -135,7 +135,7 @@ impl WhileAST {
 }
 impl AST for WhileAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Null}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {

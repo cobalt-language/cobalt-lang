@@ -12,8 +12,8 @@ impl CastAST {
 }
 impl AST for CastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
-    fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
+    fn expl_type(&self, _: &CompCtx) -> bool {true}
+    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
@@ -45,8 +45,8 @@ impl BitCastAST {
 }
 impl AST for BitCastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
-    fn expl_type<'ctx>(&self, _: &CompCtx<'ctx>) -> bool {true}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
+    fn expl_type(&self, _: &CompCtx) -> bool {true}
+    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
@@ -166,7 +166,7 @@ impl ParenAST {
 impl AST for ParenAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {self.base.is_const()}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {self.base.res_type(ctx)}
+    fn res_type(&self, ctx: &CompCtx) -> Type {self.base.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {self.base.codegen(ctx)}
     fn to_code(&self) -> String {format!("({})", self.base.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {self.base.print_impl(f, pre, file)}

@@ -14,7 +14,7 @@ impl IntLiteralAST {
 impl AST for IntLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, _ctx: &CompCtx) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("", _)) => Type::IntLiteral,
             Some(("isize", _)) => Type::Int(64, false),
@@ -66,7 +66,7 @@ impl FloatLiteralAST {
 impl AST for FloatLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, _ctx: &CompCtx) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("f64", _)) => Type::Float64,
             Some(("f16", _)) => Type::Float16,
@@ -110,7 +110,7 @@ impl CharLiteralAST {
 impl AST for CharLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, _ctx: &CompCtx) -> Type {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("", _)) => Type::Int(32, true),
             Some(("isize", _)) => Type::Int(64, false),
@@ -162,7 +162,7 @@ impl StringLiteralAST {
 impl AST for StringLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, _ctx: &CompCtx) -> Type {
         match self.suffix {
             None => Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))), false),
             Some(_) => Type::Null
@@ -210,7 +210,7 @@ impl ArrayLiteralAST {
 }
 impl AST for ArrayLiteralAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.start, self.end)}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
             Type::Reference(b, m) => match *b {
@@ -340,7 +340,7 @@ impl AST for TupleLiteralAST {
         let end = self.vals.last().unwrap().loc();
         merge_spans(start, end)
     }
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
             Type::Reference(b, m) => if b.register(ctx) {

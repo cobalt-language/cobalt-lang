@@ -11,7 +11,7 @@ impl BinOpAST {
 }
 impl AST for BinOpAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.lhs.loc(), self.rhs.loc())}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         if self.op == "&?" || self.op == "|?" {
             let t = self.rhs.res_type(ctx);
             if t == Type::IntLiteral {return Type::IntLiteral}
@@ -142,7 +142,7 @@ impl PostfixAST {
 }
 impl AST for PostfixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.loc)}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -172,7 +172,7 @@ impl PrefixAST {
 }
 impl AST for PrefixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -202,7 +202,7 @@ impl SubAST {
 }
 impl AST for SubAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
+    fn res_type(&self, ctx: &CompCtx) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
