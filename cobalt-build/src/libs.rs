@@ -3,6 +3,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use os_str_bytes::OsStrBytes;
 use object::{SectionKind, write::Object};
+use path_calculate::*;
 use cobalt_ast::CompCtx;
 /// This is a list of all symbols defined in multiple files
 #[derive(Debug)]
@@ -30,7 +31,7 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&CompCtx>) ->
                     if let Some(ctx) = ctx {
                         conflicts.append(&mut load_lib(&path, ctx)?)
                     }
-                    out.push((path.clone(), val));
+                    out.push((path.as_absolute_path()?.into_owned(), val));
                 }
             }
         }
@@ -45,7 +46,7 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&CompCtx>) ->
             for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
                 if lib == stem || (stem.starts_with("lib") && lib == &stem[3..]) {
                     let val = std::mem::take(lib);
-                    out.push((path.clone(), val));
+                    out.push((path.as_absolute_path()?.into_owned(), val));
                 }
             }
         }
