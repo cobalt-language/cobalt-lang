@@ -22,7 +22,7 @@ impl Default for Flags {
 pub struct Counter(Cell<i32>);
 impl Counter {
     pub fn min() -> Self {Counter(Cell::new(0))}
-    pub fn max() -> Self {Counter(Cell::new(std::i32::MAX as i32))}
+    pub fn max() -> Self {Counter(Cell::new(std::i32::MAX))}
     pub fn get(&self) -> i32 {self.0.get()}
     pub fn incr(&self) -> &Self {self.0.set(self.0.get() + 1); self}
     pub fn decr(&self) -> &Self {self.0.set(self.0.get() - 1); self}

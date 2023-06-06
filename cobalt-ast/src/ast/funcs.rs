@@ -13,7 +13,7 @@ pub enum ParamType {
     Mutable,
     Constant
 }
-type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
+pub type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
 #[derive(Debug, Clone)]
 pub struct FnDefAST {
     loc: SourceSpan,

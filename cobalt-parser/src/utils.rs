@@ -18,14 +18,14 @@ impl Iterator for CharBytesIterator {
         let res = match self.explode() {
             (c @ 0..=0x7f, 0) => Some(c as u8),
             (c @ 0x80..=0x7ff, 0)       => Some(0xc0 | ((c >>  6) as u8 & 0x1F)),
-            (c @ 0x80..=0x7ff, 1)       => Some(0x80 | ((c >>  0) as u8 & 0x3F)),
+            (c @ 0x80..=0x7ff, 1)       => Some(0x80 | ((c      ) as u8 & 0x3F)),
             (c @ 0x800..=0xffff, 0)     => Some(0xe0 | ((c >> 12) as u8 & 0x0F)),
             (c @ 0x800..=0xffff, 1)     => Some(0x80 | ((c >>  6) as u8 & 0x3F)),
-            (c @ 0x800..=0xffff, 2)     => Some(0x80 | ((c >>  0) as u8 & 0x3F)),
+            (c @ 0x800..=0xffff, 2)     => Some(0x80 | ((c      ) as u8 & 0x3F)),
             (c @ 0x10000..=0x1fffff, 0) => Some(0xf0 | ((c >> 18) as u8 & 0x07)),
             (c @ 0x10000..=0x1fffff, 1) => Some(0x80 | ((c >> 12) as u8 & 0x3F)),
             (c @ 0x10000..=0x1fffff, 2) => Some(0x80 | ((c >>  6) as u8 & 0x3F)),
-            (c @ 0x10000..=0x1fffff, 3) => Some(0x80 | ((c >>  0) as u8 & 0x3F)),
+            (c @ 0x10000..=0x1fffff, 3) => Some(0x80 | ((c      ) as u8 & 0x3F)),
             _ => None
         };
         self.1 += res.is_some() as u8;
