@@ -21,7 +21,7 @@ impl AST for IfAST {
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
         let cv = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
-            errs.push(e.into());
+            errs.push(e);
             Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
         });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
@@ -40,13 +40,13 @@ impl AST for IfAST {
                     if let Some(ty) = types::utils::common(&if_true.data_type, &if_false.data_type) {
                         ctx.builder.position_at_end(itb);
                         let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e.into());
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.builder.build_unconditional_branch(mb);
                         ctx.builder.position_at_end(ifb);
                         let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e.into());
+                            errs.push(e);
                             Value::error()
                         });
                         ctx.builder.build_unconditional_branch(mb);
@@ -146,7 +146,7 @@ impl AST for WhileAST {
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
             let val = types::utils::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
-                errs.push(e.into());
+                errs.push(e);
                 Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
             }).into_value(ctx).unwrap_or(ctx.context.bool_type().const_int(0, false).into());
             ctx.builder.build_conditional_branch(val.into_int_value(), body, exit);

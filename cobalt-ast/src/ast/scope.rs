@@ -85,14 +85,14 @@ impl AST for ModuleAST {
                 Err(UndefVariable::NotAModule(x)) => {
                     errs.push(CobaltError::NotAModule {
                         name: self.name.start(x).to_string(),
-                        loc: self.name.ids[x - 1].1.clone()
+                        loc: self.name.ids[x - 1].1
                     });
                     Box::new(VarMap::new(Some(v)))
                 },
                 Err(UndefVariable::DoesNotExist(x)) => {
                     errs.push(CobaltError::RedefVariable {
                         name: self.name.start(x).to_string(),
-                        loc: self.name.ids[x - 1].1.clone(),
+                        loc: self.name.ids[x - 1].1,
                         prev: None
                     });
                     Box::new(VarMap::new(Some(v)))

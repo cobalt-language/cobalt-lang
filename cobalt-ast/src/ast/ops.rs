@@ -233,7 +233,7 @@ impl AST for DotAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.obj.loc(), self.name.1)}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         match self.obj.res_type(ctx) {
-            Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
+            Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
             Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
             x => types::utils::attr_type(x, &self.name.0, ctx)
         }
@@ -252,7 +252,7 @@ impl AST for DotAST {
                     }), Value::error()),
                     |Symbol(x, d)| (if !d.init {Some(CobaltError::UninitializedGlobal {
                         name: self.name.0.clone(),
-                        loc: self.name.1.clone()
+                        loc: self.name.1
                     })} else {None}, x.clone())
                 );
                 errs.extend(e);
@@ -281,7 +281,7 @@ impl AST for DotAST {
                     Value::error()
                 }
             }
-            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1.clone()), ctx).unwrap_or_else(|e| {
+            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             })

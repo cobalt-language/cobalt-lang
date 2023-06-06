@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 pub mod ast;
 pub mod context;
 pub mod dottedname;

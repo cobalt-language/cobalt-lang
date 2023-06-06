@@ -141,19 +141,15 @@ impl AST for FnDefAST {
                     }
                 },
                 "method" if self.in_struct => {
-                    if fn_type.is_none() {
-                        if !params.is_empty() {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
-                        }
+                    if fn_type.is_none() && !params.is_empty() {
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
                     }
                 },
                 "getter" if self.in_struct => {
-                    if fn_type.is_none() {
-                        if !params.is_empty() {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
-                        }
+                    if fn_type.is_none() && !params.is_empty() {
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
                     }
                 },
                 _ => {}
@@ -329,7 +325,7 @@ impl AST for FnDefAST {
                     }
                 },
                 "cconv" => {
-                    if let Some((_, prev)) = cconv.clone() {
+                    if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
                             loc, prev
@@ -383,7 +379,7 @@ impl AST for FnDefAST {
                             loc
                         });
                     }
-                    if let Some((_, prev)) = cconv.clone() {
+                    if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
                             loc, prev
@@ -967,7 +963,7 @@ impl AST for CallAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.target.loc(), Some(self.cparen.clone()), self.args.iter().map(|a| {
+        (types::utils::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
