@@ -47,15 +47,16 @@ impl CompileCommand {
         cmd.arg(&self.output_file);
         if self.is_lib {cmd.arg("-shared");}
         for lib in &self.libs {
-            let parent = lib.parent().unwrap();
-            let mut a = OsString::from("-L");
-            a.push(parent);
-            cmd.arg(a);
-            cmd.arg("-rpath");
-            cmd.arg(parent);
-            a = OsString::from("-l:");
-            a.push(lib.file_name().unwrap());
-            cmd.arg(a);
+            cmd.arg(lib);
+            // let parent = lib.parent().unwrap();
+            // let mut a = OsString::from("-L");
+            // a.push(parent);
+            // cmd.arg(a);
+            // cmd.arg("-rpath");
+            // cmd.arg(parent);
+            // a = OsString::from("-l:");
+            // a.push(lib.file_name().unwrap());
+            // cmd.arg(a);
         }
     }
     #[allow(unreachable_code, unused_variables)]
