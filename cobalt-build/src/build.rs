@@ -242,7 +242,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     if !(force_build || opts.rebuild) && out_path.exists() && head_path.exists() && (|| Ok::<bool, std::io::Error>(path.metadata()?.modified()? < out_path.metadata()?.modified()?))().unwrap_or(false) { // lambda to propagate errors
-        let conflicts = libs::load_lib(&head_path, &ctx)?;
+        let conflicts = libs::load_lib(&head_path, ctx)?;
         if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
         return Ok((([out_path, head_path], false), None));
     }
@@ -252,7 +252,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let (mut ast, errs) = cobalt_parser::parse_tl(&code);
-    let file = FILES.add_file(0, name.to_string(), code.clone());
+    let file = FILES.add_file(0, name.to_string(), code);
     for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
@@ -332,7 +332,7 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
-    for lib in notfound {anyhow::bail!("couldn't find {lib}")}
+    if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
     out.extend(libs.into_iter().map(|(x, _)| x));
     Ok(out)
 }
@@ -365,7 +365,7 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut cc = cc::CompileCommand::new();
@@ -398,7 +398,7 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut cc = cc::CompileCommand::new();
@@ -437,7 +437,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
             Dependency::Project => {
                 let (t, d) = if let Some(t) = targets.get(target.as_str()) {t} else {anyhow::bail!("target {target:?} is not a target in this project")};
                 if d.with(|d| if let Some(a) = d {libs::load_lib(a, ctx)?; anyhow::Ok(true)} else {anyhow::Ok(false)})? {continue}
-                let (c, artifact) = build_target(t, &target, d, targets, opts)?;
+                let (c, artifact) = build_target(t, target, d, targets, opts)?;
                 changed |= c;
                 libs::load_lib(&artifact, ctx)?;
                 out.push(artifact);
@@ -462,7 +462,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
     let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
-    for lib in notfound {anyhow::bail!("couldn't find {lib}")}
+    if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
     out.extend(libs.into_iter().map(|(x, _)| x));
     Ok((changed, out))
 }
@@ -512,7 +512,7 @@ fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut cc = cc::CompileCommand::new();
@@ -562,9 +562,9 @@ fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &
                 },
                 None => anyhow::bail!("target must have files")
             }
-            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (&p1, &p2), *fail)} else {Ok(())})?;
+            paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(name, &opts.triple));
+            output.push(libs::format_lib(name, opts.triple));
             let mut cc = cc::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));

@@ -9,12 +9,7 @@ use cobalt_ast::CompCtx;
 pub struct ConflictingDefs(pub Vec<String>);
 impl fmt::Display for ConflictingDefs {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut it = self.0.iter().peekable();
-        while let Some(v) = it.next() {
-            write!(f, "conflicting defintions for {v}")?;
-            writeln!(f)?;
-        }
-        Ok(())
+        self.0.iter().try_for_each(|v| writeln!(f, "conflicting defintions for {v}"))
     }
 }
 impl std::error::Error for ConflictingDefs {}
@@ -61,12 +56,12 @@ pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&CompCtx>) ->
 /// Create a new (write) Object for the given triple
 pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     let triple = triple.as_str().to_str().unwrap();
-    let components = triple.split("-").collect::<Vec<&str>>();
+    let components = triple.split('-').collect::<Vec<&str>>();
     use object::Architecture::*;
     use object::Endianness::*;
     use object::BinaryFormat::*;
     let mut wasm = false;
-    let arch = match components.get(0).copied() {
+    let arch = match components.first().copied() {
         Some("aarch64") => Aarch64,
         Some(x) if x.starts_with("arm") => Arm,
         Some("x86" | "i386" | "i586" | "i686") => I386,
@@ -105,7 +100,7 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 /// - Anything else formats to libname.so
 pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String {
     let triple = triple.as_str().to_str().unwrap();
-    let mut components = triple.split("-");
+    let mut components = triple.split('-');
     if matches!(components.next(), Some("wasm" | "wasm32")) {format!("{base}.wasm")} else {
         match components.next() {
             Some("apple") => format!("lib{base}.dylib"),
@@ -133,7 +128,10 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
     let buf = path.read_anyhow()?;
     let mut conflicts = vec![];
     if buf.len() >= 4 && &buf[..4] == b"META" {
-        buf[4..].split(|&c| c == 0).try_for_each(|p| anyhow::Ok(conflicts.append(&mut load_lib(&Path::assert_from_raw_bytes(p), ctx)?)))?;
+        buf[4..].split(|&c| c == 0).try_for_each(|p| {
+            conflicts.append(&mut load_lib(&Path::assert_from_raw_bytes(p), ctx)?);
+            anyhow::Ok(())
+        })?;
         Ok(conflicts)
     }
     else {

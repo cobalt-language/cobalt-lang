@@ -137,18 +137,18 @@ impl Source {
         let mut to = to.as_ref().to_path_buf();
         if to.exists() {to.remove_dir_all_anyhow()?}
         match self {
-            Self::Git(Either::Left(url) | Either::Right(GitInfo {url, branch: None, ..})) => {git2::Repository::clone_recurse(&url, &to)?;},
+            Self::Git(Either::Left(url) | Either::Right(GitInfo {url, branch: None, ..})) => {git2::Repository::clone_recurse(url, &to)?;},
             Self::Git(Either::Right(GitInfo {url, branch: Some(GitLocation::Branch(commit) | GitLocation::Commit(commit)), ..})) => {
-                let repo = git2::Repository::clone_recurse(&url, &to)?;
-                let (object, reference) = repo.revparse_ext(&commit)?;
+                let repo = git2::Repository::clone_recurse(url, &to)?;
+                let (object, reference) = repo.revparse_ext(commit)?;
                 repo.checkout_tree(&object, None)?;
                 if let Some(gref) = reference {repo.set_head(std::str::from_utf8(gref.name_bytes())?)?}
                 else {repo.set_head_detached(object.id())?}
             },
-            Self::Tar(url) => tar::Archive::new(flate2::read::GzDecoder::new(ureq::get(&url).call()?.into_reader())).unpack(&to)?,
+            Self::Tar(url) => tar::Archive::new(flate2::read::GzDecoder::new(ureq::get(url).call()?.into_reader())).unpack(&to)?,
             Self::Zip(url) => {
                 let mut buf = vec![];
-                ureq::get(&url).call()?.into_reader().read_to_end(&mut buf)?;
+                ureq::get(url).call()?.into_reader().read_to_end(&mut buf)?;
                 zip_extract::extract(std::io::Cursor::new(buf), &to, true)?;
             }
         }
@@ -334,7 +334,7 @@ pub enum InstallError {
 struct DisplayCycle<'a>(pub &'a VecDeque<(graph::Id, graph::Id, Version)>);
 impl std::fmt::Display for DisplayCycle<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        for (pkg, tar, v) in self.0 {write!(f, "{}.{}@{v} -> ", graph::STRINGS.resolve(&pkg), graph::STRINGS.resolve(&tar))?}
+        for (pkg, tar, v) in self.0 {write!(f, "{}.{}@{v} -> ", graph::STRINGS.resolve(pkg), graph::STRINGS.resolve(tar))?}
         let (pkg, tar, v) = self.0.front().unwrap();
         write!(f, "{}.{}@{v}", graph::STRINGS.resolve(pkg), graph::STRINGS.resolve(tar))
     }
@@ -373,7 +373,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
         // Search for prebuilds that match the target
         // If opts.frozen == true, only allow files starting with "/" or "file://", which are
         // recognized as local files
-        if let Some(mut url) = package.releases[version].prebuilds.iter().flat_map(|(os, ts)| ts.iter().map(|(tar, url)| (os.as_str(), tar, url))).find_map(|(os, t, url)| ((!opts.frozen || url.starts_with('/') || url.starts_with("file://")) && t == tar && glob::Pattern::new(&os).ok()?.matches(&opts.target)).then_some(url.as_str())) {
+        if let Some(mut url) = package.releases[version].prebuilds.iter().flat_map(|(os, ts)| ts.iter().map(|(tar, url)| (os.as_str(), tar, url))).find_map(|(os, t, url)| ((!opts.frozen || url.starts_with('/') || url.starts_with("file://")) && t == tar && glob::Pattern::new(os).ok()?.matches(&opts.target)).then_some(url.as_str())) {
             if if url.starts_with("file://") {url = &url[7..]; true} else {url.starts_with('/')} {
                 Path::new(url).copy_anyhow(path)?;
             }
@@ -402,7 +402,7 @@ fn install_single(pkg: &'static str, tar: &'static str, version: &Version, opts:
     build_path.push("build");
     let proj = toml::from_str::<build::Project>(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
     let target = proj.targets.get(tar).ok_or(InstallError::NoMatchingTarget(pkg, version.clone(), tar))?;
-    let out = build::build_target_single(&target, pkg, tar, version, plan, &build::BuildOptions {
+    let out = build::build_target_single(target, pkg, tar, version, plan, &build::BuildOptions {
         source_dir: &src_path,
         build_dir: &build_path,
         continue_comp: false,
@@ -423,6 +423,6 @@ pub fn install<I: IntoIterator<Item = InstallSpec>>(pkgs: I, opts: &InstallOptio
     graph.is_frozen = opts.frozen;
     graph.build_tree(pkgs)?;
     let order = graph.build_order().map_err(InstallError::DependencyCycle)?.into_iter().map(|(p, t, v)| ((graph::STRINGS.resolve(&p), graph::STRINGS.resolve(&t)), v)).collect::<IndexMap<_, _>>();
-    order.iter().try_for_each(|((p, t), v)| install_single(p, t, &v, &Default::default(), &reg[p], &order))?;
+    order.iter().try_for_each(|((p, t), v)| install_single(p, t, v, &Default::default(), reg[p], &order))?;
     Ok(order)
 }
