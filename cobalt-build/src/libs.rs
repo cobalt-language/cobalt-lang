@@ -23,6 +23,7 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     let mut wasm = false;
     let arch = match components.first().copied() {
         Some("aarch64") => Aarch64,
+        Some(x) if x.starts_with("arm64") => Aarch64,
         Some(x) if x.starts_with("arm") => Arm,
         Some("x86" | "i386" | "i586" | "i686") => I386,
         Some("mips" | "mipsel") => Mips,
