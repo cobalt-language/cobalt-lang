@@ -4,10 +4,10 @@ version = "0.5.3"
 edition = "2021"
 
 [dependencies]
-cobalt-parser.path = "../cobalt-parser"
-cobalt-ast.path = "../cobalt-ast"
-cobalt-errors.path = "../cobalt-errors"
-cobalt-utils.path = "../cobalt-utils"
+cobalt-parser = { path = "../cobalt-parser" }
+cobalt-ast = { path = "../cobalt-ast" }
+cobalt-errors = { path = "../cobalt-errors" }
+cobalt-utils = { path = "../cobalt-utils" }
 inkwell = "0.2.0"
 walkdir = "2"
 serde = { version = "1.0", features = ["derive"] }
@@ -33,3 +33,4 @@ lasso = { version = "0.7.2", features = ["multi-threaded"] }
 indexmap = "1.9.3"
 os_str_bytes = "6.5.0"
 toml = "0.7.4"
+bstr = "1.5.0"

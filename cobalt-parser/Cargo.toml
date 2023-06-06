@@ -4,9 +4,9 @@ version = "0.5.3"
 edition = "2021"
 
 [dependencies]
-cobalt-errors.path = "../cobalt-errors"
-cobalt-utils.path = "../cobalt-utils"
-cobalt-ast.path = "../cobalt-ast"
+cobalt-errors = { path = "../cobalt-errors" }
+cobalt-utils = { path = "../cobalt-utils" }
+cobalt-ast = { path = "../cobalt-ast" }
 unicode-ident = "1.0.9"
 walkdir = "2"
 either = "1.8.1"

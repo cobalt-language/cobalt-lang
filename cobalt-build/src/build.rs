@@ -302,8 +302,7 @@ fn build_file_2(ast: TopLevelAST, ctx: &CompCtx, opts: &BuildOptions, (out_path,
 /// Resolve dependencies for `build_target_single`
 /// This replaces project dependencies with packages, checks `plan` for installation versions, and
 /// assumes that all dependencies are already built
-fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<Vec<PathBuf>> {
-    let mut out = vec![];
+fn resolve_deps_internal(ctx: &CompCtx, cmd: &mut cc::CompileCommand, t: &Target, pkg: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<()> {
     let mut libs = vec![];
     let mut conflicts = vec![];
     let mut installed_path = cobalt_dir()?;
@@ -316,7 +315,7 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
                 artifact.push(v.to_string());
                 artifact.push(target);
                 conflicts.append(&mut libs::load_lib(&artifact, ctx)?);
-                out.push(artifact);
+                cmd.link_abs(artifact);
             },
             Dependency::System => libs.push(target.clone()),
             Dependency::Package(spec) => spec.targets.clone().unwrap_or_else(|| vec!["default".to_string()]).into_iter().try_for_each(|tar| {
@@ -325,23 +324,23 @@ fn resolve_deps_internal(ctx: &CompCtx, t: &Target, pkg: &str, v: &Version, plan
                 path.push(plan[&(target.as_str(), tar.as_str())].to_string());
                 path.push(tar);
                 conflicts.append(&mut libs::load_lib(&path, ctx)?);
-                out.push(path);
+                cmd.link_abs(path);
                 anyhow::Ok(())
             })?
         }
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
-    let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
+    let notfound = cmd.search_libs(libs, opts.link_dirs.iter().copied().map(String::from), Some(ctx), false)?;
     if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
-    out.extend(libs.into_iter().map(|(x, _)| x));
-    Ok(out)
+    Ok(())
 }
 /// Build a single target, for use in package installation
 pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan: &IndexMap<(&str, &str), Version>, opts: &BuildOptions) -> anyhow::Result<PathBuf> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let libs = resolve_deps_internal(&ctx, t, pkg, v, plan, opts)?;
+    let mut cc = cc::CompileCommand::new();
+    resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
     match t.target_type {
         TargetType::Executable => {
             let mut paths = vec![];
@@ -368,11 +367,9 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
-            let mut cc = cc::CompileCommand::new();
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            cc.link_libs(libs);
-            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
             Ok(output)
         },
@@ -405,15 +402,14 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            cc.link_libs(libs);
-            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
             Ok(output)
         },
         TargetType::Meta => {
             let output = opts.build_dir.join(name);
             let mut vec = Vec::new();
-            for lib in libs {
+            for lib in &cc.abss {
                 vec.extend_from_slice(&lib.to_raw_bytes());
                 vec.push(0);
             }
@@ -426,7 +422,7 @@ pub fn build_target_single(t: &Target, pkg: &str, name: &str, v: &Version, plan:
 /// Resolve dependencies for a target
 /// The header is loaded into the compilation context, and it returns a tuple containing if a
 /// dependency has been rebuilt and a Vec containing the files that need to be linked
-fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, Vec<PathBuf>)> {
+fn resolve_deps(ctx: &CompCtx, cmd: &mut cc::CompileCommand, t: &Target, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<bool> {
     let mut out = vec![];
     let mut libs = vec![];
     let mut conflicts = vec![];
@@ -440,7 +436,7 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
                 let (c, artifact) = build_target(t, target, d, targets, opts)?;
                 changed |= c;
                 libs::load_lib(&artifact, ctx)?;
-                out.push(artifact);
+                cmd.link_abs(artifact);
             },
             Dependency::System => libs.push(target.clone()),
             Dependency::Package(PkgDepSpec {version, targets}) => to_install.push(pkg::InstallSpec {name: target.clone(), version: version.clone(), targets: targets.clone()})
@@ -461,17 +457,17 @@ fn resolve_deps(ctx: &CompCtx, t: &Target, targets: &HashMap<String, (Target, Ce
         }))?;
     }
     if !conflicts.is_empty() {anyhow::bail!(libs::ConflictingDefs(conflicts))}
-    let (libs, notfound) =  libs::find_libs(libs, &opts.link_dirs, Some(ctx))?;
+    let notfound = cmd.search_libs(libs, opts.link_dirs.iter().copied().map(String::from), Some(ctx), false)?;
     if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
-    out.extend(libs.into_iter().map(|(x, _)| x));
-    Ok((changed, out))
+    Ok(changed)
 }
 /// Build a single target. This is used with the `build` entry function
 fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>, opts: &BuildOptions) -> anyhow::Result<(bool, PathBuf)> {
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let (rebuild, libs) = resolve_deps(&ctx, t, targets, opts)?;
+    let mut cc = cc::CompileCommand::new();
+    let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
         TargetType::Executable => {
@@ -515,11 +511,9 @@ fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
-            let mut cc = cc::CompileCommand::new();
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            cc.link_libs(libs);
-            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
             data.set(Some(output.clone()));
             Ok((changed, output))
@@ -565,12 +559,10 @@ fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &
             paths.iter().zip(asts).try_for_each(|(([p1, p2], fail), ast)| if let Some(ast) = ast {build_file_2(ast, &ctx, opts, (p1, p2), *fail)} else {Ok(())})?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(libs::format_lib(name, opts.triple));
-            let mut cc = cc::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            cc.link_libs(libs);
-            let code = cc.build()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
             if code != 0 {anyhow::bail!("C compiler exited with code {code}")}
             data.set(Some(output.clone()));
             Ok((changed, output))
@@ -578,7 +570,7 @@ fn build_target(t: &Target, name: &str, data: &Cell<Option<PathBuf>>, targets: &
         TargetType::Meta => {
             let output = opts.build_dir.join(name.to_string() + ".meta");
             let mut vec = Vec::new();
-            for lib in libs {
+            for lib in &cc.abss {
                 vec.extend_from_slice(&lib.to_raw_bytes());
                 vec.push(0);
             }

@@ -366,12 +366,12 @@ fn driver() -> anyhow::Result<()> {
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
             ctx.module.set_triple(&trip);
-            let libs = if !linked.is_empty() {
-                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                if !notfound.is_empty() {exit(102)}
-                libs
-            } else {vec![]};
+            let mut cc = cc::CompileCommand::new();
+            cc.target(&triple);
+            if !linked.is_empty() {
+                let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+            }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.load(&mut file)?;
@@ -435,12 +435,9 @@ fn driver() -> anyhow::Result<()> {
                                 exit(4)
                             }
                             let tmp = temp_file::with_contents(mb.as_slice());
-                            let mut cc = cc::CompileCommand::new();
                             cc.obj(tmp.path());
                             cc.output(output.unwrap());
-                            cc.link_libs(libs.into_iter().map(|(l, _)| l));
-                            cc.target(&triple);
-                            let res = cc.build()?.status_anyhow()?;
+                            let res = cc.build_cmd()?.status_anyhow()?;
                             std::mem::drop(tmp);
                             exit(res.code().unwrap_or(-1));
                         },
@@ -454,9 +451,8 @@ fn driver() -> anyhow::Result<()> {
                                 cc.lib(true);
                                 cc.objs([tmp1.path(), tmp2.path()]);
                                 cc.output(&output);
-                                cc.link_libs(libs.into_iter().map(|(l, _)| l));
                                 cc.target(&triple);
-                                let res = cc.build()?.status_anyhow()?;
+                                let res = cc.build_cmd()?.status_anyhow()?;
                                 std::mem::drop(tmp1);
                                 std::mem::drop(tmp2);
                                 exit(res.code().unwrap_or(-1))
@@ -494,12 +490,11 @@ fn driver() -> anyhow::Result<()> {
             let mut ctx = CompCtx::new(&ink_ctx, input);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let libs = if !linked.is_empty() {
-                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                if !notfound.is_empty() {exit(102)}
-                libs
-            } else {vec![]};
+            let mut cc = cc::CompileCommand::new();
+            if !linked.is_empty() {
+                let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
+                if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+            }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.load(&mut file)?;
@@ -527,13 +522,6 @@ fn driver() -> anyhow::Result<()> {
             opt::load_profile(profile.as_deref(), &pm);
             pm.run_on(&ctx.module);
             let ee = ctx.module.create_jit_execution_engine(inkwell::OptimizationLevel::None).expect("Couldn't create execution engine!");
-            for (lib, _) in libs {
-                match lib.extension().map(|x| x.to_str().expect("Path should be valid UTF-8!")).unwrap_or("") {
-                    "so" | "dylib" | "dll" => {inkwell::support::load_library_permanently(lib.to_str().expect("Path should be valid UTF-8!"));},
-                    "a" | "lib" => todo!("JIT cannot handle static libraries!"),
-                    _ => {}
-                }
-            }
             unsafe {
                 let main_fn = match ee.get_function_value("main") {
                     Ok(main_fn) => main_fn,
@@ -553,7 +541,7 @@ fn driver() -> anyhow::Result<()> {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages"].into_iter().map(String::from));}
             }
             let (input, code) = if input != "-" {(input.as_str(), Path::new(&input).read_to_string_anyhow()?)}
             else {
@@ -576,10 +564,10 @@ fn driver() -> anyhow::Result<()> {
             if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
             let ctx = CompCtx::with_flags(&ink_ctx, input, flags);
             ctx.module.set_triple(&triple);
+            let mut cc = cc::CompileCommand::new();
             if !linked.is_empty() {
-                let (_, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                if !notfound.is_empty() {exit(102)}
+                let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
             }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
