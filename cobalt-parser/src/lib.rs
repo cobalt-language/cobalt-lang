@@ -1281,6 +1281,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let mut ops = vec![];
         loop {
             process(ignored, &mut src, &mut start, &mut errs);
+            if !src.as_bytes().get(1).map_or(true, |c| b";,)".contains(c)) {break}
             match src.as_bytes().first().copied() {
                 Some(c @ (b'!' | b'?' | b'^')) => {
                     ops.push(PostfixType::Operator((match c {
