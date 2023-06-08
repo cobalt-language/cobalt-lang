@@ -1627,6 +1627,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
         while src.starts_with(':') {
+            if src.as_bytes()[1] == b':' {break}
             let loc = start;
             let bit = src.as_bytes().get(1) == Some(&b'?');
             src = &src[(1 + bit as usize)..];
