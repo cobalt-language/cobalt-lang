@@ -1282,24 +1282,99 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let mut ops = vec![];
         loop {
             process(ignored, &mut src, &mut start, &mut errs);
-            if src.as_bytes().first().copied() == Some(b'.') {
-                src = &src[1..];
-                start += 1;
-                process(ignored, &mut src, &mut start, &mut errs);
-                let loc = start;
-                let name = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
-                    let g = got(src);
-                    errs.push(CobaltError::ExpectedFound {
-                        ex: "an identifier",
-                        found: g.0,
-                        loc: (start, g.1).into()
-                    });
-                    ""
-                }, |x| x.0);
-                ops.push(PostfixType::Attribute(name, loc));
-                continue
+            match src.as_bytes().first().copied() {
+                Some(b'.') => {
+                    src = &src[1..];
+                    start += 1;
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    let loc = start;
+                    let name = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                        let g = got(src);
+                        errs.push(CobaltError::ExpectedFound {
+                            ex: "an identifier",
+                            found: g.0,
+                            loc: (start, g.1).into()
+                        });
+                        ""
+                    }, |x| x.0);
+                    ops.push(PostfixType::Attribute(name, loc));
+                    continue
+                },
+                Some(b'(') => {
+                    let open = start;
+                    src = &src[1..];
+                    start += 1;
+                    let mut args = vec![];
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    let cparen;
+                    loop {
+                        if src.starts_with(')') {
+                            cparen = (start, 1).into();
+                            src = &src[1..];
+                            start += 1;
+                            break
+                        }
+                        if src.is_empty() {
+                            cparen = start.into();
+                            errs.push(CobaltError::UnmatchedDelimiter {
+                                expected: ')',
+                                found: ParserFound::Eof,
+                                start: (open, 1).into(),
+                                end: start.into()
+                            });
+                            break
+                        }
+                        args.push(process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                            errs.push(CobaltError::ExpectedExpr {loc: start.into()});
+                            Box::new(NullAST::new(start.into())) as _
+                        }, |x| x.0));
+                        process(ignored, &mut src, &mut start, &mut errs);
+                        if !src.starts_with([',', ')']) {
+                            let got = got(src);
+                            errs.push(CobaltError::ExpectedFound {
+                                ex: r#""," between function arguments"#,
+                                found: got.0,
+                                loc: (start, got.1).into()
+                            });
+                            let idx = src.find([',', ')']).unwrap_or(src.len());
+                            src = &src[idx..];
+                            start += idx;
+                        }
+                        if src.starts_with(',') {
+                            src = &src[1..];
+                            start += 1;
+                        }
+                        process(ignored, &mut src, &mut start, &mut errs);
+                    }
+                    ops.push(PostfixType::Call(args, cparen));
+                    continue
+                },
+                Some(b'[') => {
+                    let open = start;
+                    src = &src[1..];
+                    start += 1;
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    let sub = process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
+                    process(ignored, &mut src, &mut start, &mut errs);
+                    if src.starts_with(']') {
+                        src = &src[1..];
+                        start += 1;
+                    }
+                    else {
+                        let got = got(src);
+                        errs.push(CobaltError::UnmatchedDelimiter {
+                            expected: ']',
+                            found: got.0,
+                            start: (open, 1).into(),
+                            end: (start, got.1).into()
+                        });
+                    }
+                    ops.push(PostfixType::Subscript(sub, start));
+                    continue
+                },
+                _ => {}
             }
-            if !src.as_bytes().get(1).map_or(true, |c| b".;,)".contains(c)) {break}
+            if src.as_bytes().get(1).map_or(false, |c| !b".;,)+-*/%:&|^<>=?!".contains(c)) {break}
             match src.as_bytes().first().copied() {
                 Some(c @ (b'!' | b'?' | b'^')) => {
                     ops.push(PostfixType::Operator((match c {
@@ -1365,76 +1440,6 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                             break
                         }
                     }
-                },
-                Some(b'(') => {
-                    let open = start;
-                    src = &src[1..];
-                    start += 1;
-                    let mut args = vec![];
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    let cparen;
-                    loop {
-                        if src.starts_with(')') {
-                            cparen = (start, 1).into();
-                            src = &src[1..];
-                            start += 1;
-                            break
-                        }
-                        if src.is_empty() {
-                            cparen = start.into();
-                            errs.push(CobaltError::UnmatchedDelimiter {
-                                expected: ')',
-                                found: ParserFound::Eof,
-                                start: (open, 1).into(),
-                                end: start.into()
-                            });
-                            break
-                        }
-                        args.push(process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
-                            errs.push(CobaltError::ExpectedExpr {loc: start.into()});
-                            Box::new(NullAST::new(start.into())) as _
-                        }, |x| x.0));
-                        process(ignored, &mut src, &mut start, &mut errs);
-                        if !src.starts_with([',', ')']) {
-                            let got = got(src);
-                            errs.push(CobaltError::ExpectedFound {
-                                ex: r#""," between function arguments"#,
-                                found: got.0,
-                                loc: (start, got.1).into()
-                            });
-                            let idx = src.find([',', ')']).unwrap_or(src.len());
-                            src = &src[idx..];
-                            start += idx;
-                        }
-                        if src.starts_with(',') {
-                            src = &src[1..];
-                            start += 1;
-                        }
-                        process(ignored, &mut src, &mut start, &mut errs);
-                    }
-                    ops.push(PostfixType::Call(args, cparen))
-                },
-                Some(b'[') => {
-                    let open = start;
-                    src = &src[1..];
-                    start += 1;
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    let sub = process(|src, start| expr(2, src, start), &mut src, &mut start, &mut errs).map_or_else(|| Box::new(NullAST::new(start.into())) as _, |x| x.0);
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    if src.starts_with(']') {
-                        src = &src[1..];
-                        start += 1;
-                    }
-                    else {
-                        let got = got(src);
-                        errs.push(CobaltError::UnmatchedDelimiter {
-                            expected: ']',
-                            found: got.0,
-                            start: (open, 1).into(),
-                            end: (start, got.1).into()
-                        });
-                    }
-                    ops.push(PostfixType::Subscript(sub, start));
                 },
                 _ => break
             }
