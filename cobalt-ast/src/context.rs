@@ -193,6 +193,7 @@ impl<'ctx> CompCtx<'ctx> {
         Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        self.with_vars(|v| v.symbols.values().for_each(|s| if s.1.export {s.0.data_type.export(self)}));
         for (n, (t, e, m)) in self.nominals.borrow().iter() {
             if *e {
                 out.write_all(n.as_bytes())?;
@@ -219,6 +220,7 @@ impl<'ctx> CompCtx<'ctx> {
                 if vec.is_empty() {break}
                 let name = String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8");
                 let t = Type::load(buf)?;
+                if self.nominals.borrow().get(&name).map_or(false, |x| x.0.unwrapped(self) == t.unwrapped(self)) {out.push(name.clone())}
                 self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default()));
                 let mut ms = HashMap::new();
                 loop {
