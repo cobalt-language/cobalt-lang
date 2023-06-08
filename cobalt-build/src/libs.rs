@@ -104,7 +104,6 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
         if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
             conflicts.append(&mut ctx.load(&mut &*colib)?);
         }
-        println!("conflicts: {:?}", conflicts);
         Ok(conflicts)
     }
 }
