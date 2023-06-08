@@ -1273,14 +1273,33 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let begin = start;
         let mut errs = vec![];
         let ast = process(atom, &mut src, &mut start, &mut errs)?.0;
-        enum PostfixType {
+        enum PostfixType<'a> {
             Operator(String, usize),
             Subscript(Box<dyn AST>, usize),
-            Call(Vec<Box<dyn AST>>, SourceSpan)
+            Call(Vec<Box<dyn AST>>, SourceSpan),
+            Attribute(&'a str, usize)
         }
         let mut ops = vec![];
         loop {
             process(ignored, &mut src, &mut start, &mut errs);
+            if src.as_bytes().first().copied() == Some(b'.') {
+                src = &src[1..];
+                start += 1;
+                process(ignored, &mut src, &mut start, &mut errs);
+                let loc = start;
+                let name = process(|src, start| ident(false, src, start), &mut src, &mut start, &mut errs).map_or_else(|| {
+                    let g = got(src);
+                    errs.push(CobaltError::ExpectedFound {
+                        ex: "an identifier",
+                        found: g.0,
+                        loc: (start, g.1).into()
+                    });
+                    ""
+                }, |x| x.0);
+                ops.push(PostfixType::Attribute(name, loc));
+                continue
+            }
+            if !src.as_bytes().get(1).map_or(true, |c| b".;,)".contains(c)) {break}
             match src.as_bytes().first().copied() {
                 Some(c @ (b'!' | b'?' | b'^')) => {
                     ops.push(PostfixType::Operator((match c {
@@ -1423,7 +1442,8 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let ast = ops.into_iter().fold(ast, |ast, op| match op {
             PostfixType::Operator(op, loc) => Box::new(PostfixAST::new((loc, op.len()).into(), op, ast)) as _,
             PostfixType::Subscript(sub, loc) => Box::new(SubAST::new(merge_spans(ast.loc(), loc.into()), ast, sub)) as _,
-            PostfixType::Call(args, cparen) => Box::new(CallAST::new(cparen, ast, args)) as _
+            PostfixType::Call(args, cparen) => Box::new(CallAST::new(cparen, ast, args)) as _,
+            PostfixType::Attribute(name, loc) => Box::new(DotAST::new(ast, (name.to_string(), (loc, name.len()).into())))
         });
         Some((ast, (begin..start).into(), src, errs))
     }  
@@ -1627,6 +1647,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
         while src.starts_with(':') {
+            if src.as_bytes()[1] == b':' {break}
             let loc = start;
             let bit = src.as_bytes().get(1) == Some(&b'?');
             src = &src[(1 + bit as usize)..];
