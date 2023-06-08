@@ -78,7 +78,11 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
 pub fn populate_header(obj: &mut Object, ctx: &CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
-    let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Other);
+    let colib = obj.add_section(
+        obj.segment_name(object::write::StandardSegment::Text).to_vec(),
+        b".colib".to_vec(), 
+        SectionKind::Text
+    );
     let colib = obj.section_mut(colib);
     colib.set_data(buf, 1);
 }
@@ -100,6 +104,7 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
         if let Some(colib) = obj.section_by_name(".colib").and_then(|v| v.uncompressed_data().ok()) {
             conflicts.append(&mut ctx.load(&mut &*colib)?);
         }
+        println!("conflicts: {:?}", conflicts);
         Ok(conflicts)
     }
 }
