@@ -18,6 +18,7 @@ termcolor = "1.2.0"
 miette = { version = "5.9.0", features = ["fancy"] }
 clap = { version = "4.3.0", features = ["derive"] }
 const_format = "0.2.31"
+human-repr = "1.1.0"
 
 [build-dependencies]
 lazy_static = "1.4"

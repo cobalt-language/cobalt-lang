@@ -17,6 +17,7 @@ impl VarDefAST {
 }
 impl AST for VarDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
+    fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mut errs = vec![];
         let mut link_type = None;
@@ -667,6 +668,7 @@ impl MutDefAST {
 }
 impl AST for MutDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
+    fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mut errs = vec![];
         let mut link_type = None;
@@ -1293,6 +1295,7 @@ impl ConstDefAST {
 }
 impl AST for ConstDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
+    fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
     fn varfwd_prepass(&self, ctx: &CompCtx) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));}
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
@@ -1452,6 +1455,7 @@ impl TypeDefAST {
 }
 impl AST for TypeDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
+    fn nodes(&self) -> usize {self.val.nodes() + self.methods.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn varfwd_prepass(&self, ctx: &CompCtx) {
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));

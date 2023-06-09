@@ -25,6 +25,7 @@ impl<T: AST + Clone + 'static> ASTClone for T {
 }
 pub trait AST: ASTClone + std::fmt::Debug {
     fn loc(&self) -> SourceSpan;
+    fn nodes(&self) -> usize {1}
     // AST properties
     fn is_const(&self) -> bool {false}
     fn expl_type(&self, _ctx: &CompCtx) -> bool {false}
@@ -57,8 +58,6 @@ pub trait AST: ASTClone + std::fmt::Debug {
         val
     }
 }
-#[repr(transparent)]
-pub struct FileAST<T: AST>(T);
 impl Display for dyn AST {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let mut pre = TreePrefix::new();
