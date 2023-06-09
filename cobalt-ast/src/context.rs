@@ -193,6 +193,7 @@ impl<'ctx> CompCtx<'ctx> {
         Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        self.with_vars(|v| v.symbols.values().for_each(|s| if s.1.export {s.0.data_type.export(self)}));
         for (n, (t, e, m)) in self.nominals.borrow().iter() {
             if *e {
                 out.write_all(n.as_bytes())?;
@@ -210,24 +211,29 @@ impl<'ctx> CompCtx<'ctx> {
         self.with_vars(|v| v.save(out))
     }
     pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<String>> {
-        loop {
-            let mut vec = vec![];
-            buf.read_until(0, &mut vec)?;
-            if vec.last() == Some(&0) {vec.pop();}
-            if vec.is_empty() {break}
-            let name = String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8");
-            let t = Type::load(buf)?;
-            self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default()));
-            let mut ms = HashMap::new();
+        let mut out = vec![];
+        while !buf.fill_buf()?.is_empty() { // stable implementation of BufRead::has_data_left
             loop {
+                let mut vec = vec![];
                 buf.read_until(0, &mut vec)?;
                 if vec.last() == Some(&0) {vec.pop();}
                 if vec.is_empty() {break}
-                ms.insert(String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8"), Value::load(buf, self)?);
+                let name = String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8");
+                let t = Type::load(buf)?;
+                if self.nominals.borrow().get(&name).map_or(false, |x| x.0.unwrapped(self) == t.unwrapped(self)) {out.push(name.clone())}
+                self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default()));
+                let mut ms = HashMap::new();
+                loop {
+                    buf.read_until(0, &mut vec)?;
+                    if vec.last() == Some(&0) {vec.pop();}
+                    if vec.is_empty() {break}
+                    ms.insert(String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8"), Value::load(buf, self)?);
+                }
+                self.nominals.borrow_mut().get_mut(&name).unwrap().2 = ms;
             }
-            self.nominals.borrow_mut().get_mut(&name).unwrap().2 = ms;
+            out.append(&mut self.with_vars(|v| v.load(buf, self))?);
         }
-        self.with_vars(|v| v.load(buf, self))
+        Ok(out)
     }
 }
 impl<'ctx> Drop for CompCtx<'ctx> {

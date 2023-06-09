@@ -396,8 +396,8 @@ fn driver() -> anyhow::Result<()> {
             let (result, overall) = timeit(|| {
                 if !no_default_link {
                     if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
                 }
                 let (code, file_time) = timeit(|| if input == "-" {
                     let mut s = String::new();
@@ -409,17 +409,6 @@ fn driver() -> anyhow::Result<()> {
                 else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
                 let triple = triple.unwrap_or_else(|| TargetMachine::get_default_triple().as_str().to_string_lossy().into_owned());
                 let trip = TargetTriple::create(&triple);
-                let output = output.map(String::from).unwrap_or_else(|| match emit {
-                    OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
-                    OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
-                    OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                    OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                    OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                    OutputType::Bitcode => format!("{}.bc", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                    OutputType::Header => format!("{}.coh", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                    OutputType::HeaderObj => format!("{}.coh.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
-                });
-                let output = if output == "-" {None} else {Some(output)};
                 let target_machine = Target::from_triple(&trip).unwrap().create_target_machine(
                     &trip,
                     "",
@@ -428,25 +417,34 @@ fn driver() -> anyhow::Result<()> {
                     inkwell::targets::RelocMode::PIC,
                     inkwell::targets::CodeModel::Small
                 ).expect("failed to create target machine");
+                let output = (input != "-").then(|| output.map(String::from).unwrap_or_else(|| match emit {
+                    OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
+                    OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
+                    OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Bitcode => format!("{}.bc", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Header => format!("{}.coh", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::HeaderObj => format!("{}.coh.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                }));
                 let mut flags = Flags {dbg_mangle: debug_mangle, ..Flags::default()};
                 let ink_ctx = inkwell::context::Context::create();
                 if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                 ctx.module.set_triple(&trip);
-                let (libs, libs_time) = timeit(|| {
-                    let libs = if !linked.is_empty() {
-                        let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                        notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                        if !notfound.is_empty() {Err(Exit(102))?}
-                        libs
-                    } else {vec![]};
+                let mut cc = cc::CompileCommand::new();
+                cc.target(&triple);
+                let (_, libs_time) = timeit(|| {
+                    if !linked.is_empty() {
+                        let notfound = cc.search_libs(linked.clone(), link_dirs, Some(&ctx), false)?;
+                        if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+                    };
                     for head in headers {
                         let mut file = BufReader::new(std::fs::File::open(head)?);
                         ctx.load(&mut file)?;
                     }
-                    anyhow::Ok(libs)
+                    anyhow::Ok(())
                 });
-                let libs = libs?;
                 let mut fail = false;
                 let mut overall_fail = false;
                 let file = FILES.add_file(0, input.to_string(), code.clone());
@@ -484,7 +482,7 @@ fn driver() -> anyhow::Result<()> {
                         }
                         else {std::io::stdout().write_all(&buf)?}
                         (cg_time, None)
-                    }
+                    },
                     OutputType::HeaderObj => {
                         let mut obj = libs::new_object(&trip);
                         let (vec, cg_time) = timeit(|| {
@@ -516,7 +514,7 @@ fn driver() -> anyhow::Result<()> {
                         if let Some(out) = output {std::fs::write(out, m.as_slice())?}
                         else {std::io::stdout().write_all(m.as_slice())?}
                         (cg_time, None)
-                    }
+                    },
                     _ => {
                         let (mb, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap());
                         let cmd_time = match emit {
@@ -526,12 +524,9 @@ fn driver() -> anyhow::Result<()> {
                                     Err(Exit(4))?;
                                 }
                                 let tmp = temp_file::with_contents(mb.as_slice());
-                                let mut cc = cc::CompileCommand::new();
                                 cc.obj(tmp.path());
                                 cc.output(output.unwrap());
-                                cc.link_libs(libs.into_iter().map(|(l, _)| l));
-                                cc.target(&triple);
-                                let mut cmd = cc.build()?;
+                                let mut cmd = cc.build_cmd()?;
                                 let (res, cmdtime) = timeit(|| cmd.status_anyhow());
                                 let res = res?;
                                 std::mem::drop(tmp);
@@ -545,13 +540,10 @@ fn driver() -> anyhow::Result<()> {
                                     libs::populate_header(&mut obj, &ctx);
                                     let tmp1 = temp_file::with_contents(&obj.write()?);
                                     let tmp2 = temp_file::with_contents(mb.as_slice());
-                                    let mut cc = cc::CompileCommand::new();
                                     cc.lib(true);
                                     cc.objs([tmp1.path(), tmp2.path()]);
                                     cc.output(&output);
-                                    cc.link_libs(libs.into_iter().map(|(l, _)| l));
-                                    cc.target(&triple);
-                                    let mut cmd = cc.build()?;
+                                    let mut cmd = cc.build_cmd()?;
                                     let (res, cmdtime) = timeit(|| cmd.status_anyhow());
                                     let res = res?;
                                     std::mem::drop(tmp1);
@@ -594,8 +586,8 @@ fn driver() -> anyhow::Result<()> {
         Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, this, mut args} => {
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
             args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
             let (input, code) = match input.as_str() {
@@ -613,12 +605,11 @@ fn driver() -> anyhow::Result<()> {
             let mut ctx = CompCtx::new(&ink_ctx, input);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let libs = if !linked.is_empty() {
-                let (libs, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                if !notfound.is_empty() {Err(Exit(102))?}
-                libs
-            } else {vec![]};
+            let mut cc = cc::CompileCommand::new();
+            if !linked.is_empty() {
+                let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
+                if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+            }
             for head in headers {
                 let mut file = BufReader::new(std::fs::File::open(head)?);
                 ctx.load(&mut file)?;
@@ -646,13 +637,6 @@ fn driver() -> anyhow::Result<()> {
             opt::load_profile(profile.as_deref(), &pm);
             pm.run_on(&ctx.module);
             let ee = ctx.module.create_jit_execution_engine(inkwell::OptimizationLevel::None).expect("Couldn't create execution engine!");
-            for (lib, _) in libs {
-                match lib.extension().map(|x| x.to_str().expect("Path should be valid UTF-8!")).unwrap_or("") {
-                    "so" | "dylib" | "dll" => {inkwell::support::load_library_permanently(lib.to_str().expect("Path should be valid UTF-8!"));},
-                    "a" | "lib" => todo!("JIT cannot handle static libraries!"),
-                    _ => {}
-                }
-            }
             unsafe {
                 let main_fn = match ee.get_function_value("main") {
                     Ok(main_fn) => main_fn,
@@ -672,8 +656,8 @@ fn driver() -> anyhow::Result<()> {
             let (result, overall) = timeit(|| {
                 if !no_default_link {
                     if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib"].into_iter().map(String::from));}
                 }
                 
                 let (res, file_time) = timeit(|| anyhow::Ok(if input != "-" {(input.as_str(), Path::new(&input).read_to_string_anyhow()?)}
@@ -698,11 +682,11 @@ fn driver() -> anyhow::Result<()> {
                 if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
                 let ctx = CompCtx::with_flags(&ink_ctx, input, flags);
                 ctx.module.set_triple(&triple);
+                let mut cc = cc::CompileCommand::new();
                 let (res, libs_time) = timeit(|| {
                     if !linked.is_empty() {
-                        let (_, notfound) = libs::find_libs(linked.iter().map(|x| x.to_string()).collect(), &link_dirs.iter().map(|x| x.as_str()).collect::<Vec<_>>(), Some(&ctx))?;
-                        notfound.iter().for_each(|nf| error!("couldn't find library {nf}"));
-                        if !notfound.is_empty() {Err(Exit(102))?}
+                        let notfound = cc.search_libs(linked.clone(), link_dirs, Some(&ctx), false)?;
+                        if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
                     }
                     for head in headers {
                         let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -841,8 +825,8 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", ].into_iter().map(String::from));}
                 }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(|| {
@@ -910,8 +894,8 @@ fn driver() -> anyhow::Result<()> {
                     }
                 };
                 if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/packages"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/packages".to_string(), "/usr/lib/cobalt/packages".to_string(), "/lib/cobalt/packages".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
-                    else {link_dirs.extend(["/usr/local/lib/cobalt/packages", "/usr/lib/cobalt/packages", "/lib/cobalt/packages", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
                 }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(|| {

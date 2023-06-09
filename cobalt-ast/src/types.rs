@@ -4,6 +4,7 @@ use inkwell::values::BasicValueEnum;
 use Type::{*, Error};
 use SizeType::*;
 use std::fmt::*;
+use std::borrow::Cow;
 use std::io::{self, Write, Read, BufRead};
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
@@ -244,6 +245,55 @@ impl Type {
             _ => None
         }
     }
+    pub fn contains_nominal(&self) -> bool {
+        match self {
+            Type::Nominal(_) => true,
+            Type::Borrow(b) | Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.contains_nominal(),
+            Type::Tuple(v) => v.iter().any(|t| t.contains_nominal()),
+            Type::Function(r, a) => r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
+            Type::BoundMethod(b, r, a, _) => b.contains_nominal() || r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
+            _ => false
+        }
+    }
+    pub fn unwrapped(&self, ctx: &CompCtx) -> Cow<Self> {
+        match self {
+            Type::Nominal(n) => Cow::Owned(ctx.nominals.borrow()[n].0.clone()),
+            Type::Borrow(b) =>
+                if b.contains_nominal() {Cow::Owned(Type::Borrow(Box::new(b.unwrapped(ctx).into_owned())))}
+                else {Cow::Borrowed(self)},
+            Type::Reference(b, m) =>
+                if b.contains_nominal() {Cow::Owned(Type::Reference(Box::new(b.unwrapped(ctx).into_owned()), *m))}
+                else {Cow::Borrowed(self)},
+            Type::Pointer(b, m) =>
+                if b.contains_nominal() {Cow::Owned(Type::Pointer(Box::new(b.unwrapped(ctx).into_owned()), *m))}
+                else {Cow::Borrowed(self)},
+            Type::Array(b, s) =>
+                if b.contains_nominal() {Cow::Owned(Type::Array(Box::new(b.unwrapped(ctx).into_owned()), *s))}
+                else {Cow::Borrowed(self)},
+            Type::InlineAsm(b) =>
+                if b.contains_nominal() {Cow::Owned(Type::InlineAsm(Box::new(b.unwrapped(ctx).into_owned())))}
+                else {Cow::Borrowed(self)},
+            Type::Tuple(v) =>
+                if v.iter().any(|t| t.contains_nominal()) {Cow::Owned(Type::Tuple(v.iter().map(|t| t.unwrapped(ctx).into_owned()).collect()))}
+                else {Cow::Borrowed(self)},
+            Type::Function(r, a) =>
+                if r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()) {Cow::Owned(Type::Function(
+                    Box::new(r.unwrapped(ctx).into_owned()),
+                    a.iter().map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c)).collect()
+                ))}
+                else {Cow::Borrowed(self)},
+            Type::BoundMethod(b, r, a, m) =>
+                if b.contains_nominal() || r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
+                {Cow::Owned(Type::BoundMethod(
+                    Box::new(b.unwrapped(ctx).into_owned()),
+                    Box::new(r.unwrapped(ctx).into_owned()),
+                    a.iter().map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c)).collect(),
+                    *m
+                ))}
+                else {Cow::Borrowed(self)},
+            _ => Cow::Borrowed(self)
+        }
+    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
             IntLiteral => panic!("There shouldn't be an int literal in a variable!"),
@@ -417,6 +467,24 @@ impl Type {
             }
             x => panic!("read type value expecting value in 1..=21, got {x}")
         })
+    }
+    /// Ensure that any symbols reachable from this type are exported
+    pub fn export(&self, ctx: &CompCtx) {
+        match self {
+            Type::Nominal(n) => ctx.nominals.borrow_mut().get_mut(n).unwrap().1 = true,
+            Type::Borrow(b) | Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.export(ctx),
+            Type::Tuple(v) => v.iter().for_each(|t| t.export(ctx)),
+            Type::Function(r, a) => {
+                r.export(ctx);
+                a.iter().for_each(|t| t.0.export(ctx));
+            },
+            Type::BoundMethod(b, r, a, _) => {
+                b.export(ctx);
+                r.export(ctx);
+                a.iter().for_each(|t| t.0.export(ctx));
+            },
+            _ => {}
+        }
     }
 }
 pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {

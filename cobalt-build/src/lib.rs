@@ -23,7 +23,7 @@ pub struct NoCobaltDir;
 
 #[derive(Debug, Clone, Error)]
 #[error("couldn't find libraries: {}", .0.join(", "))]
-pub struct LibsNotFound(Vec<String>);
+pub struct LibsNotFound(pub Vec<String>);
 
 pub fn cobalt_dir() -> Result<PathBuf, NoCobaltDir> {
     if let Ok(path) = std::env::var("COBALT_DIR") {Ok(path.into())}

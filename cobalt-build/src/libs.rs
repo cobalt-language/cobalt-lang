@@ -1,5 +1,4 @@
-use std::path::{Path, PathBuf};
-use std::ffi::OsStr;
+use std::path::Path;
 use std::fmt;
 use os_str_bytes::OsStrBytes;
 use object::{SectionKind, write::Object};
@@ -13,46 +12,7 @@ impl fmt::Display for ConflictingDefs {
     }
 }
 impl std::error::Error for ConflictingDefs {}
-/// Find the libraries
-/// If ctx is Some, load the headers into the context
-/// Returns a Vec containing the path to a found library along with its original specifaction, and
-/// a Vec containing the libraries that weren't found
-pub fn find_libs(mut libs: Vec<String>, dirs: &[&str], ctx: Option<&CompCtx>) -> anyhow::Result<(Vec<(PathBuf, String)>, Vec<String>)> {
-    let mut out = vec![];
-    let mut conflicts = vec![];
-    for x in dirs.iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file()) {
-        let path = x.into_path();
-        if let Some(ext) = path.file_name().and_then(OsStr::to_str).map(|x| x.find('.').map(|i| &x[i..]).unwrap_or(x)) {if !(ext.contains(".so") || ext.contains(".dylib") || ext.contains(".dll")) {continue}} else {continue}
-        if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
-            for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
-                if lib == stem || (stem.starts_with("lib") && lib == &stem[3..]) {
-                    let val = std::mem::take(lib);
-                    if let Some(ctx) = ctx {
-                        conflicts.append(&mut load_lib(&path, ctx)?)
-                    }
-                    out.push((path.clone(), val));
-                }
-            }
-        }
-    }
-    for x in dirs.iter().flat_map(|dir| walkdir::WalkDir::new(dir).follow_links(true).into_iter()).filter_map(|x| x.ok()).filter(|x| x.file_type().is_file()) {
-        let path = x.into_path();
-        match path.extension().and_then(OsStr::to_str) {
-            Some("a") | Some("lib") => {},
-            _ => continue
-        }
-        if let Some(stem) = path.file_stem().and_then(|x| x.to_str()) {
-            for lib in libs.iter_mut().filter(|x| !x.is_empty()) {
-                if lib == stem || (stem.starts_with("lib") && lib == &stem[3..]) {
-                    let val = std::mem::take(lib);
-                    out.push((path.clone(), val));
-                }
-            }
-        }
-    }
-    if !conflicts.is_empty() {anyhow::bail!(ConflictingDefs(conflicts))}
-    Ok((out, libs.into_iter().filter(|x| !x.is_empty()).collect()))
-}
+
 /// Create a new (write) Object for the given triple
 pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     let triple = triple.as_str().to_str().unwrap();
@@ -63,6 +23,7 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
     let mut wasm = false;
     let arch = match components.first().copied() {
         Some("aarch64") => Aarch64,
+        Some(x) if x.starts_with("arm64") => Aarch64,
         Some(x) if x.starts_with("arm") => Arm,
         Some("x86" | "i386" | "i586" | "i686") => I386,
         Some("mips" | "mipsel") => Mips,
@@ -117,7 +78,11 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
 pub fn populate_header(obj: &mut Object, ctx: &CompCtx) {
     let mut buf = Vec::<u8>::new();
     ctx.save(&mut buf).unwrap();
-    let colib = obj.add_section(vec![], b".colib".to_vec(), SectionKind::Other);
+    let colib = obj.add_section(
+        obj.segment_name(object::write::StandardSegment::Text).to_vec(),
+        b".colib".to_vec(), 
+        SectionKind::Text
+    );
     let colib = obj.section_mut(colib);
     colib.set_data(buf, 1);
 }
