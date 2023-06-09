@@ -417,6 +417,16 @@ fn driver() -> anyhow::Result<()> {
                     inkwell::targets::RelocMode::PIC,
                     inkwell::targets::CodeModel::Small
                 ).expect("failed to create target machine");
+                let output = (input != "-").then(|| output.map(String::from).unwrap_or_else(|| match emit {
+                    OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
+                    OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
+                    OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Bitcode => format!("{}.bc", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::Header => format!("{}.coh", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                    OutputType::HeaderObj => format!("{}.coh.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                }));
                 let mut flags = Flags {dbg_mangle: debug_mangle, ..Flags::default()};
                 let ink_ctx = inkwell::context::Context::create();
                 if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
