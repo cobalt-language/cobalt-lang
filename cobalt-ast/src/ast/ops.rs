@@ -12,7 +12,7 @@ impl BinOpAST {
 impl AST for BinOpAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.lhs.loc(), self.rhs.loc())}
     fn nodes(&self) -> usize {self.lhs.nodes() + self.rhs.nodes() + 1}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         if self.op == "&?" || self.op == "|?" {
             let t = self.rhs.res_type(ctx);
             if t == Type::IntLiteral {return Type::IntLiteral}
@@ -144,7 +144,7 @@ impl PostfixAST {
 impl AST for PostfixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.loc)}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -175,7 +175,7 @@ impl PrefixAST {
 impl AST for PrefixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -206,7 +206,7 @@ impl SubAST {
 impl AST for SubAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.target.nodes() + self.index.nodes() + 1}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
+    fn res_type(&self, ctx: &CompCtx) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
@@ -238,7 +238,7 @@ impl AST for DotAST {
     fn nodes(&self) -> usize {self.obj.nodes() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         match self.obj.res_type(ctx) {
-            Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
+            Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
             Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
             x => types::utils::attr_type(x, &self.name.0, ctx)
         }
@@ -257,7 +257,7 @@ impl AST for DotAST {
                     }), Value::error()),
                     |Symbol(x, d)| (if !d.init {Some(CobaltError::UninitializedGlobal {
                         name: self.name.0.clone(),
-                        loc: self.name.1.clone()
+                        loc: self.name.1
                     })} else {None}, x.clone())
                 );
                 errs.extend(e);
@@ -286,7 +286,7 @@ impl AST for DotAST {
                     Value::error()
                 }
             }
-            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1.clone()), ctx).unwrap_or_else(|e| {
+            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             })

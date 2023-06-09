@@ -13,7 +13,7 @@ pub enum ParamType {
     Mutable,
     Constant
 }
-type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
+pub type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
 #[derive(Debug, Clone)]
 pub struct FnDefAST {
     loc: SourceSpan,
@@ -30,7 +30,7 @@ impl FnDefAST {
 impl AST for FnDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.ret.nodes() + self.body.nodes() + self.params.iter().map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes())).sum::<usize>() + 1}
-    fn fwddef_prepass<'ctx>(&self, ctx: &CompCtx<'ctx>) {
+    fn fwddef_prepass(&self, ctx: &CompCtx) {
         let oic = ctx.is_const.replace(true);
         let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
@@ -142,19 +142,15 @@ impl AST for FnDefAST {
                     }
                 },
                 "method" if self.in_struct => {
-                    if fn_type.is_none() {
-                        if !params.is_empty() {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
-                        }
+                    if fn_type.is_none() && !params.is_empty() {
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
                     }
                 },
                 "getter" if self.in_struct => {
-                    if fn_type.is_none() {
-                        if !params.is_empty() {
-                            let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                            if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
-                        }
+                    if fn_type.is_none() && !params.is_empty() {
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
                     }
                 },
                 _ => {}
@@ -254,7 +250,7 @@ impl AST for FnDefAST {
         }
         else {unreachable!()};
     }
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         let oic = ctx.is_const.replace(true);
         let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
@@ -330,7 +326,7 @@ impl AST for FnDefAST {
                     }
                 },
                 "cconv" => {
-                    if let Some((_, prev)) = cconv.clone() {
+                    if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
                             loc, prev
@@ -384,7 +380,7 @@ impl AST for FnDefAST {
                             loc
                         });
                     }
-                    if let Some((_, prev)) = cconv.clone() {
+                    if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
                             loc, prev
@@ -963,13 +959,13 @@ impl CallAST {
 impl AST for CallAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
     fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn expl_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
-    fn res_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Type {
+    fn expl_type(&self, ctx: &CompCtx) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
+    fn res_type(&self, ctx: &CompCtx) -> Type {
         types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.target.loc(), Some(self.cparen.clone()), self.args.iter().map(|a| {
+        (types::utils::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())
@@ -1008,7 +1004,7 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Type {Type::Intrinsic(self.name.clone())}
+    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Intrinsic(self.name.clone())}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
     fn to_code(&self) -> String {format!("@{}", self.name)}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}

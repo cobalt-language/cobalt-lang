@@ -2,6 +2,7 @@
 // Notable changes:
 // - LLVM 15.0 is hardcoded
 // - Linking method is prefer-dynamic by default
+// - Small refactors have been made to satisfy Clippy
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -67,7 +68,7 @@ fn target_os_is(name: &str) -> bool {
 ///
 /// Returns None on failure.
 fn locate_llvm_config() -> Option<PathBuf> {
-    let prefix = env::var_os(&*ENV_LLVM_PREFIX)
+    let prefix = env::var_os(ENV_LLVM_PREFIX)
         .map(|p| PathBuf::from(p).join("bin"))
         .unwrap_or_else(PathBuf::new);
     for binary_name in llvm_config_binary_names() {
@@ -122,9 +123,9 @@ fn llvm_config_binary_names() -> std::vec::IntoIter<String> {
 /// Check whether the given version of LLVM is blocklisted,
 /// returning `Some(reason)` if it is.
 fn is_blocklisted_llvm(llvm_version: &Version) -> Option<&'static str> {
-    static BLOCKLIST: &'static [(u64, u64, u64, &'static str)] = &[];
+    static BLOCKLIST: &[(u64, u64, u64, &str)] = &[];
 
-    if let Some(x) = env::var_os(&*ENV_IGNORE_BLOCKLIST) {
+    if let Some(x) = env::var_os(ENV_IGNORE_BLOCKLIST) {
         if &x == "YES" {
             println!(
                 "cargo:warning=Ignoring blocklist entry for LLVM {}",
@@ -141,9 +142,7 @@ fn is_blocklisted_llvm(llvm_version: &Version) -> Option<&'static str> {
 
     for &(major, minor, patch, reason) in BLOCKLIST.iter() {
         let bad_version = Version {
-            major: major,
-            minor: minor,
-            patch: patch,
+            major, minor, patch,
             pre: semver::Prerelease::EMPTY,
             build: semver::BuildMetadata::EMPTY,
         };
@@ -167,7 +166,7 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
     }
 
     let strict =
-        env::var_os(&*ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
+        env::var_os(ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
     if strict {
         llvm_version.major == CRATE_VERSION.major && llvm_version.minor == CRATE_VERSION.minor
     } else {
@@ -190,7 +189,7 @@ fn llvm_config(arg: &str) -> String {
 ///
 /// Does not panic on failure.
 fn try_llvm_config<'a>(arg: impl Iterator<Item = &'a str>) -> io::Result<String> {
-    llvm_config_ex(&*LLVM_CONFIG_PATH.clone().unwrap(), arg)
+    llvm_config_ex(LLVM_CONFIG_PATH.clone().unwrap(), arg)
 }
 
 /// Invoke the specified binary as llvm-config.
@@ -252,15 +251,15 @@ fn llvm_version<S: AsRef<OsStr>>(binary: &S) -> io::Result<Version> {
 
 fn main() {
     // Behavior can be significantly affected by these vars.
-    println!("cargo:rerun-if-env-changed={}", &*ENV_LLVM_PREFIX);
-    if let Ok(path) = env::var(&*ENV_LLVM_PREFIX) {
+    println!("cargo:rerun-if-env-changed={}", ENV_LLVM_PREFIX);
+    if let Ok(path) = env::var(ENV_LLVM_PREFIX) {
         println!("cargo:rerun-if-changed={}", path);
     }
 
-    println!("cargo:rerun-if-env-changed={}", &*ENV_IGNORE_BLOCKLIST);
-    println!("cargo:rerun-if-env-changed={}", &*ENV_NO_CLEAN_CFLAGS);
-    println!("cargo:rerun-if-env-changed={}", &*ENV_USE_DEBUG_MSVCRT);
-    println!("cargo:rerun-if-env-changed={}", &*ENV_FORCE_FFI);
+    println!("cargo:rerun-if-env-changed={}", ENV_IGNORE_BLOCKLIST);
+    println!("cargo:rerun-if-env-changed={}", ENV_NO_CLEAN_CFLAGS);
+    println!("cargo:rerun-if-env-changed={}", ENV_USE_DEBUG_MSVCRT);
+    println!("cargo:rerun-if-env-changed={}", ENV_FORCE_FFI);
 
     println!("cargo:rustc-env=LLVM_VERSION={}", llvm_config("--version"));
     git_info();
@@ -272,6 +271,5 @@ fn main() {
 
     if LLVM_CONFIG_PATH.is_none() {
         println!("cargo:rustc-cfg=LLVM_SYS_NOT_FOUND");
-        return;
     }
 }

@@ -186,7 +186,7 @@ pub fn sub_type(val: Type, idx: Type) -> Type {
         }
     }
 }
-pub fn call_type<'ctx>(target: Type, args: Vec<Value<'ctx>>) -> Type {
+pub fn call_type(target: Type, args: Vec<Value>) -> Type {
     match target {
         Type::Function(ret, _) => *ret,
         Type::InlineAsm(b) => *b,
@@ -206,7 +206,7 @@ pub fn call_type<'ctx>(target: Type, args: Vec<Value<'ctx>>) -> Type {
         _ => Type::Error
     }
 }
-pub fn attr_type<'ctx>(target: Type, attr: &str, ctx: &CompCtx<'ctx>) -> Type {
+pub fn attr_type(target: Type, attr: &str, ctx: &CompCtx) -> Type {
     match target {
         Type::Borrow(b) => attr_type(*b, attr, ctx),
         Type::Reference(b, m) =>
@@ -2283,7 +2283,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             Ok(v)
                         },
                         MethodType::Static => Err(err),
-                        MethodType::Getter => types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
+                        MethodType::Getter => types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
                     }
                 } else {Err(err)})
             }
@@ -2315,7 +2315,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     MethodType::Getter => {
                         val.comp_val = val.addr(ctx).map(From::from);
                         val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
-                        types::utils::call(Value::new(comp_val.clone(), Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                        types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                     }
                 }
             } else {Err(err)})

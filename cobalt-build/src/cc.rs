@@ -49,7 +49,7 @@ impl CompileCommand {
         for lib in &self.libs {
             let parent = lib.parent().unwrap();
             let mut a = OsString::from("-L");
-            a.push(&parent);
+            a.push(parent);
             cmd.arg(a);
             cmd.arg("-rpath");
             cmd.arg(parent);
@@ -66,9 +66,6 @@ impl CompileCommand {
         a.push(&self.output_file);
         cmd.arg(a);
         if self.is_lib {cmd.arg("/DLL");}
-        for lib in &self.libs {
-            std::mem::drop((cmd, lib));
-        }
     }
     pub fn build(&self) -> Result<Command, cc::Error> {
         let mut build = cc::Build::new();
@@ -76,7 +73,7 @@ impl CompileCommand {
         let default = inkwell::targets::TargetMachine::get_default_triple();
         let default = default.as_str().to_str().unwrap();
         build.target(self.target_.as_deref().unwrap_or(default));
-        if let Some(target) = self.target_.as_ref() {build.target(&target);}
+        if let Some(target) = self.target_.as_ref() {build.target(target);}
         let tool = build.try_get_compiler()?;
         let mut cmd = tool.to_command();
         if tool.is_like_clang() {self.init_clang(&mut cmd)}

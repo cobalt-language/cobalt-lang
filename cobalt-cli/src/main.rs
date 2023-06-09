@@ -61,7 +61,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     info: true,
     machine_code: true
 };
-static LONG_VERSION: &'static str = formatcp!("{}\nLLVM version {}{}{}",
+static LONG_VERSION: &str = formatcp!("{}\nLLVM version {}{}{}",
     env!("CARGO_PKG_VERSION"), env!("LLVM_VERSION"),
     if cfg!(has_git) {formatcp!("\nGit commit {} on branch {}", str_index!(env!("GIT_COMMIT"), ..6), env!("GIT_BRANCH"))} else {""},
     if cfg!(debug_assertions) {"\nDebug Build"} else {""}
@@ -356,8 +356,7 @@ fn driver() -> anyhow::Result<()> {
                         anyhow::Ok(s)
                     } else {Path::new(&input).read_to_string_anyhow()});
                     let code = code?;
-                    let mut flags = Flags::default();
-                    flags.dbg_mangle = true;
+                    let flags = Flags {dbg_mangle: true, ..Flags::default()};
                     let ink_ctx = inkwell::context::Context::create();
                     let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                     let file = FILES.add_file(0, input, code.clone());
@@ -429,8 +428,7 @@ fn driver() -> anyhow::Result<()> {
                     inkwell::targets::RelocMode::PIC,
                     inkwell::targets::CodeModel::Small
                 ).expect("failed to create target machine");
-                let mut flags = Flags::default();
-                flags.dbg_mangle = debug_mangle;
+                let mut flags = Flags {dbg_mangle: debug_mangle, ..Flags::default()};
                 let ink_ctx = inkwell::context::Context::create();
                 if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
@@ -824,7 +822,7 @@ fn driver() -> anyhow::Result<()> {
                             let cfg = path.read_to_string_anyhow()?;
                             path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
-                            track_project(&cfg.name, x.clone().into(), &mut vecs);
+                            track_project(&cfg.name, x.into(), &mut vecs);
                             save_projects(vecs)?;
                             (cfg, path)
                         }
@@ -893,7 +891,7 @@ fn driver() -> anyhow::Result<()> {
                             let cfg = path.read_to_string_anyhow()?;
                             path.pop();
                             let cfg = toml::from_str::<build::Project>(&cfg).context("failed to parse project file")?;
-                            track_project(&cfg.name, x.clone().into(), &mut vecs);
+                            track_project(&cfg.name, x.into(), &mut vecs);
                             save_projects(vecs)?;
                             (cfg, path)
                         }
@@ -931,7 +929,7 @@ fn driver() -> anyhow::Result<()> {
                     }
                 }, |t| {
                     if project_data.targets.get(&t).map(|x| x.target_type) != Some(build::TargetType::Executable) {anyhow::bail!("target type must be an executable")}
-                    Ok(t.to_string())
+                    Ok(t)
                 })?;
                 let triple = TargetMachine::get_default_triple();
                 build::build(project_data, Some(vec![target.clone()]), &build::BuildOptions {

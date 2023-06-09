@@ -2,6 +2,7 @@ use miette::{SourceCode, SpanContents, SourceSpan, MietteError};
 use parking_lot::{RwLock, RwLockReadGuard, MappedRwLockReadGuard};
 use once_cell::sync::Lazy;
 static UNIT_REF: () = ();
+#[allow(clippy::type_complexity)]
 pub struct FileRegistry(Lazy<RwLock<Vec<(String, Vec<InnerFile>)>>>);
 impl FileRegistry {
     pub(self) const fn new() -> Self {Self(Lazy::new(|| RwLock::new(vec![(String::new(), vec![])])))}

@@ -109,7 +109,7 @@ impl<'ctx> InterData<'ctx> {
                 for _ in 0..len {vec.push(Self::load(buf, ctx)?.expect("# of unwrapped default parameters doesn't match the prefixed count"))}
                 buf.read_exact(&mut bytes)?;
                 let mut c = 0u8;
-                buf.read_exact(&mut std::slice::from_mut(&mut c))?;
+                buf.read_exact(std::slice::from_mut(&mut c))?;
                 let mt = match c {
                     1 => MethodType::Normal,
                     2 => MethodType::Static,
