@@ -19,13 +19,17 @@ impl Default for Flags {
     }
 }
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Counter(Cell<i32>);
-impl Counter {
-    pub fn min() -> Self {Counter(Cell::new(0))}
-    pub fn max() -> Self {Counter(Cell::new(std::i32::MAX))}
-    pub fn get(&self) -> i32 {self.0.get()}
-    pub fn incr(&self) -> &Self {self.0.set(self.0.get() + 1); self}
-    pub fn decr(&self) -> &Self {self.0.set(self.0.get() - 1); self}
+pub struct Counter<T: Copy + std::ops::Add<T, Output = T> + std::ops::Sub<T, Output = T> + From<u8>>(Cell<T>);
+impl<T: Copy + std::ops::Add<T, Output = T> + std::ops::Sub<T, Output = T> + From<u8>> Counter<T> {
+    pub fn get(&self) -> T {self.0.get()}
+    pub fn incr(&self) -> &Self {self.0.set(self.0.get() + 1.into()); self}
+    pub fn decr(&self) -> &Self {self.0.set(self.0.get() - 1.into()); self}
+}
+impl<T: Copy + std::ops::Add<T, Output = T> + std::ops::Sub<T, Output = T> + From<u8>> From<T> for Counter<T> {
+    #[inline]
+    fn from(value: T) -> Self {
+        Self(Cell::new(value))
+    }
 }
 pub struct CellExt<T>(Cell<Option<T>>);
 impl<T> CellExt<T> {

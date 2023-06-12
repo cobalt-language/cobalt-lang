@@ -597,6 +597,7 @@ impl AST for FnDefAST {
             if bb.is_null() || !LLVMIsABasicBlock(bb as LLVMValueRef).is_null() {None}
             else {Some(std::mem::transmute::<_, BasicBlock>(bb))} // BasicBlock::new is pub(crate)
         };
+        ctx.var_scope.incr();
         let val = if let Type::Function(ref ret, ref params) = fty {
             match if let Some(llt) = ret.llvm_type(ctx) {
                 let mut good = true;
@@ -875,7 +876,8 @@ impl AST for FnDefAST {
                     (Value::error(), errs)
                 }
             }
-        } else {panic!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
+        } else {unreachable!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
+        ctx.var_scope.decr();
         if is_extern.is_none() {
             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
             else {ctx.builder.clear_insertion_position();}
