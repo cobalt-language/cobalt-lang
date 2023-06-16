@@ -43,7 +43,7 @@ pub enum Type {
     IntLiteral, Intrinsic(String),
     Int(u16, bool),
     Float16, Float32, Float64, Float128,
-    Pointer(Box<Type>, bool), Reference(Box<Type>, bool), Borrow(Box<Type>),
+    Pointer(Box<Type>, bool), Reference(Box<Type>, bool),
     Null, Module, TypeData, InlineAsm(Box<Type>), Array(Box<Type>, Option<u32>),
     Function(Box<Type>, Vec<(Type, bool)>), BoundMethod(Box<Type>, Box<Type>, Vec<(Type, bool)>, bool), Nominal(String),
     Tuple(Vec<Type>),
@@ -65,7 +65,6 @@ impl Display for Type {
             Pointer(x, true) => write!(f, "{} mut*", *x),
             Reference(x, false) => write!(f, "{} const&", *x),
             Reference(x, true) => write!(f, "{} mut&", *x),
-            Borrow(x) => write!(f, "{}^", *x),
             Null => write!(f, "null"),
             Module => write!(f, "module"),
             TypeData => write!(f, "type"),
@@ -130,7 +129,6 @@ impl Type {
                 Type::Array(_, None) => Static(ctx.flags.word_size as u32 * 2),
                 _ => Static(ctx.flags.word_size as u32)
             },
-            Borrow(b) => b.size(ctx),
             Tuple(v) => v.iter().fold(Static(0), |v, t| if let Static(bs) = v {
                 let n = t.size(ctx);
                 if let Static(ns) = n {
@@ -158,7 +156,6 @@ impl Type {
             Array(b, _) => b.align(ctx),
             Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => 0,
             Pointer(..) | Reference(..) | BoundMethod(..) => ctx.flags.word_size,
-            Borrow(b) => b.align(ctx),
             Tuple(v) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
             Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx)
         }
@@ -185,7 +182,6 @@ impl Type {
                 },
                 b => if b.size(ctx) == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
             },
-            Borrow(b) => b.llvm_type(ctx),
             Tuple(v) => {
                 let mut vec = Vec::with_capacity(v.len());
                 for t in v {vec.push(t.llvm_type(ctx)?);}
@@ -197,7 +193,6 @@ impl Type {
     pub fn register(&self, ctx: &CompCtx) -> bool {
         match self {
             IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
-            Borrow(b) => b.register(ctx),
             Tuple(v) => v.iter().all(|x| x.register(ctx)),
             Nominal(n) => ctx.nominals.borrow()[n].0.register(ctx),
             _ => false
@@ -205,7 +200,7 @@ impl Type {
     }
     pub fn copyable(&self, ctx: &CompCtx) -> bool {
         match self {
-            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | Borrow(_) | BoundMethod(..) => true,
+            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
             Tuple(v) => v.iter().all(|x| x.copyable(ctx)),
             Nominal(n) => ctx.nominals.borrow()[n].0.copyable(ctx),
             _ => false
@@ -248,7 +243,7 @@ impl Type {
     pub fn contains_nominal(&self) -> bool {
         match self {
             Type::Nominal(_) => true,
-            Type::Borrow(b) | Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.contains_nominal(),
+            Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.contains_nominal(),
             Type::Tuple(v) => v.iter().any(|t| t.contains_nominal()),
             Type::Function(r, a) => r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
             Type::BoundMethod(b, r, a, _) => b.contains_nominal() || r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
@@ -258,9 +253,6 @@ impl Type {
     pub fn unwrapped(&self, ctx: &CompCtx) -> Cow<Self> {
         match self {
             Type::Nominal(n) => Cow::Owned(ctx.nominals.borrow()[n].0.clone()),
-            Type::Borrow(b) =>
-                if b.contains_nominal() {Cow::Owned(Type::Borrow(Box::new(b.unwrapped(ctx).into_owned())))}
-                else {Cow::Borrowed(self)},
             Type::Reference(b, m) =>
                 if b.contains_nominal() {Cow::Owned(Type::Reference(Box::new(b.unwrapped(ctx).into_owned()), *m))}
                 else {Cow::Borrowed(self)},
@@ -327,10 +319,6 @@ impl Type {
             },
             Reference(b, true) => {
                 out.write_all(&[11])?;
-                b.save(out)
-            },
-            Borrow(b) => {
-                out.write_all(&[12])?;
                 b.save(out)
             },
             Function(b, p) => {
@@ -410,7 +398,6 @@ impl Type {
             9 => Type::Pointer(Box::new(Type::load(buf)?), true),
             10 => Type::Reference(Box::new(Type::load(buf)?), false),
             11 => Type::Reference(Box::new(Type::load(buf)?), true),
-            12 => Type::Borrow(Box::new(Type::load(buf)?)),
             13 => {
                 let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
@@ -472,7 +459,7 @@ impl Type {
     pub fn export(&self, ctx: &CompCtx) {
         match self {
             Type::Nominal(n) => ctx.nominals.borrow_mut().get_mut(n).unwrap().1 = true,
-            Type::Borrow(b) | Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.export(ctx),
+            Type::Reference(b, _) | Type::Pointer(b, _) | Type::Array(b, _) | Type::InlineAsm(b) => b.export(ctx),
             Type::Tuple(v) => v.iter().for_each(|t| t.export(ctx)),
             Type::Function(r, a) => {
                 r.export(ctx);

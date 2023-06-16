@@ -1427,11 +1427,10 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
             }
             if src.as_bytes().get(1).map_or(false, |c| !b".;,)+-*/%:&|^<>=?!".contains(c)) {break}
             match src.as_bytes().first().copied() {
-                Some(c @ (b'!' | b'?' | b'^')) => {
+                Some(c @ (b'!' | b'?')) => {
                     ops.push(PostfixType::Operator((match c {
                         b'!' => "!",
                         b'?' => "?",
-                        b'^' => "^",
                         _ => unreachable!()
                     }).to_string(), start));
                     src = &src[1..];
