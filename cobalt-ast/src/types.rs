@@ -170,7 +170,7 @@ impl Type {
             Float128 => Some(FloatType(ctx.context.f128_type())),
             Null | Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => None,
             BoundMethod(base, ret, params, _) => Some(ctx.context.struct_type(&[Type::Pointer(base.clone(), false).llvm_type(ctx)?, Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone())), false).llvm_type(ctx)?], false).into()),
-            Array(_, Some(_)) => None,
+            Array(b, Some(n)) => Some(b.llvm_type(ctx)?.array_type(*n).into()),
             Array(_, None) => None,
             Pointer(b, _) | Reference(b, _) => match &**b {
                 Type::Array(b, None) => Some(ctx.context.struct_type(&[b.llvm_type(ctx)?.ptr_type(Default::default()).into(), ctx.context.i64_type().into()], false).into()),
@@ -210,6 +210,7 @@ impl Type {
         match self {
             Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),
             Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(v, InterData::Float(..)),
+            Type::Array(b, Some(n)) => if let InterData::Array(v) = v {v.len() == *n as _ && v.iter().all(|v| b.can_be_compiled(v, ctx))} else {false} 
             Type::Tuple(vs) => if let InterData::Array(is) = v {vs.len() == is.len() && vs.iter().zip(is).all(|(t, v)| t.can_be_compiled(v, ctx))} else {false},
             Type::Nominal(n) => ctx.nominals.borrow()[n].0.can_be_compiled(v, ctx),
             _ => false
@@ -224,8 +225,23 @@ impl Type {
             Type::Float32 => if let InterData::Float(v) = v {Some(ctx.context.f32_type().const_float(*v).into())} else {None},
             Type::Float64 => if let InterData::Float(v) = v {Some(ctx.context.f64_type().const_float(*v).into())} else {None},
             Type::Float128 => if let InterData::Float(v) = v {Some(ctx.context.f128_type().const_float(*v).into())} else {None},
+            Type::Array(b, Some(n)) => {
+                if let InterData::Array(v) = v {
+                    (v.len() == *n as _).then_some(())?;
+                    let ty = b.llvm_type(ctx)?;
+                    let arr = ty.array_type(*n);
+                    let val = arr.get_undef();
+                    v.iter().enumerate()
+                        .try_fold(val, |val, (n, v)| b
+                            .into_compiled(v, ctx)
+                            .and_then(|v| ctx.builder.build_insert_value(val, v, n as _, ""))
+                            .map(|v| v.into_array_value()))
+                        .map(From::from)
+                }
+                else {None}
+            }
             Type::Tuple(vs) => {
-                if !self.can_be_compiled(v, ctx) {return None}
+                self.can_be_compiled(v, ctx).then_some(())?;
                 if let InterData::Array(is) = v {
                     let (vals, types): (Vec<_>, Vec<_>) = vs.iter().zip(is).map(|(t, v)| {
                         let llv = t.into_compiled(v, ctx).unwrap();
