@@ -1538,11 +1538,11 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
     };
     match val.data_type {
         Type::TypeData => match op {
-            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
-            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, true)))} else {Err(err)},
-            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, false)))} else {Err(err)},
-            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, false)))} else {Err(err)},
-            "^" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Borrow(t)))} else {Err(err)},
+            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), true)))} else {Err(err)},
+            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), true)))} else {Err(err)},
+            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), false)))} else {Err(err)},
+            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), false)))} else {Err(err)},
+            "^" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Borrow(decay_boxed(t))))} else {Err(err)},
             _ => Err(err)
         },
         Type::Null => match op {
@@ -1760,8 +1760,8 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                     }
                 },
                 Type::TypeData => match idx.data_type {
-                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
-                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
+                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(decay_boxed(t), None)))} else {unreachable!()},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(decay_boxed(t), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
                 },
                 Type::Null => match idx.data_type {
@@ -2802,4 +2802,20 @@ fn is_str(ty: &Type) -> bool {
         Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, true)} else {false}
         _ => false
     }
+}
+/// determine the "decayed" type of a variable
+/// This removes references and borrows
+pub fn decay(ty: Type) -> Type {
+    match ty {
+        Type::Reference(b, _) | Type::Borrow(b) => *b,
+        t => t
+    }
+}
+/// does the same as `decay`, but never reallocates
+pub fn decay_boxed(ty: Box<Type>) -> Box<Type> {
+    if matches!(*ty, Type::Reference(..) | Type::Borrow(_)) {
+        if let Type::Reference(b, _) | Type::Borrow(b) = *ty {b}
+        else {unreachable!("verified by previous conditional")}
+    }
+    else {ty}
 }
