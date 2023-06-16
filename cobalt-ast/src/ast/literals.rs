@@ -234,7 +234,7 @@ impl AST for ArrayLiteralAST {
                 break;
             }
         }
-        Type::Reference(Box::new(Type::Array(Box::new(elem), Some(self.vals.len().try_into().unwrap_or(u32::MAX)))), true)
+        Type::Array(Box::new(elem), Some(self.vals.len().try_into().unwrap_or(u32::MAX)))
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut elems = vec![];
@@ -283,25 +283,11 @@ impl AST for ArrayLiteralAST {
         (Value::new(
             if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
                 let arr_ty = llt.array_type(elems.len() as u32);
-                let alloca = 
-                    if ctx.global.get() {
-                        let gv = ctx.module.add_global(arr_ty, None, "cobalt.arr");
-                        gv.set_linkage(inkwell::module::Linkage::Private);
-                        gv.set_initializer(&arr_ty.const_zero());
-                        gv.as_pointer_value()
-                    }
-                    else {ctx.builder.build_alloca(llt.array_type(elems.len() as u32), "")};
-                let llv = ctx.builder.build_pointer_cast(alloca, llt.ptr_type(inkwell::AddressSpace::from(0u16)), "");
-                for (n, elem) in elems.iter().enumerate() {
-                    let gep = unsafe {ctx.builder.build_in_bounds_gep(llt, llv, &[ctx.context.i64_type().const_int(n as u64, false)], "")};
-                    ctx.builder.build_store(gep, elem.value(ctx).unwrap_or_else(|| llt.const_zero()));
-                }
-                Some(llv.into())
+                elems.iter().enumerate().try_fold(arr_ty.get_undef(), |val, (n, v)| ctx.builder.build_insert_value(val, v.comp_val?, n as _, "").map(|v| v.into_array_value())).map(Into::into)
             } else {None},
             Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
-            Type::Reference(Box::new(Type::Array(Box::new(ty), Some(len as u32))), true)
+            Type::Array(Box::new(ty), Some(len as u32))
         ), errs)
-
     }
     fn to_code(&self) -> String {
         let mut out = "[".to_string();
