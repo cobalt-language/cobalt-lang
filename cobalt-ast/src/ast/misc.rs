@@ -55,23 +55,14 @@ impl AST for BitCastAST {
         let oic = ctx.is_const.replace(true);
         let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
-        loop {
-            match val.data_type {
-                Type::Borrow(b) => val.data_type = *b,
-                Type::Reference(b, _) => {
-                    if !ctx.is_const.get() && b.register(ctx) {
-                        if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                            val.address = Rc::new(Cell::new(Some(pv)));
-                            val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
-                        }
-                    }
-                    val.data_type = *b;
-                },
-                x => {
-                    val.data_type = x;
-                    break;
+        while let Type::Reference(b, _) = val.data_type {
+            if !ctx.is_const.get() && b.register(ctx) {
+                if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = val.comp_val {
+                    val.address = Rc::new(Cell::new(Some(pv)));
+                    val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
                 }
             }
+            val.data_type = *b;
         }
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {

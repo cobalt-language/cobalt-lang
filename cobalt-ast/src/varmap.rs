@@ -1,6 +1,7 @@
 use crate::*;
 use std::collections::{LinkedList, hash_map::{HashMap, Entry}};
 use std::io::{self, Write, Read, BufRead};
+use std::num::NonZeroUsize;
 #[derive(Debug, Clone, Copy)]
 pub enum UndefVariable {
     NotAModule(usize),
@@ -18,6 +19,7 @@ pub struct VariableData {
     pub init: bool,
     pub fwd: bool,
     pub loc: Option<SourceSpan>,
+    pub scope: Option<NonZeroUsize>
 }
 impl VariableData {
     pub fn new(loc: SourceSpan) -> Self {
@@ -26,7 +28,8 @@ impl VariableData {
             export: true,
             init: true,
             fwd: false,
-            loc: Some(loc)
+            loc: Some(loc),
+            scope: None
         }
     }
     pub fn with_vis(loc: SourceSpan, export: bool) -> Self {
@@ -35,7 +38,8 @@ impl VariableData {
             export,
             init: true,
             fwd: false,
-            loc: Some(loc)
+            loc: Some(loc),
+            scope: None
         }
     }
     pub fn uninit(loc: SourceSpan) -> Self {
@@ -44,7 +48,8 @@ impl VariableData {
             export: true,
             init: false,
             fwd: false,
-            loc: Some(loc)
+            loc: Some(loc),
+            scope: None
         }
     }
     pub fn uninit_vis(loc: SourceSpan, export: bool) -> Self {
@@ -53,7 +58,8 @@ impl VariableData {
             export,
             init: false,
             fwd: false,
-            loc: Some(loc)
+            loc: Some(loc),
+            scope: None
         }
     }
 }
@@ -64,7 +70,8 @@ impl Default for VariableData {
             export: true,
             init: true,
             fwd: false,
-            loc: None
+            loc: None,
+            scope: None
         }
     }
 }

@@ -600,7 +600,7 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() || (val.data_type.register(ctx) && stack.is_none()) {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
@@ -616,7 +616,7 @@ impl AST for VarDefAST {
             }
             else {
                 if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -1228,7 +1228,7 @@ impl AST for MutDefAST {
             });
             ctx.restore_scope(old_scope);
             match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
@@ -1240,10 +1240,10 @@ impl AST for MutDefAST {
                     Some(PointerValue(a)),
                     val.inter_val,
                     Type::Reference(Box::new(val.data_type), true)
-                ), VariableData::with_vis(self.loc, false))))
+                ), VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             }
             else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -1691,11 +1691,11 @@ impl AST for VarGetAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match ctx.lookup(&self.name, self.global) {
-            Some(Symbol(x, d)) => (x.clone(), if d.init {vec![]} else {vec![CobaltError::UninitializedGlobal {
+            Some(Symbol(x, d)) if d.scope.map_or(true, |x| x.get() == ctx.var_scope.get()) => (x.clone(), if d.init {vec![]} else {vec![CobaltError::UninitializedGlobal {
                 name: self.name.clone(),
                 loc: self.loc
             }]}),
-            None => (Value::error(), vec![CobaltError::VariableDoesNotExist {
+            _ => (Value::error(), vec![CobaltError::VariableDoesNotExist {
                 name: self.name.clone(),
                 module: String::new(),
                 container: "",

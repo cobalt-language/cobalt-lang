@@ -9,7 +9,6 @@ use inkwell::{
 };
 pub fn impl_convertible(base: Type, target: Type) -> bool {
     base == target || target == Type::Null || target == Type::Error || match base {
-        Type::Borrow(b) => impl_convertible(*b, target),
         Type::Reference(b, true) =>
             if target == Type::Reference(b.clone(), false) {true}
             else {
@@ -35,7 +34,6 @@ pub fn impl_convertible(base: Type, target: Type) -> bool {
 }
 pub fn expl_convertible(base: Type, target: Type) -> bool {
     base == target || target == Type::Null || target == Type::Error || match base {
-        Type::Borrow(b) => expl_convertible(*b, target),
         Type::Reference(b, true) =>
             if target == Type::Reference(b.clone(), false) {true}
             else {
@@ -61,7 +59,7 @@ pub fn expl_convertible(base: Type, target: Type) -> bool {
 }
 pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
     match (lhs, rhs) {
-        (l, Type::Reference(x, _) | Type::Borrow(x)) => bin_type(l, *x, op),
+        (l, Type::Reference(x, _)) => bin_type(l, *x, op),
         (Type::Int(ls, lu), Type::Int(rs, ru)) => match op {
             "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => Type::Int(max(ls, rs), lu && ru),
             _ => Type::Error
@@ -119,7 +117,7 @@ pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
             (Type::Tuple(xv), Type::Tuple(yv)) if xv == yv && op == "=" => Type::Reference(Box::new(Type::Tuple(xv)), true),
             (x, r) => bin_type(x, r, op)
         },
-        (Type::Reference(x, false) | Type::Borrow(x), r) => bin_type(*x, r, op),
+        (Type::Reference(x, false), r) => bin_type(*x, r, op),
         _ => Type::Error
     }
 }
@@ -133,7 +131,7 @@ pub fn pre_type(val: Type, op: &str) -> Type {
             }
             x => pre_type(x, op)
         }
-        Type::Reference(x, false) | Type::Borrow(x) => pre_type(*x, op),
+        Type::Reference(x, false) => pre_type(*x, op),
         x @ (Type::IntLiteral | Type::Int(..)) => match op {
             "+" | "-" | "~" => x,
             _ => Type::Error
@@ -152,7 +150,7 @@ pub fn pre_type(val: Type, op: &str) -> Type {
 }
 pub fn post_type(val: Type, op: &str) -> Type {
     match val {
-        Type::Reference(x, _) | Type::Borrow(x) => post_type(*x, op),
+        Type::Reference(x, _) => post_type(*x, op),
         Type::TypeData | Type::Null => match op {
             "mut&" | "mut*" | "const&" | "const*" | "^" => Type::TypeData,
             _ => Type::Error
@@ -166,9 +164,8 @@ pub fn post_type(val: Type, op: &str) -> Type {
 }
 pub fn sub_type(val: Type, idx: Type) -> Type {
     match idx {
-        Type::Borrow(x) | Type::Reference(x, _) => sub_type(val, *x),
+        Type::Reference(x, _) => sub_type(val, *x),
         i => match val {
-            Type::Borrow(x) => sub_type(*x, i),
             Type::Pointer(b, m) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b, m), _ => Type::Error},
             Type::Reference(b, m) => match *b {
                 Type::Array(b, _) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b, m), _ => Type::Error},
@@ -190,12 +187,11 @@ pub fn call_type(target: Type, args: Vec<Value>) -> Type {
     match target {
         Type::Function(ret, _) => *ret,
         Type::InlineAsm(b) => *b,
-        Type::Borrow(b) => if matches!(*b, Type::Tuple(..)) {Type::Borrow(Box::new(call_type(*b, args)))} else {call_type(*b, args)},
         Type::Reference(b, m) => if matches!(*b, Type::Tuple(..)) {Type::Reference(Box::new(call_type(*b, args)), m)} else {call_type(*b, args)},
         Type::Tuple(v) => if args.len() == 1 {
             let mut val = args.into_iter().next().unwrap();
             match val.data_type {
-                Type::Borrow(b) | Type::Reference(b, _) => {
+                Type::Reference(b, _) => {
                     val.data_type = *b;
                     call_type(Type::Tuple(v), vec![val])
                 },
@@ -208,7 +204,6 @@ pub fn call_type(target: Type, args: Vec<Value>) -> Type {
 }
 pub fn attr_type(target: Type, attr: &str, ctx: &CompCtx) -> Type {
     match target {
-        Type::Borrow(b) => attr_type(*b, attr, ctx),
         Type::Reference(b, m) =>
             if let Type::Nominal(ref n) = *b {
                 ctx.nominals.borrow()[n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
@@ -237,16 +232,6 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         lloc, rloc, oloc: loc
     };
     match (lhs.data_type.clone(), rhs.data_type.clone()) {
-        (Type::Borrow(l), r) => {
-            lhs.data_type = *l;
-            rhs.data_type = r;
-            bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
-        (l, Type::Borrow(r)) => {
-            lhs.data_type = l;
-            rhs.data_type = *r;
-            bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
         (Type::Reference(l, false), _r) => {
             lhs.data_type = *l;
             if !ctx.is_const.get() && lhs.data_type.register(ctx) {
@@ -1340,10 +1325,6 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         vloc, oloc: loc
     };
     match val.data_type {
-        Type::Borrow(x) => {
-            val.data_type = *x;
-            pre_op(loc, (val, vloc), op, ctx)
-        },
         Type::Reference(x, false) => if op == "&" {
             val.data_type = Type::Pointer(x, false);
             Ok(val)
@@ -1538,11 +1519,10 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
     };
     match val.data_type {
         Type::TypeData => match op {
-            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, true)))} else {Err(err)},
-            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, true)))} else {Err(err)},
-            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(t, false)))} else {Err(err)},
-            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(t, false)))} else {Err(err)},
-            "^" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Borrow(t)))} else {Err(err)},
+            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), true)))} else {Err(err)},
+            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), true)))} else {Err(err)},
+            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), false)))} else {Err(err)},
+            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), false)))} else {Err(err)},
             _ => Err(err)
         },
         Type::Null => match op {
@@ -1550,7 +1530,6 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
             "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), true))),
             "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null), false))),
             "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), false))),
-            "^" => Ok(Value::make_type(Type::Borrow(Box::new(Type::Null)))),
             _ => Err(err)
         },
         Type::Tuple(v) => {
@@ -1565,7 +1544,6 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
                     "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), true))),
                     "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec)), false))),
                     "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), false))),
-                    "^" => Ok(Value::make_type(Type::Borrow(Box::new(Type::Tuple(vec))))),
                     _ => Err(err)
                 }
             }
@@ -1581,10 +1559,6 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
         vloc, sloc: iloc
     };
     match idx.data_type {
-        Type::Borrow(x) => {
-            idx.data_type = *x;
-            subscript((val, vloc), (idx, iloc), ctx)
-        },
         Type::Reference(x, _) => {
             if x.register(ctx) && !ctx.is_const.get() {
                 if let Some(PointerValue(v)) = idx.comp_val {
@@ -1760,8 +1734,8 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                     }
                 },
                 Type::TypeData => match idx.data_type {
-                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(t, None)))} else {unreachable!()},
-                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(t, Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
+                    Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(decay_boxed(t), None)))} else {unreachable!()},
+                    Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(decay_boxed(t), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
                 },
                 Type::Null => match idx.data_type {
@@ -1803,10 +1777,6 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if if let Type::Reference(ref b, false) = target {**b == val.data_type} else {false} {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
     else {
         match val.data_type {
-            Type::Borrow(b) => {
-                val.data_type = *b;
-                impl_convert(loc, (val, vloc), (target, tloc), ctx)
-            },
             Type::Reference(b, true) => {
                 if target == Type::Reference(b.clone(), false) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b, false)));}
                 match *b {
@@ -2006,10 +1976,6 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if if let Type::Reference(ref b, false) = target {**b == val.data_type} else {false} {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
     else {
         match val.data_type {
-            Type::Borrow(b) => {
-                val.data_type = *b;
-                expl_convert(loc, (val, vloc), (target, tloc), ctx)
-            },
             Type::Reference(b, true) => {
                 if target == Type::Reference(b.clone(), false) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b, false)));}
                 match *b {
@@ -2264,10 +2230,6 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
         vloc, aloc: iloc
     };
     match val.data_type.clone() {
-        Type::Borrow(b) => {
-            val.data_type = *b;
-            attr((val, vloc), (id, iloc), ctx)
-        },
         Type::Reference(ref b, m) => {
             if let Type::Nominal(ref n) = **b {
                 ctx.nominals.borrow()[n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = &v {
@@ -2329,10 +2291,6 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
     let i16_ty = ctx.context.i16_type();
     let i8_ty = ctx.context.i8_type();
     match arg.data_type {
-        Type::Borrow(b) => {
-            arg.data_type = *b;
-            prep_asm(arg, ctx)
-        },
         Type::Reference(b, _) => {
             arg.data_type = *b;
             if let (Some(PointerValue(val)), true) = (arg.value(ctx), arg.data_type.register(ctx)) {
@@ -2360,43 +2318,6 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
 pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<SourceSpan>, mut args: Vec<(Value<'ctx>, SourceSpan)>, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
-        Type::Borrow(b) => {
-            match *b {
-                Type::Tuple(v) => {
-                    let err = CobaltError::CannotCallWithArgs {
-                        val: format!("({})^", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")),
-                        loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                        args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
-                        aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
-                        nargs: vec![]
-                    };
-                    match args.as_slice() {
-                        [(Value {data_type: Type::IntLiteral | Type::Int(..), inter_val, ..}, aloc)] => {
-                            if let Some(InterData::Int(idx)) = inter_val {
-                                let idx = *idx as usize;
-                                if let Some(t) = v.get(idx) {
-                                    Ok(Value::new(
-                                        target.comp_val.and_then(|v| ctx.builder.build_extract_value(v.into_struct_value(), idx as u32, "")),
-                                        if let Some(InterData::Array(v)) = target.inter_val {v.get(idx).cloned()} else {None},
-                                        Type::Borrow(Box::new(t.clone()))
-                                    ))
-                                }
-                                else {Err(CobaltError::TupleIdxOutOfBounds {
-                                    idx, len: v.len(),
-                                    tloc: loc, iloc: *aloc
-                                })}
-                            }
-                            else {Err(CobaltError::NotCompileTime {loc: *aloc})}
-                        },
-                        _ => Err(err)
-                    }
-                },
-                b => {
-                    target.data_type = b;
-                    call(target, loc, cparen, args, ctx)
-                }
-            }
-        },
         Type::Reference(b, m) => {
             match *b {
                 Type::Tuple(v) => {
@@ -2712,7 +2633,6 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     for (mut arg, loc) in args {
                         loop {
                             match arg.data_type {
-                                Type::Borrow(b) => arg.data_type = *b,
                                 Type::Reference(b, _) => {
                                     if b.register(ctx) && !ctx.is_const.get() {
                                         if let Some(PointerValue(v)) = arg.comp_val {
@@ -2785,8 +2705,8 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
 pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
     if lhs == rhs {return Some(lhs.clone())}
     match (lhs, rhs) {
-        (lhs, &Type::Reference(ref base, _) | &Type::Borrow(ref base)) if lhs == &**base => Some(lhs.clone()),
-        (&Type::Reference(ref base, _) | &Type::Borrow(ref base), rhs) if rhs == &**base => Some(rhs.clone()),
+        (lhs, Type::Reference(base, _)) if lhs == &**base => Some(lhs.clone()),
+        (Type::Reference(base, _), rhs) if rhs == &**base => Some(rhs.clone()),
         (Type::IntLiteral, x @ Type::Int(..)) | (x @ Type::Int(..), Type::IntLiteral) => Some(x.clone()),
         (Type::IntLiteral | Type::Int(..), x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) | (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), Type::IntLiteral | Type::Int(..)) => Some(x.clone()),
         (Type::Float32, Type::Float16) | (Type::Float16, Type::Float32) => Some(Type::Float32),
@@ -2802,4 +2722,20 @@ fn is_str(ty: &Type) -> bool {
         Type::Reference(b, _) => if let Type::Array(ref b, _) = **b {**b == Type::Int(8, true)} else {false}
         _ => false
     }
+}
+/// determine the "decayed" type of a variable
+/// This removes references
+pub fn decay(ty: Type) -> Type {
+    match ty {
+        Type::Reference(b, _) => *b,
+        t => t
+    }
+}
+/// does the same as `decay`, but never reallocates
+pub fn decay_boxed(ty: Box<Type>) -> Box<Type> {
+    if matches!(*ty, Type::Reference(..)) {
+        if let Type::Reference(b, _) = *ty {b}
+        else {unreachable!("verified by previous conditional")}
+    }
+    else {ty}
 }
