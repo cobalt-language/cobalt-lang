@@ -285,7 +285,7 @@ impl AST for ArrayLiteralAST {
                 let arr_ty = llt.array_type(elems.len() as u32);
                 elems.iter().enumerate().try_fold(arr_ty.get_undef(), |val, (n, v)| ctx.builder.build_insert_value(val, v.comp_val?, n as _, "").map(|v| v.into_array_value())).map(Into::into)
             } else {None},
-            Some(InterData::Array(elems.into_iter().map(|v| v.inter_val.unwrap_or(InterData::Null)).collect())),
+            elems.into_iter().map(|v| v.inter_val).collect::<Option<_>>().map(InterData::Array),
             Type::Array(Box::new(ty), Some(len as u32))
         ), errs)
     }
