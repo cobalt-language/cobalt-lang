@@ -56,7 +56,7 @@ impl AST for BitCastAST {
         let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
         while let Type::Reference(b, _) = val.data_type {
-            if !ctx.is_const.get() && b.register(ctx) {
+            if !ctx.is_const.get() {
                 if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = val.comp_val {
                     val.address = Rc::new(Cell::new(Some(pv)));
                     val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));

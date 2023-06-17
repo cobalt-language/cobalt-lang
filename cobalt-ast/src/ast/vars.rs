@@ -599,7 +599,7 @@ impl AST for VarDefAST {
                 Value::error()
             });
             ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() || (val.data_type.register(ctx) && stack.is_none()) {
+            match if ctx.is_const.get() || stack.is_none() {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
             else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
