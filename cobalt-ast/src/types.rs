@@ -190,14 +190,6 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx)
         }
     }
-    pub fn register(&self, ctx: &CompCtx) -> bool {
-        match self {
-            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
-            Tuple(v) => v.iter().all(|x| x.register(ctx)),
-            Nominal(n) => ctx.nominals.borrow()[n].0.register(ctx),
-            _ => false
-        }
-    }
     pub fn copyable(&self, ctx: &CompCtx) -> bool {
         match self {
             IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,

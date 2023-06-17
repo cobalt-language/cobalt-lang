@@ -331,10 +331,10 @@ impl AST for TupleLiteralAST {
     fn res_type(&self, ctx: &CompCtx) -> Type {
         Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
             Type::IntLiteral => Type::Int(64, false),
-            Type::Reference(b, m) => if b.register(ctx) {
+            Type::Reference(b, m) => {
                 if x.expl_type(ctx) {Type::Reference(b, m)}
                 else {*b}
-            } else {Type::Reference(b, m)}
+            },
             x => x
         }).collect())
     }
@@ -344,7 +344,7 @@ impl AST for TupleLiteralAST {
             let mut v = x.codegen_errs(ctx, &mut errs);
             match v.data_type {
                 Type::IntLiteral => Value {data_type: Type::Int(64, false), ..v},
-                Type::Reference(b, m) => if b.register(ctx) {
+                Type::Reference(b, m) => {
                     if x.expl_type(ctx) {Value {data_type: Type::Reference(b, m), ..v}}
                     else {
                         if !ctx.is_const.get() {
@@ -355,7 +355,7 @@ impl AST for TupleLiteralAST {
                         v.data_type = *b;
                         v
                     }
-                } else {Value {data_type: Type::Reference(b, m), ..v}}
+                },
                 x => Value {data_type: x, ..v}
             }
         }).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();

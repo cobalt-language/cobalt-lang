@@ -234,7 +234,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
     match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Reference(l, false), _r) => {
             lhs.data_type = *l;
-            if !ctx.is_const.get() && lhs.data_type.register(ctx) {
+            if !ctx.is_const.get() {
                 if let (Some(t), Some(PointerValue(v))) = (lhs.data_type.llvm_type(ctx), lhs.comp_val) {
                     lhs.comp_val = Some(ctx.builder.build_load(t, v, ""));
                 }
@@ -246,7 +246,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         },
         (_l, Type::Reference(r, _)) => {
             rhs.data_type = *r;
-            if !ctx.is_const.get() && rhs.data_type.register(ctx) {
+            if !ctx.is_const.get() {
                 if let (Some(t), Some(PointerValue(v))) = (rhs.data_type.llvm_type(ctx), rhs.comp_val) {
                     rhs.comp_val = Some(ctx.builder.build_load(t, v, ""));
                 }
@@ -373,7 +373,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 },
                 _ => {
                     lhs.data_type = l;
-                    if !ctx.is_const.get() && lhs.data_type.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = lhs.comp_val {
                             lhs.comp_val = Some(ctx.builder.build_load(lhs.data_type.llvm_type(ctx).unwrap(), v, ""));
                         }
@@ -490,7 +490,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                     },
                     _ => {
                         lhs.data_type = Type::Int(ls, lu);
-                        if !ctx.is_const.get() && lhs.data_type.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(PointerValue(v)) = lhs.comp_val {
                                 lhs.comp_val = Some(ctx.builder.build_load(ctx.context.custom_width_int_type(ls as u32), v, ""));
                             }
@@ -614,7 +614,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 },
                 _ => {
                     lhs.data_type = Type::Pointer(b, m);
-                    if !ctx.is_const.get() && lhs.data_type.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(v) = lhs.comp_val {
                             lhs.comp_val = Some(ctx.builder.build_load(ctx.null_type.ptr_type(Default::default()), v.into_pointer_value(), ""));
                         }
@@ -633,7 +633,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             },
             (l, _) => {
                 lhs.data_type = l;
-                if !ctx.is_const.get() && lhs.data_type.register(ctx) {
+                if !ctx.is_const.get() {
                     if let Some(PointerValue(v)) = lhs.comp_val {
                         lhs.comp_val = Some(ctx.builder.build_load(lhs.data_type.llvm_type(ctx).unwrap(), v, ""));
                     }
@@ -1331,7 +1331,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         }
         else {
             val.data_type = *x;
-            if !ctx.is_const.get() && val.data_type.register(ctx) {
+            if !ctx.is_const.get() {
                 if let Some(v) = val.comp_val {
                     val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v.into_pointer_value(), ""));
                 }
@@ -1370,7 +1370,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                     },
                     _ => {
                         val.data_type = x;
-                        if !ctx.is_const.get() && val.data_type.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v.into_pointer_value(), ""));
                             }
@@ -1403,7 +1403,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                     },
                     _ => {
                         val.data_type = x;
-                        if !ctx.is_const.get() && val.data_type.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v.into_pointer_value(), ""));
                             }
@@ -1436,7 +1436,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                     },
                     _ => {
                         val.data_type = Type::Pointer(b, m);
-                        if !ctx.is_const.get() && val.data_type.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(v) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(ctx.null_type.ptr_type(Default::default()), v.into_pointer_value(), ""));
                             }
@@ -1446,7 +1446,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 },
                 x => {
                     val.data_type = x;
-                    if !ctx.is_const.get() && val.data_type.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(v) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v.into_pointer_value(), ""));
                         }
@@ -1560,7 +1560,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
     };
     match idx.data_type {
         Type::Reference(x, _) => {
-            if x.register(ctx) && !ctx.is_const.get() {
+            if !ctx.is_const.get() {
                 if let Some(PointerValue(v)) = idx.comp_val {
                     idx.comp_val = Some(ctx.builder.build_load(x.llvm_type(ctx).unwrap(), v, ""));
                 }
@@ -1724,7 +1724,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                         _ => Err(err)
                     },
                     x => {
-                        if !ctx.is_const.get() || x.register(ctx) {
+                        if !ctx.is_const.get()  {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(x.llvm_type(ctx).unwrap(), v, ""));
                             }
@@ -1811,7 +1811,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                         _ => Err(err)
                     },
                     b => {
-                        if !ctx.is_const.get() && b.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                                 val.address.set(Some(v));
@@ -1854,7 +1854,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                     _ => Err(err)
                 },
                 b => {
-                    if !ctx.is_const.get() && b.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                             val.address.set(Some(v));
@@ -2010,7 +2010,7 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                         _ => Err(err)
                     },
                     b => {
-                        if !ctx.is_const.get() && b.register(ctx) {
+                        if !ctx.is_const.get() {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                             }
@@ -2052,7 +2052,7 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                     _ => Err(err)
                 },
                 b => {
-                    if !ctx.is_const.get() && b.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                         }
@@ -2251,10 +2251,8 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
             }
             else {
                 val.data_type = (**b).clone();
-                if val.data_type.register(ctx) {
-                    if let Some(PointerValue(v)) = val.value(ctx) {
-                        val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v, ""));
-                    }
+                if let Some(PointerValue(v)) = val.value(ctx) {
+                    val.comp_val = Some(ctx.builder.build_load(val.data_type.llvm_type(ctx).unwrap(), v, ""));
                 }
                 attr((val, vloc), (id, iloc), ctx)
             }
@@ -2293,7 +2291,7 @@ fn prep_asm<'ctx>(mut arg: Value<'ctx>, ctx: &CompCtx<'ctx>) -> Option<(BasicMet
     match arg.data_type {
         Type::Reference(b, _) => {
             arg.data_type = *b;
-            if let (Some(PointerValue(val)), true) = (arg.value(ctx), arg.data_type.register(ctx)) {
+            if let Some(PointerValue(val)) = arg.value(ctx) {
                 arg.comp_val = Some(ctx.builder.build_load(arg.data_type.llvm_type(ctx).unwrap(), val, ""));
             }
             prep_asm(arg, ctx)
@@ -2350,7 +2348,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     }
                 },
                 b => {
-                    if !ctx.is_const.get() && b.register(ctx) {
+                    if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = target.comp_val {
                             target.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                         }
@@ -2634,7 +2632,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         loop {
                             match arg.data_type {
                                 Type::Reference(b, _) => {
-                                    if b.register(ctx) && !ctx.is_const.get() {
+                                    if !ctx.is_const.get() {
                                         if let Some(PointerValue(v)) = arg.comp_val {
                                             arg.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                                         }
