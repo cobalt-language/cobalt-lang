@@ -1,6 +1,6 @@
 use crate::*;
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
-use inkwell::values::{AsValueRef, FunctionValue, BasicValueEnum::*};
+use inkwell::values::{AsValueRef, FunctionValue, BasicValueEnum::*, InstructionOpcode, BasicValue};
 use inkwell::module::Linkage::*;
 use inkwell::attributes::{Attribute, AttributeLoc::Function};
 use glob::Pattern;
@@ -672,6 +672,7 @@ impl AST for FnDefAST {
                         errs.append(&mut es);
                         ctx.map_vars(|v| v.parent.unwrap());
                         ctx.builder.build_return(Some(&types::utils::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
+                        hoist_allocas(&ctx.builder);
                         ctx.restore_scope(old_scope);
                     }
                     var
@@ -786,6 +787,7 @@ impl AST for FnDefAST {
                         let (_, mut es) = self.body.codegen(ctx);
                         errs.append(&mut es);
                         ctx.builder.build_return(None);
+                        hoist_allocas(&ctx.builder);
                         ctx.map_vars(|v| v.parent.unwrap());
                         ctx.restore_scope(old_scope);
                     }
@@ -1003,4 +1005,24 @@ impl AST for IntrinsicAST {
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
     fn to_code(&self) -> String {format!("@{}", self.name)}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
+}
+/// Move all constant alloca instructions to the entry block of the function
+/// The return doesn't matter, but it makes it
+pub fn hoist_allocas(b: &inkwell::builder::Builder) -> Option<()> {
+    let blocks = b.get_insert_block()?.get_parent()?.get_basic_blocks();
+    let (&first, blocks) = blocks.split_first()?;
+    b.position_at_end(first);
+    for block in blocks {
+        let mut i = block.get_first_instruction();
+        while let Some(inst) = i {
+            i = inst.get_next_instruction();
+            // instruction is an alloca && all operands are constant
+            if inst.get_opcode() == InstructionOpcode::Alloca && (0..inst.get_num_operands()).all(|n| inst.get_operand(n).map_or(true, |i| i.left().map_or(true, |v| v.as_instruction_value().is_none()))) {
+                let name = inst.get_name();
+                inst.remove_from_basic_block();
+                b.insert_instruction(&inst, name.and_then(|s| s.to_str().ok()));
+            }
+        }
+    }
+    Some(())
 }
