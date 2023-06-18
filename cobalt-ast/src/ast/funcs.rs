@@ -1011,7 +1011,7 @@ impl AST for IntrinsicAST {
 pub fn hoist_allocas(b: &inkwell::builder::Builder) -> Option<()> {
     let blocks = b.get_insert_block()?.get_parent()?.get_basic_blocks();
     let (&first, blocks) = blocks.split_first()?;
-    b.position_at_end(first);
+    b.position_before(&first.get_terminator()?);
     for block in blocks {
         let mut i = block.get_first_instruction();
         while let Some(inst) = i {
