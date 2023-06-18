@@ -1,4 +1,5 @@
 use crate::*;
+use ast::funcs::hoist_allocas;
 use inkwell::values::{AsValueRef, GlobalValue, BasicValueEnum::*};
 use inkwell::module::Linkage::*;
 use glob::Pattern;
@@ -499,6 +500,7 @@ impl AST for VarDefAST {
                             val.inter_val = None;
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
+                            hoist_allocas(&ctx.builder);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
                             else {ctx.builder.clear_insertion_position();}
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
@@ -1127,6 +1129,7 @@ impl AST for MutDefAST {
                             val.inter_val = None;
                             ctx.builder.build_store(gv.as_pointer_value(), v);
                             ctx.builder.build_return(None);
+                            hoist_allocas(&ctx.builder);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
                             else {ctx.builder.clear_insertion_position();}
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
