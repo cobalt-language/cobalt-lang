@@ -135,6 +135,9 @@ enum Cli {
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
+        /// print timings
+        #[arg(long)]
+        timings: bool,
         /// argv[0] to pass to program
         #[arg(short, long)]
         this: Option<String>,
@@ -717,47 +720,126 @@ fn driver() -> anyhow::Result<()> {
             };
             reporter.finish();
         },
-        Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, this, mut args} => {
+        Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, timings, this, mut args} => {
+            struct Reporter {
+                timings: bool,
+                reported: bool,
+                start: Instant,
+                overall: Option<Duration>,
+                file_time: Option<Duration>,
+                file_len: usize,
+                parse_time: Option<Duration>,
+                ast_nodes: usize,
+                comp_time: Option<Duration>,
+                insts_before: usize,
+                opt_time: Option<Duration>,
+                libs_time: Option<Duration>,
+                nlibs: usize,
+            }
+            impl Reporter {
+                pub fn new(timings: bool) -> Self {
+                    Self {
+                        timings,
+                        reported: false,
+                        start: Instant::now(),
+                        overall: None,
+                        file_time: None,
+                        file_len: 0,
+                        parse_time: None,
+                        ast_nodes: 0,
+                        comp_time: None,
+                        insts_before: 0,
+                        opt_time: None,
+                        libs_time: None,
+                        nlibs: 0
+                    }
+                }
+                fn print(&mut self) {
+                    if !self.timings {return}
+                    if self.reported {return}
+                    self.reported = true;
+                    let overall = self.overall.get_or_insert_with(|| self.start.elapsed());
+                    println!("----------------");
+                    println!("overall time: {:>8}", overall.human_duration().to_string());
+                    if let Some(file) = self.file_time {
+                        println!("reading file: {:>8} ({:6.3}%) @ {:>13}", file .human_duration().to_string(), file .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / file .as_secs_f64()).human_throughput_bytes().to_string());
+                    }
+                    if let Some(parse) = self.parse_time {
+                        println!("parsing code: {:>8} ({:6.3}%) @ {:>13}", parse.human_duration().to_string(), parse.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / parse.as_secs_f64()).human_throughput_bytes().to_string());
+                    }
+                    if let Some(comp) = self.comp_time {
+                        println!("LLVM codegen: {:>8} ({:6.3}%) @ {:>13}", comp .human_duration().to_string(), comp .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.ast_nodes  as f64 / comp .as_secs_f64()).human_throughput(" node").to_string());
+                    }
+                    if let Some(opt) = self.opt_time {
+                        println!("optimization: {:>8} ({:6.3}%) @ {:>13}", opt  .human_duration().to_string(), opt  .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_before  as f64 / opt  .as_secs_f64()).human_throughput(" inst").to_string());
+                    }
+                    if self.nlibs != 0 {
+                        if let Some(libs) = self.libs_time {
+                            println!("lib lookup:   {:>8} ({:6.3}%) @ {:>13}", libs.human_duration().to_string(), libs.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.nlibs as f64 / libs.as_secs_f64()).human_throughput(" libs").to_string());
+                        }
+                    }
+                }
+                // happy exit
+                pub fn finish(&mut self) {
+                    self.print();
+                }
+            }
+            // give the report on drops too, in case of errors
+            impl Drop for Reporter {
+                fn drop(&mut self) {
+                    self.print();
+                }
+            }
+            let mut reporter = Reporter::new(timings);
             if !no_default_link {
                 if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
                 if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
                 else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
             }
-            args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
-            let (input, code) = match input.as_str() {
-                "-" => {
+            let code = {
+                let start = Instant::now(); 
+                let code = if input == "-" {
                     let mut s = String::new();
                     std::io::stdin().read_to_string(&mut s)?;
-                    ("<stdin>", s)
-                },
-                f => {
-                    args[0].push_str(f);
-                    (f, Path::new(f).read_to_string_anyhow()?)
-                }
+                    s
+                } else {Path::new(&input).read_to_string_anyhow()?};
+                reporter.file_time = Some(start.elapsed());
+                reporter.file_len = code.len();
+                code
             };
+            args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = CompCtx::new(&ink_ctx, input);
+            let mut ctx = CompCtx::new(&ink_ctx, &input);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let mut cc = cc::CompileCommand::new();
-            if !linked.is_empty() {
-                let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
-                if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
-            }
-            for head in headers {
-                let mut file = BufReader::new(std::fs::File::open(head)?);
-                ctx.load(&mut file)?;
-            }
+            {
+                reporter.nlibs = linked.len();
+                let start = Instant::now();
+                if !linked.is_empty() {
+                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                    if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+                    cc.libs.iter().for_each(|f| {inkwell::support::load_library_permanently(f.as_os_str().to_str().unwrap());});
+                }
+                for head in headers {
+                    let mut file = BufReader::new(std::fs::File::open(head)?);
+                    ctx.load(&mut file)?;
+                }
+                reporter.libs_time = Some(start.elapsed());
+            };
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code.clone());
-            let (mut ast, errs) = parse_tl(&code);
+            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            reporter.parse_time = Some(parse_time);
+            reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
-            let (_, errs) = ast.codegen(&ctx);
+            let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+            reporter.comp_time = Some(comp_time);
             overall_fail |= fail;
             fail = false;
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
@@ -767,9 +849,12 @@ fn driver() -> anyhow::Result<()> {
                 Err(Exit(101))?
             }
             if fail || overall_fail {anyhow::bail!(CompileErrors)}
-            let pm = inkwell::passes::PassManager::create(());
-            opt::load_profile(profile.as_deref(), &pm);
-            pm.run_on(&ctx.module);
+            reporter.insts_before = insts(&ctx.module);
+            reporter.opt_time = Some(timeit(|| {
+                let pm = inkwell::passes::PassManager::create(());
+                opt::load_profile(profile.as_deref(), &pm);
+                pm.run_on(&ctx.module);
+            }).1);
             let ee = ctx.module.create_jit_execution_engine(inkwell::OptimizationLevel::None).expect("Couldn't create execution engine!");
             unsafe {
                 let main_fn = match ee.get_function_value("main") {
@@ -780,6 +865,7 @@ fn driver() -> anyhow::Result<()> {
                         Err(Exit(255))?
                     }
                 };
+                reporter.finish();
                 ee.run_static_constructors();
                 let ec = ee.run_function_as_main(main_fn, &args.iter().map(String::as_str).collect::<Vec<_>>());
                 ee.run_static_destructors();
