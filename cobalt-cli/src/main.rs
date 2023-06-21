@@ -70,6 +70,7 @@ static LONG_VERSION: &str = formatcp!("{}\nLLVM version {}{}{}",
 #[command(name = "co", author, long_version = LONG_VERSION)]
 enum Cli {
     /// Print version information
+    #[command(version)]
     Version,
     /// Debug compiler stuff
     #[cfg(debug_assertions)]
@@ -165,6 +166,9 @@ enum Cli {
         #[arg(long)]
         timings: bool
     },
+    /// multi-file utilities
+    #[command(subcommand)]
+    Multi(MultiSubcommand),
     /// project-related utilities
     #[command(subcommand, alias = "proj")]
     Project(ProjSubcommand),
@@ -176,7 +180,6 @@ enum Cli {
 #[derive(Debug, Clone, Subcommand)]
 enum DbgSubcommand {
     /// Test parser
-    #[cfg(debug_assertions)]
     Parse {
         /// input file to parse
         files: Vec<String>,
@@ -188,7 +191,6 @@ enum DbgSubcommand {
         locs: bool
     },
     /// Test LLVM generation
-    #[cfg(debug_assertions)]
     Llvm {
         /// input file to compile
         input: String,
@@ -197,12 +199,101 @@ enum DbgSubcommand {
         timings: bool
     },
     /// Parse a Cobalt header
-    #[cfg(debug_assertions)]
     ParseHeader {
         /// header files to parse
         #[arg(required = true)]
         inputs: Vec<String>
+    }
+}
+#[derive(Debug, Clone, Subcommand)]
+enum MultiSubcommand {
+    /// AOT compile a file
+    Aot {
+        /// input files to compile
+        #[arg(required = true)]
+        inputs: Vec<String>,
+        /// output file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// target triple to build
+        #[arg(short, long)]
+        triple: Option<String>,
+        /// type of file to emit
+        #[arg(short, long, default_value_t)]
+        emit: OutputType,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// emit symbols with debug mangling
+        #[arg(short, long = "debug")]
+        debug_mangle: bool,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        /// print timings
+        #[arg(long)]
+        timings: bool
     },
+    /// JIT compile and run a file
+    Jit {
+        /// input files to compile
+        #[arg(required = true)]
+        inputs: Vec<String>,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// optimization profile to use
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        /// print timings
+        #[arg(long)]
+        timings: bool,
+        /// argv[0] to pass to program
+        #[arg(short, long)]
+        this: Option<String>,
+        /// arguments to pass to program
+        #[arg(last = true)]
+        args: Vec<String>
+    },
+    /// Check a file for errors
+    Check {
+        /// input files to compile
+        #[arg(required = true)]
+        inputs: Vec<String>,
+        /// libraries to link
+        #[arg(short = 'l')]
+        linked: Vec<String>,
+        /// link directories to search
+        #[arg(short = 'L')]
+        link_dirs: Vec<String>,
+        /// Cobalt headers to include
+        #[arg(short = 'H')]
+        headers: Vec<String>,
+        /// don't search default directories for libraries
+        #[arg(long)]
+        no_default_link: bool,
+        /// print timings
+        #[arg(long)]
+        timings: bool
+    }
 }
 #[derive(Debug, Clone, Subcommand)]
 enum ProjSubcommand {
@@ -280,7 +371,7 @@ enum ProjSubcommand {
         rebuild: bool,
         #[arg(last = true)]
         args: Vec<String>
-    },
+    }
 }
 #[derive(Debug, Clone, Subcommand)]
 enum PkgSubcommand {
@@ -291,7 +382,7 @@ enum PkgSubcommand {
         /// packages to install
         #[arg(required = true)]
         packages: Vec<String>
-    },
+    }
 }
 
 /// time the execution of a function
@@ -354,7 +445,7 @@ fn driver() -> anyhow::Result<()> {
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
                     else {print!("({} nodes)\n{ast}", ast.nodes())}
                 }
-            },
+            }
             DbgSubcommand::Llvm {input, timings} => {
                 struct Reporter {
                     timings: bool,
@@ -443,7 +534,7 @@ fn driver() -> anyhow::Result<()> {
                 if let Err(msg) = ctx.module.verify() {error!("\n{}", msg.to_string())}
                 print!("{}", ctx.module.to_string());
                 reporter.finish();
-            },
+            }
             #[cfg(debug_assertions)]
             DbgSubcommand::ParseHeader {inputs} => {
                 for fname in inputs {
@@ -456,7 +547,7 @@ fn driver() -> anyhow::Result<()> {
                     }
                 }
             }
-        },
+        }
         Cli::Aot {input, output, linked, mut link_dirs, headers, triple, emit, profile, continue_if_err, debug_mangle, no_default_link, timings} => {
             struct Reporter {
                 timings: bool,
@@ -643,7 +734,7 @@ fn driver() -> anyhow::Result<()> {
                         file.write_all(&buf)?;
                     }
                     else {std::io::stdout().write_all(&buf)?}
-                },
+                }
                 OutputType::HeaderObj => {
                     let mut obj = libs::new_object(&trip);
                     let (vec, cg_time) = try_timeit(|| {
@@ -662,19 +753,19 @@ fn driver() -> anyhow::Result<()> {
                     reporter.cg_time = Some(cg_time);
                     if let Some(out) = output {std::fs::write(out, &m)?}
                     else {println!("{m}")}
-                },
+                }
                 OutputType::Bitcode => {
                     let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                     reporter.cg_time = Some(cg_time);
                     if let Some(out) = output {std::fs::write(out, m.as_slice())?}
                     else {std::io::stdout().write_all(m.as_slice())?}
-                },
+                }
                 OutputType::Assembly => {
                     let (m, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap());
                     reporter.cg_time = Some(cg_time);
                     if let Some(out) = output {std::fs::write(out, m.as_slice())?}
                     else {std::io::stdout().write_all(m.as_slice())?}
-                },
+                }
                 _ => {
                     let (mb, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap());
                     reporter.cg_time = Some(cg_time);
@@ -692,7 +783,7 @@ fn driver() -> anyhow::Result<()> {
                             reporter.cmd_time = Some(cmd_time);
                             let code = res.code().unwrap_or(-1);
                             if code != 0 {Err(Exit(code))?}
-                        },
+                        }
                         OutputType::Library => {
                             if let Some(output) = output {
                                 let mut obj = libs::new_object(&trip);
@@ -709,17 +800,17 @@ fn driver() -> anyhow::Result<()> {
                                 if code != 0 {Err(Exit(code))?}
                             }
                             else {error!("cannot output library to stdout!"); Err(Exit(4))?}
-                        },
+                        }
                         OutputType::Object => {
                             if let Some(out) = output {std::fs::write(out, mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
-                        },
+                        }
                         x => unreachable!("{x:?} has already been handled")
                     };
                 }
-            };
+            }
             reporter.finish();
-        },
+        }
         Cli::Jit {input, linked, mut link_dirs, headers, profile, continue_if_err, no_default_link, timings, this, mut args} => {
             struct Reporter {
                 timings: bool,
@@ -871,7 +962,7 @@ fn driver() -> anyhow::Result<()> {
                 ee.run_static_destructors();
                 if ec != 0 {Err(Exit(ec))?}
             }
-        },
+        }
         Cli::Check {input, linked, mut link_dirs, headers, no_default_link, timings} => {
             struct Reporter {
                 timings: bool,
@@ -1005,7 +1096,627 @@ fn driver() -> anyhow::Result<()> {
             }
             if fail {anyhow::bail!(CompileErrors)}
             reporter.finish();
-        },
+        }
+        Cli::Multi(cmd) => match cmd {
+            MultiSubcommand::Aot {inputs, output, linked, mut link_dirs, headers, triple, emit, profile, debug_mangle, no_default_link, timings} => {
+                struct Reporter {
+                    timings: bool,
+                    reported: bool,
+                    bottom_line: bool,
+                    start: Instant,
+                    overall: Option<Duration>,
+                    file_time: Option<Duration>,
+                    file_len: usize,
+                    parse_time: Option<Duration>,
+                    ast_nodes: usize,
+                    comp_time: Option<Duration>,
+                    insts_before: usize,
+                    insts_after: usize,
+                    opt_time: Option<Duration>,
+                    cg_time: Option<Duration>,
+                    libs_time: Option<Duration>,
+                    nlibs: usize,
+                    cmd_time: Option<Duration>
+                }
+                impl Reporter {
+                    pub fn new(timings: bool) -> Self {
+                        Self {
+                            timings,
+                            reported: false,
+                            bottom_line: true,
+                            start: Instant::now(),
+                            overall: None,
+                            file_time: None,
+                            file_len: 0,
+                            parse_time: None,
+                            ast_nodes: 0,
+                            comp_time: None,
+                            insts_before: 0,
+                            insts_after: 0,
+                            opt_time: None,
+                            cg_time: None,
+                            libs_time: None,
+                            nlibs: 0,
+                            cmd_time: None
+                        }
+                    }
+                    fn print(&mut self) {
+                        if !self.timings {return}
+                        if self.reported {return}
+                        self.reported = true;
+                        let overall = self.overall.get_or_insert_with(|| self.start.elapsed());
+                        println!("----------------");
+                        println!("overall time: {:>8}", overall.human_duration().to_string());
+                        if let Some(file) = self.file_time {
+                            println!("reading file: {:>8} ({:6.3}%) @ {:>13}", file .human_duration().to_string(), file .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / file .as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(parse) = self.parse_time {
+                            println!("parsing code: {:>8} ({:6.3}%) @ {:>13}", parse.human_duration().to_string(), parse.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / parse.as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(comp) = self.comp_time {
+                            println!("LLVM codegen: {:>8} ({:6.3}%) @ {:>13}", comp .human_duration().to_string(), comp .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.ast_nodes  as f64 / comp .as_secs_f64()).human_throughput(" node").to_string());
+                        }
+                        if let Some(opt) = self.opt_time {
+                            println!("optimization: {:>8} ({:6.3}%) @ {:>13}", opt  .human_duration().to_string(), opt  .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_before  as f64 / opt  .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if let Some(cg) = self.cg_time {
+                            println!("output gen:   {:>8} ({:6.3}%) @ {:>13}", cg   .human_duration().to_string(), cg   .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_after  as f64 / cg   .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if self.nlibs != 0 {
+                            if let Some(libs) = self.libs_time {
+                                println!("lib lookup:   {:>8} ({:6.3}%) @ {:>13}", libs.human_duration().to_string(), libs.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.nlibs as f64 / libs.as_secs_f64()).human_throughput(" libs").to_string());
+                            }
+                        }
+                        if let Some(cmd) = self.cmd_time {
+                            println!("external cmd: {:>8} ({:6.3}%)", cmd.human_duration().to_string(), cmd.as_secs_f64() / overall.as_secs_f64() * 100.0);
+                        }
+                        if self.bottom_line {
+                            println!("----------------");
+                        }
+                    }
+                    // happy exit
+                    pub fn finish(&mut self) {
+                        self.bottom_line = false; // don't print a line after the report, everything went ok
+                        self.print();
+                    }
+                }
+                // give the report on drops too, in case of errors
+                impl Drop for Reporter {
+                    fn drop(&mut self) {
+                        self.print();
+                    }
+                }
+                let mut reporter = Reporter::new(timings);
+                if !no_default_link {
+                    if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                }
+                let codes = inputs.iter().map(|input| {
+                    let start = Instant::now();
+                    let code = if input == "-" {
+                        let mut s = String::new();
+                        std::io::stdin().read_to_string(&mut s)?;
+                        s
+                    } else {Path::new(&input).read_to_string_anyhow()?};
+                    reporter.file_time = Some(start.elapsed());
+                    reporter.file_len = code.len();
+                    anyhow::Ok(code)
+                }).collect::<anyhow::Result<Vec<String>>>()?;
+                if triple.is_some() {Target::initialize_all(&INIT_NEEDED)}
+                else {Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?}
+                let triple = triple.unwrap_or_else(|| TargetMachine::get_default_triple().as_str().to_string_lossy().into_owned());
+                let trip = TargetTriple::create(&triple);
+                let target_machine = Target::from_triple(&trip).unwrap().create_target_machine(
+                    &trip,
+                    "",
+                    "",
+                    inkwell::OptimizationLevel::None,
+                    inkwell::targets::RelocMode::PIC,
+                    inkwell::targets::CodeModel::Small
+                ).expect("failed to create target machine");
+                let mut flags = Flags {dbg_mangle: debug_mangle, prepass: false, ..Flags::default()};
+                let ink_ctx = inkwell::context::Context::create();
+                if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
+                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                ctx.module.set_triple(&trip);
+                let mut cc = cc::CompileCommand::new();
+                cc.target(&triple);
+                {
+                    reporter.nlibs = linked.len();
+                    let start = Instant::now();
+                    if !linked.is_empty() {
+                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+                    }
+                    for head in headers {
+                        let mut file = BufReader::new(std::fs::File::open(head)?);
+                        ctx.load(&mut file)?;
+                    }
+                    reporter.libs_time = Some(start.elapsed());
+                };
+                let mut fail = false;
+                let asts = inputs.iter().zip(&codes).map(|(input, code)| {
+                    if Path::new(input).is_absolute() {anyhow::bail!("cannot pass absolute paths to multi-file input")}
+                    let file = FILES.add_file(0, input.clone(), code.clone());
+                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
+                    reporter.ast_nodes = ast.nodes();
+                    ast.file = Some(file);
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    ast.run_passes(&ctx);
+                    anyhow::Ok(ast)
+                }).collect::<anyhow::Result<Vec<_>>>()?;
+                #[derive(Debug, Clone)]
+                enum TmpFile {
+                    Zero,
+                    One(temp_file::TempFile),
+                    Two(temp_file::TempFile, temp_file::TempFile)
+                }
+                let _tmps = asts.iter().map(|ast| {
+                    let file = ast.file.unwrap();
+                    ctx.module.set_name(&file.name());
+                    ctx.module.set_source_file_name(&file.name());
+                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(ast.file.unwrap()));}
+                    if let Err(msg) = ctx.module.verify() {
+                        error!("\n{}", msg.to_string());
+                        fail = true;
+                    }
+                    if fail {anyhow::bail!(CompileErrors)}
+                    *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                        let pm = inkwell::passes::PassManager::create(());
+                        opt::load_profile(profile.as_deref(), &pm);
+                        pm.run_on(&ctx.module);
+                    }).1;
+                    let input = PathBuf::from(&*file.name());
+                    let mut out = match &output {
+                        None => input,
+                        Some(p) => p.join(input)
+                    };
+                    {
+                        let parent = out.parent().unwrap();
+                        if !parent.exists() {parent.create_dir_all_anyhow()?}
+                    }
+                    use TmpFile::*;
+                    let tmps = match emit {
+                        OutputType::Header => {
+                            out.set_extension("coh");
+                            let mut buf = vec![];
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += try_timeit(|| ctx.save(&mut buf))?.1;
+                            let mut file = std::fs::File::create(out)?;
+                            file.write_all(&buf)?;
+                            Zero
+                        }
+                        OutputType::HeaderObj => {
+                            out.set_extension("coh.o");
+                            let mut obj = libs::new_object(&trip);
+                            let (vec, cg_time) = try_timeit(|| {
+                                libs::populate_header(&mut obj, &ctx);
+                                obj.write()
+                            })?;
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
+                            let mut file = std::fs::File::create(out)?;
+                            file.write_all(&vec)?;
+                            Zero
+                        }
+                        OutputType::Llvm => {
+                            out.set_extension("ll");
+                            let (m, cg_time) = timeit(|| ctx.module.to_string());
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
+                            std::fs::write(out, m)?;
+                            Zero
+                        }
+                        OutputType::Bitcode => {
+                            out.set_extension("bc");
+                            let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
+                            std::fs::write(out, m.as_slice())?;
+                            Zero
+                        }
+                        OutputType::Assembly => {
+                            out.set_extension("s");
+                            let (m, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap());
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
+                            std::fs::write(out, m.as_slice())?;
+                            Zero
+                        }
+                        _ => {
+                            let (mb, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Object).unwrap());
+                            *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
+                            match emit {
+                                OutputType::Executable => {
+                                    if output.is_none() {
+                                        eprintln!("cannot output executable to stdout");
+                                        Err(Exit(4))?;
+                                    }
+                                    let tmp = temp_file::with_contents(mb.as_slice());
+                                    cc.obj(tmp.path());
+                                    One(tmp)
+                                }
+                                OutputType::Library => {
+                                    let mut obj = libs::new_object(&trip);
+                                    libs::populate_header(&mut obj, &ctx);
+                                    let tmp1 = temp_file::with_contents(&obj.write()?);
+                                    let tmp2 = temp_file::with_contents(mb.as_slice());
+                                    cc.lib(true);
+                                    cc.objs([tmp1.path(), tmp2.path()]);
+                                    Two(tmp1, tmp2)
+                                }
+                                OutputType::Object => {
+                                    out.set_extension("o");
+                                    std::fs::write(out, mb.as_slice())?;
+                                    Zero
+                                }
+                                x => unreachable!("{x:?} has already been handled")
+                            }
+                        }
+                    };
+                    ctx.with_vars(|v| clear_mod(&mut v.symbols));
+                    anyhow::Ok(tmps)
+                }).collect::<anyhow::Result<Vec<_>>>()?;
+                if matches!(emit, OutputType::Executable | OutputType::Library) {
+                    let is_lib = emit == OutputType::Library;
+                    cc.output(&output.ok_or(anyhow::anyhow!("output file must be specified for multi-{}s", if is_lib {"lib"} else {"exe"}))?);
+                    cc.lib(is_lib);
+                    let mut cmd = cc.build_cmd()?;
+                    let (res, cmd_time) = try_timeit(|| cmd.status_anyhow())?;
+                    reporter.cmd_time = Some(cmd_time);
+                    let code = res.code().unwrap_or(-1);
+                    if code != 0 {Err(Exit(code))?}
+                }
+                reporter.finish();
+            }
+            MultiSubcommand::Jit {inputs, linked, mut link_dirs, headers, profile, no_default_link, timings, this, mut args} => {
+                struct Reporter {
+                    timings: bool,
+                    reported: bool,
+                    bottom_line: bool,
+                    start: Instant,
+                    overall: Option<Duration>,
+                    file_time: Option<Duration>,
+                    file_len: usize,
+                    parse_time: Option<Duration>,
+                    ast_nodes: usize,
+                    comp_time: Option<Duration>,
+                    insts_before: usize,
+                    insts_after: usize,
+                    opt_time: Option<Duration>,
+                    cg_time: Option<Duration>,
+                    libs_time: Option<Duration>,
+                    nlibs: usize
+                }
+                impl Reporter {
+                    pub fn new(timings: bool) -> Self {
+                        Self {
+                            timings,
+                            reported: false,
+                            bottom_line: true,
+                            start: Instant::now(),
+                            overall: None,
+                            file_time: None,
+                            file_len: 0,
+                            parse_time: None,
+                            ast_nodes: 0,
+                            comp_time: None,
+                            insts_before: 0,
+                            insts_after: 0,
+                            opt_time: None,
+                            cg_time: None,
+                            libs_time: None,
+                            nlibs: 0
+                        }
+                    }
+                    fn print(&mut self) {
+                        if !self.timings {return}
+                        if self.reported {return}
+                        self.reported = true;
+                        let overall = self.overall.get_or_insert_with(|| self.start.elapsed());
+                        println!("----------------");
+                        println!("overall time: {:>8}", overall.human_duration().to_string());
+                        if let Some(file) = self.file_time {
+                            println!("reading file: {:>8} ({:6.3}%) @ {:>13}", file .human_duration().to_string(), file .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / file .as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(parse) = self.parse_time {
+                            println!("parsing code: {:>8} ({:6.3}%) @ {:>13}", parse.human_duration().to_string(), parse.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / parse.as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(comp) = self.comp_time {
+                            println!("LLVM codegen: {:>8} ({:6.3}%) @ {:>13}", comp .human_duration().to_string(), comp .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.ast_nodes  as f64 / comp .as_secs_f64()).human_throughput(" node").to_string());
+                        }
+                        if let Some(opt) = self.opt_time {
+                            println!("optimization: {:>8} ({:6.3}%) @ {:>13}", opt  .human_duration().to_string(), opt  .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_before  as f64 / opt  .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if let Some(cg) = self.cg_time {
+                            println!("output gen:   {:>8} ({:6.3}%) @ {:>13}", cg   .human_duration().to_string(), cg   .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_after  as f64 / cg   .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if self.nlibs != 0 {
+                            if let Some(libs) = self.libs_time {
+                                println!("lib lookup:   {:>8} ({:6.3}%) @ {:>13}", libs.human_duration().to_string(), libs.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.nlibs as f64 / libs.as_secs_f64()).human_throughput(" libs").to_string());
+                            }
+                        }
+                        if self.bottom_line {
+                            println!("----------------");
+                        }
+                    }
+                    // happy exit
+                    pub fn finish(&mut self) {
+                        self.bottom_line = false; // don't print a line after the report, everything went ok
+                        self.print();
+                    }
+                }
+                // give the report on drops too, in case of errors
+                impl Drop for Reporter {
+                    fn drop(&mut self) {
+                        self.print();
+                    }
+                }
+                let mut reporter = Reporter::new(timings);
+                if !no_default_link {
+                    if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                }
+                let codes = inputs.iter().map(|input| {
+                    let start = Instant::now();
+                    let code = if input == "-" {
+                        let mut s = String::new();
+                        std::io::stdin().read_to_string(&mut s)?;
+                        s
+                    } else {Path::new(&input).read_to_string_anyhow()?};
+                    reporter.file_time = Some(start.elapsed());
+                    reporter.file_len = code.len();
+                    anyhow::Ok(code)
+                }).collect::<anyhow::Result<Vec<String>>>()?;
+                args.insert(0, this.unwrap_or_else(|| std::env::args().next().unwrap_or_else(|| "<error>".to_string()) + " jit"));
+                Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
+                let triple = TargetMachine::get_default_triple().as_str().to_string_lossy().into_owned();
+                let trip = TargetTriple::create(&triple);
+                let target_machine = Target::from_triple(&trip).unwrap().create_target_machine(
+                    &trip,
+                    "",
+                    "",
+                    inkwell::OptimizationLevel::None,
+                    inkwell::targets::RelocMode::PIC,
+                    inkwell::targets::CodeModel::Small
+                ).expect("failed to create target machine");
+                let mut flags = Flags {dbg_mangle: true, prepass: false, ..Flags::default()};
+                let ink_ctx = inkwell::context::Context::create();
+                if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
+                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                ctx.module.set_triple(&trip);
+                let mut cc = cc::CompileCommand::new();
+                cc.target(&triple);
+                {
+                    reporter.nlibs = linked.len();
+                    let start = Instant::now();
+                    if !linked.is_empty() {
+                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+                    }
+                    for head in headers {
+                        let mut file = BufReader::new(std::fs::File::open(head)?);
+                        ctx.load(&mut file)?;
+                    }
+                    reporter.libs_time = Some(start.elapsed());
+                };
+                let mut fail = false;
+                let asts = inputs.iter().zip(&codes).map(|(input, code)| {
+                    let file = FILES.add_file(0, input.clone(), code.clone());
+                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
+                    reporter.ast_nodes = ast.nodes();
+                    ast.file = Some(file);
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    ast.run_passes(&ctx);
+                    anyhow::Ok(ast)
+                }).collect::<anyhow::Result<Vec<_>>>()?;
+                let mods = asts.iter().map(|ast| {
+                    let file = ast.file.unwrap();
+                    ctx.module.set_name(&file.name());
+                    ctx.module.set_source_file_name(&file.name());
+                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(ast.file.unwrap()));}
+                    if let Err(msg) = ctx.module.verify() {
+                        error!("\n{}", msg.to_string());
+                        fail = true;
+                    }
+                    reporter.insts_before = insts(&ctx.module);
+                    *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                        let pm = inkwell::passes::PassManager::create(());
+                        opt::load_profile(profile.as_deref(), &pm);
+                        pm.run_on(&ctx.module);
+                    }).1;
+                    let m = ctx.module.clone();
+                    ctx.with_vars(|v| clear_mod(&mut v.symbols));
+                    m
+                }).collect::<Vec<_>>();
+                if fail {anyhow::bail!(CompileErrors)}
+                let (first, rest) = mods.split_first().unwrap();
+                let ee = first.create_jit_execution_engine(inkwell::OptimizationLevel::None).map_err(|e| anyhow::Error::msg(e.to_string()))?;
+                rest.iter().for_each(|m| ee.add_module(m).unwrap());
+                reporter.finish();
+                unsafe {
+                    let main_fn = match ee.get_function_value("main") {
+                        Ok(main_fn) => main_fn,
+                        Err(FunctionLookupError::JITNotEnabled) => panic!("JIT not enabled here"),
+                        Err(FunctionLookupError::FunctionNotFound) => {
+                            eprintln!("couldn't find symbol 'main'");
+                            Err(Exit(255))?
+                        }
+                    };
+                    reporter.finish();
+                    ee.run_static_constructors();
+                    let ec = ee.run_function_as_main(main_fn, &args.iter().map(String::as_str).collect::<Vec<_>>());
+                    ee.run_static_destructors();
+                    if ec != 0 {Err(Exit(ec))?}
+                }
+            }
+            MultiSubcommand::Check {inputs, linked, mut link_dirs, headers, no_default_link, timings} => {
+                struct Reporter {
+                    timings: bool,
+                    reported: bool,
+                    bottom_line: bool,
+                    start: Instant,
+                    overall: Option<Duration>,
+                    file_time: Option<Duration>,
+                    file_len: usize,
+                    parse_time: Option<Duration>,
+                    ast_nodes: usize,
+                    comp_time: Option<Duration>,
+                    insts_before: usize,
+                    insts_after: usize,
+                    opt_time: Option<Duration>,
+                    cg_time: Option<Duration>,
+                    libs_time: Option<Duration>,
+                    nlibs: usize,
+                    cmd_time: Option<Duration>
+                }
+                impl Reporter {
+                    pub fn new(timings: bool) -> Self {
+                        Self {
+                            timings,
+                            reported: false,
+                            bottom_line: true,
+                            start: Instant::now(),
+                            overall: None,
+                            file_time: None,
+                            file_len: 0,
+                            parse_time: None,
+                            ast_nodes: 0,
+                            comp_time: None,
+                            insts_before: 0,
+                            insts_after: 0,
+                            opt_time: None,
+                            cg_time: None,
+                            libs_time: None,
+                            nlibs: 0,
+                            cmd_time: None
+                        }
+                    }
+                    fn print(&mut self) {
+                        if !self.timings {return}
+                        if self.reported {return}
+                        self.reported = true;
+                        let overall = self.overall.get_or_insert_with(|| self.start.elapsed());
+                        println!("----------------");
+                        println!("overall time: {:>8}", overall.human_duration().to_string());
+                        if let Some(file) = self.file_time {
+                            println!("reading file: {:>8} ({:6.3}%) @ {:>13}", file .human_duration().to_string(), file .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / file .as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(parse) = self.parse_time {
+                            println!("parsing code: {:>8} ({:6.3}%) @ {:>13}", parse.human_duration().to_string(), parse.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.file_len   as f64 / parse.as_secs_f64()).human_throughput_bytes().to_string());
+                        }
+                        if let Some(comp) = self.comp_time {
+                            println!("LLVM codegen: {:>8} ({:6.3}%) @ {:>13}", comp .human_duration().to_string(), comp .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.ast_nodes  as f64 / comp .as_secs_f64()).human_throughput(" node").to_string());
+                        }
+                        if let Some(opt) = self.opt_time {
+                            println!("optimization: {:>8} ({:6.3}%) @ {:>13}", opt  .human_duration().to_string(), opt  .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_before  as f64 / opt  .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if let Some(cg) = self.cg_time {
+                            println!("output gen:   {:>8} ({:6.3}%) @ {:>13}", cg   .human_duration().to_string(), cg   .as_secs_f64() / overall.as_secs_f64() * 100.0, (self.insts_after  as f64 / cg   .as_secs_f64()).human_throughput(" inst").to_string());
+                        }
+                        if self.nlibs != 0 {
+                            if let Some(libs) = self.libs_time {
+                                println!("lib lookup:   {:>8} ({:6.3}%) @ {:>13}", libs.human_duration().to_string(), libs.as_secs_f64() / overall.as_secs_f64() * 100.0, (self.nlibs as f64 / libs.as_secs_f64()).human_throughput(" libs").to_string());
+                            }
+                        }
+                        if let Some(cmd) = self.cmd_time {
+                            println!("external cmd: {:>8} ({:6.3}%)", cmd.human_duration().to_string(), cmd.as_secs_f64() / overall.as_secs_f64() * 100.0);
+                        }
+                        if self.bottom_line {
+                            println!("----------------");
+                        }
+                    }
+                    // happy exit
+                    pub fn finish(&mut self) {
+                        self.bottom_line = false; // don't print a line after the report, everything went ok
+                        self.print();
+                    }
+                }
+                // give the report on drops too, in case of errors
+                impl Drop for Reporter {
+                    fn drop(&mut self) {
+                        self.print();
+                    }
+                }
+                let mut reporter = Reporter::new(timings);
+                if !no_default_link {
+                    if let Some(pwd) = std::env::current_dir().ok().and_then(|pwd| pwd.to_str().map(String::from)) {link_dirs.insert(0, pwd);}
+                    if let Ok(home) = std::env::var("HOME") {link_dirs.extend_from_slice(&[format!("{home}/.cobalt/installed/lib"), format!("{home}/.local/lib/cobalt"), "/usr/local/lib/cobalt/installed/lib".to_string(), "/usr/lib/cobalt/installed/lib".to_string(), "/lib/cobalt/installed/lib".to_string(), "/usr/local/lib".to_string(), "/usr/lib".to_string(), "/lib".to_string()]);}
+                    else {link_dirs.extend(["/usr/local/lib/cobalt/installed/lib", "/usr/lib/cobalt/installed/lib", "/lib/cobalt/installed/lib", "/usr/local/lib", "/usr/lib", "/lib"].into_iter().map(String::from));}
+                }
+                let codes = inputs.iter().map(|input| {
+                    let start = Instant::now();
+                    let code = if input == "-" {
+                        let mut s = String::new();
+                        std::io::stdin().read_to_string(&mut s)?;
+                        s
+                    } else {Path::new(&input).read_to_string_anyhow()?};
+                    reporter.file_time = Some(start.elapsed());
+                    reporter.file_len = code.len();
+                    anyhow::Ok(code)
+                }).collect::<anyhow::Result<Vec<String>>>()?;
+                Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
+                let triple = TargetMachine::get_default_triple().as_str().to_string_lossy().into_owned();
+                let trip = TargetTriple::create(&triple);
+                let target_machine = Target::from_triple(&trip).unwrap().create_target_machine(
+                    &trip,
+                    "",
+                    "",
+                    inkwell::OptimizationLevel::None,
+                    inkwell::targets::RelocMode::PIC,
+                    inkwell::targets::CodeModel::Small
+                ).expect("failed to create target machine");
+                let mut flags = Flags {dbg_mangle: true, prepass: false, ..Flags::default()};
+                let ink_ctx = inkwell::context::Context::create();
+                if let Some(size) = ink_ctx.ptr_sized_int_type(&target_machine.get_target_data(), None).size_of().get_zero_extended_constant() {flags.word_size = size as u16;}
+                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                ctx.module.set_triple(&trip);
+                let mut cc = cc::CompileCommand::new();
+                cc.target(&triple);
+                {
+                    reporter.nlibs = linked.len();
+                    let start = Instant::now();
+                    if !linked.is_empty() {
+                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
+                    }
+                    for head in headers {
+                        let mut file = BufReader::new(std::fs::File::open(head)?);
+                        ctx.load(&mut file)?;
+                    }
+                    reporter.libs_time = Some(start.elapsed());
+                };
+                let mut fail = false;
+                let asts = inputs.iter().zip(&codes).map(|(input, code)| {
+                    let file = FILES.add_file(0, input.clone(), code.clone());
+                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
+                    reporter.ast_nodes = ast.nodes();
+                    ast.file = Some(file);
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    ast.run_passes(&ctx);
+                    anyhow::Ok(ast)
+                }).collect::<anyhow::Result<Vec<_>>>()?;
+                asts.iter().for_each(|ast| {
+                    let file = ast.file.unwrap();
+                    ctx.module.set_name(&file.name());
+                    ctx.module.set_source_file_name(&file.name());
+                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
+                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(ast.file.unwrap()));}
+                    if let Err(msg) = ctx.module.verify() {
+                        error!("\n{}", msg.to_string());
+                        fail = true;
+                    }
+                    ctx.with_vars(|v| clear_mod(&mut v.symbols));
+                });
+                if fail {anyhow::bail!(CompileErrors)}
+                reporter.finish();
+            }
+        }
         Cli::Project(cmd) => match cmd {
             ProjSubcommand::Track {projects: None} => {
                 'found: {
@@ -1021,7 +1732,7 @@ fn driver() -> anyhow::Result<()> {
                     }
                     anyhow::bail!("couldn't find cobalt.toml in currnet or parent directories");
                 }
-            },
+            }
             ProjSubcommand::Track {projects: Some(projs)} => {
                 let mut vec = load_projects()?;
                 for arg in projs {
@@ -1030,7 +1741,7 @@ fn driver() -> anyhow::Result<()> {
                     track_project(&toml::from_str::<build::Project>(&Path::new(&path).read_to_string_anyhow()?)?.name, path, &mut vec);
                 }
                 save_projects(vec)?;
-            },
+            }
             ProjSubcommand::Untrack {projects: None} => {
                 'found: {
                     for path in std::env::current_dir()?.ancestors() {
@@ -1045,7 +1756,7 @@ fn driver() -> anyhow::Result<()> {
                     }
                     error!("couldn't find cobalt.toml in currnet or parent directories");
                 }
-            },
+            }
             ProjSubcommand::Untrack {projects: Some(projs)} => {
                 let mut vec = load_projects()?;
                 for arg in projs {
@@ -1054,7 +1765,7 @@ fn driver() -> anyhow::Result<()> {
                     vec.retain(|[_, p]| Path::new(p) != path);
                 }
                 save_projects(vec)?;
-            },
+            }
             ProjSubcommand::List {machine} => {
                 let vecs = load_projects()?;
                 if machine {vecs.iter().for_each(|[n, p]| println!("{n}\t{p}"))}
@@ -1062,14 +1773,14 @@ fn driver() -> anyhow::Result<()> {
                     let padding = vecs.iter().map(|[n, _]| n.chars().count()).max().unwrap_or(0);
                     vecs.iter().for_each(|[n, p]| println!("{n}{} => {p}", " ".repeat(padding - n.chars().count())));
                 }
-            },
+            }
             ProjSubcommand::Build {project_dir, source_dir, build_dir, profile, mut link_dirs, no_default_link, triple, targets, rebuild} => {
                 let (project_data, project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
                         (toml::from_str::<build::Project>(cfg.as_str()).context("failed to parse project file")?, PathBuf::from("."))
-                    },
+                    }
                     Some(x) => {
                         let mut x = x.to_string();
                         let mut vecs = load_projects()?;
@@ -1095,7 +1806,7 @@ fn driver() -> anyhow::Result<()> {
                             save_projects(vecs)?;
                             (cfg, path)
                         }
-                    },
+                    }
                     None => {
                         let mut path = std::env::current_dir()?;
                         loop {
@@ -1131,14 +1842,14 @@ fn driver() -> anyhow::Result<()> {
                     rebuild,
                     link_dirs: link_dirs.iter().map(|x| x.as_str()).collect()
                 })?;
-            },
+            }
             ProjSubcommand::Run {project_dir, source_dir, build_dir, profile, mut link_dirs, no_default_link, target, rebuild, args} => {
                 let (project_data, project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin().read_to_string(&mut cfg).context("failed to read project file")?;
                         (toml::from_str::<build::Project>(cfg.as_str()).context("failed to parse project file")?, PathBuf::from("."))
-                    },
+                    }
                     Some(x) => {
                         let mut x = x.to_string();
                         let mut vecs = load_projects()?;
@@ -1164,7 +1875,7 @@ fn driver() -> anyhow::Result<()> {
                             save_projects(vecs)?;
                             (cfg, path)
                         }
-                    },
+                    }
                     None => {
                         let mut path = std::env::current_dir()?;
                         loop {
@@ -1216,12 +1927,12 @@ fn driver() -> anyhow::Result<()> {
                 exe_path.push(target);
                 let code = Command::new(exe_path).args(args).status()?.code().unwrap_or(-1);
                 if code != 0 {Err(Exit(code))?}
-            },
-        },
+            }
+        }
         Cli::Package(cmd) => match cmd {
             PkgSubcommand::Update => pkg::update_packages()?,
             PkgSubcommand::Install {packages} => {pkg::install(packages.into_iter().map(|x| x.parse()).collect::<Result<Vec<_>, _>>()?, &Default::default())?;}
-        },
+        }
     }
     Ok(())
 }

@@ -207,7 +207,7 @@ impl<'de> Deserialize<'de> for Dependency {
         deserializer.deserialize_any(DepVisitor)
     }
 }
-fn clear_mod(this: &mut HashMap<String, Symbol>) {
+pub fn clear_mod(this: &mut HashMap<String, Symbol>) {
     for (_, sym) in this.iter_mut() {
         sym.1.export = false;
         match sym {
