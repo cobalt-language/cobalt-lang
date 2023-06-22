@@ -1265,18 +1265,20 @@ fn driver() -> anyhow::Result<()> {
                         fail = true;
                     }
                     if fail {anyhow::bail!(CompileErrors)}
+                    reporter.insts_before += insts(&ctx.module);
                     *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
                         let pm = inkwell::passes::PassManager::create(());
                         opt::load_profile(profile.as_deref(), &pm);
                         pm.run_on(&ctx.module);
                     }).1;
+                    reporter.insts_after += insts(&ctx.module);
                     let input = PathBuf::from(&*file.name());
                     let mut out = match &output {
                         None => input,
                         Some(p) => p.join(input)
                     };
                     {
-                        let parent = out.parent().unwrap();
+                        let parent = out.parent().unwrap().parent().unwrap(); // why
                         if !parent.exists() {parent.create_dir_all_anyhow()?}
                     }
                     use TmpFile::*;
@@ -1524,6 +1526,7 @@ fn driver() -> anyhow::Result<()> {
                     }
                     reporter.insts_before = insts(&ctx.module);
                     *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                        reporter.insts_before += insts(&ctx.module);
                         let pm = inkwell::passes::PassManager::create(());
                         opt::load_profile(profile.as_deref(), &pm);
                         pm.run_on(&ctx.module);
