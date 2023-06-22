@@ -68,12 +68,12 @@ fn comment(src: &str, start: usize) -> ParserReturn<()> {
     if it.next() != Some((0, '#')) {return None}
     match it.next() {
         Some((1, '=')) => {
-            if let Some(c) = it.by_ref().find(|x| x.1 != '=').map(|x| x.0 + 1) {
-                if let Some(idx) = src[(c + 1)..].find(&("=".repeat(c) + "#")) {
-                    let final_len = idx + 2 * (c + 1);
+            if let Some(c) = it.by_ref().find(|x| x.1 != '=').map(|x| x.0) {
+                if let Some(idx) = src[c..].find(&("=".repeat(c - 1) + "#")) {
+                    let final_len = idx + 2 * c;
                     Some(((), (start, final_len).into(), &src[final_len..], vec![]))
                 }
-                else {Some(((), (start, c + 1).into(), "", vec![CobaltError::UnclosedComment {loc: (start, c + 1).into()}]))}
+                else {Some(((), (start, c).into(), "", vec![CobaltError::UnclosedComment {loc: (start, c).into()}]))}
             }
             else {Some(((), (start, src.len()).into(), "", vec![CobaltError::UnclosedComment {loc: (start, src.len()).into()}]))}
         },
