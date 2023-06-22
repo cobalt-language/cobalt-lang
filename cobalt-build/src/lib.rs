@@ -6,6 +6,8 @@ pub mod pkg;
 pub mod graph;
 pub mod cc;
 
+pub mod obj;
+
 use thiserror::Error;
 use cobalt_ast::*;
 use std::io::{self, prelude::*, ErrorKind};

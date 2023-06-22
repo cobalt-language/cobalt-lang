@@ -12,6 +12,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::time::{Instant, Duration};
 use human_repr::*;
 
+use object;
+
 use cobalt_ast::{CompCtx, AST};
 use cobalt_errors::*;
 use cobalt_build::*;
@@ -36,7 +38,9 @@ enum OutputType {
     #[value(name = "header")]
     Header,
     #[value(name = "header-obj")]
-    HeaderObj
+    HeaderObj,
+    #[value(name = "TEST-combined-obj-headerobj")]
+    TestCombinedObjHeaderObj
 }
 impl fmt::Display for OutputType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -48,7 +52,8 @@ impl fmt::Display for OutputType {
             Self::Llvm => "llvm",
             Self::Bitcode => "bc",
             Self::Header => "header",
-            Self::HeaderObj => "header-obj"
+            Self::HeaderObj => "header-obj",
+            Self::TestCombinedObjHeaderObj => "TEST-combined-obj-headerobj"
         })
     }
 }
@@ -668,7 +673,7 @@ fn driver() -> anyhow::Result<()> {
             let mut output = output.map(String::from).or_else(|| (input != "-").then(|| match emit {
                 OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
                 OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
-                OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
+                OutputType::Object | OutputType::TestCombinedObjHeaderObj => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Bitcode => format!("{}.bc", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
@@ -804,6 +809,14 @@ fn driver() -> anyhow::Result<()> {
                         OutputType::Object => {
                             if let Some(out) = output {std::fs::write(out, mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
+                        }
+                        OutputType::TestCombinedObjHeaderObj => {
+                            let parsed_llvm_object = object::read::File::parse(mb.as_slice())?;
+                            let mut writeable_object = obj::get_writeable_object_from_file(parsed_llvm_object);
+                            libs::populate_header(&mut writeable_object, &ctx);
+                            obj::write_object_to_file(
+                                std::path::Path::new("testing.o"), &writeable_object
+                            )?;
                         }
                         x => unreachable!("{x:?} has already been handled")
                     };
@@ -1348,6 +1361,9 @@ fn driver() -> anyhow::Result<()> {
                                     out.set_extension("o");
                                     std::fs::write(out, mb.as_slice())?;
                                     Zero
+                                }
+                                OutputType::TestCombinedObjHeaderObj => {
+                                    unimplemented!()
                                 }
                                 x => unreachable!("{x:?} has already been handled")
                             }
