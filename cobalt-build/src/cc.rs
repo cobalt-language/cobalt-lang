@@ -161,7 +161,7 @@ impl CompileCommand {
     pub fn search_libs<L: AsRef<str>, I: IntoIterator<Item = L>, P: AsRef<Path>, D: IntoIterator<Item = P>>(&mut self, libs: I, dirs: D, ctx: Option<&CompCtx>, load: bool) -> Result<Vec<L>, anyhow::Error> {
         let mut lib_dirs = self.lib_dirs()?;
         self.dirs.extend(dirs.into_iter().map(|p| p.as_ref().to_path_buf()));
-        lib_dirs.clone_from(&self.dirs);
+        lib_dirs.extend_from_slice(&self.dirs);
         let mut remaining = libs.into_iter().collect::<Vec<_>>();
         let triple = inkwell::targets::TargetMachine::get_default_triple();
         let triple = self.target_.as_deref().unwrap_or_else(|| triple.as_str().to_str().unwrap());

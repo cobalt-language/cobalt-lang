@@ -921,9 +921,8 @@ fn driver() -> anyhow::Result<()> {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
                 if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
                     if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
-                    cc.libs.iter().for_each(|f| {inkwell::support::load_library_permanently(f.as_os_str().to_str().unwrap());});
                 }
                 for head in headers {
                     let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -1507,7 +1506,7 @@ fn driver() -> anyhow::Result<()> {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
                     if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
                         if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
                     }
                     for head in headers {
