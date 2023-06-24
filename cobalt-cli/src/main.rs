@@ -1351,11 +1351,12 @@ fn driver() -> anyhow::Result<()> {
                                     Two(tmp1, tmp2)
                                 }
                                 OutputType::RawObject => {
-                                    out.set_extension("o");
+                                    out.set_extension("raw.o");
                                     std::fs::write(out, mb.as_slice())?;
                                     Zero
                                 }
                                 OutputType::Object => {
+                                    out.set_extension("o");
                                     let parsed_llvm_object = object::read::File::parse(mb.as_slice())?;
                                     let mut writeable_object = obj::get_writeable_object_from_file(parsed_llvm_object);
                                     libs::populate_header(&mut writeable_object, &ctx);
