@@ -168,13 +168,3 @@ pub fn get_writeable_object_from_file(in_object: object::File) -> object::write:
 
     out_object
 }
-
-pub fn write_object_to_file<P>(path: P, obj: &object::write::Object) -> anyhow::Result<()> 
-where
-    P: AsRef<std::path::Path> 
-{
-    let out_data = obj.write()?;
-    std::fs::write(path, out_data)?;
-
-    Ok(())
-}
