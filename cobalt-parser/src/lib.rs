@@ -31,7 +31,7 @@ fn process<'a, T>(parser: impl FnOnce(&'a str, usize) -> ParserReturn<'a, T>, sr
 
 /// Things an identifier cannot be
 const KEYWORDS: &[&str] = &[
-    "let", "mut", "const", "type", "fn", "module", "import", "if", "else", "while", // currently in use
+    "let", "mut", "const", "type", "fn", "module", "import", "if", "else", "while", "null", // currently in use
     "trait", "spec", "break", "continue" // future-proofing
 ];
 
@@ -538,6 +538,24 @@ fn atom(src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
             true
         } else {false};
         ident(false, src, start).map(|(name, loc, rem, errs)| (Box::new(VarGetAST::new(loc, name.to_string(), global)) as _, if global {(loc.offset() - 1, loc.len() + 1).into()} else {loc}, rem, errs))
+    }
+    fn speckw(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
+        let begin = start;
+        if src.starts_with("type") && !src[4..].chars().next().map_or(false, is_xid_continue) {
+            src = &src[4..];
+            start += 4;
+            let mut errs = vec![];
+            process(ignored, &mut src, &mut start, &mut errs);
+            Some((Box::new(TypeLiteralAST::new((begin, 4).into())), (begin..start).into(), src, errs))
+        }
+        else if src.starts_with("null") && !src[4..].chars().next().map_or(false, is_xid_continue) {
+            src = &src[4..];
+            start += 4;
+            let mut errs = vec![];
+            process(ignored, &mut src, &mut start, &mut errs);
+            Some((Box::new(NullAST::new((begin, 4).into())), (begin..start).into(), src, errs))
+        }
+        else {None}
     }
     fn intrin(mut src: &str, mut start: usize) -> ParserReturn<Box<dyn AST>> {
         src.starts_with('@').then_some(())?;
@@ -1254,6 +1272,7 @@ fn atom(src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         Some((Box::new(ArrayLiteralAST::new((begin, 1).into(), (end, 1).into(), vals)), (begin..start).into(), src, errs))
     }
     None // the None is unneccessary, but it makes the code prettier
+        .or_else(|| speckw(src, start))
         .or_else(|| parens(src, start))
         .or_else(|| blocks(src, start))
         .or_else(|| strlit(src, start))
