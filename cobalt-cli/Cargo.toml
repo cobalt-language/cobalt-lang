@@ -20,6 +20,8 @@ clap = { version = "4.3.0", features = ["derive"] }
 const_format = "0.2.31"
 human-repr = "1.1.0"
 
+object = { version = "0.31.1", features = ["write"] }
+
 [build-dependencies]
 lazy_static = "1.4"
 regex = "1.8"

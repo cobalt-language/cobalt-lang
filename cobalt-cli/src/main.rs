@@ -27,6 +27,8 @@ enum OutputType {
     Library,
     #[value(name = "obj")]
     Object,
+    #[value(name = "raw-obj")]
+    RawObject,
     #[value(name = "asm")]
     Assembly,
     #[value(name = "llvm")]
@@ -44,6 +46,7 @@ impl fmt::Display for OutputType {
             Self::Executable => "exe",
             Self::Library => "lib",
             Self::Object => "obj",
+            Self::RawObject => "raw-obj",
             Self::Assembly => "asm",
             Self::Llvm => "llvm",
             Self::Bitcode => "bc",
@@ -668,6 +671,7 @@ fn driver() -> anyhow::Result<()> {
             let mut output = output.map(String::from).or_else(|| (input != "-").then(|| match emit {
                 OutputType::Executable => format!("{}{}", input.rfind('.').map_or(input.as_str(), |i| &input[..i]), if triple.contains("windows") {".exe"} else {""}),
                 OutputType::Library => libs::format_lib(input.rfind('.').map_or(input.as_str(), |i| &input[..i]), &trip),
+                OutputType::RawObject => format!("{}.raw.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Object => format!("{}.o", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Assembly => format!("{}.s", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
                 OutputType::Llvm => format!("{}.ll", input.rfind('.').map_or(input.as_str(), |i| &input[..i])),
@@ -742,11 +746,8 @@ fn driver() -> anyhow::Result<()> {
                         obj.write()
                     })?;
                     reporter.cg_time = Some(cg_time);
-                    if let Some(out) = output {
-                        let mut file = std::fs::File::create(out)?;
-                        file.write_all(&vec)?;
-                    }
-                    else {std::io::stdout().write_all(&vec)?;}
+                    if let Some(path) = output {Path::new(&path).write_anyhow(vec)?}
+                    else {std::io::stdout().write_all(&vec)?}
                 }
                 OutputType::Llvm => {
                     let (m, cg_time) = timeit(|| ctx.module.to_string());
@@ -757,13 +758,13 @@ fn driver() -> anyhow::Result<()> {
                 OutputType::Bitcode => {
                     let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                     reporter.cg_time = Some(cg_time);
-                    if let Some(out) = output {std::fs::write(out, m.as_slice())?}
+                    if let Some(path) = output {Path::new(&path).write_anyhow(m.as_slice())?}
                     else {std::io::stdout().write_all(m.as_slice())?}
                 }
                 OutputType::Assembly => {
                     let (m, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap());
                     reporter.cg_time = Some(cg_time);
-                    if let Some(out) = output {std::fs::write(out, m.as_slice())?}
+                    if let Some(path) = output {Path::new(&path).write_anyhow(m.as_slice())?}
                     else {std::io::stdout().write_all(m.as_slice())?}
                 }
                 _ => {
@@ -801,9 +802,17 @@ fn driver() -> anyhow::Result<()> {
                             }
                             else {error!("cannot output library to stdout!"); Err(Exit(4))?}
                         }
-                        OutputType::Object => {
-                            if let Some(out) = output {std::fs::write(out, mb.as_slice())?}
+                        OutputType::RawObject => {
+                            if let Some(path) = output {Path::new(&path).write_anyhow(mb.as_slice())?}
                             else {std::io::stdout().write_all(mb.as_slice())?}
+                        }
+                        OutputType::Object => {
+                            let parsed_llvm_object = object::read::File::parse(mb.as_slice())?;
+                            let mut writeable_object = obj::get_writeable_object_from_file(parsed_llvm_object);
+                            libs::populate_header(&mut writeable_object, &ctx);
+                            let buf = writeable_object.write()?;
+                            if let Some(path) = output {Path::new(&path).write_anyhow(buf)?}
+                            else {std::io::stdout().write_all(&buf)?}
                         }
                         x => unreachable!("{x:?} has already been handled")
                     };
@@ -908,9 +917,8 @@ fn driver() -> anyhow::Result<()> {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
                 if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
                     if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
-                    cc.libs.iter().for_each(|f| {inkwell::support::load_library_permanently(f.as_os_str().to_str().unwrap());});
                 }
                 for head in headers {
                     let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -1287,8 +1295,7 @@ fn driver() -> anyhow::Result<()> {
                             out.set_extension("coh");
                             let mut buf = vec![];
                             *reporter.cg_time.get_or_insert(Duration::ZERO) += try_timeit(|| ctx.save(&mut buf))?.1;
-                            let mut file = std::fs::File::create(out)?;
-                            file.write_all(&buf)?;
+                            Path::new(&out).write_anyhow(buf)?;
                             Zero
                         }
                         OutputType::HeaderObj => {
@@ -1299,29 +1306,28 @@ fn driver() -> anyhow::Result<()> {
                                 obj.write()
                             })?;
                             *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                            let mut file = std::fs::File::create(out)?;
-                            file.write_all(&vec)?;
+                            Path::new(&out).write_anyhow(vec)?;
                             Zero
                         }
                         OutputType::Llvm => {
                             out.set_extension("ll");
                             let (m, cg_time) = timeit(|| ctx.module.to_string());
                             *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                            std::fs::write(out, m)?;
+                            Path::new(&out).write_anyhow(m)?;
                             Zero
                         }
                         OutputType::Bitcode => {
                             out.set_extension("bc");
                             let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                             *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                            std::fs::write(out, m.as_slice())?;
+                            Path::new(&out).write_anyhow(m.as_slice())?;
                             Zero
                         }
                         OutputType::Assembly => {
                             out.set_extension("s");
                             let (m, cg_time) = timeit(|| target_machine.write_to_memory_buffer(&ctx.module, inkwell::targets::FileType::Assembly).unwrap());
                             *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                            std::fs::write(out, m.as_slice())?;
+                            Path::new(&out).write_anyhow(m.as_slice())?;
                             Zero
                         }
                         _ => {
@@ -1346,9 +1352,18 @@ fn driver() -> anyhow::Result<()> {
                                     cc.objs([tmp1.path(), tmp2.path()]);
                                     Two(tmp1, tmp2)
                                 }
+                                OutputType::RawObject => {
+                                    out.set_extension("raw.o");
+                                    std::fs::write(out, mb.as_slice())?;
+                                    Zero
+                                }
                                 OutputType::Object => {
                                     out.set_extension("o");
-                                    std::fs::write(out, mb.as_slice())?;
+                                    let parsed_llvm_object = object::read::File::parse(mb.as_slice())?;
+                                    let mut writeable_object = obj::get_writeable_object_from_file(parsed_llvm_object);
+                                    libs::populate_header(&mut writeable_object, &ctx);
+                                    let buf = writeable_object.write()?;
+                                    Path::new(&out).write_anyhow(buf)?;
                                     Zero
                                 }
                                 x => unreachable!("{x:?} has already been handled")
@@ -1493,7 +1508,7 @@ fn driver() -> anyhow::Result<()> {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
                     if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
                         if !notfound.is_empty() {anyhow::bail!(LibsNotFound(notfound))}
                     }
                     for head in headers {
