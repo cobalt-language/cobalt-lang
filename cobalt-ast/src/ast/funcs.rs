@@ -586,7 +586,7 @@ impl AST for FnDefAST {
         let fty = Type::Function(Box::new(ret), params);
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         let cf = ctx.is_cfunc(&self.name);
-        let cc = cconv.map_or(if cf {0} else {8}, |(cc, _)| cc);
+        let cc = cconv.map_or(0, |(cc, _)| cc);
         let mt = fn_type.map_or(MethodType::Static, |v| v.0);
         if target_match == 0 {return (Value::null(), errs)}
         let old_ip = ctx.builder.get_insert_block();
