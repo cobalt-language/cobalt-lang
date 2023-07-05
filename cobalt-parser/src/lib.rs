@@ -391,6 +391,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 start += 1;
             }
             fn param(mut src: &str, mut start: usize) -> ParserReturn<ast::funcs::Parameter> {
+                (!src.starts_with(';')).then_some(())?;
                 let mut errs = vec![];
                 let begin = start;
                 loop {
