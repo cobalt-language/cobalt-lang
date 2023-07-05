@@ -176,16 +176,17 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let val = a.codegen(ctx).0;
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
+                    })).collect();
                     let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         Some(PointerValue(f.as_global_value().as_pointer_value())),
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen(ctx).0;
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -209,16 +210,17 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let val = a.codegen(ctx).0;
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
+                    })).collect();
                     let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         Some(PointerValue(f.as_global_value().as_pointer_value())),
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen(ctx).0;
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -228,16 +230,17 @@ impl AST for FnDefAST {
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let old_const = ctx.is_const.replace(true);
+                    let val = a.codegen(ctx).0;
+                    let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                    ctx.is_const.set(old_const);
+                    val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
+                })).collect();
                 let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     None,
                     Some(InterData::Function(FnData {
-                        defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                            let old_const = ctx.is_const.replace(true);
-                            let val = a.codegen(ctx).0;
-                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                            ctx.is_const.set(old_const);
-                            val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                        })).collect(),
+                        defaults,
                         cconv: cc,
                         mt
                     })),
@@ -608,28 +611,29 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let (val, mut es) = a.codegen(ctx);
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        errs.append(&mut es);
+                        match val {
+                            Ok(val) => 
+                                if let Some(val) = val.inter_val {val}
+                                else {
+                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                                    InterData::Null
+                                }
+                            Err(e) => {
+                                errs.push(e);
+                                InterData::Null
+                            }
+                        }
+                    })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         Some(PointerValue(f.as_global_value().as_pointer_value())),
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                errs.append(&mut es);
-                                match val {
-                                    Ok(val) => 
-                                        if let Some(val) = val.inter_val {val}
-                                        else {
-                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                            InterData::Null
-                                        }
-                                    Err(e) => {
-                                        errs.push(e);
-                                        InterData::Null
-                                    }
-                                }
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -679,28 +683,29 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let (val, mut es) = a.codegen(ctx);
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        errs.append(&mut es);
+                        match val {
+                            Ok(val) => 
+                                if let Some(val) = val.inter_val {val}
+                                else {
+                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                                    InterData::Null
+                                }
+                            Err(e) => {
+                                errs.push(e);
+                                InterData::Null
+                            }
+                        }
+                    })).collect();
                     ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         None,
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                errs.append(&mut es);
-                                match val {
-                                    Ok(val) => 
-                                        if let Some(val) = val.inter_val {val}
-                                        else {
-                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                            InterData::Null
-                                        }
-                                    Err(e) => {
-                                        errs.push(e);
-                                        InterData::Null
-                                    }
-                                }
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -724,28 +729,29 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let (val, mut es) = a.codegen(ctx);
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        errs.append(&mut es);
+                        match val {
+                            Ok(val) => 
+                                if let Some(val) = val.inter_val {val}
+                                else {
+                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                                    InterData::Null
+                                }
+                            Err(e) => {
+                                errs.push(e);
+                                InterData::Null
+                            }
+                        }
+                    })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         Some(PointerValue(f.as_global_value().as_pointer_value())),
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                errs.append(&mut es);
-                                match val {
-                                    Ok(val) => 
-                                        if let Some(val) = val.inter_val {val}
-                                        else {
-                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                            InterData::Null
-                                        }
-                                    Err(e) => {
-                                        errs.push(e);
-                                        InterData::Null
-                                    }
-                                }
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -795,28 +801,29 @@ impl AST for FnDefAST {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let (val, mut es) = a.codegen(ctx);
+                        let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                        ctx.is_const.set(old_const);
+                        errs.append(&mut es);
+                        match val {
+                            Ok(val) => 
+                                if let Some(val) = val.inter_val {val}
+                                else {
+                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                                    InterData::Null
+                                }
+                            Err(e) => {
+                                errs.push(e);
+                                InterData::Null
+                            }
+                        }
+                    })).collect();
                     ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                         None,
                         Some(InterData::Function(FnData {
-                            defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                errs.append(&mut es);
-                                match val {
-                                    Ok(val) => 
-                                        if let Some(val) = val.inter_val {val}
-                                        else {
-                                            errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                            InterData::Null
-                                        }
-                                    Err(e) => {
-                                        errs.push(e);
-                                        InterData::Null
-                                    }
-                                }
-                            })).collect(),
+                            defaults,
                             cconv: cc,
                             mt
                         })),
@@ -826,28 +833,29 @@ impl AST for FnDefAST {
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let old_const = ctx.is_const.replace(true);
+                    let (val, mut es) = a.codegen(ctx);
+                    let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                    ctx.is_const.set(old_const);
+                    errs.append(&mut es);
+                    match val {
+                        Ok(val) => 
+                            if let Some(val) = val.inter_val {val}
+                            else {
+                                errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                                InterData::Null
+                            }
+                        Err(e) => {
+                            errs.push(e);
+                            InterData::Null
+                        }
+                    }
+                })).collect();
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     None,
                     Some(InterData::Function(FnData {
-                        defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                            let old_const = ctx.is_const.replace(true);
-                            let (val, mut es) = a.codegen(ctx);
-                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                            ctx.is_const.set(old_const);
-                            errs.append(&mut es);
-                            match val {
-                                Ok(val) => 
-                                    if let Some(val) = val.inter_val {val}
-                                    else {
-                                        errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                        InterData::Null
-                                    }
-                                Err(e) => {
-                                    errs.push(e);
-                                    InterData::Null
-                                }
-                            }
-                        })).collect(),
+                        defaults,
                         cconv: cc,
                         mt
                     })),
