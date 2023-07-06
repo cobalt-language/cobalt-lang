@@ -487,4 +487,3 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
     for t in v {vec.push(t.llvm_type(ctx)?);}
     Some(ctx.context.struct_type(&vec, false).into())
 }
-pub mod utils;

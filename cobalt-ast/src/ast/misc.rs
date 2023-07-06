@@ -14,14 +14,14 @@ impl AST for CastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
     fn expl_type(&self, _: &CompCtx) -> bool {true}
-    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
+    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = ops::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
         let oic = ctx.is_const.replace(true);
-        let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+        let t = ops::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
-        (types::utils::expl_convert(self.loc, (val, Some(self.val.loc())), (t, Some(self.target.loc())), ctx).unwrap_or_else(|e| {
+        (ops::expl_convert(self.loc, (val, Some(self.val.loc())), (t, Some(self.target.loc())), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -48,12 +48,12 @@ impl AST for BitCastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
     fn expl_type(&self, _: &CompCtx) -> bool {true}
-    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = types::utils::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
+    fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = ops::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
         if val.data_type == Type::Error {return (Value::error(), errs)}
         let oic = ctx.is_const.replace(true);
-        let t = types::utils::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+        let t = ops::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
         while let Type::Reference(b, _) = val.data_type {
             if !ctx.is_const.get() {

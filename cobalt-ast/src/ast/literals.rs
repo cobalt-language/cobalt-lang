@@ -221,7 +221,7 @@ impl AST for ArrayLiteralAST {
             x => x
         });
         for val in self.vals.iter() {
-            if let Some(c) = types::utils::common(&elem, &match val.res_type(ctx) {
+            if let Some(c) = ops::common(&elem, &match val.res_type(ctx) {
                 Type::IntLiteral => Type::Int(64, false),
                 Type::Reference(b, m) => match *b {
                     x @ Type::Array(..) => Type::Reference(Box::new(x), m),
@@ -259,7 +259,7 @@ impl AST for ArrayLiteralAST {
                 ty = dt;
             }
             else if ty != dt {
-                if let Some(t) = types::utils::common(&ty, &dt) {
+                if let Some(t) = ops::common(&ty, &dt) {
                     ty = t;
                     elem_loc = val.loc();
                 }
@@ -278,7 +278,7 @@ impl AST for ArrayLiteralAST {
             errs.push(CobaltError::ArrayTooLong {loc: self.vals[u32::MAX as usize + 1].loc(), len: elems.len()});
             elems.truncate(u32::MAX as usize);
         }
-        let elems = elems.into_iter().enumerate().filter_map(|(n, v)| types::utils::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
+        let elems = elems.into_iter().enumerate().filter_map(|(n, v)| ops::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
         let len = elems.len();
         (Value::new(
             if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {

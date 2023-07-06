@@ -29,8 +29,8 @@ impl AST for FnDefAST {
     fn nodes(&self) -> usize {self.ret.nodes() + self.body.nodes() + self.params.iter().map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes())).sum::<usize>() + 1}
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        let ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let params = self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -141,13 +141,13 @@ impl AST for FnDefAST {
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
+                        if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
                     }
                 },
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
-                        if types::utils::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
+                        if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
                     }
                 },
                 _ => {}
@@ -182,7 +182,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let val = a.codegen(ctx).0;
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
                             })).collect(),
@@ -215,7 +215,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let val = a.codegen(ctx).0;
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
                             })).collect(),
@@ -234,7 +234,7 @@ impl AST for FnDefAST {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let val = a.codegen(ctx).0;
-                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                            let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                             ctx.is_const.set(old_const);
                             val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
                         })).collect(),
@@ -249,19 +249,19 @@ impl AST for FnDefAST {
     }
     fn res_type(&self, ctx: &CompCtx) -> Type {
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
+        let ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
         ctx.is_const.set(oic);
         out
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
-        let ret = types::utils::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+        let ret = ops::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
             errs.push(e);
             Type::Error
         }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        let params = self.params.iter().map(|(_, pt, ty, _)| (types::utils::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+        let params = self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
             errs.push(e);
             Type::Error
         }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error}), pt == &ParamType::Constant)).collect::<Vec<_>>();
@@ -528,7 +528,7 @@ impl AST for FnDefAST {
                         }
                         else {
                             let s = self_t.to_string();
-                            if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
+                            if !ops::impl_convertible(self_t, params[0].0.clone()) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,
@@ -567,7 +567,7 @@ impl AST for FnDefAST {
                         }
                         else {
                             let s = self_t.to_string();
-                            if !types::utils::impl_convertible(self_t, params[0].0.clone()) {
+                            if !ops::impl_convertible(self_t, params[0].0.clone()) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,
@@ -614,7 +614,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
                                 match val {
@@ -671,7 +671,7 @@ impl AST for FnDefAST {
                         let (body, mut es) = self.body.codegen(ctx);
                         errs.append(&mut es);
                         ctx.map_vars(|v| v.parent.unwrap());
-                        ctx.builder.build_return(Some(&types::utils::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
+                        ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         hoist_allocas(&ctx.builder);
                         ctx.restore_scope(old_scope);
                     }
@@ -685,7 +685,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
                                 match val {
@@ -730,7 +730,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
                                 match val {
@@ -801,7 +801,7 @@ impl AST for FnDefAST {
                             defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let (val, mut es) = a.codegen(ctx);
-                                let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                                 ctx.is_const.set(old_const);
                                 errs.append(&mut es);
                                 match val {
@@ -832,7 +832,7 @@ impl AST for FnDefAST {
                         defaults: self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let (val, mut es) = a.codegen(ctx);
-                            let val = types::utils::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                            let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                             ctx.is_const.set(old_const);
                             errs.append(&mut es);
                             match val {
@@ -958,11 +958,11 @@ impl AST for CallAST {
     fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn expl_type(&self, ctx: &CompCtx) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        types::utils::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
+        ops::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (types::utils::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
+        (ops::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
             let (arg, mut es) = a.codegen(ctx);
             errs.append(&mut es);
             (arg, a.loc())

@@ -2245,7 +2245,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             Ok(v)
                         },
                         MethodType::Static => Err(err),
-                        MethodType::Getter => types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
+                        MethodType::Getter => ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
                     }
                 } else {Err(err)})
             }
@@ -2275,7 +2275,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     MethodType::Getter => {
                         val.comp_val = val.addr(ctx).map(From::from);
                         val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
-                        types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                        ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                     }
                 }
             } else {Err(err)})

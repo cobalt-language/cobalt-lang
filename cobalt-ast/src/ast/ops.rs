@@ -16,15 +16,15 @@ impl AST for BinOpAST {
         if self.op == "&?" || self.op == "|?" {
             let t = self.rhs.res_type(ctx);
             if t == Type::IntLiteral {return Type::IntLiteral}
-            if types::utils::expl_convertible(Type::Int(1, false), t.clone()) {t} else {Type::Null}
+            if ops::expl_convertible(Type::Int(1, false), t.clone()) {t} else {Type::Null}
         }
-        else {types::utils::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
+        else {ops::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.op.as_str() {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                let cond = ops::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
                     errs.push(e);
                     Value::error()
                 });
@@ -40,7 +40,7 @@ impl AST for BinOpAST {
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
                     let rdt = rhs.data_type.clone();
-                    let (comp_val, inter_val) = if let Ok(rhv) = types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
+                    let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(0), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
                         (if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                             let llt = val.get_type();
                             let phi = ctx.builder.build_phi(llt, "");
@@ -50,7 +50,7 @@ impl AST for BinOpAST {
                         else {None}, if let Some(InterData::Int(v)) = cond.inter_val {if v == 0 {rhs.inter_val} else {rhv.inter_val}} else {None})
                     }
                     else {
-                        match types::utils::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
+                        match ops::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
                             Ok(rhv) => (if let Some(val) = rhv.value(ctx) {
                                 let llt = ctx.context.bool_type();
                                 let phi = ctx.builder.build_phi(llt, "");
@@ -69,7 +69,7 @@ impl AST for BinOpAST {
             },
             "|?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond = types::utils::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+                let cond = ops::expl_convert(self.lhs.loc(), (lhs, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
                     errs.push(e);
                     Value::error()
                 });
@@ -85,7 +85,7 @@ impl AST for BinOpAST {
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type == Type::IntLiteral {rhs.data_type = Type::Int(64, false);}
                     let rdt = rhs.data_type.clone();
-                    let (comp_val, inter_val) = if let Ok(rhv) = types::utils::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
+                    let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(self.rhs.loc(), (Value::metaval(InterData::Int(1), Type::Int(1, false)), None), (rhs.data_type.clone(), None), ctx) {
                         (if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                             let llt = val.get_type();
                             let phi = ctx.builder.build_phi(llt, "");
@@ -95,7 +95,7 @@ impl AST for BinOpAST {
                         else {None}, if let Some(InterData::Int(v)) = cond.inter_val {if v != 0 {rhs.inter_val} else {rhv.inter_val}} else {None})
                     }
                     else {
-                        match types::utils::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
+                        match ops::expl_convert(self.rhs.loc(), (rhs, None), (Type::Int(1, false), None), ctx) {
                             Ok(rhv) => (if let Some(val) = rhv.value(ctx) {
                                 let llt = ctx.context.bool_type();
                                 let phi = ctx.builder.build_phi(llt, "");
@@ -116,7 +116,7 @@ impl AST for BinOpAST {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let rhs = self.rhs.codegen_errs(ctx, &mut errs);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
-                (types::utils::bin_op(self.loc, (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
+                (ops::bin_op(self.loc, (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
                     errs.push(e);
                     Value::error()
                 }), errs)
@@ -145,12 +145,12 @@ impl AST for PostfixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.loc)}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        types::utils::post_type(self.val.res_type(ctx), self.op.as_str())
+        ops::post_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (types::utils::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (ops::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -176,12 +176,12 @@ impl AST for PrefixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        types::utils::pre_type(self.val.res_type(ctx), self.op.as_str())
+        ops::pre_type(self.val.res_type(ctx), self.op.as_str())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (types::utils::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (ops::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -206,12 +206,12 @@ impl SubAST {
 impl AST for SubAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.target.nodes() + self.index.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {types::utils::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
+    fn res_type(&self, ctx: &CompCtx) -> Type {ops::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
         if target.data_type == Type::Error || index.data_type == Type::Error {return (Value::error(), errs)}
-        (types::utils::subscript((target, self.target.loc()), (index, self.index.loc()), ctx).unwrap_or_else(|e| {
+        (ops::subscript((target, self.target.loc()), (index, self.index.loc()), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -240,7 +240,7 @@ impl AST for DotAST {
         match self.obj.res_type(ctx) {
             Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
             Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
-            x => types::utils::attr_type(x, &self.name.0, ctx)
+            x => ops::attr_type(x, &self.name.0, ctx)
         }
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
@@ -286,7 +286,7 @@ impl AST for DotAST {
                     Value::error()
                 }
             }
-            x => types::utils::attr((x, self.obj.loc()), (&self.name.0, self.name.1), ctx).unwrap_or_else(|e| {
+            x => ops::attr((x, self.obj.loc()), (&self.name.0, self.name.1), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             })
