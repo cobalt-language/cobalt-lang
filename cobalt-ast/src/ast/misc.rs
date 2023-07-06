@@ -1,6 +1,4 @@
 use crate::*;
-use std::rc::Rc;
-use std::cell::Cell;
 #[derive(Debug, Clone)]
 pub struct CastAST {
     loc: SourceSpan,
@@ -55,15 +53,7 @@ impl AST for BitCastAST {
         let oic = ctx.is_const.replace(true);
         let t = ops::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
-        while let Type::Reference(b, _) = val.data_type {
-            if !ctx.is_const.get() {
-                if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                    val.address = Rc::new(Cell::new(Some(pv)));
-                    val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
-                }
-            }
-            val.data_type = *b;
-        }
+        val = ops::impl_convert(unreachable_span(), (val, None), (ops::decay(val.data_type.clone()), None), ctx).unwrap();
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {

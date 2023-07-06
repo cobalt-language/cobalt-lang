@@ -226,7 +226,7 @@ impl<'ctx> Value<'ctx> {
                     }
                 }
             }
-            else if let Some(t) = if let Type::Reference(ref b, _) = var.data_type {b.llvm_type(ctx)} else {None} {
+            else if let Some(t) = if let Type::Reference(ref b) = var.data_type {b.llvm_type(ctx)} else {None} {
                 let gv = ctx.module.add_global(t, None, std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8")); // maybe do something with linkage/call convention?
                 gv.set_linkage(DLLImport);
                 var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));

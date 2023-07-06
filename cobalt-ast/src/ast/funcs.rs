@@ -140,13 +140,13 @@ impl AST for FnDefAST {
                 },
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
                         if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
                     }
                 },
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
                         if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
                     }
                 },
@@ -518,7 +518,7 @@ impl AST for FnDefAST {
                                 loc
                             });
                         }
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
                         if params.is_empty() {
                             errs.push(CobaltError::InvalidSelfParam {
                                 loc: self.loc,
@@ -557,7 +557,7 @@ impl AST for FnDefAST {
                                 loc
                             });
                         }
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()), true);
+                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
                         if params.is_empty() {
                             errs.push(CobaltError::InvalidSelfParam {
                                 loc: self.loc,
