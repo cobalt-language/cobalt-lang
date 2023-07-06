@@ -1370,59 +1370,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     }
                     ops.push(PostfixType::Subscript(sub, start));
                     continue
-                },
-                Some(b'c') if src.starts_with("const") => {
-                    let src_ = src;
-                    let start_ = start;
-                    src = &src[5..];
-                    start += 5;
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    match src.as_bytes().first().copied() {
-                        Some(c @ (b'&' | b'*')) => {
-                            ops.push(PostfixType::Operator((match c {
-                                b'&' => "const&",
-                                b'*' => "const*",
-                                _ => unreachable!()
-                            }).to_string(), start));
-                            src = &src[1..];
-                            start += 1;
-                        },
-                        _ => {
-                            src = src_;
-                            start = start_;
-                            break
-                        }
-                    }
-                    continue
-                },
-                Some(b'm') if src.starts_with("mut") => {
-                    let src_ = src;
-                    let start_ = start;
-                    src = &src[3..];
-                    start += 3;
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    match src.as_bytes().first().copied() {
-                        Some(c @ (b'&' | b'*')) => {
-                            ops.push(PostfixType::Operator((match c {
-                                b'&' => "mut&",
-                                b'*' => "mut*",
-                                _ => unreachable!()
-                            }).to_string(), start));
-                            src = &src[1..];
-                            start += 1;
-                        },
-                        _ => {
-                            src = src_;
-                            start = start_;
-                            break
-                        }
-                    }
-                    continue
-                },
-                _ => {}
-            }
-            if src.as_bytes().get(1).map_or(false, |c| !b".;,)+-*/%:&|^<>=?!".contains(c)) {break}
-            match src.as_bytes().first().copied() {
+                }
                 Some(c @ (b'!' | b'?')) => {
                     ops.push(PostfixType::Operator((match c {
                         b'!' => "!",
@@ -1431,17 +1379,8 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     }).to_string(), start));
                     src = &src[1..];
                     start += 1;
-                },
-                Some(c @ (b'&' | b'*')) => {
-                    ops.push(PostfixType::Operator((match c {
-                        b'&' => "const&",
-                        b'*' => "const*",
-                        _ => unreachable!()
-                    }).to_string(), start));
-                    src = &src[1..];
-                    start += 1;
-                },
-                _ => break
+                }
+                _ => {}
             }
         }
         let ast = ops.into_iter().fold(ast, |ast, op| match op {
@@ -1467,7 +1406,9 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                 src = &src[1..];
                 start += 1;
             }
-            else {break}
+            else if process(|src, start| start_match("mut"), &mut src, &mut start, &mut errs).is_some() {
+                ops.push((start, "mut".to_string()));
+            }
             process(ignored, &mut src, &mut start, &mut errs);
         }
         let ast = process(postfix, &mut src, &mut start, &mut errs)?.0;
