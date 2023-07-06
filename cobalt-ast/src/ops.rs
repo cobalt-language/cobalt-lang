@@ -1852,7 +1852,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
         }
     }
 }
-pub fn impl_convert<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::InvalidConversion {
         is_expl: false,
         val: val.data_type.to_string(),
@@ -1872,6 +1872,115 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, Option<Sou
         }
     }
     match val.data_type.clone() {
+        Type::Reference(b) => {
+            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            match *b {
+                Type::Mut(b) => match *b {
+                    Type::Array(b, Some(l)) => match target {
+                        Type::Pointer(b2) if covariant(&b, &b2) => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b))),
+                        Type::Reference(b2) => match *b2 {
+                            Type::Mut(b2) => if b == b2 {
+                                let at = Type::Reference(Box::new(Type::Mut(Box::new(Type::Array(b2, None)))));
+                                Ok(Value::new(
+                                    if let Some(PointerValue(v)) = val.comp_val {
+                                        let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                        let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                        let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                        Some(v2.into_struct_value().into())
+                                    } else {None},
+                                    val.inter_val,
+                                    at
+                                ))
+                            }
+                            else {Err(err)}
+                            Type::Array(b2, None) => if b == b2 {
+                                let at = Type::Reference(Box::new(Type::Mut(Box::new(Type::Array(b2, None)))));
+                                Ok(Value::new(
+                                    if let Some(PointerValue(v)) = val.comp_val {
+                                        let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                        let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                        let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                        Some(v2.into_struct_value().into())
+                                    } else {None},
+                                    val.inter_val,
+                                    at
+                                ))
+                            }
+                            else {Err(err)}
+                            _ => Err(err)
+                        }
+                        _ => Err(err)
+                    }
+                    Type::Array(b, None) => match target {
+                        Type::Pointer(b2) if covariant(&b, &b2) => {
+                            val.data_type = Type::Reference(Box::new(Type::Array(b, None)));
+                            if let Some(StructValue(sv)) = val.value(ctx) {
+                                val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                            }
+                            Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b2)))
+                        }
+                        _ => Err(err)
+                    }
+                    b => {
+                        if !ctx.is_const.get() {
+                            if let Some(PointerValue(v)) = val.comp_val {
+                                val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                            }
+                        }
+                        val.data_type = b;
+                        expl_convert(loc, (val, vloc), (target, tloc), ctx)
+                    }
+                }
+                Type::Array(b, Some(l)) => match target {
+                    Type::Pointer(b2) if covariant(&b, &b2) => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b2))),
+                    Type::Reference(b2) => if let Type::Array(b2, None) = *b2 {
+                        if b == b2 {
+                            let at = Type::Reference(Box::new(Type::Array(b2, None)));
+                            Ok(Value::new(
+                                if let Some(PointerValue(v)) = val.comp_val {
+                                    let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                    let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                    let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                    Some(v2.into_struct_value().into())
+                                } else {None},
+                                val.inter_val,
+                                at
+                            ))
+                        }
+                        else {Err(err)}
+                    } else {Err(err)}
+                    _ => Err(err)
+                }
+                Type::Array(b, None) => match target {
+                    Type::Pointer(b2) if covariant(&b, &b2) => {
+                        val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)));
+                        if let Some(StructValue(sv)) = val.value(ctx) {
+                            val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                        }
+                        Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b)))
+                    }
+                    _ => Err(err)
+                }
+                b => {
+                    if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                        if let Some(PointerValue(v)) = val.comp_val {
+                            val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                        }
+                    }
+                    val.data_type = b;
+                    expl_convert(loc, (val, vloc), (target, tloc), ctx)
+                }
+            }
+        }
+        Type::Mut(b) => {
+            if !ctx.is_const.get() {
+                if let Some(PointerValue(v)) = val.comp_val {
+                    val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                }
+            }
+            val.data_type = *b;
+            expl_convert(loc, (val, vloc), (target, tloc), ctx)
+        }
         Type::IntLiteral => match target {
             x @ Type::Int(..) => Ok(Value::new(
                 if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
@@ -1956,7 +2065,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, Option<Sou
         _ => Err(err)
     }
 }
-pub fn expl_convert<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option<SourceSpan>), (target, tloc): (Type, Option<SourceSpan>), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::InvalidConversion {
         is_expl: true,
         val: val.data_type.to_string(),
@@ -1976,6 +2085,115 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, Option<Sou
         }
     }
     match val.data_type {
+        Type::Reference(b) => {
+            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            match *b {
+                Type::Mut(b) => match *b {
+                    Type::Array(b, Some(l)) => match target {
+                        Type::Pointer(b2) if covariant(&b, &b2) => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b))),
+                        Type::Reference(b2) => match *b2 {
+                            Type::Mut(b2) => if b == b2 {
+                                let at = Type::Reference(Box::new(Type::Mut(Box::new(Type::Array(b2, None)))));
+                                Ok(Value::new(
+                                    if let Some(PointerValue(v)) = val.comp_val {
+                                        let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                        let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                        let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                        Some(v2.into_struct_value().into())
+                                    } else {None},
+                                    val.inter_val,
+                                    at
+                                ))
+                            }
+                            else {Err(err)}
+                            Type::Array(b2, None) => if b == b2 {
+                                let at = Type::Reference(Box::new(Type::Mut(Box::new(Type::Array(b2, None)))));
+                                Ok(Value::new(
+                                    if let Some(PointerValue(v)) = val.comp_val {
+                                        let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                        let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                        let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                        Some(v2.into_struct_value().into())
+                                    } else {None},
+                                    val.inter_val,
+                                    at
+                                ))
+                            }
+                            else {Err(err)}
+                            _ => Err(err)
+                        }
+                        _ => Err(err)
+                    }
+                    Type::Array(b, None) => match target {
+                        Type::Pointer(b2) if covariant(&b, &b2) => {
+                            val.data_type = Type::Reference(Box::new(Type::Array(b, None)));
+                            if let Some(StructValue(sv)) = val.value(ctx) {
+                                val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                            }
+                            Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b2)))
+                        }
+                        _ => Err(err)
+                    }
+                    b => {
+                        if !ctx.is_const.get() {
+                            if let Some(PointerValue(v)) = val.comp_val {
+                                val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                            }
+                        }
+                        val.data_type = b;
+                        expl_convert(loc, (val, vloc), (target, tloc), ctx)
+                    }
+                }
+                Type::Array(b, Some(l)) => match target {
+                    Type::Pointer(b2) if covariant(&b, &b2) => Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b2))),
+                    Type::Reference(b2) => if let Type::Array(b2, None) = *b2 {
+                        if b == b2 {
+                            let at = Type::Reference(Box::new(Type::Array(b2, None)));
+                            Ok(Value::new(
+                                if let Some(PointerValue(v)) = val.comp_val {
+                                    let llt = at.llvm_type(ctx).unwrap().into_struct_type();
+                                    let v1 = ctx.builder.build_insert_value(llt.const_zero(), v, 0, "").unwrap();
+                                    let v2 = ctx.builder.build_insert_value(v1, ctx.context.i64_type().const_int(l as u64, false), 1, "").unwrap();
+                                    Some(v2.into_struct_value().into())
+                                } else {None},
+                                val.inter_val,
+                                at
+                            ))
+                        }
+                        else {Err(err)}
+                    } else {Err(err)}
+                    _ => Err(err)
+                }
+                Type::Array(b, None) => match target {
+                    Type::Pointer(b2) if covariant(&b, &b2) => {
+                        val.data_type = Type::Reference(Box::new(Type::Array(b.clone(), None)));
+                        if let Some(StructValue(sv)) = val.value(ctx) {
+                            val.comp_val = ctx.builder.build_extract_value(sv, 0, "");
+                        }
+                        Ok(Value::new(val.comp_val, val.inter_val, Type::Pointer(b)))
+                    }
+                    _ => Err(err)
+                }
+                b => {
+                    if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                        if let Some(PointerValue(v)) = val.comp_val {
+                            val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                        }
+                    }
+                    val.data_type = b;
+                    expl_convert(loc, (val, vloc), (target, tloc), ctx)
+                }
+            }
+        }
+        Type::Mut(b) => {
+            if !ctx.is_const.get() {
+                if let Some(PointerValue(v)) = val.comp_val {
+                    val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
+                }
+            }
+            val.data_type = *b;
+            expl_convert(loc, (val, vloc), (target, tloc), ctx)
+        }
         Type::IntLiteral => match target {
             x @ Type::Int(..) => Ok(Value::new(
                 if let Some(InterData::Int(v)) = val.inter_val {Some(IntValue(x.llvm_type(ctx).unwrap().into_int_type().const_int(v as u64, true)))}
