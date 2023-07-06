@@ -1864,7 +1864,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if target == Type::Null {return Ok(Value::null())}
     else if target == Type::Error {return Ok(Value::error())}
     else if let Type::Reference(ref b) = target {
-        if **b == val.data_type {return Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
+        if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
                 return Ok(Value::new(val.addr(ctx).map(From::from), None, target))
@@ -2077,7 +2077,7 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if target == Type::Null {return Ok(Value::null())}
     else if target == Type::Error {return Ok(Value::error())}
     else if let Type::Reference(ref b) = target {
-        if **b == val.data_type {return Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
+        if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
                 return Ok(Value::new(val.addr(ctx).map(From::from), None, target))
