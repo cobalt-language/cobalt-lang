@@ -253,6 +253,17 @@ pub enum CobaltError {
         #[label("this string should be valid UTF-8, but there was an error at byte {pos}")]
         loc: SourceSpan
     },
+    #[error("parameter type can't be mutable")]
+    #[help("try `mut param: T` instead")]
+    ParamCantBeMut {
+        #[label]
+        loc: SourceSpan
+    },
+    #[error("return type can't be mutable")]
+    ReturnCantBeMut {
+        #[label]
+        loc: SourceSpan
+    },
 
     // @asm issues
     #[error("invalid creation of inline assembly")]

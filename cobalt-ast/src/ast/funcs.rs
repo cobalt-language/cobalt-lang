@@ -29,8 +29,13 @@ impl AST for FnDefAST {
     fn nodes(&self) -> usize {self.ret.nodes() + self.body.nodes() + self.params.iter().map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes())).sum::<usize>() + 1}
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let oic = ctx.is_const.replace(true);
-        let ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let params = self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        let mut ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        while let Type::Mut(b) = ret {ret = *b}
+        let params = self.params.iter().map(|(_, pt, ty, _)| ({
+            let mut val = ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+            while let Type::Mut(b) = val {val = *b}
+            val
+        }, pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -257,14 +262,27 @@ impl AST for FnDefAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
-        let ret = ops::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+        let mut ret = ops::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
             errs.push(e);
             Type::Error
-        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-        let params = self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
-            errs.push(e);
-            Type::Error
-        }, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error}), pt == &ParamType::Constant)).collect::<Vec<_>>();
+        }, |v| v.into_type().unwrap_or(Type::Error));
+        if let Type::Mut(b) = ret {
+            errs.push(CobaltError::ReturnCantBeMut {loc: self.ret.loc()});
+            ret = *b;
+        }
+        while let Type::Mut(b) = ret {ret = *b}
+        let params = self.params.iter().map(|(_, pt, ty, _)| ({
+            let mut val = ops::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+                errs.push(e);
+                Type::Error
+            }, |v| v.into_type().unwrap_or(Type::Error));
+            if let Type::Mut(b) = val {
+                errs.push(CobaltError::ReturnCantBeMut {loc: ty.loc()});
+                val = *b;
+            }
+            while let Type::Mut(b) = val {val = *b}
+            val
+        }, pt == &ParamType::Constant)).collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
