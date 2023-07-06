@@ -181,7 +181,7 @@ impl Type {
                     for (p, c) in p {if !c {args.push(p.llvm_type(ctx)?.into());}}
                     Some(if r.size(ctx) == Static(0) {ctx.context.void_type().fn_type(&args, false)} else {r.llvm_type(ctx)?.fn_type(&args, false)}.ptr_type(Default::default()).into())
                 }
-                Type::Mut(b) => b.llvm_type(ctx),
+                Type::Mut(b) => b.llvm_type(ctx).map(|t| t.ptr_type(Default::default()).into()),
                 b => if b.size(ctx) == Static(0) {Some(PointerType(ctx.null_type.ptr_type(Default::default())))} else {Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))}
             }
             Mut(b) => b.llvm_type(ctx).map(|t| t.ptr_type(Default::default()).into()),
