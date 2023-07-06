@@ -11,10 +11,11 @@ pub struct VarDefAST {
     pub val: Box<dyn AST>,
     pub type_: Option<Box<dyn AST>>,
     pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    pub global: bool
+    pub global: bool,
+    pub is_mut: bool
 }
 impl VarDefAST {
-    pub fn new(loc: SourceSpan, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>, global: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global}}
+    pub fn new(loc: SourceSpan, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>, global: bool, is_mut: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global, is_mut}}
 }
 impl AST for VarDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
@@ -41,12 +42,12 @@ impl AST for VarDefAST {
                         Some("common") => Some(Common),
                         _ => None
                     }.map(|x| (x, loc))
-                },
+                }
                 "linkas" => {
                     if let Some(arg) = arg {
                         linkas = Some(arg.clone())
                     }
-                },
+                }
                 "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
@@ -56,7 +57,7 @@ impl AST for VarDefAST {
                             target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
                         }
                     }
-                },
+                }
                 "export" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -65,7 +66,7 @@ impl AST for VarDefAST {
                             _ => {},
                         }
                     }
-                },
+                }
                 "private" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -74,7 +75,7 @@ impl AST for VarDefAST {
                             _ => {}
                         }
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -86,16 +87,7 @@ impl AST for VarDefAST {
             let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
             ctx.is_const.set(oic);
             t
-        }) {t} else {
-            match t2 {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }
-        };
+        }) {t} else {ops::decay(t2)};
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
             dt.llvm_type(ctx).map(|t| {
                 let gv = ctx.module.add_global(t, None, &linkas.unwrap_or_else(|| ctx.mangle(&self.name)));
@@ -104,10 +96,11 @@ impl AST for VarDefAST {
                     Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                     Some((x, _)) => gv.set_linkage(x)
                 }
+                gv.set_constant(!self.is_mut);
                 PointerValue(gv.as_pointer_value())
             }),
             None,
-            Type::Reference(Box::new(dt), false)
+            Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
     fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
@@ -133,7 +126,7 @@ impl AST for VarDefAST {
                         });
                     }
                     is_static = true;
-                },
+                }
                 "link" => {
                     if let Some((_, prev)) = link_type {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -161,7 +154,7 @@ impl AST for VarDefAST {
                             None
                         }
                     }.map(|x| (x, loc))
-                },
+                }
                 "linkas" => {
                     if let Some((_, prev)) = linkas {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -178,7 +171,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "extern" => {
                     is_extern = Some(loc);
                     if arg.is_some() {
@@ -189,7 +182,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "c" | "C" => {
                     match arg.as_ref().map(|x| x.as_str()) {
                         Some("") | None => {},
@@ -202,7 +195,7 @@ impl AST for VarDefAST {
                         })
                     }
                     linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
-                },
+                }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -220,7 +213,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if !self.global {
                         errs.push(CobaltError::MustBeGlobal {
@@ -246,7 +239,7 @@ impl AST for VarDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if !self.global {
                         errs.push(CobaltError::MustBeGlobal {
@@ -272,26 +265,7 @@ impl AST for VarDefAST {
                             })
                         }
                     }
-                },
-                "stack" => {
-                    if let Some(prev) = stack {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "stack",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        stack = Some(loc);
-                        if arg.is_some() {
-                            errs.push(CobaltError::InvalidAnnArgument {
-                                name: "stack",
-                                found: arg.clone(),
-                                expected: None,
-                                loc
-                            })
-                        }
-                    }
-                },
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
             }
         }
@@ -308,16 +282,7 @@ impl AST for VarDefAST {
                     let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t2)};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     dt.llvm_type(ctx).map(|t| {
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
@@ -327,10 +292,11 @@ impl AST for VarDefAST {
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                             Some((x, _)) => gv.set_linkage(x)
                         }
+                        gv.set_constant(!self.is_mut);
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}; None}),
                     None,
-                    Type::Reference(Box::new(dt), false)
+                    Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                 ), VariableData::with_vis(self.loc, vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -358,16 +324,7 @@ impl AST for VarDefAST {
                     let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t2)};
                 match if let Some(v) = val.value(ctx) {
                     val.inter_val = None;
                     if ctx.is_const.get() {
@@ -377,13 +334,13 @@ impl AST for VarDefAST {
                         let t = dt.llvm_type(ctx).unwrap();
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
                         let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(true);
                         gv.set_initializer(&v);
+                        gv.set_constant(!self.is_mut);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                             Some(PointerValue(gv.as_pointer_value())),
                             None,
-                            Type::Reference(Box::new(dt), false)
+                            Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                         ), VariableData::with_vis(self.loc, vs))))
                     }
                 }
@@ -417,16 +374,7 @@ impl AST for VarDefAST {
                     let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t)};
                 match if let Some(t) = dt.llvm_type(ctx) {
                     let old_global = ctx.global.replace(true);
                     let val = if ctx.is_const.get() {
@@ -437,16 +385,7 @@ impl AST for VarDefAST {
                             let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
+                        }) {t} else {ops::decay(t2)};
                         let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
@@ -457,7 +396,7 @@ impl AST for VarDefAST {
                     else {
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
                         let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(false);
+                        gv.set_constant(!self.is_mut);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
@@ -481,16 +420,7 @@ impl AST for VarDefAST {
                             let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
+                        }) {t} else {ops::decay(t2)};
                         let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
@@ -506,7 +436,7 @@ impl AST for VarDefAST {
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                                 Some(PointerValue(gv.as_pointer_value())),
                                 None,
-                                Type::Reference(Box::new(dt), false)
+                                Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                             ), VariableData::with_vis(self.loc, vs))))
                         }
                         else {
@@ -532,16 +462,7 @@ impl AST for VarDefAST {
                         let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                         ctx.is_const.set(oic);
                         t
-                    }) {t} else {
-                        match t2 {
-                            Type::IntLiteral => Type::Int(64, false),
-                            Type::Reference(b, m) => match *b {
-                                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                x => x
-                            },
-                            x => x
-                        }
-                    };
+                    }) {t} else {ops::decay(t2)};
                     let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error()
@@ -570,13 +491,13 @@ impl AST for VarDefAST {
         }
         else {
             if let Some(loc) = is_extern {
-                errs.push(CobaltError::MustBeLocal {name: "extern", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "extern", loc});
             }
             if let Some((_, loc)) = link_type {
-                errs.push(CobaltError::MustBeLocal {name: "link", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "link", loc});
             }
             if let Some((_, loc)) = linkas {
-                errs.push(CobaltError::MustBeLocal {name: "linkas", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "linkas", loc});
             }
             let old_scope = ctx.push_scope(&self.name);
             let val = self.val.codegen_errs(ctx, &mut errs);
@@ -586,25 +507,17 @@ impl AST for VarDefAST {
                 let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                 ctx.is_const.set(oic);
                 t
-            }) {t} else {
-                match t2 {
-                    Type::IntLiteral => Type::Int(64, false),
-                    Type::Reference(b, m) => match *b {
-                        x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                        x => x
-                    },
-                    x => x
-                }
-            };
-            let val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+            }) {t} else {ops::decay(t2)};
+            let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             });
             ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() || stack.is_none() {
+            val.comp_val = val.value(ctx);
+            match if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
-            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                     ctx.builder.build_store(a, v);
@@ -613,7 +526,7 @@ impl AST for VarDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
-                    Type::Reference(Box::new(val.data_type), false)
+                    *ops::maybe_mut(Box::new(val.data_type), self.is_mut)
                 ), VariableData::with_vis(self.loc, false))))
             }
             else {
@@ -711,7 +624,7 @@ impl AST for ConstDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -731,7 +644,7 @@ impl AST for ConstDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -751,7 +664,7 @@ impl AST for ConstDefAST {
                             })
                         }
                     }
-                },
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "constant"})
             }
         }
@@ -764,16 +677,7 @@ impl AST for ConstDefAST {
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
             let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
             t
-        }) {t} else {
-            match t2 {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }
-        };
+        }) {t} else {ops::decay(t2)};
         let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()

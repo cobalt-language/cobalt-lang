@@ -2723,17 +2723,28 @@ fn is_str(ty: &Type) -> bool {
 }
 /// determine the "decayed" type of a variable
 /// This removes references
-pub fn decay(ty: Type) -> Type {
-    match ty {
-        Type::Reference(b, _) => *b,
-        t => t
+pub fn decay(mut ty: Type) -> Type {
+    loop {
+        match ty {
+            Type::Reference(b) | Type::Mut(b) => ty = decay(*b),
+            Type::IntLiteral => break Type::Int(64, false),
+            t => break t
+        }
     }
 }
 /// does the same as `decay`, but never reallocates
-pub fn decay_boxed(ty: Box<Type>) -> Box<Type> {
-    if matches!(*ty, Type::Reference(..)) {
-        if let Type::Reference(b, _) = *ty {b}
-        else {unreachable!("verified by previous conditional")}
+pub fn decay_boxed(mut ty: Box<Type>) -> Box<Type> {
+    loop {
+        match ty {
+            Type::Reference(b) | Type::Mut(b) => ty = decay_boxed(*b),
+            Type::IntLiteral => break Box::new(Type::Int(64, false)),
+            x => break x
+        }
     }
+}
+/// convenience function to maybe add a Type::Mut
+#[inline(always)]
+pub fn maybe_mut(ty: Box<Type>, is_mut: bool) -> Box<Type> {
+    if is_mut {Box::new(Type::Mut(ty))}
     else {ty}
 }
