@@ -1425,7 +1425,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(prefix, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with(['*', '/', '%']) {
+        while src.starts_with(['*', '/', '%']) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let op = src[..1].to_string();
             src = &src[1..];
@@ -1446,7 +1446,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(mul_div, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with(['+', '-']) {
+        while src.starts_with(['+', '-']) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let add = src.starts_with('+');
             src = &src[1..];
@@ -1467,7 +1467,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(add_sub, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with("<<") || src.starts_with(">>") {
+        while (src.starts_with("<<") || src.starts_with(">>")) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let ls = src.starts_with("<<");
             src = &src[2..];
@@ -1488,7 +1488,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(shift, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('>') || src.starts_with('<') {
+        while (src.starts_with('>') || src.starts_with('<')) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let gt = src.starts_with('>');
             src = &src[1..];
@@ -1535,7 +1535,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(eq, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('&') {
+        while src.starts_with('&') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;
@@ -1555,7 +1555,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(bit_and, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('^') {
+        while src.starts_with('^') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;
@@ -1575,7 +1575,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(bit_xor, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('|') {
+        while src.starts_with('|') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;
