@@ -551,10 +551,10 @@ impl AST for VarDefAST {
     fn to_code(&self) -> String {
         let mut out = "".to_string();
         for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
+        out + format!("let {}{}{} = {}", if self.is_mut {"mut "} else {""}, self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        writeln!(f, "let: {}", self.name)?;
+        writeln!(f, "let {}: {}", if self.is_mut {"(mut)"} else {""}, self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {

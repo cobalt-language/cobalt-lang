@@ -82,7 +82,7 @@ impl Display for Type {
                     len -= 1;
                 }
                 write!(f, "): {}", *ret)
-            },
+            }
             BoundMethod(base, ret, args, m) => {
                 write!(f, "{} {base}.fn (", if *m {"mut"} else {"const"})?;
                 let mut len = args.len();
@@ -95,7 +95,7 @@ impl Display for Type {
                     len -= 1;
                 }
                 write!(f, "): {}", *ret)
-            },
+            }
             Nominal(n) => write!(f, "{n}"),
             Tuple(v) => {
                 write!(f, "(")?;
