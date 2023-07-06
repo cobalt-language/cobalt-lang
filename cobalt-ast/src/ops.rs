@@ -1454,17 +1454,17 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
             _ => Err(err)
         }
         Type::TypeData => match op {
-            "&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t))))} else {Err(err)}
-            "*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t))))} else {Err(err)}
-            "mut" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Mut(decay_boxed(t))))} else {Err(err)}
+            "&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(weak_decay_boxed(t))))} else {Err(err)}
+            "*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(weak_decay_boxed(t))))} else {Err(err)}
+            "mut" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Mut(weak_decay_boxed(t))))} else {Err(err)}
             _ => Err(err)
-        },
+        }
         Type::Null => match op {
             "&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null)))),
             "*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null)))),
             "mut" => Ok(Value::make_type(Type::Mut(Box::new(Type::Null)))),
             _ => Err(err)
-        },
+        }
         Type::Tuple(v) => {
             if let Some(InterData::Array(a)) = val.inter_val {
                 let mut vec = Vec::with_capacity(v.len());
@@ -1479,7 +1479,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 }
             }
             else {Err(err)}
-        },
+        }
         _ => Err(err)
     }
 }
@@ -2917,7 +2917,7 @@ fn add_ref(ty: Type) -> Type {
     else {ty}
 }
 /// determine the "decayed" type of a variable
-/// This removes references
+/// This removes references and mutability
 pub fn decay(mut ty: Type) -> Type {
     loop {
         match ty {
@@ -2932,6 +2932,31 @@ pub fn decay_boxed(mut ty: Box<Type>) -> Box<Type> {
     loop {
         match *ty {
             Type::Reference(b) | Type::Mut(b) => {
+                ty = decay_boxed(b);
+                continue
+            }
+            Type::IntLiteral => break Box::new(Type::Int(64, false)),
+            _ => {}
+        }
+        break ty
+    }
+}
+/// determine the "decayed" type of a variable
+/// This removes references
+pub fn weak_decay(mut ty: Type) -> Type {
+    loop {
+        match ty {
+            Type::Reference(b) => ty = decay(*b),
+            Type::IntLiteral => break Type::Int(64, false),
+            t => break t
+        }
+    }
+}
+/// does the same as `weak_decay`, but never reallocates
+pub fn weak_decay_boxed(mut ty: Box<Type>) -> Box<Type> {
+    loop {
+        match *ty {
+            Type::Reference(b) => {
                 ty = decay_boxed(b);
                 continue
             }
