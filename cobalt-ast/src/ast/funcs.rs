@@ -146,13 +146,13 @@ impl AST for FnDefAST {
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Normal)};
+                        if ops::impl_convertible(&self_t, &params[0].0) {fn_type = Some(MethodType::Normal)};
                     }
                 },
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(self_t, params[0].0.clone()) {fn_type = Some(MethodType::Getter)};
+                        if ops::impl_convertible(&self_t, &params[0].0) {fn_type = Some(MethodType::Getter)};
                     }
                 },
                 _ => {}
@@ -546,7 +546,7 @@ impl AST for FnDefAST {
                         }
                         else {
                             let s = self_t.to_string();
-                            if !ops::impl_convertible(self_t, params[0].0.clone()) {
+                            if !ops::impl_convertible(&self_t, &params[0].0) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,
@@ -585,7 +585,7 @@ impl AST for FnDefAST {
                         }
                         else {
                             let s = self_t.to_string();
-                            if !ops::impl_convertible(self_t, params[0].0.clone()) {
+                            if !ops::impl_convertible(&self_t, &params[0].0) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,

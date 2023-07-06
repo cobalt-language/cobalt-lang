@@ -53,7 +53,8 @@ impl AST for BitCastAST {
         let oic = ctx.is_const.replace(true);
         let t = ops::impl_convert(self.target.loc(), (self.target.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         ctx.is_const.set(oic);
-        val = ops::impl_convert(unreachable_span(), (val, None), (ops::decay(val.data_type.clone()), None), ctx).unwrap();
+        let decayed = ops::decay(val.data_type.clone());
+        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx).unwrap();
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {

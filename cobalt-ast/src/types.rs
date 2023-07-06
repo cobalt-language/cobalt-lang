@@ -327,7 +327,7 @@ impl Type {
                 b.save(out)
             }
             Mut(b) => {
-                out.write_all(&[11]);
+                out.write_all(&[11])?;
                 b.save(out)
             }
             Function(b, p) => {

@@ -1379,9 +1379,11 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     }).to_string(), start));
                     src = &src[1..];
                     start += 1;
+                    continue
                 }
                 _ => {}
             }
+            break
         }
         let ast = ops.into_iter().fold(ast, |ast, op| match op {
             PostfixType::Operator(op, loc) => Box::new(PostfixAST::new((loc, op.len()).into(), op, ast)) as _,
@@ -1406,9 +1408,10 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                 src = &src[1..];
                 start += 1;
             }
-            else if process(|src, start| start_match("mut"), &mut src, &mut start, &mut errs).is_some() {
+            else if process(|src, start| start_match("mut", src, start), &mut src, &mut start, &mut errs).is_some() {
                 ops.push((start, "mut".to_string()));
             }
+            else {break}
             process(ignored, &mut src, &mut start, &mut errs);
         }
         let ast = process(postfix, &mut src, &mut start, &mut errs)?.0;

@@ -314,7 +314,8 @@ impl AST for TupleLiteralAST {
         let mut errs = vec![];
         let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| {
             let mut v = x.codegen_errs(ctx, &mut errs);
-            v = ops::impl_convert(unreachable_span(), (v, None), (ops::decay(v.data_type.clone()), None), ctx).unwrap();
+            let decayed = ops::decay(v.data_type.clone());
+            v = ops::impl_convert(unreachable_span(), (v, None), (decayed, None), ctx).unwrap();
             v
         }).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();
         let mut val = Value::null();

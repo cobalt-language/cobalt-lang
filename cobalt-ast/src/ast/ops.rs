@@ -16,7 +16,7 @@ impl AST for BinOpAST {
         if self.op == "&?" || self.op == "|?" {
             let t = self.rhs.res_type(ctx);
             if t == Type::IntLiteral {return Type::IntLiteral}
-            if ops::expl_convertible(Type::Int(1, false), t.clone()) {t} else {Type::Null}
+            if ops::expl_convertible(&Type::Int(1, false), &t) {t} else {Type::Null}
         }
         else {ops::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
     }

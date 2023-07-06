@@ -111,7 +111,6 @@ impl AST for VarDefAST {
         let mut linkas = None;
         let mut is_extern = None;
         let mut vis_spec = None;
-        let mut stack = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
@@ -272,9 +271,6 @@ impl AST for VarDefAST {
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
-            if let Some(loc) = stack {
-                errs.push(CobaltError::MustBeLocal {name: "stack", loc});
-            }
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
