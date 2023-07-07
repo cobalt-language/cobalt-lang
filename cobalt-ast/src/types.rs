@@ -1,5 +1,5 @@
 use crate::*;
-use inkwell::types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum};
+use inkwell::{types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum}, values::FunctionValue};
 use inkwell::values::BasicValueEnum;
 use Type::{*, Error};
 use SizeType::*;
@@ -193,15 +193,8 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx)
         }
     }
-    pub fn copyable(&self, ctx: &CompCtx) -> bool {
-        match self {
-            IntLiteral | Int(_, _) | Float16 | Float32 | Float64 | Float128 | Null | Function(..) | Pointer(..) | Reference(..) | BoundMethod(..) => true,
-            Tuple(v) => v.iter().all(|x| x.copyable(ctx)),
-            Nominal(n) => ctx.nominals.borrow()[n].0.copyable(ctx),
-            Mut(b) => b.copyable(ctx),
-            _ => false
-        }
-    }
+    pub fn has_dtor(&self, _ctx: &CompCtx) -> bool {false}
+    pub fn get_dtor<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Option<FunctionValue<'ctx>> {None}
     fn can_be_compiled<'ctx>(&self, v: &InterData<'ctx>, ctx: &CompCtx<'ctx>) -> bool {
         match self {
             Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),

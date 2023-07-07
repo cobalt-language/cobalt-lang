@@ -7,6 +7,26 @@ use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
 };
+pub(crate) fn load<'ctx>(val: &mut Value<'ctx>, ctx: &CompCtx<'ctx>, loc: Option<SourceSpan>) {
+    if !ctx.is_const.get() {
+        if let (Some(t), Some(PointerValue(v))) = (val.data_type.llvm_type(ctx), val.comp_val) {
+            val.address = std::rc::Rc::new(std::cell::Cell::new(Some(v)));
+            let load = ctx.builder.build_load(t, v, "");
+            val.comp_val = Some(load);
+            if let (Some(loc), Some(name), true) = (loc, &val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
+                let inst = load.as_instruction_value().unwrap();
+                let kind = ctx.context.get_kind_id("cobalt.move");
+                let mloc = ctx.context.metadata_string(&format!("{}+{}", loc.offset(), loc.len()));
+                let mnam = ctx.context.metadata_string(name);
+                let node = ctx.context.metadata_node(&[mloc.into(), mnam.into()]);
+                inst.set_metadata(node, kind).unwrap(); // the Err variant only appears if the metadata is not a node
+            }
+        }
+        else {
+            val.comp_val = None;
+        }
+    }
+}
 pub fn impl_convertible(base: &Type, target: &Type) -> bool {
     base == target || *target == Type::Null || *target == Type::Error || match base {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
