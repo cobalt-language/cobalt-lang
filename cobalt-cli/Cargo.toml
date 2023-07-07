@@ -9,6 +9,7 @@ cobalt-ast = { path = "../cobalt-ast" }
 cobalt-build = { path = "../cobalt-build" }
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
+cobalt-llvm = { path = "../cobalt-llvm" }
 inkwell = "0.2.0"
 toml = "0.7.4"
 temp-file = "0.1.7"
@@ -19,13 +20,7 @@ miette = { version = "5.9.0", features = ["fancy"] }
 clap = { version = "4.3.0", features = ["derive"] }
 const_format = "0.2.31"
 human-repr = "1.1.0"
-
 object = { version = "0.31.1", features = ["write"] }
-
-[build-dependencies]
-lazy_static = "1.4"
-regex = "1.8"
-semver = "1.0"
 
 [[bin]]
 name = "co"

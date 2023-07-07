@@ -4,6 +4,7 @@ members = [
   "cobalt-build",
   "cobalt-cli",
   "cobalt-errors",
+  "cobalt-llvm",
   "cobalt-parser",
   "cobalt-utils"
 ]

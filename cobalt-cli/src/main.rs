@@ -65,7 +65,7 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     machine_code: true
 };
 static LONG_VERSION: &str = formatcp!("{}\nLLVM version {}{}{}",
-    env!("CARGO_PKG_VERSION"), env!("LLVM_VERSION"),
+    env!("CARGO_PKG_VERSION"), cobalt_llvm::LLVM_VERSION,
     if cfg!(has_git) {formatcp!("\nGit commit {} on branch {}", str_index!(env!("GIT_COMMIT"), ..6), env!("GIT_BRANCH"))} else {""},
     if cfg!(debug_assertions) {"\nDebug Build"} else {""}
 );
