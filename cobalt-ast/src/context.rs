@@ -21,7 +21,7 @@ pub struct CompCtx<'ctx> {
     pub var_scope: Counter<usize>,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>)>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
-    vars: Cell<MaybeUninit<Pin<Box<VarMap<'ctx>>>>>,
+    vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
 }
 impl<'ctx> CompCtx<'ctx> {
@@ -40,7 +40,7 @@ impl<'ctx> CompCtx<'ctx> {
             var_scope: 0.into(),
             nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
-            vars: Cell::new(MaybeUninit::new(Box::pin(VarMap::new(Some([
+            vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
                 ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
                 ("bool", Value::make_type(Type::Int(1, false)).into()),
@@ -68,7 +68,7 @@ impl<'ctx> CompCtx<'ctx> {
             var_scope: 0.into(),
             nominals: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
-            vars: Cell::new(MaybeUninit::new(Box::pin(VarMap::new(Some([
+            vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
                 ("false", Value::interpreted(ctx.bool_type().const_int(0, false).into(), InterData::Int(0), Type::Int(1, false)).into()),
                 ("bool", Value::make_type(Type::Int(1, false)).into()),
@@ -84,20 +84,18 @@ impl<'ctx> CompCtx<'ctx> {
         }
     }
     pub fn with_vars<'a, R, F: FnOnce(&'a mut VarMap<'ctx>) -> R>(&'a self, f: F) -> R {
-        let mut val = unsafe {self.vars.replace(MaybeUninit::uninit()).assume_init()};
-        let out = f(unsafe {std::mem::transmute(val.as_mut().get_mut())});
-        self.vars.set(MaybeUninit::new(val));
+        let mut val = self.vars.take().expect("recursive access to VarMap!");
+        let out = f(unsafe {std::mem::transmute(val.as_mut().get_mut())}); // reference stuff
+        self.vars.set(Some(val));
         out
     }
     pub fn map_vars<F: FnOnce(Box<VarMap<'ctx>>) -> Box<VarMap<'ctx>>>(&self, f: F) -> &Self {
-        let val = self.vars.replace(MaybeUninit::uninit());
-        self.vars.set(MaybeUninit::new(Pin::new(unsafe {f(Pin::into_inner(val.assume_init()))})));
+        self.vars.set(Some(Pin::new(f(Pin::into_inner(self.vars.take().expect("recursive access to VarMap!"))))));
         self
     }
     pub fn map_split_vars<R, F: FnOnce(Box<VarMap<'ctx>>) -> (Box<VarMap<'ctx>>, R)>(&self, f: F) -> R {
-        let val = self.vars.replace(MaybeUninit::uninit());
-        let (v, out) = unsafe {f(Pin::into_inner(val.assume_init()))};
-        self.vars.set(MaybeUninit::new(Pin::new(v)));
+        let (v, out) = f(Pin::into_inner(self.vars.take().expect("recursive access to VarMap!")));
+        self.vars.set(Some(Pin::new(v)));
         out
     }
     pub fn is_cfunc(&self, name: &DottedName) -> bool {
@@ -242,7 +240,6 @@ impl<'ctx> CompCtx<'ctx> {
 impl<'ctx> Drop for CompCtx<'ctx> {
     fn drop(&mut self) {
         unsafe {
-            self.vars.replace(MaybeUninit::uninit()).assume_init_drop();
             self.name.replace(MaybeUninit::uninit()).assume_init_drop();
             self.int_types.replace(MaybeUninit::uninit()).assume_init_drop();
         }
