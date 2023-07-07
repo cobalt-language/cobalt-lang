@@ -14,6 +14,7 @@ use std::io::{self, prelude::*, ErrorKind};
 use path_calculate::*;
 use std::path::{Path, PathBuf};
 use cobalt_errors::error;
+use cobalt_llvm::*;
 pub use build::clear_mod;
 
 #[derive(Debug, Error)]

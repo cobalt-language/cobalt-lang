@@ -3,6 +3,7 @@ use std::fmt;
 use os_str_bytes::OsStrBytes;
 use object::{SectionKind, write::Object};
 use cobalt_ast::CompCtx;
+use cobalt_llvm::inkwell;
 /// This is a list of all symbols defined in multiple files
 #[derive(Debug)]
 pub struct ConflictingDefs(pub Vec<String>);
