@@ -6,8 +6,7 @@ pub use llvm_sys_16 as llvm_sys;
 
 pub use inkwell;
 
-#[cfg(not(any(feature = "llvm-15", feature = "llvm-16")))]
-compile_error!("Either LLVM 15 or LLVM 16 must be specified!");
+pub const LLVM_VERSION: &str = env!("LLVM_VERSION");
 
 #[cfg(feature = "llvm-15")]
 #[macro_export]

@@ -8,6 +8,12 @@ inkwell = { version = "0.2.0" }
 llvm-sys-15 = { package = "llvm-sys", version = "150", optional = true }
 llvm-sys-16 = { package = "llvm-sys", version = "160", optional = true }
 
+[build-dependencies]
+lazy_static = "1.4"
+regex = "1.8"
+const_format = "0.2.31"
+semver = "1.0"
+
 # features passed to llvm-sys
 [features]
 default = ["strict-versioning", "prefer-dynamic", "llvm-16"]
