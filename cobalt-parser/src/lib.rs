@@ -1822,7 +1822,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     Box::new(NullAST::new(start.into())) as _
                 }, |x| x.0)
             });
-            let ast = Box::new(IfAST::new((begin..start).into(), cond, if_true, if_false));
+            let ast = Box::new(IfAST::new((begin..start).into(), cond, if_true, if_false.unwrap_or_else(|| Box::new(NullAST::new(start.into())))));
             Some((ast, (begin..start).into(), src, errs))
         }
         else if process(|src, start| start_match("while", src, start), &mut src, &mut start, &mut errs).is_some() {

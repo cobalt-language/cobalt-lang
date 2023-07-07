@@ -4,17 +4,16 @@ pub struct IfAST {
     loc: SourceSpan,
     pub cond: Box<dyn AST>,
     pub if_true: Box<dyn AST>,
-    pub if_false: Option<Box<dyn AST>>
+    pub if_false: Box<dyn AST>
 }
 impl IfAST {
-    pub fn new(loc: SourceSpan, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Option<Box<dyn AST>>) -> Self {IfAST {loc, cond, if_true, if_false}}
+    pub fn new(loc: SourceSpan, cond: Box<dyn AST>, if_true: Box<dyn AST>, if_false: Box<dyn AST>) -> Self {IfAST {loc, cond, if_true, if_false}}
 }
 impl AST for IfAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn nodes(&self) -> usize {self.cond.nodes() + self.if_true.nodes() + self.if_false.as_ref().map_or(0, |x| x.nodes()) + 1}
+    fn nodes(&self) -> usize {self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        if let Some(val) = self.if_false.as_ref() {types::utils::common(&self.if_true.res_type(ctx), &val.res_type(ctx)).unwrap_or(Type::Null)}
-        else {self.if_true.res_type(ctx)}
+        types::utils::common(&self.if_true.res_type(ctx), &self.if_false.res_type(ctx)).unwrap_or(Type::Null)
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
@@ -26,7 +25,7 @@ impl AST for IfAST {
             Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
         });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
-            (if let Some(if_false) = self.if_false.as_ref() {
+            ({
                 if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
                     let itb = ctx.context.append_basic_block(f, "if_true");
                     let ifb = ctx.context.append_basic_block(f, "if_false");
@@ -36,7 +35,7 @@ impl AST for IfAST {
                     let (if_true, mut es) = self.if_true.codegen(ctx);
                     errs.append(&mut es);
                     ctx.builder.position_at_end(ifb);
-                    let (if_false, mut es) = if_false.codegen(ctx);
+                    let (if_false, mut es) = self.if_false.codegen(ctx);
                     errs.append(&mut es);
                     if let Some(ty) = types::utils::common(&if_true.data_type, &if_false.data_type) {
                         ctx.builder.position_at_end(itb);
@@ -46,7 +45,7 @@ impl AST for IfAST {
                         });
                         ctx.builder.build_unconditional_branch(mb);
                         ctx.builder.position_at_end(ifb);
-                        let if_false = types::utils::impl_convert(self.if_false.as_ref().unwrap().loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                        let if_false = types::utils::impl_convert(self.if_false.loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
@@ -76,53 +75,18 @@ impl AST for IfAST {
                     }
                 }
                 else {Value::error()}
-            }
-            else if let Some(ip) = ctx.builder.get_insert_block() {
-                if let Some(f) = ip.get_parent() {
-                    let itb = ctx.context.append_basic_block(f, "if_true");
-                    let mb = ctx.context.append_basic_block(f, "merge");
-                    ctx.builder.build_conditional_branch(v, itb, mb);
-                    ctx.builder.position_at_end(itb);
-                    let (if_true, mut es) = self.if_true.codegen(ctx);
-                    errs.append(&mut es);
-                    ctx.builder.build_unconditional_branch(mb);
-                    ctx.builder.position_at_end(mb);
-                    Value::new(
-                        if let Some(llt) = if_true.data_type.llvm_type(ctx) {
-                            let phi = ctx.builder.build_phi(llt, "");
-                            if let Some(v) = if_true.value(ctx) {phi.add_incoming(&[(&v, itb)]);}
-                            phi.add_incoming(&[(&llt.const_zero(), ip)]);
-                            Some(phi.as_basic_value())
-                        } else {None},
-                        if let Some(InterData::Int(v)) = cv.inter_val {
-                            if v == 0 {Some(InterData::Null)}
-                            else {if_true.inter_val}
-                        } else {None},
-                        if_true.data_type
-                    )
-                }
-                else {Value::error()}
-            }
-            else {Value::error()}, errs)
+            }, errs)
         }
         else {(Value::error(), vec![])}
     }
     fn to_code(&self) -> String {
-        if let Some(val) = self.if_false.as_ref() {format!("if ({}) ({}) else ({})", self.cond, self.if_true, val)}
-        else {format!("if ({}) ({})", self.cond, self.if_true)}
+        format!("if ({}) ({}) else ({})", self.cond, self.if_true, self.if_false)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        if let Some(val) = self.if_false.as_ref() {
-            writeln!(f, "if/else")?;
-            print_ast_child(f, pre, &*self.cond, false, file)?;
-            print_ast_child(f, pre, &*self.if_true, false, file)?;
-            print_ast_child(f, pre, &**val, true, file)
-        }
-        else {
-            writeln!(f, "if")?;
-            print_ast_child(f, pre, &*self.cond, false, file)?;
-            print_ast_child(f, pre, &*self.if_true, true, file)
-        }
+        writeln!(f, "if/else")?;
+        print_ast_child(f, pre, &*self.cond, false, file)?;
+        print_ast_child(f, pre, &*self.if_true, false, file)?;
+        print_ast_child(f, pre, &*self.if_false, true, file)
     }
 }
 #[derive(Debug, Clone)]
