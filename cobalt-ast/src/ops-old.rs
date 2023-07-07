@@ -1337,7 +1337,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 }
             }
             pre_op(loc, (val, vloc), op, ctx)
-        },
+        }
         Type::Reference(x, true) => if op == "&" {
             val.data_type = Type::Pointer(x, true);
             Ok(val)
@@ -1454,7 +1454,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                     pre_op(loc, (val, vloc), op, ctx)
                 }
             }
-        },
+        }
         Type::IntLiteral => match op {
             "+" => {
                 val.data_type = Type::IntLiteral;
@@ -1471,7 +1471,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 Type::IntLiteral
             )),
             _ => Err(err)
-        },
+        }
         Type::Int(s, u) => match op {
             "+" => {
                 val.data_type = Type::Int(s, u);
@@ -1488,7 +1488,7 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 Type::Int(s, u)
             )),
             _ => Err(err)
-        },
+        }
         x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
             "+" => {
                 val.data_type = x;
@@ -1507,29 +1507,17 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
                 Ok(val)
             },
             _ => Err(err)
-        },
-        _ => Err(err)
-    }
-}
-pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
-    let err = CobaltError::PostOpNotDefined {
-        val: val.data_type.to_string(),
-        op: op.to_string(),
-        vloc, oloc: loc
-    };
-    match val.data_type {
+        }
         Type::TypeData => match op {
-            "mut&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), true)))} else {Err(err)},
-            "mut*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), true)))} else {Err(err)},
-            "const&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t), false)))} else {Err(err)},
-            "const*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t), false)))} else {Err(err)},
+            "&" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Reference(decay_boxed(t))))} else {Err(err)}
+            "*" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Pointer(decay_boxed(t))))} else {Err(err)}
+            "mut" => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Mut(decay_boxed(t))))} else {Err(err)}
             _ => Err(err)
         },
         Type::Null => match op {
-            "mut&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null), true))),
-            "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), true))),
-            "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null), false))),
-            "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null), false))),
+            "&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Null)))),
+            "*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Null)))),
+            "mut" => Ok(Value::make_type(Type::Mut(Box::new(Type::Null)))),
             _ => Err(err)
         },
         Type::Tuple(v) => {
@@ -1540,10 +1528,9 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
                     else {return Err(err);}
                 }
                 match op {
-                    "mut&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec)), true))),
-                    "mut*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), true))),
-                    "const&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec)), false))),
-                    "const*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec)), false))),
+                    "&" => Ok(Value::make_type(Type::Reference(Box::new(Type::Tuple(vec))))),
+                    "*" => Ok(Value::make_type(Type::Pointer(Box::new(Type::Tuple(vec))))),
+                    "mut" => Ok(Value::make_type(Type::Mut(Box::new(Type::Tuple(vec))))),
                     _ => Err(err)
                 }
             }
@@ -1551,6 +1538,14 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
         },
         _ => Err(err)
     }
+}
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    let err = CobaltError::PostOpNotDefined {
+        val: val.data_type.to_string(),
+        op: op.to_string(),
+        vloc, oloc: loc
+    };
+    Err(err)
 }
 pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::SubscriptNotDefined {
@@ -2245,7 +2240,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             Ok(v)
                         },
                         MethodType::Static => Err(err),
-                        MethodType::Getter => types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
+                        MethodType::Getter => ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(Value {data_type: Type::Reference(b.clone(), m), ..val.clone()}, vloc)], ctx)
                     }
                 } else {Err(err)})
             }
@@ -2275,7 +2270,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     MethodType::Getter => {
                         val.comp_val = val.addr(ctx).map(From::from);
                         val.data_type = Type::Reference(Box::new(val.data_type.clone()), false);
-                        types::utils::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                        ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                     }
                 }
             } else {Err(err)})
@@ -2723,17 +2718,28 @@ fn is_str(ty: &Type) -> bool {
 }
 /// determine the "decayed" type of a variable
 /// This removes references
-pub fn decay(ty: Type) -> Type {
-    match ty {
-        Type::Reference(b, _) => *b,
-        t => t
+pub fn decay(mut ty: Type) -> Type {
+    loop {
+        match ty {
+            Type::Reference(b) | Type::Mut(b) => ty = decay(*b),
+            Type::IntLiteral => break Type::Int(64, false),
+            t => break t
+        }
     }
 }
 /// does the same as `decay`, but never reallocates
-pub fn decay_boxed(ty: Box<Type>) -> Box<Type> {
-    if matches!(*ty, Type::Reference(..)) {
-        if let Type::Reference(b, _) = *ty {b}
-        else {unreachable!("verified by previous conditional")}
+pub fn decay_boxed(mut ty: Box<Type>) -> Box<Type> {
+    loop {
+        match ty {
+            Type::Reference(b) | Type::Mut(b) => ty = decay_boxed(*b),
+            Type::IntLiteral => break Box::new(Type::Int(64, false)),
+            x => break x
+        }
     }
+}
+/// convenience function to maybe add a Type::Mut
+#[inline(always)]
+pub fn maybe_mut(ty: Box<Type>, is_mut: bool) -> Box<Type> {
+    if is_mut {Box::new(Type::Mut(ty))}
     else {ty}
 }

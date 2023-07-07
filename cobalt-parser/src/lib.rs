@@ -237,6 +237,8 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
         b'l' => {
             let (_, start_span, mut src, mut errs) = start_match("let", src, start)?;
             start += start_span.len();
+            process(ignored, &mut src, &mut start, &mut errs);
+            let is_mut = process(|src, start| start_match("mut", src, start), &mut src, &mut start, &mut errs).is_some();
             let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
             process(ignored, &mut src, &mut start, &mut errs);
             let ty = src.starts_with(':').then(|| {
@@ -256,34 +258,9 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
                 res
             }).flatten().unwrap_or_else(|| Box::new(NullAST::new(ty.as_ref().map_or(start_span, |x| x.loc()))));
             let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
-            let ast = Box::new(VarDefAST::new((begin, 3).into(), name, val, ty, anns, loc != DeclLoc::Local));
+            let ast = Box::new(VarDefAST::new((begin, 3).into(), name, val, ty, anns, loc != DeclLoc::Local, is_mut));
             Some((ast, merge_spans(start_span, start.into()), src, errs))
-        },
-        b'm' => {
-            let (_, start_span, mut src, mut errs) = start_match("mut", src, start)?;
-            start += start_span.len();
-            let name = process(id_parser, &mut src, &mut start, &mut errs).map_or(DottedName::local((String::new(), start.into())), |x| x.0);
-            process(ignored, &mut src, &mut start, &mut errs);
-            let ty = src.starts_with(':').then(|| {
-                src = &src[1..];
-                start += 1;
-                process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(0, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
-                process(ignored, &mut src, &mut start, &mut errs);
-                res
-            }).flatten();
-            let val = src.starts_with('=').then(|| {
-                src = &src[1..];
-                start += 1;
-                process(ignored, &mut src, &mut start, &mut errs);
-                let res = process(|src, start| expr(1, src, start), &mut src, &mut start, &mut errs).map(|x| x.0);
-                process(ignored, &mut src, &mut start, &mut errs);
-                res
-            }).flatten().unwrap_or_else(|| Box::new(NullAST::new(ty.as_ref().map_or(start_span, |x| x.loc()))));
-            let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
-            let ast = Box::new(MutDefAST::new((begin, 3).into(), name, val, ty, anns, loc != DeclLoc::Local));
-            Some((ast, merge_spans(start_span, start.into()), src, errs))
-        },
+        }
         b'c' => {
             let (_, start_span, mut src, mut errs) = start_match("const", src, start)?;
             start += start_span.len();
@@ -308,7 +285,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
             let ast = Box::new(ConstDefAST::new((begin, 5).into(), name, val, ty, anns));
             Some((ast, merge_spans(start_span, start.into()), src, errs))
-        },
+        }
         b't' => {
             let (_, start_span, mut src, mut errs) = start_match("type", src, start)?;
             start += start_span.len();
@@ -371,7 +348,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             }).unwrap_or_default();
             let ast = Box::new(TypeDefAST::new((begin, 4).into(), name, val, anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect(), metds));
             Some((ast, merge_spans(start_span, start.into()), src, errs))
-        },
+        }
         b'f' => {
             let (_, start_span, mut src, mut errs) = start_match("fn", src, start)?;
             start += start_span.len();
@@ -512,7 +489,7 @@ fn declarations<'a>(loc: DeclLoc, anns: Option<Vec<(&'a str, Option<&'a str>, So
             }).unwrap_or_else(|| Box::new(NullAST::new(ret.loc())) as _);
             let anns = anns.iter().copied().map(|(ann, arg, loc)| (ann.to_string(), arg.map(ToString::to_string), loc)).collect();
             Some((Box::new(FnDefAST::new((begin, 2).into(), name, ret, params, body, anns, loc == DeclLoc::Method)), (begin..start).into(), src, errs))
-        },
+        }
         _ => None
     }
 }
@@ -1394,59 +1371,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     }
                     ops.push(PostfixType::Subscript(sub, start));
                     continue
-                },
-                Some(b'c') if src.starts_with("const") => {
-                    let src_ = src;
-                    let start_ = start;
-                    src = &src[5..];
-                    start += 5;
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    match src.as_bytes().first().copied() {
-                        Some(c @ (b'&' | b'*')) => {
-                            ops.push(PostfixType::Operator((match c {
-                                b'&' => "const&",
-                                b'*' => "const*",
-                                _ => unreachable!()
-                            }).to_string(), start));
-                            src = &src[1..];
-                            start += 1;
-                        },
-                        _ => {
-                            src = src_;
-                            start = start_;
-                            break
-                        }
-                    }
-                    continue
-                },
-                Some(b'm') if src.starts_with("mut") => {
-                    let src_ = src;
-                    let start_ = start;
-                    src = &src[3..];
-                    start += 3;
-                    process(ignored, &mut src, &mut start, &mut errs);
-                    match src.as_bytes().first().copied() {
-                        Some(c @ (b'&' | b'*')) => {
-                            ops.push(PostfixType::Operator((match c {
-                                b'&' => "mut&",
-                                b'*' => "mut*",
-                                _ => unreachable!()
-                            }).to_string(), start));
-                            src = &src[1..];
-                            start += 1;
-                        },
-                        _ => {
-                            src = src_;
-                            start = start_;
-                            break
-                        }
-                    }
-                    continue
-                },
-                _ => {}
-            }
-            if src.as_bytes().get(1).map_or(false, |c| !b".;,)+-*/%:&|^<>=?!".contains(c)) {break}
-            match src.as_bytes().first().copied() {
+                }
                 Some(c @ (b'!' | b'?')) => {
                     ops.push(PostfixType::Operator((match c {
                         b'!' => "!",
@@ -1455,18 +1380,11 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                     }).to_string(), start));
                     src = &src[1..];
                     start += 1;
-                },
-                Some(c @ (b'&' | b'*')) => {
-                    ops.push(PostfixType::Operator((match c {
-                        b'&' => "const&",
-                        b'*' => "const*",
-                        _ => unreachable!()
-                    }).to_string(), start));
-                    src = &src[1..];
-                    start += 1;
-                },
-                _ => break
+                    continue
+                }
+                _ => {}
             }
+            break
         }
         let ast = ops.into_iter().fold(ast, |ast, op| match op {
             PostfixType::Operator(op, loc) => Box::new(PostfixAST::new((loc, op.len()).into(), op, ast)) as _,
@@ -1491,6 +1409,9 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
                 src = &src[1..];
                 start += 1;
             }
+            else if process(|src, start| start_match("mut", src, start), &mut src, &mut start, &mut errs).is_some() {
+                ops.push((start, "mut".to_string()));
+            }
             else {break}
             process(ignored, &mut src, &mut start, &mut errs);
         }
@@ -1505,7 +1426,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(prefix, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with(['*', '/', '%']) {
+        while src.starts_with(['*', '/', '%']) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let op = src[..1].to_string();
             src = &src[1..];
@@ -1526,7 +1447,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(mul_div, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with(['+', '-']) {
+        while src.starts_with(['+', '-']) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let add = src.starts_with('+');
             src = &src[1..];
@@ -1547,7 +1468,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(add_sub, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with("<<") || src.starts_with(">>") {
+        while (src.starts_with("<<") || src.starts_with(">>")) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let ls = src.starts_with("<<");
             src = &src[2..];
@@ -1568,7 +1489,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(shift, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('>') || src.starts_with('<') {
+        while (src.starts_with('>') || src.starts_with('<')) && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             let gt = src.starts_with('>');
             src = &src[1..];
@@ -1615,7 +1536,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(eq, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('&') {
+        while src.starts_with('&') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;
@@ -1635,7 +1556,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(bit_and, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('^') {
+        while src.starts_with('^') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;
@@ -1655,7 +1576,7 @@ fn expr(mode: u8, src: &str, start: usize) -> ParserReturn<Box<dyn AST>> {
         let first = process(bit_xor, &mut src, &mut start, &mut errs)?.0;
         let mut rest = vec![];
         process(ignored, &mut src, &mut start, &mut errs);
-        while src.starts_with('|') {
+        while src.starts_with('|') && src.as_bytes().get(1) != Some(&b'=') {
             let loc = start;
             src = &src[1..];
             start += 1;

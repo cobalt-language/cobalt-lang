@@ -13,14 +13,14 @@ impl AST for IfAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        types::utils::common(&self.if_true.res_type(ctx), &self.if_false.res_type(ctx)).unwrap_or(Type::Null)
+        ops::common(&self.if_true.res_type(ctx), &self.if_false.res_type(ctx)).unwrap_or(Type::Null)
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
-        let cv = types::utils::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+        let cv = ops::expl_convert(self.cond.loc(), (cond, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
         });
@@ -37,15 +37,15 @@ impl AST for IfAST {
                     ctx.builder.position_at_end(ifb);
                     let (if_false, mut es) = self.if_false.codegen(ctx);
                     errs.append(&mut es);
-                    if let Some(ty) = types::utils::common(&if_true.data_type, &if_false.data_type) {
+                    if let Some(ty) = ops::common(&if_true.data_type, &if_false.data_type) {
                         ctx.builder.position_at_end(itb);
-                        let if_true = types::utils::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                        let if_true = ops::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
                         ctx.builder.build_unconditional_branch(mb);
                         ctx.builder.position_at_end(ifb);
-                        let if_false = types::utils::impl_convert(self.if_false.loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
+                        let if_false = ops::impl_convert(self.if_false.loc(), (if_false, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
@@ -111,7 +111,7 @@ impl AST for WhileAST {
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
-            let val = types::utils::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
+            let val = ops::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::compiled(ctx.context.bool_type().const_int(0, false).into(), Type::Int(1, false))
             }).into_value(ctx).unwrap_or(ctx.context.bool_type().const_int(0, false).into());

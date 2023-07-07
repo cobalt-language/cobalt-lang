@@ -164,7 +164,7 @@ impl AST for StringLiteralAST {
     fn is_const(&self) -> bool {true}
     fn res_type(&self, _ctx: &CompCtx) -> Type {
         match self.suffix {
-            None => Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))), false),
+            None => Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32)))),
             Some(_) => Type::Null
         }
     }
@@ -179,7 +179,7 @@ impl AST for StringLiteralAST {
                 (Value::interpreted(
                     gv.as_pointer_value().const_cast(ctx.context.i8_type().ptr_type(Default::default())).into(),
                     InterData::Array(self.val.iter().map(|&c| InterData::Int(c as i128)).collect()),
-                    Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))), false)
+                    Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))))
                 ), vec![])
             },
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc, lit: "string", suf: x.to_string()}])
@@ -212,23 +212,9 @@ impl AST for ArrayLiteralAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.start, self.end)}
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        let mut elem = self.vals.get(0).map_or(Type::Null, |x| match x.res_type(ctx) {
-            Type::IntLiteral => Type::Int(64, false),
-            Type::Reference(b, m) => match *b {
-                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                x => x
-            },
-            x => x
-        });
+        let mut elem = self.vals.get(0).map_or(Type::Null, |x| ops::decay(x.res_type(ctx)));
         for val in self.vals.iter() {
-            if let Some(c) = types::utils::common(&elem, &match val.res_type(ctx) {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }) {elem = c;}
+            if let Some(c) = ops::common(&elem, &ops::decay(val.res_type(ctx))) {elem = c;}
             else {
                 elem = Type::Error;
                 break;
@@ -244,14 +230,7 @@ impl AST for ArrayLiteralAST {
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
-            let dt = match v.data_type.clone() {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            };
+            let dt = ops::decay(v.data_type.clone());
             errs.append(&mut es);
             if first {
                 first = false;
@@ -259,7 +238,7 @@ impl AST for ArrayLiteralAST {
                 ty = dt;
             }
             else if ty != dt {
-                if let Some(t) = types::utils::common(&ty, &dt) {
+                if let Some(t) = ops::common(&ty, &dt) {
                     ty = t;
                     elem_loc = val.loc();
                 }
@@ -278,7 +257,7 @@ impl AST for ArrayLiteralAST {
             errs.push(CobaltError::ArrayTooLong {loc: self.vals[u32::MAX as usize + 1].loc(), len: elems.len()});
             elems.truncate(u32::MAX as usize);
         }
-        let elems = elems.into_iter().enumerate().filter_map(|(n, v)| types::utils::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
+        let elems = elems.into_iter().enumerate().filter_map(|(n, v)| ops::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx).map_err(|e| errs.push(e)).ok()).collect::<Vec<_>>();
         let len = elems.len();
         (Value::new(
             if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
@@ -329,35 +308,15 @@ impl AST for TupleLiteralAST {
     }
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn res_type(&self, ctx: &CompCtx) -> Type {
-        Type::Tuple(self.vals.iter().map(|x| match x.res_type(ctx) {
-            Type::IntLiteral => Type::Int(64, false),
-            Type::Reference(b, m) => {
-                if x.expl_type(ctx) {Type::Reference(b, m)}
-                else {*b}
-            },
-            x => x
-        }).collect())
+        Type::Tuple(self.vals.iter().map(|x| ops::decay(x.res_type(ctx))).collect())
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| {
             let mut v = x.codegen_errs(ctx, &mut errs);
-            match v.data_type {
-                Type::IntLiteral => Value {data_type: Type::Int(64, false), ..v},
-                Type::Reference(b, m) => {
-                    if x.expl_type(ctx) {Value {data_type: Type::Reference(b, m), ..v}}
-                    else {
-                        if !ctx.is_const.get() {
-                            if let Some(PointerValue(pv)) = v.comp_val {
-                                v.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), pv, ""));
-                            }
-                        }
-                        v.data_type = *b;
-                        v
-                    }
-                },
-                x => Value {data_type: x, ..v}
-            }
+            let decayed = ops::decay(v.data_type.clone());
+            v = ops::impl_convert(unreachable_span(), (v, None), (decayed, None), ctx).unwrap();
+            v
         }).map(|Value {comp_val, inter_val, data_type, ..}| (comp_val, (inter_val, data_type))).unzip();
         let mut val = Value::null();
         val.data_type = Type::Tuple(types);

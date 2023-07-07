@@ -2,6 +2,7 @@
 pub mod ast;
 pub mod context;
 pub mod dottedname;
+pub mod ops;
 pub mod types;
 pub mod varmap;
 pub mod value;

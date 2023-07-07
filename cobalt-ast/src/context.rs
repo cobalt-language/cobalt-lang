@@ -188,7 +188,7 @@ impl<'ctx> CompCtx<'ctx> {
                         return None
                     }
                 }
-                x => types::utils::attr((x, unreachable_span()), (&name.0, unreachable_span()), self).ok()?
+                x => ops::attr((x, unreachable_span()), (&name.0, unreachable_span()), self).ok()?
             };
         }
         Some(v)

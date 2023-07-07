@@ -11,10 +11,11 @@ pub struct VarDefAST {
     pub val: Box<dyn AST>,
     pub type_: Option<Box<dyn AST>>,
     pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    pub global: bool
+    pub global: bool,
+    pub is_mut: bool
 }
 impl VarDefAST {
-    pub fn new(loc: SourceSpan, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>, global: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global}}
+    pub fn new(loc: SourceSpan, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>, global: bool, is_mut: bool) -> Self {VarDefAST {loc, name, val, type_, annotations, global, is_mut}}
 }
 impl AST for VarDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
@@ -41,12 +42,12 @@ impl AST for VarDefAST {
                         Some("common") => Some(Common),
                         _ => None
                     }.map(|x| (x, loc))
-                },
+                }
                 "linkas" => {
                     if let Some(arg) = arg {
                         linkas = Some(arg.clone())
                     }
-                },
+                }
                 "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
                 "target" => {
                     if let Some(arg) = arg {
@@ -56,7 +57,7 @@ impl AST for VarDefAST {
                             target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
                         }
                     }
-                },
+                }
                 "export" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -65,7 +66,7 @@ impl AST for VarDefAST {
                             _ => {},
                         }
                     }
-                },
+                }
                 "private" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -74,7 +75,7 @@ impl AST for VarDefAST {
                             _ => {}
                         }
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -83,19 +84,10 @@ impl AST for VarDefAST {
         let t2 = self.val.const_codegen(ctx).0.data_type;
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
             let oic = ctx.is_const.replace(true);
-            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
             ctx.is_const.set(oic);
             t
-        }) {t} else {
-            match t2 {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }
-        };
+        }) {t} else {ops::decay(t2)};
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
             dt.llvm_type(ctx).map(|t| {
                 let gv = ctx.module.add_global(t, None, &linkas.unwrap_or_else(|| ctx.mangle(&self.name)));
@@ -104,10 +96,11 @@ impl AST for VarDefAST {
                     Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                     Some((x, _)) => gv.set_linkage(x)
                 }
+                gv.set_constant(!self.is_mut);
                 PointerValue(gv.as_pointer_value())
             }),
             None,
-            Type::Reference(Box::new(dt), false)
+            Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
     fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
@@ -118,7 +111,6 @@ impl AST for VarDefAST {
         let mut linkas = None;
         let mut is_extern = None;
         let mut vis_spec = None;
-        let mut stack = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
@@ -133,7 +125,7 @@ impl AST for VarDefAST {
                         });
                     }
                     is_static = true;
-                },
+                }
                 "link" => {
                     if let Some((_, prev)) = link_type {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -161,7 +153,7 @@ impl AST for VarDefAST {
                             None
                         }
                     }.map(|x| (x, loc))
-                },
+                }
                 "linkas" => {
                     if let Some((_, prev)) = linkas {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -178,7 +170,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "extern" => {
                     is_extern = Some(loc);
                     if arg.is_some() {
@@ -189,7 +181,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "c" | "C" => {
                     match arg.as_ref().map(|x| x.as_str()) {
                         Some("") | None => {},
@@ -202,7 +194,7 @@ impl AST for VarDefAST {
                         })
                     }
                     linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
-                },
+                }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -220,7 +212,7 @@ impl AST for VarDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if !self.global {
                         errs.push(CobaltError::MustBeGlobal {
@@ -246,7 +238,7 @@ impl AST for VarDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if !self.global {
                         errs.push(CobaltError::MustBeGlobal {
@@ -272,52 +264,21 @@ impl AST for VarDefAST {
                             })
                         }
                     }
-                },
-                "stack" => {
-                    if let Some(prev) = stack {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "stack",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        stack = Some(loc);
-                        if arg.is_some() {
-                            errs.push(CobaltError::InvalidAnnArgument {
-                                name: "stack",
-                                found: arg.clone(),
-                                expected: None,
-                                loc
-                            })
-                        }
-                    }
-                },
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
             }
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
-            if let Some(loc) = stack {
-                errs.push(CobaltError::MustBeLocal {name: "stack", loc});
-            }
             if is_extern.is_some() {
                 let t2 = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t2)};
                 match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     dt.llvm_type(ctx).map(|t| {
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
@@ -327,10 +288,11 @@ impl AST for VarDefAST {
                             Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                             Some((x, _)) => gv.set_linkage(x)
                         }
+                        gv.set_constant(!self.is_mut);
                         PointerValue(gv.as_pointer_value())
                     }).or_else(|| {if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}; None}),
                     None,
-                    Type::Reference(Box::new(dt), false)
+                    Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                 ), VariableData::with_vis(self.loc, vs)))) {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
@@ -355,19 +317,10 @@ impl AST for VarDefAST {
                 let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t2)};
                 match if let Some(v) = val.value(ctx) {
                     val.inter_val = None;
                     if ctx.is_const.get() {
@@ -377,13 +330,13 @@ impl AST for VarDefAST {
                         let t = dt.llvm_type(ctx).unwrap();
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
                         let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(true);
                         gv.set_initializer(&v);
+                        gv.set_constant(!self.is_mut);
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                             Some(PointerValue(gv.as_pointer_value())),
                             None,
-                            Type::Reference(Box::new(dt), false)
+                            Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                         ), VariableData::with_vis(self.loc, vs))))
                     }
                 }
@@ -414,19 +367,10 @@ impl AST for VarDefAST {
                 let t = self.val.res_type(ctx);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                    let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                     ctx.is_const.set(oic);
                     t
-                }) {t} else {
-                    match t {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
+                }) {t} else {ops::decay(t)};
                 match if let Some(t) = dt.llvm_type(ctx) {
                     let old_global = ctx.global.replace(true);
                     let val = if ctx.is_const.get() {
@@ -434,20 +378,11 @@ impl AST for VarDefAST {
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
-                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                        }) {t} else {ops::decay(t2)};
+                        let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
@@ -457,7 +392,7 @@ impl AST for VarDefAST {
                     else {
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
                         let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(false);
+                        gv.set_constant(!self.is_mut);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
                         let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
@@ -478,20 +413,11 @@ impl AST for VarDefAST {
                         let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                             ctx.is_const.set(oic);
                             t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
-                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        }) {t} else {ops::decay(t2)};
+                        let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);
                             Value::error()
                         });
@@ -506,7 +432,7 @@ impl AST for VarDefAST {
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                                 Some(PointerValue(gv.as_pointer_value())),
                                 None,
-                                Type::Reference(Box::new(dt), false)
+                                Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
                             ), VariableData::with_vis(self.loc, vs))))
                         }
                         else {
@@ -529,20 +455,11 @@ impl AST for VarDefAST {
                     let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                         ctx.is_const.set(oic);
                         t
-                    }) {t} else {
-                        match t2 {
-                            Type::IntLiteral => Type::Int(64, false),
-                            Type::Reference(b, m) => match *b {
-                                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                x => x
-                            },
-                            x => x
-                        }
-                    };
-                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                    }) {t} else {ops::decay(t2)};
+                    let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error()
                     });
@@ -570,41 +487,33 @@ impl AST for VarDefAST {
         }
         else {
             if let Some(loc) = is_extern {
-                errs.push(CobaltError::MustBeLocal {name: "extern", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "extern", loc});
             }
             if let Some((_, loc)) = link_type {
-                errs.push(CobaltError::MustBeLocal {name: "link", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "link", loc});
             }
             if let Some((_, loc)) = linkas {
-                errs.push(CobaltError::MustBeLocal {name: "linkas", loc});
+                errs.push(CobaltError::MustBeGlobal {name: "linkas", loc});
             }
             let old_scope = ctx.push_scope(&self.name);
             let val = self.val.codegen_errs(ctx, &mut errs);
             let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                 let oic = ctx.is_const.replace(true);
-                let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
                 ctx.is_const.set(oic);
                 t
-            }) {t} else {
-                match t2 {
-                    Type::IntLiteral => Type::Int(64, false),
-                    Type::Reference(b, m) => match *b {
-                        x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                        x => x
-                    },
-                    x => x
-                }
-            };
-            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+            }) {t} else {ops::decay(t2)};
+            let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             });
             ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() || stack.is_none() {
+            val.comp_val = val.value(ctx);
+            match if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
-            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
+            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.comp_val) {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
                     ctx.builder.build_store(a, v);
@@ -613,7 +522,7 @@ impl AST for VarDefAST {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
-                    Type::Reference(Box::new(val.data_type), false)
+                    *ops::maybe_mut(Box::new(val.data_type), self.is_mut)
                 ), VariableData::with_vis(self.loc, false))))
             }
             else {
@@ -642,638 +551,10 @@ impl AST for VarDefAST {
     fn to_code(&self) -> String {
         let mut out = "".to_string();
         for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out + format!("let {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
+        out + format!("let {}{}{} = {}", if self.is_mut {"mut "} else {""}, self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        writeln!(f, "let: {}", self.name)?;
-        writeln!(f, "{pre}├── annotations:")?;
-        pre.push(false);
-        for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
-            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or_default())?;
-        }
-        pre.pop();
-        if let Some(ref ast) = self.type_ {print_ast_child(f, pre, &**ast, false, file)?}
-        print_ast_child(f, pre, &*self.val, true, file)
-    }
-}
-#[derive(Debug, Clone)]
-pub struct MutDefAST {
-    loc: SourceSpan,
-    pub name: DottedName,
-    pub val: Box<dyn AST>,
-    pub type_: Option<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    pub global: bool
-}
-impl MutDefAST {
-    pub fn new(loc: SourceSpan, name: DottedName, val: Box<dyn AST>, type_: Option<Box<dyn AST>>, annotations: Vec<(String, Option<String>, SourceSpan)>, global: bool) -> Self {MutDefAST {loc, name, val, type_, annotations, global}}
-}
-impl AST for MutDefAST {
-    fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
-    fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
-    fn fwddef_prepass(&self, ctx: &CompCtx) {
-        let mut errs = vec![];
-        let mut link_type = None;
-        let mut linkas = None;
-        let mut vis_spec = None;
-        let mut target_match = 2u8;
-        for (ann, arg, loc) in self.annotations.iter() {
-            let loc = *loc;
-            match ann.as_str() {
-                "link" => {
-                    link_type = match arg.as_ref().map(|x| x.as_str()) {
-                        Some("extern") | Some("external") => Some(External),
-                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
-                        Some("intern") | Some("internal") => Some(Internal),
-                        Some("private") => Some(Private),
-                        Some("weak") => Some(WeakAny),
-                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
-                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
-                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
-                        Some("common") => Some(Common),
-                        _ => None
-                    }.map(|x| (x, loc))
-                },
-                "linkas" => {
-                    if let Some(arg) = arg {
-                        linkas = Some(arg.clone())
-                    }
-                },
-                "c" | "C" => linkas = Some(self.name.ids.last().expect("function name shouldn't be empty!").0.clone()),
-                "target" => {
-                    if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
-                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
-                        if let Ok(pat) = Pattern::new(arg) {
-                            target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
-                        }
-                    }
-                },
-                "export" => {
-                    if vis_spec.is_none() {
-                        match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
-                            Some("false") | Some("0") => vis_spec = Some(false),
-                            _ => {},
-                        }
-                    }
-                },
-                "private" => {
-                    if vis_spec.is_none() {
-                        match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
-                            Some("false") | Some("0") => vis_spec = Some(true),
-                            _ => {}
-                        }
-                    }
-                },
-                _ => {}
-            }
-        }
-        let vs = vis_spec.unwrap_or(ctx.export.get());
-        if target_match == 0 {return}
-        let t2 = self.val.const_codegen(ctx).0.data_type;
-        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            let oic = ctx.is_const.replace(true);
-            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-            ctx.is_const.set(oic);
-            t
-        }) {t} else {
-            match t2 {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }
-        };
-        let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-            dt.llvm_type(ctx).map(|t| {
-                let gv = ctx.module.add_global(t, None, &linkas.unwrap_or_else(|| ctx.mangle(&self.name)));
-                match link_type {
-                    None => {},
-                    Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
-                    Some((x, _)) => gv.set_linkage(x)
-                }
-                PointerValue(gv.as_pointer_value())
-            }),
-            None,
-            Type::Reference(Box::new(dt), false)
-        ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
-    }
-    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
-        let mut errs = vec![];
-        let mut is_static = false;
-        let mut link_type = None;
-        let mut linkas = None;
-        let mut is_extern = None;
-        let mut vis_spec = None;
-        let mut target_match = 2u8;
-        for (ann, arg, loc) in self.annotations.iter() {
-            let loc = *loc;
-            match ann.as_str() {
-                "static" => {
-                    if arg.is_some() {
-                        errs.push(CobaltError::InvalidAnnArgument {
-                            name: "static",
-                            expected: None,
-                            found: arg.clone(),
-                            loc
-                        });
-                    }
-                    is_static = true;
-                },
-                "link" => {
-                    if let Some((_, prev)) = link_type {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "link",
-                            loc, prev
-                        });
-                    }
-                    link_type = match arg.as_deref() {
-                        Some("extern") | Some("external") => Some(External),
-                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
-                        Some("intern") | Some("internal") => Some(Internal),
-                        Some("private") => Some(Private),
-                        Some("weak") => Some(WeakAny),
-                        Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
-                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
-                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
-                        Some("common") => Some(Common),
-                        _ => {
-                            errs.push(CobaltError::InvalidAnnArgument {
-                                name: "link",
-                                found: arg.clone(),
-                                expected: Some("link type"),
-                                loc
-                            });
-                            None
-                        }
-                    }.map(|x| (x, loc))
-                },
-                "linkas" => {
-                    if let Some((_, prev)) = linkas {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "linkas",
-                            loc, prev
-                        });
-                    }
-                    if let Some(arg) = arg {linkas = Some((arg.clone(), loc))}
-                    else {
-                        errs.push(CobaltError::InvalidAnnArgument {
-                            name: "linkas",
-                            found: arg.clone(),
-                            expected: Some("linkage name"),
-                            loc
-                        });
-                    }
-                },
-                "extern" => {
-                    is_extern = Some(loc);
-                    if arg.is_some() {
-                        errs.push(CobaltError::InvalidAnnArgument {
-                            name: "extern",
-                            found: arg.clone(),
-                            expected: None,
-                            loc
-                        });
-                    }
-                },
-                "c" | "C" => {
-                    match arg.as_ref().map(|x| x.as_str()) {
-                        Some("") | None => {},
-                        Some("extern") => is_extern = Some(loc),
-                        Some(_) => errs.push(CobaltError::InvalidAnnArgument {
-                            name: "C",
-                            found: arg.clone(),
-                            expected: Some(r#"no argument or "extern""#),
-                            loc
-                        })
-                    }
-                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
-                },
-                "target" => {
-                    if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
-                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
-                        match Pattern::new(arg) {
-                            Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(CobaltError::GlobPatternError {pos: err.pos, msg: err.msg.to_string(), loc})
-                        }
-                    }
-                    else {
-                        errs.push(CobaltError::InvalidAnnArgument {
-                            name: "target",
-                            found: arg.clone(),
-                            expected: Some("target glob"),
-                            loc
-                        });
-                    }
-                },
-                "export" => {
-                    if !self.global {
-                        errs.push(CobaltError::MustBeGlobal {
-                            name: "export",
-                            loc
-                        });
-                    }
-                    if let Some((_, prev)) = vis_spec {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "export",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
-                            Some("false") | Some("0") => vis_spec = Some((false, loc)),
-                            Some(_) => errs.push(CobaltError::InvalidAnnArgument {
-                                name: "export",
-                                found: arg.clone(),
-                                expected: Some(r#"no argument, "true", or "false""#),
-                                loc
-                            })
-                        }
-                    }
-                },
-                "private" => {
-                    if !self.global {
-                        errs.push(CobaltError::MustBeGlobal {
-                            name: "private",
-                            loc
-                        });
-                    }
-                    if let Some((_, prev)) = vis_spec {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "private",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
-                            Some("false") | Some("0") => vis_spec = Some((true, loc)),
-                            Some(_) => errs.push(CobaltError::InvalidAnnArgument {
-                                name: "private",
-                                found: arg.clone(),
-                                expected: Some(r#"no argument, "true", or "false""#),
-                                loc
-                            })
-                        }
-                    }
-                },
-                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "variable"})
-            }
-        }
-        let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
-        if target_match == 0 {return (Value::null(), errs)}
-        if self.global || is_static {
-            if is_extern.is_some() {
-                let t2 = self.val.res_type(ctx);
-                let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                    ctx.is_const.set(oic);
-                    t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
-                match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                    dt.llvm_type(ctx).map(|t| {
-                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
-                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        match link_type {
-                            None => {},
-                            Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
-                            Some((x, _)) => gv.set_linkage(x)
-                        }
-                        PointerValue(gv.as_pointer_value())
-                    }).or_else(|| {if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}; None}),
-                    None,
-                    Type::Reference(Box::new(dt), false)
-                ), VariableData::with_vis(self.loc, vs)))) {
-                    Ok(x) => (x.0.clone(), errs),
-                    Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(CobaltError::NotAModule {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string()
-                        });
-                        (Value::error(), errs)
-                    },
-                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                        errs.push(CobaltError::RedefVariable {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string(),
-                            prev: d
-                        });
-                        (Value::error(), errs)
-                    }
-                }
-            }
-            else if self.val.is_const() && self.type_.is_none() {
-                let mut val = self.val.codegen_errs(ctx, &mut errs);
-                let t2 = val.data_type.clone();
-                let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                    ctx.is_const.set(oic);
-                    t
-                }) {t} else {
-                    match t2 {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
-                match if let Some(v) = val.value(ctx) {
-                    val.inter_val = None;
-                    if ctx.is_const.get() {
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
-                    }
-                    else {
-                        let t = dt.llvm_type(ctx).unwrap();
-                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
-                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(false);
-                        gv.set_initializer(&v);
-                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                            Some(PointerValue(gv.as_pointer_value())),
-                            None,
-                            Type::Reference(Box::new(dt), false)
-                        ), VariableData::with_vis(self.loc, vs))))
-                    }
-                }
-                else {
-                    val.inter_val = None;
-                    if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
-                } {
-                    Ok(x) => (x.0.clone(), errs),
-                    Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(CobaltError::NotAModule {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string()
-                        });
-                        (Value::error(), errs)
-                    },
-                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                        errs.push(CobaltError::RedefVariable {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string(),
-                            prev: d
-                        });
-                        (Value::error(), errs)
-                    }
-                }
-            }
-            else {
-                let t = self.val.res_type(ctx);
-                let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let oic = ctx.is_const.replace(true);
-                    let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                    ctx.is_const.set(oic);
-                    t
-                }) {t} else {
-                    match t {
-                        Type::IntLiteral => Type::Int(64, false),
-                        Type::Reference(b, m) => match *b {
-                            x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                            x => x
-                        },
-                        x => x
-                    }
-                };
-                match if let Some(t) = dt.llvm_type(ctx) {
-                    let old_global = ctx.global.replace(true);
-                    let val = if ctx.is_const.get() {
-                        let val = self.val.codegen_errs(ctx, &mut errs);
-                        let t2 = val.data_type.clone();
-                        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                            ctx.is_const.set(oic);
-                            t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
-                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
-                        val.inter_val = None;
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
-                    }
-                    else {
-                        let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
-                        let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
-                        gv.set_constant(false);
-                        gv.set_initializer(&t.const_zero());
-                        if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                        {
-                            let as0 = inkwell::AddressSpace::from(0u16);
-                            let i32t = ctx.context.i32_type();
-                            let i8tp = ctx.context.i8_type().ptr_type(as0);
-                            let st = ctx.context.struct_type(&[i32t.into(), ctx.context.void_type().fn_type(&[], false).ptr_type(as0).into(), i8tp.into()], false);
-                            let g = ctx.module.add_global(st.array_type(1), None, "llvm.global_ctors");
-                            g.set_linkage(inkwell::module::Linkage::Appending);
-                            g.set_initializer(&st.const_array(&[st.const_named_struct(&[i32t.const_int(ctx.priority.decr().get() as u64, false).into(), f.as_global_value().as_pointer_value().into(), i8tp.const_zero().into()])]));
-                        }
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        let old_ip = ctx.builder.get_insert_block();
-                        ctx.builder.position_at_end(entry);
-                        let old_scope = ctx.push_scope(&self.name);
-                        let val = self.val.codegen_errs(ctx, &mut errs);
-                        let t2 = val.data_type.clone();
-                        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let oic = ctx.is_const.replace(true);
-                            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                            ctx.is_const.set(oic);
-                            t
-                        }) {t} else {
-                            match t2 {
-                                Type::IntLiteral => Type::Int(64, false),
-                                Type::Reference(b, m) => match *b {
-                                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                    x => x
-                                },
-                                x => x
-                            }
-                        };
-                        let mut val = types::utils::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
-                        ctx.restore_scope(old_scope);
-                        if let Some(v) = val.value(ctx) {
-                            val.inter_val = None;
-                            ctx.builder.build_store(gv.as_pointer_value(), v);
-                            ctx.builder.build_return(None);
-                            hoist_allocas(&ctx.builder);
-                            if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
-                            else {ctx.builder.clear_insertion_position();}
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                                Some(PointerValue(gv.as_pointer_value())),
-                                None,
-                                Type::Reference(Box::new(dt), false)
-                            ), VariableData::with_vis(self.loc, vs))))
-                        }
-                        else {
-                            val.inter_val = None;
-                            unsafe {
-                                gv.delete();
-                                f.delete();
-                            }
-                            if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
-                        }
-                    };
-                    ctx.global.set(old_global);
-                    val
-                }
-                else {
-                    let old_scope = ctx.push_scope(&self.name);
-                    if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                    let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
-                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let oic = ctx.is_const.replace(true);
-                        let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                        ctx.is_const.set(oic);
-                        t
-                    }) {t} else {
-                        match t2 {
-                            Type::IntLiteral => Type::Int(64, false),
-                            Type::Reference(b, m) => match *b {
-                                x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                                x => x
-                            },
-                            x => x
-                        }
-                    };
-                    let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::error()
-                    });
-                    ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
-                } {
-                    Ok(x) => (x.0.clone(), errs),
-                    Err(RedefVariable::NotAModule(x, _)) => {
-                        errs.push(CobaltError::NotAModule {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string()
-                        });
-                        (Value::error(), errs)
-                    },
-                    Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                        errs.push(CobaltError::RedefVariable {
-                            loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string(),
-                            prev: d
-                        });
-                        (Value::error(), errs)
-                    }
-                }
-            }
-        }
-        else {
-            if let Some(loc) = is_extern {
-                errs.push(CobaltError::MustBeLocal {name: "extern", loc});
-            }
-            if let Some((_, loc)) = link_type {
-                errs.push(CobaltError::MustBeLocal {name: "link", loc});
-            }
-            if let Some((_, loc)) = linkas {
-                errs.push(CobaltError::MustBeLocal {name: "linkas", loc});
-            }
-            let old_scope = ctx.push_scope(&self.name);
-            let val = self.val.codegen_errs(ctx, &mut errs);
-            let t2 = val.data_type.clone();
-            let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                let oic = ctx.is_const.replace(true);
-                let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                ctx.is_const.set(oic);
-                t
-            }) {t} else {
-                match t2 {
-                    Type::IntLiteral => Type::Int(64, false),
-                    Type::Reference(b, m) => match *b {
-                        x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                        x => x
-                    },
-                    x => x
-                }
-            };
-            let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
-                errs.push(e);
-                Value::error()
-            });
-            ctx.restore_scope(old_scope);
-            match if ctx.is_const.get() {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
-            } 
-            else if let (Some(t), Some(v)) = (val.data_type.llvm_type(ctx), val.value(ctx)) {
-                let a = val.addr(ctx).unwrap_or_else(|| {
-                    let a = ctx.builder.build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
-                    ctx.builder.build_store(a, v);
-                    a
-                });
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                    Some(PointerValue(a)),
-                    val.inter_val,
-                    Type::Reference(Box::new(val.data_type), true)
-                ), VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
-            }
-            else {
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
-            } {
-                Ok(x) => (x.0.clone(), errs),
-                Err(RedefVariable::NotAModule(x, _)) => {
-                    errs.push(CobaltError::NotAModule {
-                        loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string()
-                    });
-                    (Value::error(), errs)
-                },
-                Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                    errs.push(CobaltError::RedefVariable {
-                        loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string(),
-                        prev: d
-                    });
-                    (Value::error(), errs)
-                }
-            }
-        }
-    }
-    fn to_code(&self) -> String {
-        let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out + format!("mut {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
-    }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        writeln!(f, "mut: {}", self.name)?;
+        writeln!(f, "let {}: {}", if self.is_mut {"(mut)"} else {""}, self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
@@ -1339,7 +620,7 @@ impl AST for ConstDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -1359,7 +640,7 @@ impl AST for ConstDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -1379,7 +660,7 @@ impl AST for ConstDefAST {
                             })
                         }
                     }
-                },
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "constant"})
             }
         }
@@ -1390,19 +671,10 @@ impl AST for ConstDefAST {
         let val = self.val.codegen_errs(ctx, &mut errs);
         let t2 = val.data_type.clone();
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            let t = types::utils::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
             t
-        }) {t} else {
-            match t2 {
-                Type::IntLiteral => Type::Int(64, false),
-                Type::Reference(b, m) => match *b {
-                    x @ Type::Array(..) => Type::Reference(Box::new(x), m),
-                    x => x
-                },
-                x => x
-            }
-        };
-        let val = types::utils::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+        }) {t} else {ops::decay(t2)};
+        let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         });
@@ -1528,7 +800,7 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        let ty = types::utils::impl_convert(unreachable_span(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
+        let ty = ops::impl_convert(unreachable_span(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
@@ -1612,7 +884,7 @@ impl AST for TypeDefAST {
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {return (Value::null(), errs)}
-        let ty = types::utils::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+        let ty = ops::impl_convert(self.val.loc(), (self.val.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
         let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
