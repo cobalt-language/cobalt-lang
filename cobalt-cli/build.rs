@@ -12,5 +12,6 @@ fn git_info() -> Option<()> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=../.git");
     git_info();
 }
