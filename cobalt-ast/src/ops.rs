@@ -2708,6 +2708,12 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     }
                 }
             }
+            "sizeof" => Ok(Value::metaval(InterData::Int(Type::Tuple(args.into_iter().map(|(v, aloc)| v.clone().into_type().ok_or_else(|| CobaltError::SizeofNeedsType {loc, aloc, ty: v.data_type.to_string()})).collect::<Result<_, _>>()?).size(ctx).as_static().unwrap_or(0) as _), Type::IntLiteral)),
+            "typeof" => Ok(match args.len() {
+                0 => Value::null(),
+                1 => Value::make_type(args.into_iter().next().unwrap().0.data_type),
+                _ => Value::make_type(Type::Tuple(args.into_iter().map(|x| x.0.data_type).collect())),
+            }),
             x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
         }
         t => Err(CobaltError::CannotCallWithArgs {
