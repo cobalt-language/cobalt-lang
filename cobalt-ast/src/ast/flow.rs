@@ -12,9 +12,6 @@ impl IfAST {
 impl AST for IfAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        ops::common(&self.if_true.res_type(ctx), &self.if_false.res_type(ctx)).unwrap_or(Type::Null)
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         let mut errs = vec![];
@@ -79,9 +76,6 @@ impl AST for IfAST {
         }
         else {(Value::error(), vec![])}
     }
-    fn to_code(&self) -> String {
-        format!("if ({}) ({}) else ({})", self.cond, self.if_true, self.if_false)
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "if/else")?;
         print_ast_child(f, pre, &*self.cond, false, file)?;
@@ -101,7 +95,6 @@ impl WhileAST {
 impl AST for WhileAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.cond.nodes() + self.body.nodes() + 1}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         if ctx.is_const.get() {return (Value::null(), vec![])}
         if let Some(f) = ctx.builder.get_insert_block().and_then(|bb| bb.get_parent()) {
@@ -124,9 +117,6 @@ impl AST for WhileAST {
             (Value::null(), errs)
         }
         else {(Value::error(), vec![])}
-    }
-    fn to_code(&self) -> String {
-        format!("while ({}) ({})", self.cond, self.body)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "while")?;

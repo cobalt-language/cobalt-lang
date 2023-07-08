@@ -34,7 +34,10 @@ pub fn impl_convertible(base: &Type, target: &Type) -> bool {
         Type::Float16 => matches!(target, Type::Float32 | Type::Float64 | Type::Float128),
         Type::Float32 => matches!(target, Type::Float64 | Type::Float128),
         Type::Float64 => *target == Type::Float128,
-        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb.as_ref(), rb.as_ref())} else {false},
+        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || impl_convertible(lb, target),
+        Type::Mut(b) => impl_convertible(b, target),
+        Type::Null => *target == Type::TypeData,
         Type::Error => true,
         _ => false
     }
@@ -44,191 +47,12 @@ pub fn expl_convertible(base: &Type, target: &Type) -> bool {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Int(..) => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)),
         Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(target, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
-        Type::Pointer(lb) => if let Type::Pointer(rb) = target {**rb == Type::Null || covariant(lb.as_ref(), rb.as_ref())} else {false},
+        Type::Pointer(lb) => if let Type::Pointer(rb) = target {**lb == Type::Null || covariant(lb, rb)} else {false},
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || expl_convertible(lb, target),
+        Type::Mut(b) => expl_convertible(b, target),
+        Type::Null => matches!(target, Type::TypeData | Type::IntLiteral | Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(_)),
         Type::Error => true,
         _ => false
-    }
-}
-pub fn bin_type(lhs: Type, rhs: Type, op: &str) -> Type {
-    match (lhs, rhs) {
-        (l, Type::Reference(r)) => bin_type(l, *r, op),
-        (Type::Reference(l), r) => add_ref(bin_type(*l, r, op)),
-        (Type::Int(ls, lu), Type::Int(rs, ru)) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => Type::Int(max(ls, rs), lu && ru),
-            _ => Type::Error
-        },
-        (x @ Type::Int(..), Type::IntLiteral) | (Type::IntLiteral, x @ Type::Int(..)) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => x,
-            _ => Type::Error
-        },
-        (Type::IntLiteral, Type::IntLiteral) => match op {
-            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" => Type::IntLiteral,
-            _ => Type::Error
-        },
-        (Type::Int(..) | Type::IntLiteral, x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) | (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), Type::Int(..) | Type::IntLiteral) => match op {
-            "+" | "-" | "*" | "/" | "%" => x,
-            _ => Type::Error
-        },
-        (Type::Float16, Type::Float16) => match op {
-            "+" | "-" | "*" | "/" | "%" => Type::Float16,
-            _ => Type::Error
-        },
-        (Type::Float32, Type::Float16 | Type::Float32) | (Type::Float16, Type::Float32) => match op {
-            "+" | "-" | "*" | "/" | "%" => Type::Float32,
-            _ => Type::Error
-        },
-        (Type::Float64, Type::Float16 | Type::Float32 | Type::Float64) | (Type::Float16 | Type::Float32, Type::Float64) => match op {
-            "+" | "-" | "*" | "/" | "%" => Type::Float64,
-            _ => Type::Error
-        },
-        (Type::Float128, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) | (Type::Float16 | Type::Float32 | Type::Float64, Type::Float128) => match op {
-            "+" | "-" | "*" | "/" | "%" => Type::Float128,
-            _ => Type::Error
-        },
-        (x @ Type::Pointer(..), Type::IntLiteral | Type::Int(..)) | (Type::IntLiteral | Type::Int(..), x @ Type::Pointer(..)) => match op {
-            "+" | "-" => x,
-            _ => Type::Error
-        }
-        (Type::Mut(x), r) => if op == "=" && impl_convertible(&r, x.as_ref()) {Type::Mut(x)} else {
-            match (*x, r) {
-                (Type::IntLiteral, _) => panic!("There shouldn't be a reference to an integer literal"),
-                (x @ Type::Int(..), r @ (Type::IntLiteral | Type::Int(..))) => match op {
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" => Type::Mut(Box::new(x)),
-                    _ => bin_type(x, r, op)
-                }
-                (x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => match op {
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Type::Mut(Box::new(x)),
-                    _ => bin_type(x, r, op)
-                }
-                (x @ Type::Pointer(..), r @ (Type::IntLiteral | Type::Int(..))) => match op {
-                    "+=" | "-=" => Type::Mut(Box::new(x)),
-                    _ => bin_type(x, r, op)
-                }
-                (x @ Type::Pointer(..), y @ Type::Pointer(..)) if x == y => match op {
-                    "=" => Type::Mut(Box::new(x)),
-                    _ => bin_type(x, y, op)
-                }
-                (x, r) => bin_type(x, r, op)
-            }
-        }
-        _ => Type::Error
-    }
-}
-pub fn pre_type(val: Type, op: &str) -> Type {
-    match val {
-        Type::Mut(x) => match *x {
-            Type::IntLiteral => panic!("There shouldn't be a reference to an integer literal"),
-            x @ (Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)) => match op {
-                "++" | "--" => Type::Mut(Box::new(x)),
-                _ => Type::Error
-            }
-            x => pre_type(x, op)
-        }
-        Type::Reference(x) => add_ref(pre_type(*x, op)),
-        x @ (Type::IntLiteral | Type::Int(..)) => match op {
-            "+" | "-" | "~" => x,
-            _ => Type::Error
-        },
-        x @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128) => match op {
-            "+" | "-" => x,
-            _ => Type::Error
-        }
-        Type::Pointer(b) => match op {
-            "*" => Type::Reference(b),
-            _ => Type::Error
-        }
-        Type::TypeData | Type::Null => if matches!(op, "&" | "*" | "mut") {Type::TypeData} else {Type::Error},
-        Type::Tuple(v) => if matches!(op, "&" | "*" | "mut") && v.iter().all(|t| impl_convertible(t, &Type::TypeData)) {Type::TypeData} else {Type::Error},
-        _ => Type::Error
-    }
-}
-#[allow(clippy::only_used_in_recursion)]
-pub fn post_type(val: Type, op: &str) -> Type {
-    match val {
-        Type::Reference(x) => add_ref(post_type(*x, op)),
-        _ => Type::Error
-    }
-}
-pub fn sub_type(val: Type, idx: Type) -> Type {
-    match idx {
-        Type::Reference(x) | Type::Mut(x) => sub_type(val, *x),
-        i => match val {
-            Type::Pointer(b) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b), _ => Type::Error},
-            Type::Reference(b) => match *b {
-                Type::Array(b, _) => match i {Type::IntLiteral | Type::Int(..) => Type::Reference(b), _ => Type::Error},
-                x => sub_type(x, i)
-            },
-            Type::TypeData | Type::Null => match i {
-                Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
-                _ => Type::Error
-            },
-            Type::Tuple(v) if v.iter().all(|v| impl_convertible(v, &Type::TypeData)) => match i {
-                Type::Int(..) | Type::IntLiteral | Type::Null => Type::TypeData,
-                _ => Type::Error
-            },
-            _ => Type::Error
-        }
-    }
-}
-pub fn call_type(target: Type, args: Vec<Value>) -> Type {
-    match target {
-        Type::Function(ret, _) => *ret,
-        Type::InlineAsm(b) => *b,
-        Type::Reference(b) => match *b {
-            Type::Mut(b) => {
-                let is_tup = matches!(*b, Type::Tuple(..));
-                let mut t = call_type(*b, args);
-                if is_tup && t != Type::Error {t = Type::Reference(Box::new(Type::Mut(Box::new(t))))}
-                t
-            }
-            Type::Tuple(..) => {
-                let mut t = call_type(*b, args);
-                if t != Type::Error {t = Type::Reference(Box::new(t))}
-                t
-            },
-            _ => call_type(*b, args)
-        }
-        Type::Tuple(v) => if args.len() == 1 {
-            let val = args.into_iter().next().unwrap();
-            match decay(val.data_type) {
-                Type::Int(..) => if let Some(InterData::Int(i)) = val.inter_val {v.get(i as usize).cloned().unwrap_or(Type::Error)} else {Type::Error},
-                _ => Type::Error
-            }
-        } else {Type::Error},
-        _ => Type::Error
-    }
-}
-pub fn attr_type(target: Type, attr: &str, ctx: &CompCtx) -> Type {
-    match target {
-        Type::Reference(b) => match *b {
-            Type::Nominal(ref n) => {
-                ctx.nominals.borrow()[n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
-                    match mt {
-                        MethodType::Normal => Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false),
-                        MethodType::Static => Type::Error,
-                        MethodType::Getter => (**ret).clone()
-                    }
-                } else {Type::Error})
-            }
-            Type::Mut(b) => if let Type::Nominal(ref n) = *b {
-                ctx.nominals.borrow()[n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
-                    match mt {
-                        MethodType::Normal => Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false),
-                        MethodType::Static => Type::Error,
-                        MethodType::Getter => (**ret).clone()
-                    }
-                } else {Type::Error})
-            } else {Type::Error}
-            _ => Type::Error
-        }
-        Type::Nominal(n) => ctx.nominals.borrow()[&n].2.get(attr).map_or(Type::Error, |v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(InterData::Function(FnData {mt, ..})), ..} = v {
-            match mt {
-                MethodType::Normal => Type::BoundMethod(Box::new(Type::Nominal(n)), ret.clone(), args.clone(), false),
-                MethodType::Static => Type::Error,
-                MethodType::Getter => (**ret).clone()
-            }
-        } else {Type::Error}),
-        _ => Type::Error
     }
 }
 pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan), (mut rhs, rloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
@@ -395,7 +219,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                         Ordering::Greater => if let Some(IntValue(rv)) = rhs.comp_val {
                             let lt = ctx.context.custom_width_int_type(ls as u32);
                             rhs.comp_val = Some(if ru {ctx.builder.build_int_z_extend(rv, lt, "")} else {ctx.builder.build_int_s_extend(rv, lt, "")}.into());
-                        },
+                        }
                         Ordering::Equal => {}
                     }
                     match op {
@@ -626,7 +450,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             }
             rhs.data_type = Type::Int(ls, ru);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (Type::Int(ls, lu), Type::Int(rs, _)) if ls < rs => {
             if let (Some(IntValue(val)), false) = (lhs.value(ctx), ctx.is_const.get()) {
                 lhs.comp_val = Some(IntValue(if lu {ctx.builder.build_int_z_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}
@@ -634,7 +458,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             }
             lhs.data_type = Type::Int(rs, lu);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (Type::Int(ls, lu), Type::Int(rs, ru)) if ls == rs => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -813,13 +637,13 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(unreachable_span(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
         (Type::IntLiteral, x @ Type::Int(..)) => {
             let t = x.clone();
             lhs.data_type = Type::IntLiteral;
             bin_op(loc, (impl_convert(unreachable_span(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
-        },
+        }
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -998,7 +822,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (Type::Pointer(b), Type::Int(..) | Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
                 match (lhs.comp_val, rhs.comp_val, b.size(ctx), ctx.is_const.get()) {
@@ -1020,7 +844,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Pointer(b)
             )),
             _ => Err(err)
-        },
+        }
         (Type::Int(..) | Type::IntLiteral, Type::Pointer(b)) => match op {
             "+" => Ok(Value::new(
                 match (rhs.comp_val, lhs.comp_val, b.size(ctx), ctx.is_const.get()) { // I just swapped the sides here
@@ -1031,7 +855,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Pointer(b)
             )),
             _ => Err(err)
-        },
+        }
         (l @ Type::Pointer(..), r @ Type::Pointer(..)) => match op {
             "-" if l == r => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -1125,7 +949,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l.size(ctx) < r.size(ctx) => {
             lhs.comp_val = match (lhs.comp_val, ctx.is_const.get()) {
                 (Some(FloatValue(l)), false) => Some(FloatValue(ctx.builder.build_float_cast(l, r.llvm_type(ctx).unwrap().into_float_type(), ""))),
@@ -1134,7 +958,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = r.clone();
             rhs.data_type = r;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64)) if l.size(ctx) > r.size(ctx) => {
             rhs.comp_val = match (rhs.comp_val, ctx.is_const.get()) {
                 (Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_cast(r, l.llvm_type(ctx).unwrap().into_float_type(), ""))),
@@ -1143,7 +967,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = l.clone();
             rhs.data_type = l;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l == r => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -1267,7 +1091,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..))) => {
             if let (Some(IntValue(rv)), false) = (rhs.comp_val, ctx.is_const.get()) {
                 rhs.comp_val = Some(FloatValue(match r {
@@ -1278,7 +1102,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = l.clone();
             rhs.data_type = l;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::IntLiteral | Type::Int(..)), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => {
             if let (Some(IntValue(lv)), false) = (lhs.comp_val, ctx.is_const.get()) {
                 lhs.comp_val = Some(FloatValue(match l {
@@ -1289,7 +1113,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = r.clone();
             rhs.data_type = r;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         _ => Err(err)
     }
 }
@@ -2562,6 +2386,10 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         _ => Err(err)
                     }
                 }
+                b @ Type::Function(..) => {
+                    target.data_type = b;
+                    call(target, loc, cparen, args, ctx)
+                }
                 b => {
                     if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = target.comp_val {
@@ -2628,7 +2456,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 None,
                 *ret
             ))
-        },
+        }
         Type::BoundMethod(base, ret, params, m) => {
             let mut avec = Vec::with_capacity(args.len() + 1);
             avec.push((Value::new(None, None, Type::Reference(maybe_mut(base, m))), loc));
@@ -2641,7 +2469,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             }
             target.data_type = Type::Function(ret, params);
             call(target, loc, cparen, avec, ctx)
-        },
+        }
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
             let mut comp_args = Vec::with_capacity(args.len());
@@ -2676,7 +2504,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 ctx.builder.build_indirect_call(fty, asm, &comp_args, "");
                 Ok(Value::null())
             }
-        } else {Ok(Value::error())},
+        } else {Ok(Value::error())}
         Type::Tuple(v) => {
             let err = CobaltError::CannotCallWithArgs {
                 val: format!("({})", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")),
@@ -2702,10 +2530,10 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         })}
                     }
                     else {Err(CobaltError::NotCompileTime {loc: *aloc})}
-                },
+                }
                 _ => Err(err)
             }
-        },
+        }
         Type::Intrinsic(name) => match name.as_str() {
             "asm" => {
                 let mut args = args.into_iter().collect::<VecDeque<_>>();
@@ -2819,7 +2647,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         })
                     }
                 }
-            },
+            }
             "alloca" => {
                 let mut args = args.into_iter().collect::<VecDeque<_>>();
                 if args.is_empty() {
@@ -2903,9 +2731,23 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         Ok(Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Mut(Box::new(Type::Null))))))
                     }
                 }
-            },
+            }
+            "sizeof" => Ok(Value::metaval(InterData::Int(Type::Tuple(args.into_iter().map(|(v, aloc)| v.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc, ty: v.data_type.to_string()})).collect::<Result<_, _>>()?).size(ctx).as_static().unwrap_or(0) as _), Type::IntLiteral)),
+            "typename" => {
+                let name = match args.len() {
+                    0 => "null".into(),
+                    1 => args[0].0.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc: args[0].1, ty: args[0].0.data_type.to_string()})?.to_string(),
+                    _ => Type::Tuple(args.into_iter().map(|(v, aloc)| v.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc, ty: v.data_type.to_string()})).collect::<Result<_, _>>()?).to_string(),
+                };
+                Ok(Value::interpreted(ctx.builder.build_global_string_ptr(&name, "cobalt.str").as_pointer_value().into(), InterData::Array(name.bytes().map(|v| InterData::Int(v as _)).collect()), Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(name.len() as _))))))
+            }
+            "typeof" => Ok(match args.len() {
+                0 => Value::null(),
+                1 => Value::make_type(args.into_iter().next().unwrap().0.data_type),
+                _ => Value::make_type(Type::Tuple(args.into_iter().map(|x| x.0.data_type).collect())),
+            }),
             x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
-        },
+        }
         t => Err(CobaltError::CannotCallWithArgs {
             val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
@@ -2992,8 +2834,8 @@ pub fn maybe_mut(ty: Box<Type>, is_mut: bool) -> Box<Type> {
     if is_mut {Box::new(Type::Mut(ty))}
     else {ty}
 }
-pub fn covariant(base: &Type, derived: &Type) -> bool {
+pub fn covariant(derived: &Type, base: &Type) -> bool {
     base == derived ||
-    if let Type::Mut(d) = derived {covariant(base, d)}
+    if let Type::Mut(d) = derived {covariant(d, base)}
     else {matches!((base, derived), (Type::Array(_, Some(0)), Type::Array(_, Some(0))) | (_, Type::Null))}
 }

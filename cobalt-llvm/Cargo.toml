@@ -1,0 +1,28 @@
+[package]
+name = "cobalt-llvm"
+version = "0.5.4"
+edition = "2021"
+
+[dependencies]
+inkwell = { version = "0.2.0" }
+llvm-sys-15 = { package = "llvm-sys", version = "150", optional = true }
+llvm-sys-16 = { package = "llvm-sys", version = "160", optional = true }
+
+[build-dependencies]
+lazy_static = "1.4"
+regex = "1.8"
+const_format = "0.2.31"
+semver = "1.0"
+
+# features passed to llvm-sys
+[features]
+default = ["strict-versioning", "prefer-dynamic", "llvm-16"]
+llvm-15 = ["inkwell/llvm15-0", "llvm-sys-15"]
+llvm-16 = ["inkwell/llvm16-0", "llvm-sys-16"]
+strict-versioning = ["llvm-sys-15/strict-versioning", "llvm-sys-16/strict-versioning"]
+no-llvm-linking = ["llvm-sys-15/no-llvm-linking", "llvm-sys-16/no-llvm-linking"]
+
+prefer-dynamic = ["llvm-sys-15/prefer-dynamic", "llvm-sys-16/prefer-dynamic"]
+force-dynamic = ["llvm-sys-15/force-dynamic", "llvm-sys-16/force-dynamic"]
+prefer-static = ["llvm-sys-15/prefer-static", "llvm-sys-16/prefer-static"]
+force-static = ["llvm-sys-15/force-static", "llvm-sys-16/force-static"]
