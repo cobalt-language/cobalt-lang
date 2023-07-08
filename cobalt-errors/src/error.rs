@@ -202,7 +202,7 @@ pub enum CobaltError {
         errs: Vec<CobaltError>
     },
     #[error("@sizeof requires all arguments to be types")]
-    SizeofNeedsType {
+    ExpectedType {
         #[label]
         loc: SourceSpan,
         #[label("argument type is {ty}")]

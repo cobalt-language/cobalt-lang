@@ -983,7 +983,7 @@ impl IntrinsicAST {
 impl AST for IntrinsicAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
-        if matches!(self.name.as_str(), "alloca" | "asm" | "sizeof" | "typeof") {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
+        if matches!(self.name.as_str(), "alloca" | "asm" | "sizeof" | "typeof" | "typename") {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
         else {(Value::error(), vec![CobaltError::UnknownIntrinsic {name: self.name.clone(), loc: self.loc}])}
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
