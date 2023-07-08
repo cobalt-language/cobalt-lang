@@ -195,7 +195,7 @@ impl AST for FnDefAST {
                             cconv: cc,
                             mt
                         })),
-                        fty.clone(),
+                        Type::Reference(Box::new(fty.clone()))
                     ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
                 }
             }
@@ -229,7 +229,7 @@ impl AST for FnDefAST {
                             cconv: cc,
                             mt
                         })),
-                        fty.clone(),
+                        Type::Reference(Box::new(fty.clone()))
                     ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
                 }
             }
@@ -648,7 +648,7 @@ impl AST for FnDefAST {
                             cconv: cc,
                             mt
                         })),
-                        fty.clone(),
+                        Type::Reference(Box::new(fty.clone()))
                     ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
@@ -766,7 +766,7 @@ impl AST for FnDefAST {
                             cconv: cc,
                             mt
                         })),
-                        fty.clone()
+                        Type::Reference(Box::new(fty.clone()))
                     ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);

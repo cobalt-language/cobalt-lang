@@ -2366,6 +2366,10 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         _ => Err(err)
                     }
                 }
+                b @ Type::Function(..) => {
+                    target.data_type = b;
+                    call(target, loc, cparen, args, ctx)
+                }
                 b => {
                     if !ctx.is_const.get() {
                         if let Some(PointerValue(v)) = target.comp_val {
