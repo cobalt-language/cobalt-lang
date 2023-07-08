@@ -2708,6 +2708,20 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                     }
                 }
             }
+            "sizeof" => Ok(Value::metaval(InterData::Int(Type::Tuple(args.into_iter().map(|(v, aloc)| v.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc, ty: v.data_type.to_string()})).collect::<Result<_, _>>()?).size(ctx).as_static().unwrap_or(0) as _), Type::IntLiteral)),
+            "typename" => {
+                let name = match args.len() {
+                    0 => "null".into(),
+                    1 => args[0].0.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc: args[0].1, ty: args[0].0.data_type.to_string()})?.to_string(),
+                    _ => Type::Tuple(args.into_iter().map(|(v, aloc)| v.clone().into_type().ok_or_else(|| CobaltError::ExpectedType {loc, aloc, ty: v.data_type.to_string()})).collect::<Result<_, _>>()?).to_string(),
+                };
+                Ok(Value::interpreted(ctx.builder.build_global_string_ptr(&name, "cobalt.str").as_pointer_value().into(), InterData::Array(name.bytes().map(|v| InterData::Int(v as _)).collect()), Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(name.len() as _))))))
+            }
+            "typeof" => Ok(match args.len() {
+                0 => Value::null(),
+                1 => Value::make_type(args.into_iter().next().unwrap().0.data_type),
+                _ => Value::make_type(Type::Tuple(args.into_iter().map(|x| x.0.data_type).collect())),
+            }),
             x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
         }
         t => Err(CobaltError::CannotCallWithArgs {

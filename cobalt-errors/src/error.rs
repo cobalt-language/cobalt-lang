@@ -201,6 +201,14 @@ pub enum CobaltError {
         #[related]
         errs: Vec<CobaltError>
     },
+    #[error("@sizeof requires all arguments to be types")]
+    ExpectedType {
+        #[label]
+        loc: SourceSpan,
+        #[label("argument type is {ty}")]
+        aloc: SourceSpan,
+        ty: String
+    },
     #[error("bit cast target must be the same size as the source")]
     DifferentBitCastSizes {
         #[label]

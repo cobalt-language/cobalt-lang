@@ -21,12 +21,12 @@ impl AST for IntLiteralAST {
             Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, false)), vec![])
-            },
+            }
             Some(("usize", _)) => (Value::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(64, true)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
-            },
+            }
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "integer", suf: x.to_string()}])
         }
     }
@@ -82,12 +82,12 @@ impl AST for CharLiteralAST {
             Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, false)), vec![])
-            },
+            }
             Some(("usize", _)) => (Value::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(64, true)), vec![]),
             Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
-            },
+            }
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "character", suf: x.to_string()}])
         }
     }
@@ -122,7 +122,7 @@ impl AST for StringLiteralAST {
                     InterData::Array(self.val.iter().map(|&c| InterData::Int(c as i128)).collect()),
                     Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))))
                 ), vec![])
-            },
+            }
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc, lit: "string", suf: x.to_string()}])
         }
     }
