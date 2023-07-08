@@ -14,7 +14,9 @@ pub fn impl_convertible(base: &Type, target: &Type) -> bool {
         Type::Float16 => matches!(target, Type::Float32 | Type::Float64 | Type::Float128),
         Type::Float32 => matches!(target, Type::Float64 | Type::Float128),
         Type::Float64 => *target == Type::Float128,
-        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb.as_ref(), rb.as_ref())} else {false},
+        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || impl_convertible(lb, target),
+        Type::Mut(b) => impl_convertible(b, target),
         Type::Error => true,
         _ => false
     }
@@ -24,7 +26,9 @@ pub fn expl_convertible(base: &Type, target: &Type) -> bool {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Int(..) => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)),
         Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(target, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
-        Type::Pointer(lb) => if let Type::Pointer(rb) = target {**rb == Type::Null || covariant(lb.as_ref(), rb.as_ref())} else {false},
+        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || expl_convertible(lb, target),
+        Type::Mut(b) => expl_convertible(b, target),
         Type::Error => true,
         _ => false
     }
