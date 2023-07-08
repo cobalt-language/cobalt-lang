@@ -40,14 +40,6 @@ impl AST for IntLiteralAST {
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "integer", suf: x.to_string()}])
         }
     }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{}{}", self.val, suf)
-        }
-        else {
-            self.val.to_string()
-        }
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "int: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
@@ -82,14 +74,6 @@ impl AST for FloatLiteralAST {
             Some(("f32", _)) => (Value::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
             Some(("f128", _)) => (Value::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "floating-point", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{}{}", self.val, suf)
-        }
-        else {
-            self.val.to_string()
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -136,14 +120,6 @@ impl AST for CharLiteralAST {
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "character", suf: x.to_string()}])
         }
     }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{:?}{}", self.val, suf)
-        }
-        else {
-            format!("{:?}", self.val)
-        }
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         if let Some(c) = char::from_u32(self.val) {write!(f, "char: {c:?}")} else {write!(f, "char: \\u{{{:0>X}}}", self.val)}?;
         if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
@@ -183,14 +159,6 @@ impl AST for StringLiteralAST {
                 ), vec![])
             },
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc, lit: "string", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{:?}{}", self.val.as_bstr(), suf)
-        }
-        else {
-            format!("{:?}", self.val.as_bstr())
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -268,18 +236,6 @@ impl AST for ArrayLiteralAST {
             Type::Array(Box::new(ty), Some(len as u32))
         ), errs)
     }
-    fn to_code(&self) -> String {
-        let mut out = "[".to_string();
-        let mut len = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if len != 1 {
-                out += ", ";
-                len -= 1;
-            }
-        }
-        out + "]"
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "array")?;
         let mut len = self.vals.len();
@@ -326,18 +282,6 @@ impl AST for TupleLiteralAST {
         };
         if inters.iter().all(Option::is_some) {val.inter_val = Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()));};
         (val, errs)
-    }
-    fn to_code(&self) -> String {
-        let mut out = "(".to_string();
-        let mut len = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if len != 1 {
-                out += ", ";
-                len -= 1;
-            }
-        }
-        out + ")"
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "tuple")?;

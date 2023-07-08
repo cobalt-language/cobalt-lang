@@ -79,9 +79,6 @@ impl AST for IfAST {
         }
         else {(Value::error(), vec![])}
     }
-    fn to_code(&self) -> String {
-        format!("if ({}) ({}) else ({})", self.cond, self.if_true, self.if_false)
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "if/else")?;
         print_ast_child(f, pre, &*self.cond, false, file)?;
@@ -124,9 +121,6 @@ impl AST for WhileAST {
             (Value::null(), errs)
         }
         else {(Value::error(), vec![])}
-    }
-    fn to_code(&self) -> String {
-        format!("while ({}) ({})", self.cond, self.body)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "while")?;

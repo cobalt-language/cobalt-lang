@@ -548,11 +548,6 @@ impl AST for VarDefAST {
             }
         }
     }
-    fn to_code(&self) -> String {
-        let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out + format!("let {}{}{} = {}", if self.is_mut {"mut "} else {""}, self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {}", t.to_code())), self.val.to_code()).as_str()
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "let {}: {}", if self.is_mut {"(mut)"} else {""}, self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
@@ -698,11 +693,6 @@ impl AST for ConstDefAST {
                 (Value::error(), errs)
             }
         }
-    }
-    fn to_code(&self) -> String {
-        let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out + format!("const {}{} = {}", self.name, self.type_.as_ref().map_or("".to_string(), |t| format!(": {t}")), self.val.to_code()).as_str()
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "const: {}", self.name)?;
@@ -926,7 +916,6 @@ impl AST for TypeDefAST {
             }
         }
     }
-    fn to_code(&self) -> String {format!("type {} = {}", self.name, self.val.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "type: {}", self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
@@ -977,9 +966,6 @@ impl AST for VarGetAST {
                 loc: self.loc
             }])
         }
-    }
-    fn to_code(&self) -> String {
-        format!("{}{}", if self.global {"."} else {""}, self.name)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "var: {}{}", if self.global {"."} else {""}, self.name)

@@ -19,16 +19,6 @@ impl AST for BlockAST {
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }
-    fn to_code(&self) -> String {
-        let mut out = '{'.to_string();
-        let mut count = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if count != 1 {out += "; ";}
-            count -= 1;
-        }
-        out + "}"
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "block")?;
         let mut count = self.vals.len();
@@ -58,16 +48,6 @@ impl AST for GroupAST {
         let mut errs = vec![];
         self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
         (out, errs)
-    }
-    fn to_code(&self) -> String {
-        let mut out = '('.to_string();
-        let mut count = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if count != 1 {out += "; ";}
-            count -= 1;
-        }
-        out + ")"
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "group")?;
@@ -101,16 +81,6 @@ impl AST for TopLevelAST {
         let mut errs = vec![];
         self.vals.iter().for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
         (Value::null(), errs)
-    }
-    fn to_code(&self) -> String {
-        let mut out = String::new();
-        let mut count = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            out += if count != 1 {"; "} else {";"};
-            count -= 1;
-        }
-        out
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         if let Some(ref file) = self.file {writeln!(f, "{}", file.name())?} else {f.write_str("<file not set>\n")?};

@@ -905,28 +905,6 @@ impl AST for FnDefAST {
         }
         val
     }
-    fn to_code(&self) -> String {
-        let mut out = "".to_string();
-        for s in self.annotations.iter().map(|(name, arg, _)| ("@".to_string() + name.as_str() + arg.as_ref().map(|x| format!("({x})")).unwrap_or_default().as_str() + " ")) {out += s.as_str();}
-        out += format!("fn {}(", self.name).as_str();
-        let mut len = self.params.len();
-        for (param, param_ty, ty, default) in self.params.iter() {
-            out += match param_ty {
-                ParamType::Normal => "",
-                ParamType::Mutable => "mut ",
-                ParamType::Constant => "const "
-            };
-            out += format!("{}: {}", param, ty).as_str();
-            if let Some(val) = default {
-                out += format!(" = {}", val.to_code()).as_str();
-            }
-            if len > 1 {
-                out += ", ";
-            }
-            len -= 1;
-        }
-        out + format!("): {} = {}", self.ret, self.body.to_code()).as_str()
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "function: {}", self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
@@ -982,7 +960,6 @@ impl CallAST {
 impl AST for CallAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
     fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn expl_type(&self, ctx: &CompCtx) -> bool {matches!(self.target.res_type(ctx), Type::InlineAsm(..))}
     fn res_type(&self, ctx: &CompCtx) -> Type {
         ops::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
     }
@@ -993,18 +970,6 @@ impl AST for CallAST {
             errs.append(&mut es);
             (arg, a.loc())
         }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Value::error()}), errs)
-    }
-    fn to_code(&self) -> String {
-        let mut out = format!("{}(", self.target.to_code());
-        let mut count = self.args.len();
-        for arg in self.args.iter() {
-            out += arg.to_code().as_str();
-            if count > 1 {
-                out += ", ";
-            }
-            count -= 1;
-        }
-        out + ")"
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "call")?;
@@ -1029,7 +994,6 @@ impl AST for IntrinsicAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Intrinsic(self.name.clone())}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
-    fn to_code(&self) -> String {format!("@{}", self.name)}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
 }
 /// Move all constant alloca instructions to the entry block of the function

@@ -123,9 +123,6 @@ impl AST for BinOpAST {
             }
         }
     }
-    fn to_code(&self) -> String {
-        format!("({} {} {})", self.lhs.to_code(), self.op, self.rhs.to_code())
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "binary op: {}", self.op)?;
         print_ast_child(f, pre, &*self.lhs, false, file)?;
@@ -155,9 +152,6 @@ impl AST for PostfixAST {
             Value::error()
         }), errs)
     }
-    fn to_code(&self) -> String {
-        format!("{}{}", self.val.to_code(), self.op)
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "postfix op: {}", self.op)?;
         print_ast_child(f, pre, &*self.val, true, file)
@@ -186,9 +180,6 @@ impl AST for PrefixAST {
             Value::error()
         }), errs)
     }
-    fn to_code(&self) -> String {
-        format!("{}{}", self.op, self.val.to_code())
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "prefix op: {}", self.op)?;
         print_ast_child(f, pre, &*self.val, true, file)
@@ -215,9 +206,6 @@ impl AST for SubAST {
             errs.push(e);
             Value::error()
         }), errs)
-    }
-    fn to_code(&self) -> String {
-        format!("{}[{}]", self.target.to_code(), self.index.to_code())
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "subscript")?;
@@ -293,7 +281,6 @@ impl AST for DotAST {
         };
         (v, errs)
     }
-    fn to_code(&self) -> String {format!("{}.{}", self.obj.to_code(), self.name.0)}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "attr: {}", self.name.0)?;
         print_ast_child(f, pre, &*self.obj, true, file)

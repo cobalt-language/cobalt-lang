@@ -118,17 +118,6 @@ impl AST for ModuleAST {
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
         (Value::null(), errs)
     }
-    fn to_code(&self) -> String {
-        let mut out = format!("module {} {{", self.name);
-        let mut count = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            out += ";";
-            if count > 1 {out += " ";}
-            count -= 1;
-        }
-        out + "}"
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "module: {}", self.name)?;
         let mut count = self.vals.len();
@@ -229,9 +218,6 @@ impl AST for ImportAST {
             v.imports.push((self.name.clone(), vis_spec.map_or(ctx.export.get(), |(v, _)| v)))
         });
         (Value::null(), errs)
-    }
-    fn to_code(&self) -> String {
-        format!("import {}", self.name)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "import: {}", self.name)

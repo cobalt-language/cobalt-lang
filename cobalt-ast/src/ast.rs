@@ -28,9 +28,7 @@ pub trait AST: ASTClone + std::fmt::Debug {
     fn nodes(&self) -> usize {1}
     // AST properties
     fn is_const(&self) -> bool {false}
-    fn expl_type(&self, _ctx: &CompCtx) -> bool {false}
     // pretty printing
-    fn to_code(&self) -> String;
     fn print_impl(&self, f: &mut Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> Result;
     // prepasses
     fn varfwd_prepass(&self, _ctx: &CompCtx) {} // runs once, inserts uninit symbols with correct names

@@ -11,7 +11,6 @@ impl CastAST {
 impl AST for CastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
-    fn expl_type(&self, _: &CompCtx) -> bool {true}
     fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = ops::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.val.codegen(ctx);
@@ -23,9 +22,6 @@ impl AST for CastAST {
             errs.push(e);
             Value::error()
         }), errs)
-    }
-    fn to_code(&self) -> String {
-        format!("{}: {}", self.val.to_code(), self.target.to_code())
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "cast")?;
@@ -45,7 +41,6 @@ impl BitCastAST {
 impl AST for BitCastAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.target.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.target.nodes() + 1}
-    fn expl_type(&self, _: &CompCtx) -> bool {true}
     fn res_type(&self, ctx: &CompCtx) -> Type {if let Some(InterData::Type(ty)) = ops::impl_convert(unreachable_span(), (self.target.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(|t| t.inter_val) {*ty} else {Type::Error}}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
@@ -88,9 +83,6 @@ impl AST for BitCastAST {
         }
         else {(Value::error(), errs)}
     }
-    fn to_code(&self) -> String {
-        format!("{}:? {}", self.val.to_code(), self.target.to_code())
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "bitcast")?;
         print_ast_child(f, pre, &*self.val, false, file)?;
@@ -108,7 +100,6 @@ impl AST for NullAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::null(), vec![])}
-    fn to_code(&self) -> String {"null".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "null")}
 }
 #[derive(Debug, Clone)]
@@ -122,7 +113,6 @@ impl AST for ErrorTypeAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::make_type(Type::Error), vec![])}
-    fn to_code(&self) -> String {"<error type>".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "error type")}
 }
 #[derive(Debug, Clone)]
@@ -136,7 +126,6 @@ impl AST for TypeLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::make_type(Type::TypeData), vec![])}
-    fn to_code(&self) -> String {"type".to_string()}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "type (literal)")}
 }
 #[derive(Debug, Clone)]
@@ -153,6 +142,5 @@ impl AST for ParenAST {
     fn is_const(&self) -> bool {self.base.is_const()}
     fn res_type(&self, ctx: &CompCtx) -> Type {self.base.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {self.base.codegen(ctx)}
-    fn to_code(&self) -> String {format!("({})", self.base.to_code())}
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {self.base.print_impl(f, pre, file)}
 }
