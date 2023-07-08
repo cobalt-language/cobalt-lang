@@ -17,6 +17,7 @@ pub fn impl_convertible(base: &Type, target: &Type) -> bool {
         Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
         Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || impl_convertible(lb, target),
         Type::Mut(b) => impl_convertible(b, target),
+        Type::Null => *target == Type::TypeData,
         Type::Error => true,
         _ => false
     }
@@ -26,9 +27,10 @@ pub fn expl_convertible(base: &Type, target: &Type) -> bool {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Int(..) => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)),
         Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(target, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
-        Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
+        Type::Pointer(lb) => if let Type::Pointer(rb) = target {**lb == Type::Null || covariant(lb, rb)} else {false},
         Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || expl_convertible(lb, target),
         Type::Mut(b) => expl_convertible(b, target),
+        Type::Null => matches!(target, Type::TypeData | Type::IntLiteral | Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(_)),
         Type::Error => true,
         _ => false
     }
@@ -2794,8 +2796,8 @@ pub fn maybe_mut(ty: Box<Type>, is_mut: bool) -> Box<Type> {
     if is_mut {Box::new(Type::Mut(ty))}
     else {ty}
 }
-pub fn covariant(base: &Type, derived: &Type) -> bool {
+pub fn covariant(derived: &Type, base: &Type) -> bool {
     base == derived ||
-    if let Type::Mut(d) = derived {covariant(base, d)}
+    if let Type::Mut(d) = derived {covariant(d, base)}
     else {matches!((base, derived), (Type::Array(_, Some(0)), Type::Array(_, Some(0))) | (_, Type::Null))}
 }
