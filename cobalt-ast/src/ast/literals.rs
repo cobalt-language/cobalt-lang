@@ -14,16 +14,6 @@ impl IntLiteralAST {
 impl AST for IntLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {
-        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
-            None | Some(("", _)) => Type::IntLiteral,
-            Some(("isize", _)) => Type::Int(64, false),
-            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
-            Some(("usize", _)) => Type::Int(64, true),
-            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
-            _ => Type::Null
-        }
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("", _)) => (Value::metaval(InterData::Int(self.val), Type::IntLiteral), vec![]),
@@ -38,14 +28,6 @@ impl AST for IntLiteralAST {
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val), Type::Int(size, true)), vec![])
             },
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "integer", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{}{}", self.val, suf)
-        }
-        else {
-            self.val.to_string()
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -66,15 +48,6 @@ impl FloatLiteralAST {
 impl AST for FloatLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {
-        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
-            None | Some(("f64", _)) => Type::Float64,
-            Some(("f16", _)) => Type::Float16,
-            Some(("f32", _)) => Type::Float32,
-            Some(("f128", _)) => Type::Float64,
-            _ => Type::Null
-        }
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("f64", _)) => (Value::interpreted(FloatValue(ctx.context.f64_type().const_float(self.val)), InterData::Float(self.val), Type::Float64), vec![]),
@@ -82,14 +55,6 @@ impl AST for FloatLiteralAST {
             Some(("f32", _)) => (Value::interpreted(FloatValue(ctx.context.f32_type().const_float(self.val)), InterData::Float(self.val), Type::Float32), vec![]),
             Some(("f128", _)) => (Value::interpreted(FloatValue(ctx.context.f128_type().const_float(self.val)), InterData::Float(self.val), Type::Float128), vec![]),
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "floating-point", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{}{}", self.val, suf)
-        }
-        else {
-            self.val.to_string()
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -110,16 +75,6 @@ impl CharLiteralAST {
 impl AST for CharLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {
-        match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
-            None | Some(("", _)) => Type::Int(32, true),
-            Some(("isize", _)) => Type::Int(64, false),
-            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), false),
-            Some(("usize", _)) => Type::Int(64, true),
-            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Type::Int(x[1..].parse().unwrap_or(0), true),
-            _ => Type::Null
-        }
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.suffix.as_ref().map(|(x, y)| (x.as_str(), y)) {
             None | Some(("", _)) => (Value::interpreted(IntValue(ctx.context.i64_type().const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(32, true)), vec![]),
@@ -134,14 +89,6 @@ impl AST for CharLiteralAST {
                 (Value::interpreted(IntValue(ctx.context.custom_width_int_type(size as u32).const_int(self.val as u64, false)), InterData::Int(self.val as i128), Type::Int(size, true)), vec![])
             },
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc: *loc, lit: "character", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{:?}{}", self.val, suf)
-        }
-        else {
-            format!("{:?}", self.val)
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -162,12 +109,6 @@ impl StringLiteralAST {
 impl AST for StringLiteralAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn is_const(&self) -> bool {true}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {
-        match self.suffix {
-            None => Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32)))),
-            Some(_) => Type::Null
-        }
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.suffix.as_ref().map(|(s, l)| (s.as_str(), *l)) {
             None | Some(("c" | "C", _)) => {
@@ -183,14 +124,6 @@ impl AST for StringLiteralAST {
                 ), vec![])
             },
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc, lit: "string", suf: x.to_string()}])
-        }
-    }
-    fn to_code(&self) -> String {
-        if let Some((ref suf, _)) = self.suffix {
-            format!("{:?}{}", self.val.as_bstr(), suf)
-        }
-        else {
-            format!("{:?}", self.val.as_bstr())
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
@@ -211,17 +144,6 @@ impl ArrayLiteralAST {
 impl AST for ArrayLiteralAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.start, self.end)}
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        let mut elem = self.vals.get(0).map_or(Type::Null, |x| ops::decay(x.res_type(ctx)));
-        for val in self.vals.iter() {
-            if let Some(c) = ops::common(&elem, &ops::decay(val.res_type(ctx))) {elem = c;}
-            else {
-                elem = Type::Error;
-                break;
-            }
-        }
-        Type::Array(Box::new(elem), Some(self.vals.len().try_into().unwrap_or(u32::MAX)))
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut elems = vec![];
         let mut ty = Type::Null;
@@ -268,18 +190,6 @@ impl AST for ArrayLiteralAST {
             Type::Array(Box::new(ty), Some(len as u32))
         ), errs)
     }
-    fn to_code(&self) -> String {
-        let mut out = "[".to_string();
-        let mut len = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if len != 1 {
-                out += ", ";
-                len -= 1;
-            }
-        }
-        out + "]"
-    }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "array")?;
         let mut len = self.vals.len();
@@ -307,9 +217,6 @@ impl AST for TupleLiteralAST {
         merge_spans(start, end)
     }
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        Type::Tuple(self.vals.iter().map(|x| ops::decay(x.res_type(ctx))).collect())
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self.vals.iter().map(|x| {
@@ -326,18 +233,6 @@ impl AST for TupleLiteralAST {
         };
         if inters.iter().all(Option::is_some) {val.inter_val = Some(InterData::Array(inters.into_iter().map(Option::unwrap).collect()));};
         (val, errs)
-    }
-    fn to_code(&self) -> String {
-        let mut out = "(".to_string();
-        let mut len = self.vals.len();
-        for val in self.vals.iter() {
-            out += &val.to_code();
-            if len != 1 {
-                out += ", ";
-                len -= 1;
-            }
-        }
-        out + ")"
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
         writeln!(f, "tuple")?;
