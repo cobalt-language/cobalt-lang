@@ -199,7 +199,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                         Ordering::Greater => if let Some(IntValue(rv)) = rhs.comp_val {
                             let lt = ctx.context.custom_width_int_type(ls as u32);
                             rhs.comp_val = Some(if ru {ctx.builder.build_int_z_extend(rv, lt, "")} else {ctx.builder.build_int_s_extend(rv, lt, "")}.into());
-                        },
+                        }
                         Ordering::Equal => {}
                     }
                     match op {
@@ -430,7 +430,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             }
             rhs.data_type = Type::Int(ls, ru);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (Type::Int(ls, lu), Type::Int(rs, _)) if ls < rs => {
             if let (Some(IntValue(val)), false) = (lhs.value(ctx), ctx.is_const.get()) {
                 lhs.comp_val = Some(IntValue(if lu {ctx.builder.build_int_z_extend(val, ctx.context.custom_width_int_type(rs as u32), "")}
@@ -438,7 +438,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             }
             lhs.data_type = Type::Int(rs, lu);
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (Type::Int(ls, lu), Type::Int(rs, ru)) if ls == rs => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -617,13 +617,13 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (x @ Type::Int(..), Type::IntLiteral) => bin_op(loc, (Value {data_type: x.clone(), ..lhs}, lloc), (impl_convert(unreachable_span(), (Value {data_type: Type::IntLiteral, ..rhs}, None), (x, None), ctx).unwrap(), rloc), op, ctx),
         (Type::IntLiteral, x @ Type::Int(..)) => {
             let t = x.clone();
             lhs.data_type = Type::IntLiteral;
             bin_op(loc, (impl_convert(unreachable_span(), (lhs, None), (x, None), ctx).unwrap(), lloc), (Value {data_type: t, ..rhs}, rloc), op, ctx)
-        },
+        }
         (Type::IntLiteral, Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -802,7 +802,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (Type::Pointer(b), Type::Int(..) | Type::IntLiteral) => match op {
             "+" => Ok(Value::new(
                 match (lhs.comp_val, rhs.comp_val, b.size(ctx), ctx.is_const.get()) {
@@ -824,7 +824,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Pointer(b)
             )),
             _ => Err(err)
-        },
+        }
         (Type::Int(..) | Type::IntLiteral, Type::Pointer(b)) => match op {
             "+" => Ok(Value::new(
                 match (rhs.comp_val, lhs.comp_val, b.size(ctx), ctx.is_const.get()) { // I just swapped the sides here
@@ -835,7 +835,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Pointer(b)
             )),
             _ => Err(err)
-        },
+        }
         (l @ Type::Pointer(..), r @ Type::Pointer(..)) => match op {
             "-" if l == r => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -929,7 +929,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l.size(ctx) < r.size(ctx) => {
             lhs.comp_val = match (lhs.comp_val, ctx.is_const.get()) {
                 (Some(FloatValue(l)), false) => Some(FloatValue(ctx.builder.build_float_cast(l, r.llvm_type(ctx).unwrap().into_float_type(), ""))),
@@ -938,7 +938,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = r.clone();
             rhs.data_type = r;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64)) if l.size(ctx) > r.size(ctx) => {
             rhs.comp_val = match (rhs.comp_val, ctx.is_const.get()) {
                 (Some(FloatValue(r)), false) => Some(FloatValue(ctx.builder.build_float_cast(r, l.llvm_type(ctx).unwrap().into_float_type(), ""))),
@@ -947,7 +947,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = l.clone();
             rhs.data_type = l;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) if l == r => match op {
             "+" => Ok(Value::new(
                 match (lhs.value(ctx), rhs.value(ctx), ctx.is_const.get()) {
@@ -1071,7 +1071,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                 Type::Int(1, false)
             )),
             _ => Err(err)
-        },
+        }
         (l @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128), r @ (Type::IntLiteral | Type::Int(..))) => {
             if let (Some(IntValue(rv)), false) = (rhs.comp_val, ctx.is_const.get()) {
                 rhs.comp_val = Some(FloatValue(match r {
@@ -1082,7 +1082,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = l.clone();
             rhs.data_type = l;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         (l @ (Type::IntLiteral | Type::Int(..)), r @ (Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128)) => {
             if let (Some(IntValue(lv)), false) = (lhs.comp_val, ctx.is_const.get()) {
                 lhs.comp_val = Some(FloatValue(match l {
@@ -1093,7 +1093,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             lhs.data_type = r.clone();
             rhs.data_type = r;
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
-        },
+        }
         _ => Err(err)
     }
 }
@@ -2432,7 +2432,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 None,
                 *ret
             ))
-        },
+        }
         Type::BoundMethod(base, ret, params, m) => {
             let mut avec = Vec::with_capacity(args.len() + 1);
             avec.push((Value::new(None, None, Type::Reference(maybe_mut(base, m))), loc));
@@ -2445,7 +2445,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             }
             target.data_type = Type::Function(ret, params);
             call(target, loc, cparen, avec, ctx)
-        },
+        }
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());
             let mut comp_args = Vec::with_capacity(args.len());
@@ -2480,7 +2480,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 ctx.builder.build_indirect_call(fty, asm, &comp_args, "");
                 Ok(Value::null())
             }
-        } else {Ok(Value::error())},
+        } else {Ok(Value::error())}
         Type::Tuple(v) => {
             let err = CobaltError::CannotCallWithArgs {
                 val: format!("({})", v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")),
@@ -2506,10 +2506,10 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         })}
                     }
                     else {Err(CobaltError::NotCompileTime {loc: *aloc})}
-                },
+                }
                 _ => Err(err)
             }
-        },
+        }
         Type::Intrinsic(name) => match name.as_str() {
             "asm" => {
                 let mut args = args.into_iter().collect::<VecDeque<_>>();
@@ -2623,7 +2623,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         })
                     }
                 }
-            },
+            }
             "alloca" => {
                 let mut args = args.into_iter().collect::<VecDeque<_>>();
                 if args.is_empty() {
@@ -2707,9 +2707,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                         Ok(Value::compiled(ctx.builder.build_array_alloca(ctx.context.i8_type(), val.unwrap(), "").into(), Type::Pointer(Box::new(Type::Mut(Box::new(Type::Null))))))
                     }
                 }
-            },
+            }
             x => Err(CobaltError::UnknownIntrinsic {loc, name: x.to_string()})
-        },
+        }
         t => Err(CobaltError::CannotCallWithArgs {
             val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
