@@ -35,7 +35,6 @@ pub trait AST: ASTClone + std::fmt::Debug {
     fn constinit_prepass(&self, _ctx: &CompCtx, _needs_another: &mut bool) {} // runs while needs_another is set to true, pretty much only for ConstDefAST
     fn fwddef_prepass(&self, _ctx: &CompCtx) {} // create forward definitions for functions in LLVM
     // code generation
-    fn res_type(&self, ctx: &CompCtx) -> Type;
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>);
     fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let old_is_const = ctx.is_const.replace(true);

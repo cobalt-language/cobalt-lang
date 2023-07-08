@@ -255,13 +255,6 @@ impl AST for FnDefAST {
         }
         else {unreachable!()};
     }
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        let oic = ctx.is_const.replace(true);
-        let ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        let out = Type::Function(Box::new(ret), self.params.iter().map(|(_, pt, ty, _)| (ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error), pt == &ParamType::Constant)).collect());
-        ctx.is_const.set(oic);
-        out
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
@@ -960,9 +953,6 @@ impl CallAST {
 impl AST for CallAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
     fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        ops::call_type(self.target.res_type(ctx), self.args.iter().map(|a| a.const_codegen(ctx).0).collect::<Vec<_>>())
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (ops::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
@@ -992,7 +982,6 @@ impl IntrinsicAST {
 }
 impl AST for IntrinsicAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Intrinsic(self.name.clone())}
     fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
 }

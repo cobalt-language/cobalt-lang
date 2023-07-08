@@ -10,7 +10,6 @@ pub struct ModuleAST {
 impl AST for ModuleAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = Vec::<CobaltError>::new();
         let mut target_match = 2u8;
@@ -142,7 +141,6 @@ impl ImportAST {
 }
 impl AST for ImportAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::Null}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut target_match = 2u8;

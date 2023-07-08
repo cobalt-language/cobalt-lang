@@ -12,14 +12,6 @@ impl BinOpAST {
 impl AST for BinOpAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.lhs.loc(), self.rhs.loc())}
     fn nodes(&self) -> usize {self.lhs.nodes() + self.rhs.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        if self.op == "&?" || self.op == "|?" {
-            let t = self.rhs.res_type(ctx);
-            if t == Type::IntLiteral {return Type::IntLiteral}
-            if ops::expl_convertible(&Type::Int(1, false), &t) {t} else {Type::Null}
-        }
-        else {ops::bin_type(self.lhs.res_type(ctx), self.rhs.res_type(ctx), self.op.as_str())}
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.op.as_str() {
             "&?" => {
@@ -141,9 +133,6 @@ impl PostfixAST {
 impl AST for PostfixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.val.loc(), self.loc)}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        ops::post_type(self.val.res_type(ctx), self.op.as_str())
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
@@ -169,9 +158,6 @@ impl PrefixAST {
 impl AST for PrefixAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        ops::pre_type(self.val.res_type(ctx), self.op.as_str())
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
@@ -197,7 +183,6 @@ impl SubAST {
 impl AST for SubAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.target.nodes() + self.index.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {ops::sub_type(self.target.res_type(ctx), self.index.res_type(ctx))}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
@@ -224,13 +209,6 @@ impl DotAST {
 impl AST for DotAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.obj.loc(), self.name.1)}
     fn nodes(&self) -> usize {self.obj.nodes() + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        match self.obj.res_type(ctx) {
-            Type::Module => if let Some((s, i, _)) = self.obj.const_codegen(ctx).0.as_mod() {ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &self.name.0, v)).map_or(Type::Error, |x| x.0.data_type.clone())} else {Type::Error},
-            Type::TypeData => if let Some(Type::Nominal(n)) = self.obj.const_codegen(ctx).0.as_type() {ctx.nominals.borrow()[n].2.get(&self.name.0).map_or(Type::Error, |x| x.data_type.clone())} else {Type::Error},
-            x => ops::attr_type(x, &self.name.0, ctx)
-        }
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let r = self.obj.codegen_errs(ctx, &mut errs);

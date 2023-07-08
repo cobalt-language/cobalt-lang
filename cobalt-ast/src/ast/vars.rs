@@ -103,7 +103,6 @@ impl AST for VarDefAST {
             Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
         ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
     }
-    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut is_static = false;
@@ -272,7 +271,7 @@ impl AST for VarDefAST {
         if target_match == 0 {return (Value::null(), errs)}
         if self.global || is_static {
             if is_extern.is_some() {
-                let t2 = self.val.res_type(ctx);
+                let t2 = self.val.const_codegen_errs(ctx, &mut errs).data_type;
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
                     let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
@@ -364,63 +363,46 @@ impl AST for VarDefAST {
                 }
             }
             else {
-                let t = self.val.res_type(ctx);
-                let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                    let oic = ctx.is_const.replace(true);
-                    let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                    ctx.is_const.set(oic);
-                    t
-                }) {t} else {ops::decay(t)};
-                match if let Some(t) = dt.llvm_type(ctx) {
-                    let old_global = ctx.global.replace(true);
-                    let val = if ctx.is_const.get() {
-                        let val = self.val.codegen_errs(ctx, &mut errs);
-                        let t2 = val.data_type.clone();
-                        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let oic = ctx.is_const.replace(true);
-                            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                            ctx.is_const.set(oic);
-                            t
-                        }) {t} else {ops::decay(t2)};
-                        let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
-                        val.inter_val = None;
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
-                    }
-                    else {
+                let res = if ctx.is_const.get() {
+                    let val = self.val.codegen_errs(ctx, &mut errs);
+                    let t2 = val.data_type.clone();
+                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
+                        let oic = ctx.is_const.replace(true);
+                        let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        ctx.is_const.set(oic);
+                        t
+                    }) {t} else {ops::decay(t2)};
+                    let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error()
+                    });
+                    val.inter_val = None;
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
+                }
+                else {
+                    let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
+                    let entry = ctx.context.append_basic_block(f, "entry");
+                    let old_ip = ctx.builder.get_insert_block();
+                    ctx.builder.position_at_end(entry);
+                    let old_scope = ctx.push_scope(&self.name);
+                    let val = self.val.codegen_errs(ctx, &mut errs);
+                    let t2 = val.data_type.clone();
+                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
+                        let oic = ctx.is_const.replace(true);
+                        let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                        ctx.is_const.set(oic);
+                        t
+                    }) {t} else {ops::decay(t2)};
+                    let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error()
+                    });
+                    if let Some(t) = dt.llvm_type(ctx) {
                         let mangled = linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
                         let gv = ctx.lookup_full(&self.name).and_then(|x| -> Option<GlobalValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_global(t, None, &mangled));
                         gv.set_constant(!self.is_mut);
                         gv.set_initializer(&t.const_zero());
                         if let Some((link, _)) = link_type {gv.set_linkage(link)}
-                        let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
-                        {
-                            let as0 = inkwell::AddressSpace::from(0u16);
-                            let i32t = ctx.context.i32_type();
-                            let i8tp = ctx.context.i8_type().ptr_type(as0);
-                            let st = ctx.context.struct_type(&[i32t.into(), ctx.context.void_type().fn_type(&[], false).ptr_type(as0).into(), i8tp.into()], false);
-                            let g = ctx.module.add_global(st.array_type(1), None, "llvm.global_ctors");
-                            g.set_linkage(inkwell::module::Linkage::Appending);
-                            g.set_initializer(&st.const_array(&[st.const_named_struct(&[i32t.const_int(ctx.priority.decr().get() as u64, false).into(), f.as_global_value().as_pointer_value().into(), i8tp.const_zero().into()])]));
-                        }
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        let old_ip = ctx.builder.get_insert_block();
-                        ctx.builder.position_at_end(entry);
-                        let old_scope = ctx.push_scope(&self.name);
-                        let val = self.val.codegen_errs(ctx, &mut errs);
-                        let t2 = val.data_type.clone();
-                        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                            let oic = ctx.is_const.replace(true);
-                            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {errs.push(e); Type::Error}, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                            ctx.is_const.set(oic);
-                            t
-                        }) {t} else {ops::decay(t2)};
-                        let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx).unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
                         ctx.restore_scope(old_scope);
                         if let Some(v) = val.value(ctx) {
                             val.inter_val = None;
@@ -429,6 +411,15 @@ impl AST for VarDefAST {
                             hoist_allocas(&ctx.builder);
                             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
                             else {ctx.builder.clear_insertion_position();}
+                            {
+                                let as0 = inkwell::AddressSpace::from(0u16);
+                                let i32t = ctx.context.i32_type();
+                                let i8tp = ctx.context.i8_type().ptr_type(as0);
+                                let st = ctx.context.struct_type(&[i32t.into(), ctx.context.void_type().fn_type(&[], false).ptr_type(as0).into(), i8tp.into()], false);
+                                let g = ctx.module.add_global(st.array_type(1), None, "llvm.global_ctors");
+                                g.set_linkage(inkwell::module::Linkage::Appending);
+                                g.set_initializer(&st.const_array(&[st.const_named_struct(&[i32t.const_int(ctx.priority.decr().get() as u64, false).into(), f.as_global_value().as_pointer_value().into(), i8tp.const_zero().into()])]));
+                            }
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
                                 Some(PointerValue(gv.as_pointer_value())),
                                 None,
@@ -444,28 +435,27 @@ impl AST for VarDefAST {
                             if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
                             ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
                         }
-                    };
-                    ctx.global.set(old_global);
-                    val
-                }
-                else {
-                    let old_scope = ctx.push_scope(&self.name);
-                    if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                    let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
-                    let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-                        let oic = ctx.is_const.replace(true);
-                        let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
-                        ctx.is_const.set(oic);
-                        t
-                    }) {t} else {ops::decay(t2)};
-                    let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::error()
-                    });
-                    ctx.restore_scope(old_scope);
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
-                } {
+                    }
+                    else {
+                        let old_scope = ctx.push_scope(&self.name);
+                        if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
+                        let val = self.val.codegen_errs(ctx, &mut errs);
+                        let t2 = val.data_type.clone();
+                        let dt = if let Some(t) = self.type_.as_ref().map(|t| {
+                            let oic = ctx.is_const.replace(true);
+                            let t = ops::impl_convert(t.loc(), (t.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or(Type::Error, |v| if let Some(InterData::Type(t)) = v.inter_val {*t} else {Type::Error});
+                            ctx.is_const.set(oic);
+                            t
+                        }) {t} else {ops::decay(t2)};
+                        let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error()
+                        });
+                        ctx.restore_scope(old_scope);
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
+                    }
+                };
+                match res {
                     Ok(x) => (x.0.clone(), errs),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
@@ -575,7 +565,6 @@ impl ConstDefAST {
 impl AST for ConstDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
-    fn res_type(&self, ctx: &CompCtx) -> Type {self.val.res_type(ctx)}
     fn varfwd_prepass(&self, ctx: &CompCtx) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));}
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
         let mut missing = HashSet::new();
@@ -721,7 +710,6 @@ impl TypeDefAST {
 impl AST for TypeDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.val.nodes() + self.methods.iter().map(|x| x.nodes()).sum::<usize>() + 1}
-    fn res_type(&self, _ctx: &CompCtx) -> Type {Type::TypeData}
     fn varfwd_prepass(&self, ctx: &CompCtx) {
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));
         let mangled = ctx.format(&self.name);
@@ -949,10 +937,6 @@ impl VarGetAST {
 }
 impl AST for VarGetAST {
     fn loc(&self) -> SourceSpan {self.loc}
-    fn res_type(&self, ctx: &CompCtx) -> Type {
-        if let Some(Symbol(x, _)) = ctx.lookup(&self.name, self.global) {x.data_type.clone()}
-        else {Type::Error}
-    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match ctx.lookup(&self.name, self.global) {
             Some(Symbol(x, d)) if d.scope.map_or(true, |x| x.get() == ctx.var_scope.get()) => (x.clone(), if d.init {vec![]} else {vec![CobaltError::UninitializedGlobal {
