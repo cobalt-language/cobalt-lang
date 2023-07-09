@@ -272,6 +272,12 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan
     },
+    #[error("can't move out of a reference")]
+    CantMoveFromReference {
+        #[label("`{ty}` has a destructor, so it can't be moved out of references")]
+        loc: SourceSpan,
+        ty: String
+    },
 
     // @asm issues
     #[error("invalid creation of inline assembly")]

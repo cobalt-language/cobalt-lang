@@ -1,3 +1,5 @@
+use cobalt_llvm::inkwell::values::BasicValue;
+
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct CastAST {
@@ -62,7 +64,7 @@ impl AST for BitCastAST {
                     });
                     return (Value::error(), errs)
                 }
-            },
+            }
             _ => {
                 errs.push(CobaltError::UnsizedBitCast {
                     loc: self.loc,
@@ -75,7 +77,9 @@ impl AST for BitCastAST {
             }
         }
         if let (Some(llt), Some(ctval)) = (t.llvm_type(ctx), val.comp_val) {
-            val.comp_val = Some(ctx.builder.build_bitcast(ctval, llt, ""));
+            let bc = ctx.builder.build_bitcast(ctval, llt, "");
+            ops::mark_as_move(&val, bc.as_instruction_value().unwrap(), ctx, self.loc());
+            val.comp_val = Some(bc);
             val.data_type = t;
             (val, errs)
         }
