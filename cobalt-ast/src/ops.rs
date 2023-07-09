@@ -1,29 +1,22 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
 use std::collections::VecDeque;
-use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue};
+use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue, MetadataValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
 };
-pub(crate) fn load<'ctx>(val: &mut Value<'ctx>, ctx: &CompCtx<'ctx>, loc: Option<SourceSpan>) {
+pub(crate) fn mark_as_move<'ctx>(val: &mut Value<'ctx>, inst: InstructionValue<'ctx>, ctx: &CompCtx<'ctx>, loc: Option<SourceSpan>) {
     if !ctx.is_const.get() {
-        if let (Some(t), Some(PointerValue(v))) = (val.data_type.llvm_type(ctx), val.comp_val) {
-            val.address = std::rc::Rc::new(std::cell::Cell::new(Some(v)));
-            let load = ctx.builder.build_load(t, v, "");
-            val.comp_val = Some(load);
-            if let (Some(loc), Some(name), true) = (loc, &val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
-                let inst = load.as_instruction_value().unwrap();
-                let kind = ctx.context.get_kind_id("cobalt.move");
-                let mloc = ctx.context.metadata_string(&format!("{}+{}", loc.offset(), loc.len()));
-                let mnam = ctx.context.metadata_string(name);
-                let node = ctx.context.metadata_node(&[mloc.into(), mnam.into()]);
-                inst.set_metadata(node, kind).unwrap(); // the Err variant only appears if the metadata is not a node
-            }
-        }
-        else {
-            val.comp_val = None;
+        if let (Some(loc), Some(name), true) = (loc, &val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
+            let kind = ctx.context.get_kind_id("cobalt.move");
+            let mut meta = inst.get_metadata(kind).map_or_else(Vec::new, MetadataValue::get_node_values);
+            let mloc = ctx.context.metadata_string(&format!("{}+{}", loc.offset(), loc.len()));
+            let mnam = ctx.context.metadata_string(name);
+            let node = ctx.context.metadata_node(&[mloc.into(), mnam.into()]);
+            meta.push(node.into());
+            inst.set_metadata(ctx.context.metadata_node(&meta), kind).unwrap(); // the Err variant only appears if the metadata is not a node
         }
     }
 }
@@ -1666,17 +1659,17 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                         val.data_type = x;
                         subscript((val, vloc), (idx, iloc), ctx)
                     }
-                },
+                }
                 Type::TypeData => match idx.data_type {
                     Type::Null => if let Some(InterData::Type(t)) = val.inter_val {Ok(Value::make_type(Type::Array(decay_boxed(t), None)))} else {unreachable!()},
                     Type::Int(..) | Type::IntLiteral => if let (Some(InterData::Type(t)), Some(InterData::Int(v))) = (val.inter_val, idx.inter_val) {Ok(Value::make_type(Type::Array(decay_boxed(t), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
-                },
+                }
                 Type::Null => match idx.data_type {
                     Type::Null => Ok(Value::make_type(Type::Array(Box::new(Type::Null), None))),
                     Type::Int(..) | Type::IntLiteral => if let Some(InterData::Int(v)) = idx.inter_val {Ok(Value::make_type(Type::Array(Box::new(Type::Null), Some(v as u32))))} else {Err(CobaltError::NotCompileTime {loc: iloc})},
                     _ => Err(err)
-                },
+                }
                 Type::Tuple(v) => {
                     if let Some(InterData::Array(a)) = val.inter_val {
                         let mut vec = Vec::with_capacity(v.len());
@@ -1690,7 +1683,7 @@ pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, ilo
                         }
                     }
                     else {Err(err)}
-                },
+                }
                 _ => Err(err)
             }
         }
