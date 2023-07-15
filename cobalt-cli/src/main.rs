@@ -16,7 +16,7 @@ use cobalt_ast::{CompCtx, AST};
 use cobalt_errors::*;
 use cobalt_build::*;
 use cobalt_utils::Flags;
-use cobalt_parser::parse_tl;
+use cobalt_parser::prelude::*;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputType {
@@ -433,7 +433,9 @@ fn driver() -> anyhow::Result<()> {
             DbgSubcommand::Parse {files, code, locs} => {
                 for code in code {
                     let file = FILES.add_file(0, "<command line>".to_string(), code.clone());
-                    let (mut ast, errs) = parse_tl(&code);
+                    let (ast, errs) = parse_tl().parse_recovery(code.as_str());
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -442,7 +444,9 @@ fn driver() -> anyhow::Result<()> {
                 for arg in files {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (mut ast, errs) = parse_tl(&code);
+                    let (ast, errs) = parse_tl().parse_recovery(code.as_str());
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -525,7 +529,9 @@ fn driver() -> anyhow::Result<()> {
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                 let file = FILES.add_file(0, input, code.clone());
-                let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+                let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+                let mut ast = ast.unwrap_or_default();
+                let errs = errs.into_iter().map(cvt_err);
                 reporter.parse_time = Some(parse_time);
                 reporter.ast_nodes = ast.nodes();
                 ast.file = Some(file);
@@ -703,7 +709,9 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -929,7 +937,9 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -1090,7 +1100,9 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -1247,7 +1259,9 @@ fn driver() -> anyhow::Result<()> {
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     if Path::new(input).is_absolute() {anyhow::bail!("cannot pass absolute paths to multi-file input")}
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
@@ -1520,7 +1534,9 @@ fn driver() -> anyhow::Result<()> {
                 let mut fail = false;
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
@@ -1710,7 +1726,9 @@ fn driver() -> anyhow::Result<()> {
                 let mut fail = false;
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse_recovery(code.as_str()));
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);

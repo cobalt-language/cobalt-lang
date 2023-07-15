@@ -12,6 +12,7 @@ use os_str_bytes::OsStrBytes;
 use cobalt_ast::ast::*;
 use cobalt_utils::CellExt as Cell;
 use cobalt_errors::*;
+use cobalt_parser::prelude::*;
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -251,7 +252,9 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
-    let (mut ast, errs) = cobalt_parser::parse_tl(&code);
+    let (ast, errs) = parse_tl().parse_recovery(code.as_str());
+    let mut ast = ast.unwrap_or_default();
+    let errs = errs.into_iter().map(cvt_err);
     let file = FILES.add_file(0, name.to_string(), code);
     for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
