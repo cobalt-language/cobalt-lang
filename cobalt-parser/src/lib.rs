@@ -61,16 +61,6 @@ fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
         just('#').then_ignore(any().repeated()).ignore_then(end().or(text::newline()))
     )).repeated().ignored().labelled("whitespace")
 }
-fn padding<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
-    choice((
-        // whitespace
-        any().filter(|c: &char| c.is_whitespace()).ignored(),
-        // multiline comment
-        just('#').ignore_then(just('=').repeated().count().then_ignore(any().repeated()).then_with_ctx(just('=').repeated().configure(|cfg, &ctx| cfg.exactly(ctx))).then_ignore(just('#'))).ignored(),
-        // single-line comment
-        just('#').then_ignore(any().repeated()).ignore_then(end().or(text::newline()))
-    )).repeated().at_least(1).ignored().labelled("whitespace")
-}
 /// where a declaration is being parsed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeclLoc {
@@ -97,27 +87,61 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
     let metd = metd.unwrap_or_else(|| recursive(move |m| declarations(DeclLoc::Method, Some(m.boxed()), &expr_clone)).boxed());
     let id = if loc == DeclLoc::Global {global_id().boxed()} else {local_id().boxed()}; // TODO: remove allocation
     let anns = annotation().padded_by(ignored()).repeated().collect();
-    choice((
+    let param = choice((text::keyword("mut").to(ParamType::Mutable), text::keyword("const").to(ParamType::Constant), empty().to(ParamType::Normal)))
+        .then_ignore(ignored())
+        .then(ident()
+            .or_not()
+            .map(|v| v.map_or_else(String::new, String::from))
+            .labelled("parameter name"))
+        .then_ignore(ignored())
+        .then(just(':')
+            .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=)").ignored()))
+            .recover_with(skip_until(any().ignored(), one_of(":=)").rewind().ignored().or(end()), || '-'))
+            .ignore_then(ignored())
+            .ignore_then(expr.clone())
+            .recover_with(via_parser(empty().map_with_span(|_, loc: SimpleSpan| box_ast(ErrorTypeAST::new(loc.into_range().into())))))
+            .labelled("parameter type"))
+        .then_ignore(ignored())
+        .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().labelled("default value"))
+        .map(|(((pty, name), ty), default)| (name, pty, ty, default))
+        .and_is(none_of("),").rewind())
+        .boxed();
+    choice([
         anns.then(text::keyword("let").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
             .then(text::keyword("mut").ignore_then(ignored()).or_not().map(|o| o.is_some()))
             .then(
                 id.clone()
                 .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
-                .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span()))))
-                .then_ignore(ignored()))
+                .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
+            .then_ignore(ignored())
             .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not())
-            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or(box_ast(NullAST::new(loc.into_range().into())))))
-            .map(move |(((((anns, l), is_mut), name), ty), val)| box_ast(VarDefAST::new(l, name, val, ty, anns, loc == DeclLoc::Global, is_mut))),
+            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .map(move |(((((anns, l), is_mut), name), ty), val)| box_ast(VarDefAST::new(l, name, val, ty, anns, loc == DeclLoc::Global, is_mut)))
+            .boxed(),
         anns.then(text::keyword("const").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
             .then(
                 id.clone()
                 .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
-                .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span()))))
-                .then_ignore(ignored()))
+                .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
+            .then_ignore(ignored())
             .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not())
-            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or(box_ast(NullAST::new(loc.into_range().into())))))
-            .map(move |((((anns, l), name), ty), val)| box_ast(ConstDefAST::new(l, name, val, ty, anns))),
-    )).labelled("a declaration")
+            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .map(move |((((anns, l), name), ty), val)| box_ast(ConstDefAST::new(l, name, val, ty, anns)))
+            .boxed(),
+        anns.then(text::keyword("fn").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
+        .then(
+            id.clone()
+            .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
+            .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
+            .then_ignore(ignored())
+            .then(param.separated_by(just(',').padded_by(ignored())).allow_trailing().collect().delimited_by(just('('), just(')')))
+            .then_ignore(ignored())
+            .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .then_ignore(ignored())
+            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .map(move |(((((anns, l), name), params), ret), body)| box_ast(FnDefAST::new(l, name, ret, params, body, anns, loc == DeclLoc::Method)))
+            .boxed(),
+    ]).labelled("a declaration")
 }
 /// create a parser for a statement.
 /// it requires an expression parser to passed, otherwise it would require infinite recursion
@@ -135,8 +159,7 @@ pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
 }
 /// create a parser for the top-level scope
 pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    ignored()
-        .ignore_then(declarations(DeclLoc::Global, None, &parse_expr()))
-        .then_ignore(just(';').padded_by(ignored()))
-    .repeated().collect().map(TopLevelAST::new).then_ignore(end()).boxed()
+    declarations(DeclLoc::Global, None, &parse_expr()).padded_by(ignored())
+        .then_ignore(just(';').ignore_then(ignored()))
+    .repeated().collect().map(TopLevelAST::new).then_ignore(ignored().then(end())).boxed()
 }
