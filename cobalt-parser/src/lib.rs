@@ -3,6 +3,7 @@ use cobalt_errors::*;
 use cobalt_ast::{*, ast::*};
 use unicode_ident::*;
 use chumsky::prelude::*;
+use cobalt_errors::miette::{MietteDiagnostic, LabeledSpan};
 mod utils;
 pub mod prelude {
     pub use super::parse_expr;
@@ -10,13 +11,15 @@ pub mod prelude {
     pub use super::cvt_err;
     pub use chumsky::Parser as _;
 }
-type Error = Simple<char>;
-pub fn cvt_err(_err: Error) -> CobaltError {
-    unimplemented!()
+pub fn cvt_err(err: Rich<char>) -> MietteDiagnostic {
+    MietteDiagnostic {
+        labels: Some(vec![LabeledSpan::underline(err.span().into_range())]),
+        ..MietteDiagnostic::new(err.to_string())
+    }
 }
-pub fn parse_expr() -> BoxedParser<'static, char, Box<dyn AST>, Error> {
-    unimplemented!()
+pub fn parse_expr<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, chumsky::extra::Full<Rich<'a, char>, (), Vec<usize>>> {
+    todo()
 }
-pub fn parse_tl() -> BoxedParser<'static, char, TopLevelAST, Error> {
-    unimplemented!()
+pub fn parse_tl<'a>() -> impl Parser<'a, &'a str, TopLevelAST, chumsky::extra::Full<Rich<'a, char>, (), Vec<usize>>> {
+    todo()
 }
