@@ -78,6 +78,43 @@ fn annotation<'a>() -> impl Parser<'a, &'a str, (String, Option<String>, SourceS
         .map_with_span(|(name, arg), loc| (name.to_string(), arg, loc.into_range().into()))
         .labelled("an annotation")
 }
+fn cdn<'a>() -> impl Parser<'a, &'a str, CompoundDottedName, Extras<'a>> + Clone {
+    use CompoundDottedNameSegment::*;
+    let cdns = recursive(|cdns| choice((
+        ident().map_with_span(|id, loc| Identifier(id.to_string(), loc.into_range().into())),
+        just('*').map_with_span(|_, loc: SimpleSpan| Glob(loc.into_range().into())),
+        cdns
+            .separated_by(just('.')
+                .padded_by(ignored())
+                .ignored()
+                .recover_with(skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored()))
+            )
+            .collect()
+            .separated_by(just(',')
+                .padded_by(ignored())
+                .ignored()
+                .recover_with(skip_then_retry_until(none_of(",}").ignored(), one_of(",}").ignored()))
+            )
+            .collect()
+            .delimited_by(just('{'), just('}'))
+            .map(Group)
+    )));
+    just('.').or_not().map(|o| o.is_some()).then_ignore(ignored())
+        .then(cdns
+                .separated_by(just('.')
+                .padded_by(ignored()).ignored()
+                .recover_with(skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored())))
+            .collect())
+        .map(|(global, ids)| CompoundDottedName::new(ids, global))
+}
+fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
+    let anns = annotation().padded_by(ignored()).repeated().collect();
+    anns.then(text::keyword("import").to_span())
+        .then_ignore(ignored())
+        .then(cdn())
+        .map(|((anns, loc), cdn)| ImportAST::new(loc.into_range().into(), cdn, anns))
+        .labelled("an import")
+} 
 /// parse declarations. these are:
 /// - functions
 /// - variables
@@ -107,7 +144,8 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
         .and_is(none_of("),").rewind())
         .boxed();
     choice([
-        anns.then(text::keyword("let").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
+        anns.then(text::keyword("let").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
+            .then_ignore(ignored())
             .then(text::keyword("mut").ignore_then(ignored()).or_not().map(|o| o.is_some()))
             .then(
                 id.clone()
@@ -118,7 +156,8 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
             .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |(((((anns, l), is_mut), name), ty), val)| box_ast(VarDefAST::new(l, name, val, ty, anns, loc == DeclLoc::Global, is_mut)))
             .boxed(),
-        anns.then(text::keyword("const").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
+        anns.then(text::keyword("const").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
+            .then_ignore(ignored())
             .then(
                 id.clone()
                 .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
@@ -128,11 +167,12 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
             .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |((((anns, l), name), ty), val)| box_ast(ConstDefAST::new(l, name, val, ty, anns)))
             .boxed(),
-        anns.then(text::keyword("fn").map_with_span(|_, loc: SimpleSpan| loc.into_range().into())).then_ignore(ignored())
-        .then(
-            id.clone()
-            .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
-            .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
+        anns.then(text::keyword("fn").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
+            .then_ignore(ignored())
+            .then(
+                id.clone()
+                .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
+                .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
             .then_ignore(ignored())
             .then(param.separated_by(just(',').padded_by(ignored())).allow_trailing().collect().delimited_by(just('('), just(')')))
             .then_ignore(ignored())
@@ -145,8 +185,33 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
 }
 /// create a parser for a statement.
 /// it requires an expression parser to passed, otherwise it would require infinite recursion
-fn def_stmt<'a>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a) -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a {
-    declarations(DeclLoc::Local, None, &expr).or(expr)
+fn def_stmt<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a) -> BoxedASTParser<'a, 'b> {
+    choice((
+        declarations(DeclLoc::Local, None, &expr),
+        import().map(box_ast),
+        expr
+    )).boxed()
+}
+fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone {
+    let anns = annotation().padded_by(ignored()).repeated().collect();
+    recursive(|tl| choice((
+        declarations(DeclLoc::Global, None, &parse_expr()).padded_by(ignored())
+            .then_ignore(just(';').ignore_then(ignored())),
+        import().then_ignore(ignored().then_ignore(just(';')).recover_with(skip_until(empty(), any().ignored(), || ()))).map(box_ast),
+        anns.then(text::keyword("module").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
+            .then_ignore(ignored())
+            .then(global_id()
+                .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of("{=;").ignored()))
+                .recover_with(skip_until(any().ignored(), one_of("{=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
+            .then_ignore(ignored())
+            .then(choice((
+                tl.repeated().collect().delimited_by(just('{'), just('}')),
+                just('=').then_ignore(ignored()).ignore_then(cdn()).map_with_span(|cdn, loc| vec![box_ast(ImportAST::new(loc.into_range().into(), cdn, vec![]))]).then_ignore(just(';')),
+                just(';').to(vec![])
+            )))
+            .map(|(((anns, loc), name), body)| box_ast(ModuleAST::new(loc, name, body, anns))),
+        just(';').to_span().map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into())))
+    ))).labelled("a top-level declaration")
 }
 /// create a parser for expressions
 pub fn parse_expr<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
@@ -155,11 +220,9 @@ pub fn parse_expr<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
 }
 /// create a parser for statements
 pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
-    def_stmt(parse_expr()).boxed()
+    def_stmt(parse_expr())
 }
 /// create a parser for the top-level scope
 pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    declarations(DeclLoc::Global, None, &parse_expr()).padded_by(ignored())
-        .then_ignore(just(';').ignore_then(ignored()))
-    .repeated().collect().map(TopLevelAST::new).then_ignore(ignored().then(end())).boxed()
+    top_level().repeated().collect().map(TopLevelAST::new).then_ignore(ignored().then(end())).boxed()
 }
