@@ -31,7 +31,7 @@ type BoxedParser<'a, 'b, T> = Boxed<'a, 'b, &'a str, T, Extras<'a>>;
 type BoxedASTParser<'a, 'b> = BoxedParser<'a, 'b, Box<dyn AST>>;
 static KEYWORDS: &[&str] = &[
     "let", "mut", "const", "fn",
-    "if", "while", "for",
+    "if", "else", "while", "for",
     "null", "type"
 ];
 /// parse an identifier. unicode-aware
@@ -238,13 +238,32 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
         just(';').to_span().map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into())))
     ))).labelled("a top-level declaration")
 }
+/// add assignments and control flow to parser
 fn add_assigns<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a) -> BoxedASTParser<'a, 'b> {
-    expr.clone()
+    let prev = expr.clone()
         .then(choice(["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
             .map(just))
             .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
         .padded_by(ignored()))
-        .repeated().foldr(expr, |(lhs, (op, loc)), rhs| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed()
+        .repeated().foldr(expr, |(lhs, (op, loc)), rhs| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed();
+    recursive(|expr| choice([
+        text::keyword("if").ignore_then(ignored())
+            .ignore_then(one_of("({").or_not().rewind().then(expr.clone()).validate(|(o, ast), loc, e| {
+                if o.is_none() {e.emit(Rich::custom(loc, "condition must be wrapped in either parentheses or braces"))}
+                ast
+            }).labelled("a condition"))
+            .then(expr.clone().padded_by(ignored()))
+            .then(text::keyword("else").ignore_then(expr.clone().padded_by(ignored())).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .map_with_span(|((cond, if_true), if_false), span| box_ast(IfAST::new(span.into_range().into(), cond, if_true, if_false))).boxed(),
+        text::keyword("while").ignore_then(ignored())
+            .ignore_then(one_of("({").or_not().rewind().then(expr.clone()).validate(|(o, ast), loc, e| {
+                if o.is_none() {e.emit(Rich::custom(loc, "condition must be wrapped in either parentheses or braces"))}
+                ast
+            }).labelled("a condition"))
+            .then(expr.clone().padded_by(ignored()))
+            .map_with_span(|(cond, body), span| box_ast(WhileAST::new(span.into_range().into(), cond, body))).boxed(),
+        prev
+    ]).recover_with(via_parser(text::keyword("else").ignore_then(expr)))).boxed()
 }
 /// create a parser for expressions, without assignment
 fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
