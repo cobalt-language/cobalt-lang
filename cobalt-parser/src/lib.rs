@@ -1,4 +1,3 @@
-#![allow(unused_imports, dead_code, unused_variables)] // TODO: remove before merge
 use cobalt_errors::*;
 use cobalt_ast::{*, ast::*};
 use unicode_ident::*;
