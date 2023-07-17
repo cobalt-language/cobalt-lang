@@ -539,7 +539,7 @@ impl AST for VarDefAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        writeln!(f, "let {}: {}", if self.is_mut {"(mut)"} else {""}, self.name)?;
+        writeln!(f, "let{}: {}", if self.is_mut {" (mut)"} else {""}, self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
