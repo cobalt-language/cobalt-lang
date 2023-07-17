@@ -55,9 +55,12 @@ fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
         // whitespace
         any().filter(|c: &char| c.is_whitespace()).ignored(),
         // multiline comment
-        just('#').ignore_then(just('=').repeated().count().then_ignore(any().repeated()).then_with_ctx(just('=').repeated().configure(|cfg, &ctx| cfg.exactly(ctx))).then_ignore(just('#'))).ignored(),
+        just('#').ignore_then(just('=').repeated().at_least(1).count().then_with_ctx({
+            let term = just('=').repeated().configure(|cfg, &ctx| cfg.exactly(ctx)).then_ignore(just('#'));
+            any().and_is(term.not()).repeated().then_ignore(term)
+        })),
         // single-line comment
-        just('#').then_ignore(any().repeated()).ignore_then(end().or(text::newline()))
+        just('#').ignore_then(any().and_is(text::newline().not()).repeated())
     )).repeated().ignored().labelled("whitespace")
 }
 /// where a declaration is being parsed
