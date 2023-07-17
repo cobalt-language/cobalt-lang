@@ -119,8 +119,9 @@ fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
 /// - functions
 /// - variables
 /// - type definitions
-fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a)) -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a {
-    let expr_clone = expr.clone();
+fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, part_expr: &BoxedASTParser<'a, 'a>) -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a {
+    let full_expr = add_assigns(part_expr.clone());
+    let expr_clone = full_expr.clone();
     let metd = metd.unwrap_or_else(|| recursive(move |m| declarations(DeclLoc::Method, Some(m.boxed()), &expr_clone)).boxed());
     let id = if loc == DeclLoc::Global {global_id().boxed()} else {local_id().boxed()}; // TODO: remove allocation
     let anns = annotation().padded_by(ignored()).repeated().collect();
@@ -135,11 +136,11 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
             .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=)").ignored()))
             .recover_with(skip_until(any().ignored(), one_of(":=)").rewind().ignored().or(end()), || '-'))
             .ignore_then(ignored())
-            .ignore_then(expr.clone())
+            .ignore_then(part_expr.clone())
             .recover_with(via_parser(empty().map_with_span(|_, loc: SimpleSpan| box_ast(ErrorTypeAST::new(loc.into_range().into())))))
             .labelled("parameter type"))
         .then_ignore(ignored())
-        .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().labelled("default value"))
+        .then(just('=').ignore_then(ignored()).ignore_then(full_expr.clone()).or_not().labelled("default value"))
         .map(|(((pty, name), ty), default)| (name, pty, ty, default))
         .and_is(none_of("),").rewind())
         .boxed();
@@ -152,8 +153,8 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
                 .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
                 .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
             .then_ignore(ignored())
-            .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not())
-            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .then(just(':').ignore_then(ignored()).ignore_then(part_expr.clone()).or_not())
+            .then(just('=').ignore_then(ignored()).ignore_then(full_expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |(((((anns, l), is_mut), name), ty), val)| box_ast(VarDefAST::new(l, name, val, ty, anns, loc == DeclLoc::Global, is_mut)))
             .boxed(),
         anns.then(text::keyword("const").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
@@ -163,8 +164,8 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
                 .recover_with(skip_then_retry_until(any().filter(|&c| is_xid_continue(c)).repeated().at_least(1).ignored().or(any().ignored()), one_of(":=;").ignored()))
                 .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
             .then_ignore(ignored())
-            .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not())
-            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .then(just(':').ignore_then(ignored()).ignore_then(part_expr.clone()).or_not())
+            .then(just('=').ignore_then(ignored()).ignore_then(full_expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |((((anns, l), name), ty), val)| box_ast(ConstDefAST::new(l, name, val, ty, anns)))
             .boxed(),
         anns.then(text::keyword("fn").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
@@ -176,26 +177,26 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, expr: &(
             .then_ignore(ignored())
             .then(param.separated_by(just(',').padded_by(ignored())).allow_trailing().collect().delimited_by(just('('), just(')')))
             .then_ignore(ignored())
-            .then(just(':').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .then(just(':').ignore_then(ignored()).ignore_then(part_expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .then_ignore(ignored())
-            .then(just('=').ignore_then(ignored()).ignore_then(expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
+            .then(just('=').ignore_then(ignored()).ignore_then(full_expr.clone()).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |(((((anns, l), name), params), ret), body)| box_ast(FnDefAST::new(l, name, ret, params, body, anns, loc == DeclLoc::Method)))
             .boxed(),
     ]).labelled("a declaration")
 }
 /// create a parser for a statement.
 /// it requires an expression parser to passed, otherwise it would require infinite recursion
-fn def_stmt<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a) -> BoxedASTParser<'a, 'b> {
+fn def_stmt<'a>(expr: BoxedASTParser<'a, 'a>) -> BoxedASTParser<'a, 'a> {
     choice((
         declarations(DeclLoc::Local, None, &expr),
         import().map(box_ast),
-        expr
+        add_assigns(expr)
     )).boxed()
 }
 fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone {
     let anns = annotation().padded_by(ignored()).repeated().collect();
     recursive(|tl| choice((
-        declarations(DeclLoc::Global, None, &parse_expr()).padded_by(ignored())
+        declarations(DeclLoc::Global, None, &expr_impl()).padded_by(ignored())
             .then_ignore(just(';').ignore_then(ignored())),
         import().then_ignore(ignored().then_ignore(just(';')).recover_with(skip_until(empty(), any().ignored(), || ()))).map(box_ast),
         anns.then(text::keyword("module").map_with_span(|_, loc: SimpleSpan| loc.into_range().into()))
@@ -213,16 +214,199 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
         just(';').to_span().map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into())))
     ))).labelled("a top-level declaration")
 }
+fn add_assigns<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a) -> BoxedASTParser<'a, 'b> {
+    expr.clone()
+        .then(choice(["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
+            .map(just))
+            .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
+        .padded_by(ignored()))
+        .repeated().foldr(expr, |(lhs, (op, loc)), rhs| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed()
+}
+/// create a parser for expressions, without assignment
+fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
+    type Cbi = utils::CharBytesIterator;
+    let int_literal = choice((
+        just("0x").ignore_then(text::digits(16).at_least(1)).slice().map(|v| i128::from_str_radix(v, 16).unwrap()),
+        just("0o").ignore_then(text::digits(8).at_least(1)).slice().map(|v| i128::from_str_radix(v, 8).unwrap()),
+        just("0b").ignore_then(text::digits(2).at_least(1)).slice().map(|v| i128::from_str_radix(v, 2).unwrap()),
+        text::digits(10).slice().from_str().unwrapped()
+    )).map_with_span(add_loc).then_ignore(ignored())
+        .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
+        .map(|((val, loc), suf)| box_ast(IntLiteralAST::new(loc, val, suf)));
+    let float_literal =
+        text::digits(10).then(just('.')).then(text::digits(10).at_least(1))
+        .or(text::digits(10).at_least(1).then(just('.')).then(ident().not().rewind()))
+        .slice().from_str().unwrapped()
+        .map_with_span(add_loc).then_ignore(ignored())
+        .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
+        .map(|((val, loc), suf)| box_ast(FloatLiteralAST::new(loc, val, suf)));
+    let char_literal = just('\'').ignore_then(choice((
+        none_of("\\'").map(u32::from),
+        just("\\0").to(0x00u32),
+        just("\\n").to(0x0au32),
+        just("\\r").to(0x0du32),
+        just("\\t").to(0x09u32),
+        just("\\v").to(0x0au32),
+        just("\\b").to(0x08u32),
+        just("\\e").to(0x1bu32),
+        just("\\a").to(0x07u32),
+        just("\\c").ignore_then(
+            text::digits(16)
+            .exactly(2).slice()
+            .map(|v| u32::from_str_radix(v, 16).unwrap())
+            .recover_with(via_parser(empty().to(0u32)))),
+        just("\\u").ignore_then(
+            text::digits(16)
+            .at_least(2).at_most(6).slice()
+            .map(|v| u32::from_str_radix(v, 16).unwrap())
+            .recover_with(skip_until(none_of("}'").ignored(), one_of("}'").ignored(), || 0u32))
+            .delimited_by(just('{'), just('}'))
+            .recover_with(skip_until(none_of("}'").ignored(), one_of("}'").ignored(), || 0u32))),
+        just('\\').ignore_then(any()).map(u32::from)
+    ))).then_ignore(just('\''))
+        .map_with_span(add_loc).then_ignore(ignored())
+        .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
+        .map(|((val, loc), suf)| box_ast(CharLiteralAST::new(loc, val, suf)));
+    let str_literal = just('"').ignore_then(choice((
+        none_of("\\'").map(Cbi::from_char),
+        just("\\0").to(Cbi::from_u8(0x00)),
+        just("\\n").to(Cbi::from_u8(0x0a)),
+        just("\\r").to(Cbi::from_u8(0x0d)),
+        just("\\t").to(Cbi::from_u8(0x09)),
+        just("\\v").to(Cbi::from_u8(0x0a)),
+        just("\\b").to(Cbi::from_u8(0x08)),
+        just("\\e").to(Cbi::from_u8(0x1b)),
+        just("\\a").to(Cbi::from_u8(0x07)),
+        just("\\c").ignore_then(
+            text::digits(16)
+            .exactly(2).slice()
+            .map(|v| Cbi::from_u8(u8::from_str_radix(v, 16).unwrap()))
+            .recover_with(via_parser(empty().to(Cbi::from_u8(0))))),
+        just("\\u").ignore_then(
+            text::digits(16)
+            .at_least(2).at_most(6).slice()
+            .validate(|v, span, e| {
+                let v = u32::from_str_radix(v, 16).unwrap();
+                Cbi::from_u32(v).unwrap_or_else(|| {
+                    e.emit(Rich::custom(span, format!("{v:0>4X} is not a valid Unicode codepoint")));
+                    Cbi::from_u8(0)
+                })
+            })
+            .recover_with(skip_until(none_of("}'").ignored(), one_of("}'").ignored(), || Cbi::from_u8(0)))
+            .delimited_by(just('{'), just('}'))
+            .recover_with(skip_until(none_of("}'").ignored(), one_of("}'").ignored(), || Cbi::from_u8(0)))),
+        just('\\').ignore_then(any()).map(Cbi::from_char)
+    ))).repeated().collect::<Vec<Cbi>>().then_ignore(just('"'))
+        .map_with_span(add_loc).then_ignore(ignored())
+        .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
+        .map(|((val, loc), suf)| box_ast(StringLiteralAST::new(loc, val.into_iter().flatten().collect(), suf)));
+    let literal = choice((int_literal, float_literal, char_literal, str_literal)).labelled("literal");
+    let varget = just('.').or_not().map(|o| o.is_some()).then(ident()).map_with_span(|(global, name), loc| box_ast(VarGetAST::new(loc.into_range().into(), name.to_string(), global)));
+    let special = choice((
+        text::keyword("null").to_span().map(|span: SimpleSpan| box_ast(NullAST::new(span.into_range().into()))),
+        text::keyword("type").to_span().map(|span: SimpleSpan| box_ast(TypeLiteralAST::new(span.into_range().into())))
+    ));
+    recursive(move |expr| {
+        let expr = add_assigns(expr);
+        let maybe_expr = expr.clone().or_not().map_with_span(|ast, span: SimpleSpan| ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into()))));
+        let atom = choice((
+            literal,
+            special,
+            varget,
+            // parenthetical grouping, single value
+            // also empty tuple
+            maybe_expr.clone()
+                .padded_by(ignored())
+                .delimited_by(just('('), just(')'))
+                .map_with_span(|ast, span| box_ast(ParenAST::new(span.into_range().into(), ast))),
+            // tuple
+            expr.clone()
+                .padded_by(ignored())
+                .separated_by(just(',')).allow_trailing().collect()
+                .delimited_by(just('('), just(')'))
+                .map_with_span(|vals, span| box_ast(ParenAST::new(span.into_range().into(), box_ast(TupleLiteralAST::new(vals))))),
+            // parenthetical grouping, multiple values
+            maybe_expr.clone()
+                .padded_by(ignored())
+                .separated_by(just(';')).collect()
+                .delimited_by(just('('), just(')'))
+                .map_with_span(|vals, span| box_ast(ParenAST::new(span.into_range().into(), box_ast(GroupAST::new(vals))))),
+            // array
+            expr.clone()
+                .padded_by(ignored())
+                .separated_by(just(',')).allow_trailing().collect()
+                .delimited_by(just('['), just(']'))
+                .map_with_span(|vals, span| box_ast(ArrayLiteralAST::new((span.start, 1).into(), (span.end - 1, 1).into(), vals))),
+            // block
+            def_stmt(maybe_expr.clone().boxed())
+                .padded_by(ignored())
+                .separated_by(just(';')).collect()
+                .delimited_by(just('{'), just('}'))
+                .map_with_span(|vals, span| box_ast(BlockAST::new(span.into_range().into(), vals))),
+        )).labelled("an atom").boxed();
+        #[derive(Debug, Clone)]
+        enum PostfixType {
+            Op(String, SourceSpan),
+            Attr(String, SourceSpan),
+            Sub(Box<dyn AST>, SourceSpan),
+            Call(Vec<Box<dyn AST>>, SourceSpan),
+        }
+        let postfix = atom.foldl(choice((
+            // postfix operator
+            one_of("?!").map_with_span(|c: char, span: SimpleSpan| PostfixType::Op(c.to_string(), span.into_range().into())),
+            // attribute
+            just('.').ignore_then(ignored()).ignore_then(ident()).map_with_span(|attr, span| PostfixType::Attr(attr.to_string(), span.into_range().into())),
+            // subscript
+            maybe_expr
+                .padded_by(ignored())
+                .delimited_by(just('['), just(']'))
+                .map_with_span(|ast, loc| PostfixType::Sub(ast, loc.into_range().into())),
+            expr
+                .padded_by(ignored())
+                .separated_by(just(',')).allow_trailing().collect()
+                .delimited_by(just('('), just(')'))
+                .map_with_span(|ast, loc| PostfixType::Call(ast, (loc.end - 1, 1).into()))
+        )).padded_by(ignored()).repeated(), |ast, op| match op {
+            PostfixType::Op(op, loc) => box_ast(PostfixAST::new(loc, op, ast)),
+            PostfixType::Attr(attr, loc) => box_ast(DotAST::new(ast, (attr, loc))),
+            PostfixType::Sub(idx, loc) => box_ast(SubAST::new(loc, ast, idx)),
+            PostfixType::Call(args, loc) => box_ast(CallAST::new(loc, ast, args))
+        }).labelled("an expression").boxed();
+        let prefix = choice((just("++"), just("--"), just("mut"))).map(String::from)
+            .or(one_of("+-*&~").map(String::from))
+            .map_with_span(add_loc).padded_by(ignored()).repeated()
+            .foldr(postfix, |(op, loc), ast| box_ast(PrefixAST::new(loc, op, ast)))
+            .labelled("an expression").boxed();
+        #[inline(always)]
+        fn impl_ltr<'a, const N: usize>(prev: BoxedASTParser<'a, 'a>, ops: [&'static str; N]) -> BoxedASTParser<'a, 'a> {
+            prev.clone().foldl(
+                choice(ops.map(just))
+                    .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
+                    .padded_by(ignored()).then(prev).repeated(),
+                |lhs, ((op, loc), rhs)| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed()
+        }
+        let mul_div = impl_ltr(prefix, ["*", "/", "%"]);
+        let add_sub = impl_ltr(mul_div, ["+", "-"]);
+        let shifts = impl_ltr(add_sub, ["<<", ">>"]);
+        let cmps = impl_ltr(shifts, ["<", ">", "<=", ">="]);
+        let eqs = impl_ltr(cmps, ["==", "!="]);
+        let log_or = ["&", "^", "|", "&?", "|?"].into_iter().fold(eqs, |parser, op| impl_ltr(parser, [op]));
+        // casts
+        log_or.clone()
+            .foldl(just(':').ignore_then(just('?').or_not()).map(|o| o.is_some())
+                .map_with_span(add_loc)
+                .padded_by(ignored()).then(log_or).repeated(),
+          |lhs, ((bit, loc), rhs)|
+                if bit {box_ast(BitCastAST::new(loc, lhs, rhs))}
+                else {box_ast(CastAST::new(loc, lhs, rhs))})
+            .labelled("an expression").boxed()
+    }).boxed()
+}
 /// create a parser for expressions
-pub fn parse_expr<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
-    // currently only identifiers
-    ident().map_with_span(|v, loc| box_ast(VarGetAST::new(loc.into_range().into(), v.to_string(), false))).boxed()
-}
+#[inline(always)]
+pub fn parse_expr<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {add_assigns(expr_impl())}
 /// create a parser for statements
-pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
-    def_stmt(parse_expr())
-}
+#[inline(always)]
+pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {def_stmt(expr_impl())}
 /// create a parser for the top-level scope
-pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    top_level().repeated().collect().map(TopLevelAST::new).then_ignore(ignored().then(end())).boxed()
-}
+pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {top_level().repeated().collect().map(TopLevelAST::new).then_ignore(ignored().then(end())).boxed()}
