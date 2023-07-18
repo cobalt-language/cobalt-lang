@@ -314,7 +314,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
         .map(|((val, loc), suf)| box_ast(CharLiteralAST::new(loc, val, suf)));
     let str_literal = just('"').ignore_then(choice((
-        none_of("\\'").map(Cbi::from_char),
+        none_of("\\\"").map(Cbi::from_char),
         just("\\0").to(Cbi::from_u8(0x00)),
         just("\\n").to(Cbi::from_u8(0x0a)),
         just("\\r").to(Cbi::from_u8(0x0d)),
@@ -328,6 +328,11 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             .exactly(2).slice()
             .map(|v| Cbi::from_u8(u8::from_str_radix(v, 16).unwrap()))
             .recover_with(via_parser(empty().to(Cbi::from_u8(0))))),
+        just("\\x").ignore_then(
+                text::digits(16)
+                .exactly(2).slice()
+                .map(|v| Cbi::raw(u8::from_str_radix(v, 16).unwrap()))
+                .recover_with(via_parser(empty().to(Cbi::from_u8(0))))),
         just("\\u").ignore_then(
             text::digits(16)
             .at_least(2).at_most(6).slice()
@@ -342,7 +347,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             .delimited_by(just('{'), just('}'))
             .recover_with(skip_until(none_of("}'").ignored(), one_of("}'").ignored(), || Cbi::from_u8(0)))),
         just('\\').ignore_then(any()).map(Cbi::from_char)
-    ))).repeated().collect::<Vec<Cbi>>().then_ignore(just('"'))
+    )).repeated().collect::<Vec<Cbi>>()).then_ignore(just('"'))
         .map_with_span(add_loc).then_ignore(ignored())
         .then(ident().map_with_span(|suf, span| (suf.to_string(), span.into_range().into())).or_not())
         .map(|((val, loc), suf)| box_ast(StringLiteralAST::new(loc, val.into_iter().flatten().collect(), suf)));
