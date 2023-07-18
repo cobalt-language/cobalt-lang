@@ -257,7 +257,7 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     let lock = file.contents();
     let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
     let mut ast = ast.unwrap_or_default();
-    let errs = errs.into_iter().map(cvt_err);
+    let errs = errs.into_iter().flat_map(cvt_err);
     for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}

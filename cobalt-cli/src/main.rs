@@ -437,7 +437,7 @@ fn driver() -> anyhow::Result<()> {
                     let lock = file.contents();
                     let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().map(cvt_err);
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -449,7 +449,7 @@ fn driver() -> anyhow::Result<()> {
                     let lock = file.contents();
                     let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().map(cvt_err);
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -535,7 +535,7 @@ fn driver() -> anyhow::Result<()> {
                 let lock = file.contents();
                 let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
                 let mut ast = ast.unwrap_or_default();
-                let errs = errs.into_iter().map(cvt_err);
+                let errs = errs.into_iter().flat_map(cvt_err);
                 reporter.parse_time = Some(parse_time);
                 reporter.ast_nodes = ast.nodes();
                 ast.file = Some(file);
@@ -716,7 +716,7 @@ fn driver() -> anyhow::Result<()> {
             let lock = file.contents();
             let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().map(cvt_err);
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -945,7 +945,7 @@ fn driver() -> anyhow::Result<()> {
             let lock = file.contents();
             let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().map(cvt_err);
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -1109,7 +1109,7 @@ fn driver() -> anyhow::Result<()> {
             let lock = file.contents();
             let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().map(cvt_err);
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
@@ -1269,7 +1269,7 @@ fn driver() -> anyhow::Result<()> {
                     let lock = file.contents();
                     let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().map(cvt_err);
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
@@ -1545,7 +1545,7 @@ fn driver() -> anyhow::Result<()> {
                     let lock = file.contents();
                     let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().map(cvt_err);
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
@@ -1738,7 +1738,7 @@ fn driver() -> anyhow::Result<()> {
                     let lock = file.contents();
                     let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().map(cvt_err);
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);

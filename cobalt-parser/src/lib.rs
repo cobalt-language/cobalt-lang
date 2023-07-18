@@ -1,7 +1,7 @@
 use cobalt_errors::*;
 use cobalt_ast::{*, ast::*};
 use unicode_ident::*;
-use chumsky::prelude::*;
+use chumsky::{prelude::*, error::RichReason};
 use cobalt_errors::miette::{MietteDiagnostic, LabeledSpan, SourceSpan};
 mod utils;
 pub mod prelude {
@@ -10,14 +10,18 @@ pub mod prelude {
     pub use super::cvt_err;
     pub use chumsky::Parser as _;
 }
+fn cvt_reason(span: SimpleSpan, err: RichReason<'_, char, &'static str>) -> Vec<MietteDiagnostic> {
+    if let RichReason::Many(errs) = err {errs.into_iter().flat_map(|e| cvt_reason(span, e)).collect()}
+    else {
+        let mut msg = err.to_string();
+        if let Some(idx) = msg.find(" expected") {msg.insert(idx, ',')} // the lack of the comma was bothering me
+        vec![MietteDiagnostic::new(msg).with_label(LabeledSpan::underline(span.into_range()))]
+    }
+}
 /// make chumsky errors pretty
-pub fn cvt_err(err: Rich<char>) -> MietteDiagnostic {
-    let mut msg = err.to_string();
-    if let Some(idx) = msg.find(" expected") {msg.insert(idx, ',')} // the lack of the comma was bothering me
-    MietteDiagnostic::new(msg)
-        .with_labels(
-            std::iter::once(LabeledSpan::underline(err.span().into_range()))
-            .chain(err.contexts().map(|(&label, span)| LabeledSpan::at(span.into_range(), label))))
+pub fn cvt_err(err: Rich<char>) -> Vec<MietteDiagnostic> {
+    let span = *err.span();
+    cvt_reason(span, err.into_reason())
 }
 /// for use with map_with_span
 #[inline(always)]
