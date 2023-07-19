@@ -254,7 +254,7 @@ fn add_assigns<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'
         .then(choice(["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
             .map(just))
             .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
-            .labelled("a binary operator")
+            .labelled("an operator")
         .padded_by(ignored()))
         .repeated().foldr(expr, |(lhs, (op, loc)), rhs| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed();
     recursive(|expr| choice([
@@ -274,7 +274,7 @@ fn add_assigns<'a: 'b, 'b>(expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'
             .then(expr.clone().padded_by(ignored()))
             .map_with_span(|(cond, body), span| box_ast(WhileAST::new(span.into_range().into(), cond, body))).boxed(),
         prev
-    ]).recover_with(via_parser(text::keyword("else").ignore_then(expr)))).boxed()
+    ]).recover_with(via_parser(text::keyword("else").ignore_then(expr)))).labelled("an expression").boxed()
 }
 /// create a parser for expressions, without assignment
 fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
@@ -434,14 +434,14 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                 .separated_by(just(',').recover_with(skip_then_retry_until(none_of(",)").ignored(), one_of(",)").ignored()))).allow_trailing().collect()
                 .delimited_by(just('('), just(')'))
                 .map_with_span(|ast, loc| PostfixType::Call(ast, (loc.end - 1, 1).into()))
-        )).labelled("a postfix operator").padded_by(ignored()).repeated(), |ast, op| match op {
+        )).labelled("an operator").padded_by(ignored()).repeated(), |ast, op| match op {
             PostfixType::Op(op, loc) => box_ast(PostfixAST::new(loc, op, ast)),
             PostfixType::Attr(attr, loc) => box_ast(DotAST::new(ast, (attr, loc))),
             PostfixType::Sub(idx, loc) => box_ast(SubAST::new(loc, ast, idx)),
             PostfixType::Call(args, loc) => box_ast(CallAST::new(loc, ast, args))
         }).labelled("an expression").boxed();
         let prefix = choice((just("++"), just("--"), just("mut"))).map(String::from)
-            .or(one_of("+-*&~").map(String::from))
+            .or(one_of("+-*&~").map(String::from)).labelled("an operator")
             .map_with_span(add_loc).padded_by(ignored()).repeated()
             .foldr(postfix, |(op, loc), ast| box_ast(PrefixAST::new(loc, op, ast)))
             .labelled("an expression").boxed();
@@ -449,7 +449,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         fn impl_ltr<'a, const N: usize>(prev: BoxedASTParser<'a, 'a>, ops: [&'static str; N]) -> BoxedASTParser<'a, 'a> {
             prev.clone().foldl(
                 choice(ops.map(just))
-                    .labelled("a binary operator")
+                    .labelled("an operator")
                     .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
                     .padded_by(ignored()).then(prev).repeated(),
                 |lhs, ((op, loc), rhs)| box_ast(BinOpAST::new(loc, op, lhs, rhs))).labelled("an expression").boxed()
@@ -462,7 +462,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         let log_or = ["&", "^", "|", "&?", "|?"].into_iter().fold(eqs, |parser, op| impl_ltr(parser, [op]));
         // casts
         log_or.clone()
-            .foldl(just(':').ignore_then(just('?').or_not()).map(|o| o.is_some()).labelled("a binary operator")
+            .foldl(just(':').ignore_then(just('?').or_not()).map(|o| o.is_some()).labelled("an operator")
                 .map_with_span(add_loc)
                 .padded_by(ignored()).then(log_or).repeated(),
           |lhs, ((bit, loc), rhs)|
