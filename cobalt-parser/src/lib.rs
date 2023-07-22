@@ -165,6 +165,7 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, part_exp
                 .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
             .then_ignore(ignored())
             .then(just(':').labelled("variable type").ignore_then(ignored()).ignore_then(part_expr.clone().recover_with(via_parser(none_of(",=;").repeated().map_with_span(|_, span: SimpleSpan| box_ast(ErrorTypeAST::new(span.end.into())))))).or_not())
+            .then_ignore(ignored())
             .then(just('=').labelled("variable value").ignore_then(ignored()).ignore_then(full_expr.clone().recover_with(via_parser(none_of(",;").repeated().map_with_span(|_, span: SimpleSpan| box_ast(ErrorAST::new(span.end.into())))))).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |(((((anns, l), is_mut), name), ty), val)| box_ast(VarDefAST::new(l, name, val, ty, anns, loc == DeclLoc::Global, is_mut)))
             .boxed(),
@@ -176,6 +177,7 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, part_exp
                 .recover_with(skip_until(any().ignored(), one_of(":=;").rewind().ignored().or(end()), || DottedName::local(("<error>".to_string(), unreachable_span())))))
             .then_ignore(ignored())
             .then(just(':').labelled("variable type").ignore_then(ignored()).ignore_then(part_expr.clone().recover_with(via_parser(none_of(",=;").repeated().map_with_span(|_, span: SimpleSpan| box_ast(ErrorTypeAST::new(span.end.into())))))).or_not())
+            .then_ignore(ignored())
             .then(just('=').labelled("variable value").ignore_then(ignored()).ignore_then(full_expr.clone().recover_with(via_parser(none_of(",;").repeated().map_with_span(|_, span: SimpleSpan| box_ast(ErrorAST::new(span.end.into())))))).or_not().map_with_span(|expr, loc| expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))))
             .map(move |((((anns, l), name), ty), val)| box_ast(ConstDefAST::new(l, name, val, ty, anns)))
             .boxed(),
@@ -372,8 +374,8 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         text::keyword("type").to_span().map(|span: SimpleSpan| box_ast(TypeLiteralAST::new(span.into_range().into())))
     )).labelled("a literal");
     let intrinsic = just('@').ignore_then(ident()).map_with_span(|name, span| box_ast(IntrinsicAST::new(span.into_range().into(), name.to_string()))).labelled("an intrinsic");
-    recursive(move |expr| {
-        let expr = add_assigns(expr);
+    recursive(move |raw_expr| {
+        let expr = add_assigns(raw_expr.clone());
         let maybe_expr = expr.clone().or_not().map_with_span(|ast, span: SimpleSpan| ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into()))));
         let atom = choice((
             literal,
@@ -410,7 +412,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                 .map_with_span(|vals, span| box_ast(ArrayLiteralAST::new((span.start, 1).into(), (span.end - 1, 1).into(), vals)))
                 .recover_with(via_parser(nested_delimiters('[', ']', [('(', ')'), ('{', '}')], |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into()))))),
             // block
-            def_stmt(maybe_expr.clone().boxed())
+            def_stmt(raw_expr.or_not().map_with_span(|ast, span: SimpleSpan| ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into())))).boxed())
                 .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
                 .padded_by(ignored())
                 .separated_by(just(';').recover_with(skip_then_retry_until(none_of(";}").ignored(), one_of(";}").ignored()))).collect()
