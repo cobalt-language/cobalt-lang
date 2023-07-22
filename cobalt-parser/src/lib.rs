@@ -11,7 +11,11 @@ pub mod prelude {
     pub use chumsky::Parser as _;
 }
 fn cvt_reason(span: SimpleSpan, err: RichReason<'_, char, &'static str>) -> Vec<MietteDiagnostic> {
-    if let RichReason::Many(errs) = err {errs.into_iter().flat_map(|e| cvt_reason(span, e)).collect()}
+    if let RichReason::Many(mut errs) = err {
+        errs.sort();
+        errs.dedup();
+        errs.into_iter().flat_map(|e| cvt_reason(span, e)).collect()
+    }
     else {
         let mut msg = err.to_string();
         if let Some(idx) = msg.find(" expected") {msg.insert(idx, ',')} // the lack of the comma was bothering me
