@@ -167,8 +167,10 @@ pub enum CobaltError {
         vloc: SourceSpan,
         ty: String,
         #[label("operator is `{op}`")]
-        oloc: SourceSpan,
-        op: String
+        oloc: Option<SourceSpan>,
+        op: String,
+        #[label("defined as immutable here")]
+        floc: SourceSpan
     },
 
     // Misc stuff
