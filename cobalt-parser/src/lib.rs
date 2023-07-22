@@ -448,7 +448,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             PostfixType::Sub(idx, loc) => box_ast(SubAST::new(loc, ast, idx)),
             PostfixType::Call(args, loc) => box_ast(CallAST::new(loc, ast, args))
         }).labelled("an expression").boxed();
-        let prefix = choice((just("++"), just("--"), just("mut"))).map(String::from)
+        let prefix = choice((just("++"), just("--"), text::keyword("mut"))).map(String::from)
             .or(one_of("+-*&~").map(String::from)).labelled("an operator")
             .map_with_span(add_loc).padded_by(ignored()).repeated()
             .foldr(postfix, |(op, loc), ast| box_ast(PrefixAST::new(loc, op, ast)))
