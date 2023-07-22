@@ -67,6 +67,18 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             }
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         }
+        (_l, Type::Mut(r)) => {
+            rhs.data_type = *r;
+            if !ctx.is_const.get() {
+                if let (Some(t), Some(PointerValue(v))) = (rhs.data_type.llvm_type(ctx), rhs.comp_val) {
+                    rhs.comp_val = Some(ctx.builder.build_load(t, v, ""));
+                }
+                else {
+                    rhs.comp_val = None;
+                }
+            }
+            bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
+        }
         (Type::Mut(l), r) => if op == "=" {
             rhs = impl_convert(rloc, (rhs, None), (*l, Some(lloc)), ctx)?;
             if let (Some(PointerValue(lv)), Some(rv)) = (lhs.comp_val, rhs.value(ctx)) {
