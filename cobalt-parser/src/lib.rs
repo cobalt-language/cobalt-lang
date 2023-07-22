@@ -457,7 +457,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         let mul_div = impl_ltr(prefix, ["*", "/", "%"]);
         let add_sub = impl_ltr(mul_div, ["+", "-"]);
         let shifts = impl_ltr(add_sub, ["<<", ">>"]);
-        let cmps = impl_ltr(shifts, ["<", ">", "<=", ">="]);
+        let cmps = impl_ltr(shifts, ["<=", ">=", "<", ">"]);
         let eqs = impl_ltr(cmps, ["==", "!="]);
         let log_or = ["&", "^", "|", "&?", "|?"].into_iter().fold(eqs, |parser, op| impl_ltr(parser, [op]));
         // casts
