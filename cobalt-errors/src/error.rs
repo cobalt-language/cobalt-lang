@@ -161,6 +161,15 @@ pub enum CobaltError {
         #[label("index is {idx}")]
         iloc: SourceSpan
     },
+    #[error("cannot mutate an immutable value")]
+    CantMutateImmut {
+        #[label("value is of type `{ty}`")]
+        vloc: SourceSpan,
+        ty: String,
+        #[label("operator is `{op}`")]
+        oloc: SourceSpan,
+        op: String
+    },
 
     // Misc stuff
     #[error("error in glob pattern")]

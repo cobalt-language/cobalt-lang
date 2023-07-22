@@ -42,7 +42,9 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         op: op.to_string(),
         lloc, rloc, oloc: loc
     };
-    match (lhs.data_type.clone(), rhs.data_type.clone()) {
+    let ldt = lhs.data_type.clone();
+    let rdt = rhs.data_type.clone();
+    let out = match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Reference(l), _r) => {
             lhs.data_type = *l;
             if !(ctx.is_const.get() || matches!(lhs.data_type, Type::Mut(_))) {
@@ -1107,7 +1109,24 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx)
         }
         _ => Err(err)
-    }
+    };
+    out.map_err(|err| {
+        let oic = ctx.is_const.replace(true);
+        let tyname = ldt.to_string();
+        let lhs = Value {data_type: Type::Mut(Box::new(ldt)), ..Value::null()};
+        let rhs = Value {data_type: rdt, ..Value::null()};
+        let uloc = unreachable_span();
+        let non_mut = bin_op(uloc, (lhs, uloc), (rhs, uloc), op, ctx).is_ok();
+        ctx.is_const.set(oic);
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc: lloc,
+                ty: tyname,
+                oloc: loc,
+                op: op.to_string()
+            }
+        } else {err}
+    })
 }
 pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::PreOpNotDefined {
@@ -1115,7 +1134,8 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         op: op.to_string(),
         vloc, oloc: loc
     };
-    match val.data_type.clone() {
+    let vdt = val.data_type.clone();
+    let out = match val.data_type.clone() {
         Type::Reference(x) => if op == "&" {
             val.data_type = Type::Pointer(x);
             Ok(val)
@@ -1317,15 +1337,49 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
             else {Err(err)}
         }
         _ => Err(err)
-    }
+    };
+    out.map_err(|err| {
+        let oic = ctx.is_const.replace(true);
+        let tyname = vdt.to_string();
+        let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+        let uloc = unreachable_span();
+        let non_mut = pre_op(uloc, (val, uloc), op, ctx).is_ok();
+        ctx.is_const.set(oic);
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc,
+                ty: tyname,
+                oloc: loc,
+                op: op.to_string()
+            }
+        } else {err}
+    })
 }
-pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
+    #![allow(clippy::redundant_clone)]
     let err = CobaltError::PostOpNotDefined {
         val: val.data_type.to_string(),
         op: op.to_string(),
         vloc, oloc: loc
     };
-    Err(err)
+    let vdt = val.data_type.clone();
+    let out = Err(err);
+    out.map_err(|err| {
+        let oic = ctx.is_const.replace(true);
+        let tyname = vdt.to_string();
+        let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+        let uloc = unreachable_span();
+        let non_mut = post_op(uloc, (val, uloc), op, ctx).is_ok();
+        ctx.is_const.set(oic);
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc,
+                ty: tyname,
+                oloc: loc,
+                op: op.to_string()
+            }
+        } else {err}
+    })
 }
 pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::SubscriptNotDefined {
