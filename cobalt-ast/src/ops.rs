@@ -1112,13 +1112,16 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         _ => Err(err)
     };
     out.map_err(|err| {
-        let oic = ctx.is_const.replace(true);
         let tyname = ldt.to_string();
-        let lhs = Value {data_type: Type::Mut(Box::new(ldt)), ..Value::null()};
-        let rhs = Value {data_type: rdt, ..Value::null()};
-        let uloc = unreachable_span();
-        let non_mut = bin_op(uloc, (lhs, uloc), (rhs, uloc), op, ctx).is_ok();
-        ctx.is_const.set(oic);
+        let non_mut = !matches!(ldt, Type::Mut(_)) && {
+            let oic = ctx.is_const.replace(true);
+            let lhs = Value {data_type: Type::Mut(Box::new(ldt)), ..Value::null()};
+            let rhs = Value {data_type: rdt, ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = bin_op(uloc, (lhs, uloc), (rhs, uloc), op, ctx).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc: lloc,
@@ -1342,12 +1345,15 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         _ => Err(err)
     };
     out.map_err(|err| {
-        let oic = ctx.is_const.replace(true);
         let tyname = vdt.to_string();
-        let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
-        let uloc = unreachable_span();
-        let non_mut = pre_op(uloc, (val, uloc), op, ctx).is_ok();
-        ctx.is_const.set(oic);
+        let non_mut = (!matches!(vdt, Type::Mut(_))) && {
+            let oic = ctx.is_const.replace(true);
+            let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = post_op(uloc, (val, uloc), op, ctx).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc,
@@ -1370,12 +1376,15 @@ pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op
     let vf = val.frozen;
     let out = Err(err);
     out.map_err(|err| {
-        let oic = ctx.is_const.replace(true);
         let tyname = vdt.to_string();
-        let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
-        let uloc = unreachable_span();
-        let non_mut = post_op(uloc, (val, uloc), op, ctx).is_ok();
-        ctx.is_const.set(oic);
+        let non_mut = (!matches!(vdt, Type::Mut(_))) && {
+            let oic = ctx.is_const.replace(true);
+            let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = post_op(uloc, (val, uloc), op, ctx).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc,
