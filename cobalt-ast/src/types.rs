@@ -1,5 +1,6 @@
 use crate::*;
-use inkwell::{types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum}, values::FunctionValue};
+use cobalt_llvm::inkwell::values::FunctionValue;
+use inkwell::types::{BasicType, BasicTypeEnum::{self, *}, BasicMetadataTypeEnum};
 use inkwell::values::BasicValueEnum;
 use Type::{*, Error};
 use SizeType::*;
@@ -193,8 +194,14 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx)
         }
     }
-    pub fn has_dtor(&self, _ctx: &CompCtx) -> bool {false}
-    pub fn get_dtor<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> Option<FunctionValue<'ctx>> {None}
+    pub fn has_dtor(&self, ctx: &CompCtx) -> bool {
+        match self {
+            Type::Nominal(n) => ctx.nominals.borrow()[n].3.dtor.is_some(),
+            Type::Array(b, _) | Type::Mut(b) => b.has_dtor(ctx),
+            Type::Tuple(v) => v.iter().any(|t| t.has_dtor(ctx)),
+            _ => false
+        }
+    }
     fn can_be_compiled<'ctx>(&self, v: &InterData<'ctx>, ctx: &CompCtx<'ctx>) -> bool {
         match self {
             Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),
@@ -474,4 +481,28 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
     let mut vec = Vec::with_capacity(v.len());
     for t in v {vec.push(t.llvm_type(ctx)?);}
     Some(ctx.context.struct_type(&vec, false).into())
+}
+#[derive(Debug, Clone, Default)]
+pub struct NominalInfo<'ctx> {
+    pub dtor: Option<FunctionValue<'ctx>>
+}
+impl<'ctx> NominalInfo<'ctx> {
+    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if let Some(fv) = self.dtor {
+            out.write_all(fv.get_name().to_bytes())?;
+        }
+        out.write_all(&[0])
+    }
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+        let mut vec = vec![];
+        buf.read_until(0, &mut vec)?;
+        if vec.last() == Some(&0) {vec.pop();}
+        let dtor = if vec.is_empty() {None}
+        else {
+            let name = String::from_utf8(vec).expect("value should be valid UTF-8!");
+            let fv = ctx.module.get_function(&name);
+            Some(fv.unwrap_or_else(|| ctx.module.add_function(&name, ctx.context.void_type().fn_type(&[ctx.null_type.ptr_type(Default::default()).into()], false), None)))
+        };
+        Ok(Self {dtor})
+    }
 }

@@ -179,6 +179,50 @@ impl<'ctx> Value<'ctx> {
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| self.data_type.into_compiled(v, ctx)))}
     pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| self.data_type.into_compiled(v, ctx)))}
 
+    pub fn ins_dtor(&self, ctx: &CompCtx<'ctx>) {
+        match &self.data_type {
+            Type::Nominal(n) => if let (Some(addr), Some(fv)) = (self.addr(ctx), ctx.nominals.borrow()[n].3.dtor) {
+                ctx.builder.build_call(fv, &[addr.into()], "");
+            }
+            Type::Tuple(v) => if let Some(BasicValueEnum::StructValue(comp_val)) = self.comp_val {
+                v.iter().enumerate().for_each(|(n, t)| {
+                    if t.has_dtor(ctx) {
+                        let val = ctx.builder.build_extract_value(comp_val, n as _, "").unwrap();
+                        let mut val = Value::compiled(val, t.clone());
+                        if let Some(pv) = self.address.get() {
+                            val.address = Rc::new(Cell::new(Some(ctx.builder.build_struct_gep(self.data_type.llvm_type(ctx).unwrap(), pv, n as _, "").unwrap())));
+                        }
+                        val.ins_dtor(ctx);
+                    }
+                })
+            }
+            Type::Array(b, Some(s)) => if let Some(BasicValueEnum::ArrayValue(comp_val)) = self.comp_val {
+                if b.has_dtor(ctx) {
+                    let llt = self.data_type.llvm_type(ctx).unwrap();
+                    for n in 0..*s {
+                        let val = ctx.builder.build_extract_value(comp_val, n, "").unwrap();
+                        let mut val = Value::compiled(val, b.as_ref().clone());
+                        if let Some(pv) = self.address.get() {
+                            val.address = Rc::new(Cell::new(Some(ctx.builder.build_struct_gep(llt, pv, n, "").unwrap())));
+                        }
+                        val.ins_dtor(ctx);
+                    }
+                }
+            }
+            Type::Mut(b) => if let Some(BasicValueEnum::PointerValue(comp_val)) = self.comp_val {
+                if b.has_dtor(ctx) {
+                    if let Some(llt) = b.llvm_type(ctx) {
+                        let val = ctx.builder.build_load(llt, comp_val, "");
+                        let mut val = Value::compiled(val, b.as_ref().clone());
+                        val.address = Rc::new(Cell::new(Some(comp_val)));
+                        val.ins_dtor(ctx);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
     pub fn into_type(self) -> Option<Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(*t)} else {None}}
     pub fn as_type(&self) -> Option<&Type> {if let Value {data_type: Type::TypeData, inter_val: Some(InterData::Type(t)), ..} = self {Some(t.as_ref())} else {None}}
     pub fn into_mod(self) -> Option<(HashMap<String, Symbol<'ctx>>, Vec<(CompoundDottedName, bool)>, String)> {if let Value {data_type: Type::Module, inter_val: Some(InterData::Module(s, m, n)), ..} = self {Some((s, m, n))} else {None}}
