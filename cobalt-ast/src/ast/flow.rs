@@ -34,7 +34,7 @@ impl AST for IfAST {
                     ctx.builder.position_at_end(ifb);
                     let (if_false, mut es) = self.if_false.codegen(ctx);
                     errs.append(&mut es);
-                    if let Some(ty) = ops::common(&if_true.data_type, &if_false.data_type) {
+                    if let Some(ty) = ops::common(&if_true.data_type, &if_false.data_type, ctx) {
                         ctx.builder.position_at_end(itb);
                         let if_true = ops::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {
                             errs.push(e);

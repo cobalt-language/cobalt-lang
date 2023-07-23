@@ -1,7 +1,7 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
 use std::collections::VecDeque;
-use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue, MetadataValue, AnyValue};
+use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue, MetadataValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
@@ -20,7 +20,7 @@ pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>
         }
     }
 }
-pub fn impl_convertible(base: &Type, target: &Type) -> bool {
+pub fn impl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
     base == target || *target == Type::Null || *target == Type::Error || match base {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Int(s, _) => match target {Type::Int(s2, _) if s2 >= s => true, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => true, _ => false},
@@ -28,21 +28,21 @@ pub fn impl_convertible(base: &Type, target: &Type) -> bool {
         Type::Float32 => matches!(target, Type::Float64 | Type::Float128),
         Type::Float64 => *target == Type::Float128,
         Type::Pointer(lb) => if let Type::Pointer(rb) = target {covariant(lb, rb)} else {false},
-        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || impl_convertible(lb, target),
-        Type::Mut(b) => impl_convertible(b, target),
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || (impl_convertible(lb, target, ctx) && !lb.has_dtor(ctx)),
+        Type::Mut(b) => impl_convertible(b, target, ctx),
         Type::Null => *target == Type::TypeData,
         Type::Error => true,
         _ => false
     }
 }
-pub fn expl_convertible(base: &Type, target: &Type) -> bool {
+pub fn expl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
     base == target || *target == Type::Null || *target == Type::Error || match base {
         Type::IntLiteral => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Int(..) => matches!(target, Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(..)),
         Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => matches!(target, Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128),
         Type::Pointer(lb) => if let Type::Pointer(rb) = target {**lb == Type::Null || covariant(lb, rb)} else {false},
-        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || expl_convertible(lb, target),
-        Type::Mut(b) => expl_convertible(b, target),
+        Type::Reference(lb) => (if let Type::Reference(rb) = target {covariant(lb, rb)} else {false}) || (expl_convertible(lb, target, ctx) && !lb.has_dtor(ctx)),
+        Type::Mut(b) => expl_convertible(b, target, ctx),
         Type::Null => matches!(target, Type::TypeData | Type::IntLiteral | Type::Int(..) | Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 | Type::Pointer(_)),
         Type::Error => true,
         _ => false
@@ -2231,23 +2231,32 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                         Ok(val)
                     }
                     else {
-                        ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
-                            match mt {
-                                MethodType::Normal => {
-                                    let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), true);
-                                    let mut v = Value::metaval(iv.clone(), bm);
-                                    if let (Some(vv), Some(f), Some(StructType(llt))) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
-                                        let v0 = llt.get_undef();
-                                        let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
-                                        let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
-                                        v.comp_val = Some(v2.as_basic_value_enum());
+                        let noms = ctx.nominals.borrow();
+                        let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                        if let Value {data_type: Type::Reference(r), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
+                            if let Type::Function(ret, args) = r.as_ref() {
+                                match mt {
+                                    MethodType::Normal => {
+                                        let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
+                                        let bm = Type::BoundMethod(ret.clone(), args.clone());
+                                        let mut v = Value::metaval(iv.clone(), bm);
+                                        if let (Some(vv), Some(f), Some(StructType(llt))) = (this.comp_val, comp_val, v.data_type.llvm_type(ctx)) {
+                                            let v0 = llt.get_undef();
+                                            let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                                            let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                                            v.comp_val = Some(v2.as_basic_value_enum());
+                                        }
+                                        Ok(v)
                                     }
-                                    Ok(v)
-                                },
-                                MethodType::Static => Err(err),
-                                MethodType::Getter => ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
-                            }
-                        } else {Err(err)})
+                                    MethodType::Static => Err(err),
+                                    MethodType::Getter => {
+                                        val.comp_val = val.addr(ctx).map(From::from);
+                                        val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                        ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                                    }
+                                }
+                            } else {Err(err)}
+                        } else {Err(err)}
                     }
                 } else {Err(err)}
                 Type::Nominal(n) =>
@@ -2256,54 +2265,102 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                         Ok(val)
                     }
                     else {
-                        ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
-                            match mt {
-                                MethodType::Normal => {
-                                    let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false);
-                                    let mut v = Value::metaval(iv.clone(), bm);
-                                    if let (Some(vv), Some(f), Some(StructType(llt))) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
-                                        let v0 = llt.get_undef();
-                                        let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
-                                        let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
-                                        v.comp_val = Some(v2.as_basic_value_enum());
+                        let noms = ctx.nominals.borrow();
+                        let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                        if let Value {data_type: Type::Reference(r), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
+                            if let Type::Function(ret, args) = r.as_ref() {
+                                match mt {
+                                    MethodType::Normal => {
+                                        let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
+                                        let bm = Type::BoundMethod(ret.clone(), args.clone());
+                                        let mut v = Value::metaval(iv.clone(), bm);
+                                        if let (Some(vv), Some(f), Some(StructType(llt))) = (this.comp_val, comp_val, v.data_type.llvm_type(ctx)) {
+                                            let v0 = llt.get_undef();
+                                            let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                                            let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                                            v.comp_val = Some(v2.as_basic_value_enum());
+                                        }
+                                        Ok(v)
                                     }
-                                    Ok(v)
-                                },
-                                MethodType::Static => Err(err),
-                                MethodType::Getter => ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
-                            }
-                        } else {Err(err)})
+                                    MethodType::Static => Err(err),
+                                    MethodType::Getter => {
+                                        val.comp_val = val.addr(ctx).map(From::from);
+                                        val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                        ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                                    }
+                                }
+                            } else {Err(err)}
+                        } else {Err(err)}
                     }
                 _ => Err(err)
             }
         }
+        Type::Mut(b) => if let Type::Nominal(n) = *b {
+            if id == "__base" {
+                val.data_type = Type::Reference(Box::new(Type::Mut(Box::new(ctx.nominals.borrow()[&n].0.clone()))));
+                Ok(val)
+            }
+            else {
+                let noms = ctx.nominals.borrow();
+                let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                if let Value {data_type: Type::Reference(r), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
+                    if let Type::Function(ret, args) = r.as_ref() {
+                        match mt {
+                            MethodType::Normal => {
+                                let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
+                                let bm = Type::BoundMethod(ret.clone(), args.clone());
+                                let mut v = Value::metaval(iv.clone(), bm);
+                                if let (Some(vv), Some(f), Some(StructType(llt))) = (this.comp_val, comp_val, v.data_type.llvm_type(ctx)) {
+                                    let v0 = llt.get_undef();
+                                    let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                                    let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                                    v.comp_val = Some(v2.as_basic_value_enum());
+                                }
+                                Ok(v)
+                            }
+                            MethodType::Static => Err(err),
+                            MethodType::Getter => {
+                                val.comp_val = val.addr(ctx).map(From::from);
+                                val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                            }
+                        }
+                    } else {Err(err)}
+                } else {Err(err)}
+            }
+        } else {Err(err)}
         Type::Nominal(n) =>
             if id == "__base" {
                 val.data_type = ctx.nominals.borrow()[&n].0.clone();
                 Ok(val)
             }
             else {
-                ctx.nominals.borrow()[&n].2.get(id).ok_or_else(|| err.clone()).and_then(|v| if let Value {data_type: Type::Function(ret, args), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
-                    match mt {
-                        MethodType::Normal => {
-                            let bm = Type::BoundMethod(Box::new(Type::Nominal(n.clone())), ret.clone(), args.clone(), false);
-                            let mut v = Value::metaval(iv.clone(), bm);
-                            if let (Some(vv), Some(f), Some(StructType(llt))) = (val.addr(ctx), comp_val, v.data_type.llvm_type(ctx)) {
-                                let v0 = llt.get_undef();
-                                let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
-                                let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
-                                v.comp_val = Some(v2.as_basic_value_enum());
+                let noms = ctx.nominals.borrow();
+                let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                if let Value {data_type: Type::Reference(r), inter_val: Some(iv @ InterData::Function(FnData {mt, ..})), comp_val, ..} = v {
+                    if let Type::Function(ret, args) = r.as_ref() {
+                        match mt {
+                            MethodType::Normal => {
+                                let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
+                                let bm = Type::BoundMethod(ret.clone(), args.clone());
+                                let mut v = Value::metaval(iv.clone(), bm);
+                                if let (Some(vv), Some(f), Some(StructType(llt))) = (this.comp_val, comp_val, v.data_type.llvm_type(ctx)) {
+                                    let v0 = llt.get_undef();
+                                    let v1 = ctx.builder.build_insert_value(v0, vv, 0, "").unwrap();
+                                    let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
+                                    v.comp_val = Some(v2.as_basic_value_enum());
+                                }
+                                Ok(v)
                             }
-                            Ok(v)
-                        },
-                        MethodType::Static => Err(err),
-                        MethodType::Getter => {
-                            val.comp_val = val.addr(ctx).map(From::from);
-                            val.data_type = Type::Reference(Box::new(val.data_type.clone()));
-                            ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                            MethodType::Static => Err(err),
+                            MethodType::Getter => {
+                                val.comp_val = val.addr(ctx).map(From::from);
+                                val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
+                            }
                         }
-                    }
-                } else {Err(err)})
+                    } else {Err(err)}
+                } else {Err(err)}
             }
         _ => Err(err)
     }
@@ -2489,7 +2546,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             Ok(Value::new(
                 val.and_then(|v| {
                     let call = ctx.builder.build_indirect_call(fty?, v, &args_v, "");
-                    let inst = call.as_any_value_enum().into_instruction_value();
+                    let inst = call.try_as_basic_value().right_or_else(|v| v.as_instruction_value().unwrap());
                     for (val, loc) in args {mark_as_move(&val, inst, ctx, loc)}
                     call.try_as_basic_value().left()
                 }),
@@ -2497,9 +2554,9 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 *ret
             ))
         }
-        Type::BoundMethod(base, ret, params, m) => {
+        Type::BoundMethod(ret, params) => {
             let mut avec = Vec::with_capacity(args.len() + 1);
-            avec.push((Value::new(None, None, Type::Reference(maybe_mut(base, m))), loc));
+            avec.push((Value::new(None, None, params[0].0.clone()), loc));
             avec.append(&mut args);
             if let Some(StructValue(sv)) = target.comp_val {
                 let tv = ctx.builder.build_extract_value(sv, 0, "").unwrap();
@@ -2797,10 +2854,10 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
         })
     }
 }
-pub fn common(lhs: &Type, rhs: &Type) -> Option<Type> {
+pub fn common(lhs: &Type, rhs: &Type, ctx: &CompCtx) -> Option<Type> {
     if lhs == rhs {Some(lhs.clone())}
-    else if impl_convertible(lhs, rhs) {Some(rhs.clone())}
-    else if impl_convertible(rhs, lhs) {Some(lhs.clone())}
+    else if impl_convertible(lhs, rhs, ctx) {Some(rhs.clone())}
+    else if impl_convertible(rhs, lhs, ctx) {Some(lhs.clone())}
     else {None}
 }
 fn is_str(ty: &Type) -> bool {

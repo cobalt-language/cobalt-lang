@@ -45,7 +45,7 @@ pub enum Type {
     Float16, Float32, Float64, Float128,
     Pointer(Box<Type>), Reference(Box<Type>), Mut(Box<Type>),
     Null, Module, TypeData, InlineAsm(Box<Type>), Array(Box<Type>, Option<u32>),
-    Function(Box<Type>, Vec<(Type, bool)>), BoundMethod(Box<Type>, Box<Type>, Vec<(Type, bool)>, bool), Nominal(String),
+    Function(Box<Type>, Vec<(Type, bool)>), BoundMethod(Box<Type>, Vec<(Type, bool)>), Nominal(String),
     Tuple(Vec<Type>),
     Error
 }
@@ -83,10 +83,10 @@ impl Display for Type {
                 }
                 write!(f, "): {}", *ret)
             }
-            BoundMethod(base, ret, args, m) => {
-                write!(f, "{} {base}.fn (", if *m {"mut"} else {"const"})?;
+            BoundMethod(ret, args) => {
+                write!(f, "{}{}.fn (", if args[0].1 {"const "} else {""}, args[0].0)?;
                 let mut len = args.len();
-                for (arg, ty) in args.iter() {
+                for (arg, ty) in args[1..].iter() {
                     write!(f, "{}{}", match ty {
                         true => "const ",
                         false => ""
@@ -170,7 +170,7 @@ impl Type {
             Float64 => Some(FloatType(ctx.context.f64_type())),
             Float128 => Some(FloatType(ctx.context.f128_type())),
             Null | Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => None,
-            BoundMethod(base, ret, params, _) => Some(ctx.context.struct_type(&[Type::Pointer(base.clone()).llvm_type(ctx)?, Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone()))).llvm_type(ctx)?], false).into()),
+            BoundMethod(ret, params) => Some(ctx.context.struct_type(&[params[0].0.llvm_type(ctx)?, Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone()))).llvm_type(ctx)?], false).into()),
             Array(b, Some(n)) => Some(b.llvm_type(ctx)?.array_type(*n).into()),
             Array(_, None) => None,
             Pointer(b) | Reference(b) => match &**b {
@@ -253,7 +253,7 @@ impl Type {
             Type::Reference(b) | Type::Pointer(b) | Type::Mut(b) | Type::Array(b, _) | Type::InlineAsm(b) => b.contains_nominal(),
             Type::Tuple(v) => v.iter().any(|t| t.contains_nominal()),
             Type::Function(r, a) => r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
-            Type::BoundMethod(b, r, a, _) => b.contains_nominal() || r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
+            Type::BoundMethod(r, a) => r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()),
             _ => false
         }
     }
@@ -281,13 +281,11 @@ impl Type {
                     a.iter().map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c)).collect()
                 ))}
                 else {Cow::Borrowed(self)},
-            Type::BoundMethod(b, r, a, m) =>
-                if b.contains_nominal() || r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
+            Type::BoundMethod(r, a) =>
+                if r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
                 {Cow::Owned(Type::BoundMethod(
-                    Box::new(b.unwrapped(ctx).into_owned()),
                     Box::new(r.unwrapped(ctx).into_owned()),
-                    a.iter().map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c)).collect(),
-                    *m
+                    a.iter().map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c)).collect()
                 ))}
                 else {Cow::Borrowed(self)},
             _ => Cow::Borrowed(self)
@@ -362,12 +360,10 @@ impl Type {
                 out.write_all(&buf)?;
                 v.iter().try_for_each(|t| t.save(out))
             },
-            BoundMethod(b, r, p, m) => {
+            BoundMethod(r, p) => {
                 out.write_all(&[21])?;
                 out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
-                b.save(out)?;
                 r.save(out)?;
-                out.write_all(&[u8::from(*m)])?;
                 for (par, c) in p {
                     par.save(out)?;
                     out.write_all(&[u8::from(*c)])?; // param is const
@@ -443,7 +439,6 @@ impl Type {
                 let mut bytes = [0; 2];
                 buf.read_exact(&mut bytes)?;
                 let v = u16::from_be_bytes(bytes);
-                let base = Type::load(buf)?;
                 let ret = Type::load(buf)?;
                 buf.read_exact(&mut bytes[..1])?;
                 let mut vec = Vec::with_capacity(v as usize);
@@ -452,7 +447,7 @@ impl Type {
                     buf.read_exact(std::slice::from_mut(&mut c))?;
                     vec.push((t, c != 0));
                 }
-                Type::BoundMethod(Box::new(base), Box::new(ret), vec, bytes[0] != 0)
+                Type::BoundMethod(Box::new(ret), vec)
             }
             x => panic!("read type value expecting value in 1..=21, got {x}")
         })
@@ -467,8 +462,7 @@ impl Type {
                 r.export(ctx);
                 a.iter().for_each(|t| t.0.export(ctx));
             },
-            Type::BoundMethod(b, r, a, _) => {
-                b.export(ctx);
+            Type::BoundMethod(r, a) => {
                 r.export(ctx);
                 a.iter().for_each(|t| t.0.export(ctx));
             },

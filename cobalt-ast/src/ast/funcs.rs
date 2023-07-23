@@ -60,12 +60,12 @@ impl AST for FnDefAST {
                         Some("common") => Some(Common),
                         _ => None
                     }
-                },
+                }
                 "linkas" => {
                     if let Some(arg) = arg {
                         linkas = Some((arg.clone(), loc))
                     }
-                },
+                }
                 "cconv" => {
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
                         Some("c") | Some("C") => Some(0),
@@ -82,7 +82,7 @@ impl AST for FnDefAST {
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
                         _ => None
                     });
-                },
+                }
                 "extern" => {
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
                         Some("c") | Some("C") => Some(0),
@@ -99,7 +99,7 @@ impl AST for FnDefAST {
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
                         _ => None
                     });
-                },
+                }
                 "inline" => {
                     if let Some(arg) = arg {
                         match arg.as_str() {
@@ -111,11 +111,11 @@ impl AST for FnDefAST {
                     else {
                         inline = Some(true)
                     }
-                },
+                }
                 "c" | "C" => {
                     cconv = Some(0);
                     linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc))
-                },
+                }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -124,7 +124,7 @@ impl AST for FnDefAST {
                             if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))}
                         }
                     }
-                },
+                }
                 "export" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -133,7 +133,7 @@ impl AST for FnDefAST {
                             _ => {}
                         }
                     }
-                },
+                }
                 "private" => {
                     if vis_spec.is_none() {
                         match arg.as_deref() {
@@ -142,19 +142,19 @@ impl AST for FnDefAST {
                             _ => {}
                         }
                     }
-                },
+                }
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(&self_t, &params[0].0) {fn_type = Some(MethodType::Normal)};
+                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {fn_type = Some(MethodType::Normal)};
                     }
-                },
+                }
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
                         let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(&self_t, &params[0].0) {fn_type = Some(MethodType::Getter)};
+                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {fn_type = Some(MethodType::Getter)};
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -267,7 +267,7 @@ impl AST for FnDefAST {
             ret = *b;
         }
         while let Type::Mut(b) = ret {ret = *b}
-        let params = self.params.iter().map(|(_, pt, ty, _)| ({
+        let mut params = self.params.iter().map(|(_, pt, ty, _)| ({
             let mut val = ops::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
                 errs.push(e);
                 Type::Error
@@ -318,7 +318,7 @@ impl AST for FnDefAST {
                             None
                         }
                     }.map(|x| (x, loc))
-                },
+                }
                 "linkas" => {
                     if let Some((_, prev)) = linkas {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -335,7 +335,7 @@ impl AST for FnDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "cconv" => {
                     if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -380,7 +380,7 @@ impl AST for FnDefAST {
                             }
                         }
                     }.map(|cc| (cc, loc)));
-                },
+                }
                 "extern" => {
                     is_extern = Some(loc);
                     if arg.is_some() {
@@ -426,7 +426,7 @@ impl AST for FnDefAST {
                             }
                         }
                     }.map(|cc| (cc, loc)));
-                },
+                }
                 "inline" => {
                     if let Some((_, prev)) = inline {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -444,7 +444,7 @@ impl AST for FnDefAST {
                             loc
                         })
                     }
-                },
+                }
                 "c" | "C" => {
                     match arg.as_ref().map(|x| x.as_str()) {
                         Some("") | None => {},
@@ -457,7 +457,7 @@ impl AST for FnDefAST {
                         })
                     }
                     linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
-                },
+                }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
@@ -475,7 +475,7 @@ impl AST for FnDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -495,7 +495,7 @@ impl AST for FnDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -515,7 +515,7 @@ impl AST for FnDefAST {
                             })
                         }
                     }
-                },
+                }
                 "method" if self.in_struct => {
                     if let Some((_, prev)) = fn_type {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -532,17 +532,21 @@ impl AST for FnDefAST {
                                 loc
                             });
                         }
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
+                        let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
                         if params.is_empty() {
                             errs.push(CobaltError::InvalidSelfParam {
                                 loc: self.loc,
                                 self_t: self_t.to_string(),
                                 param: None,
                             });
+                            params.push((Type::Null, false));
                         }
                         else {
                             let s = self_t.to_string();
-                            if !ops::impl_convertible(&self_t, &params[0].0) {
+                            if !(
+                                ops::impl_convertible(&self_t, &params[0].0, ctx) ||
+                                ops::impl_convertible(&Type::Reference(Box::new(self_t.clone())), &params[0].0, ctx) ||
+                                ops::impl_convertible(&Type::Reference(Box::new(Type::Mut(Box::new(self_t)))), &params[0].0, ctx)) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,
@@ -554,7 +558,7 @@ impl AST for FnDefAST {
                             }
                         }
                     }
-                },
+                }
                 "getter" if self.in_struct => {
                     if let Some((_, prev)) = fn_type {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -571,17 +575,21 @@ impl AST for FnDefAST {
                                 loc
                             });
                         }
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
+                        let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
                         if params.is_empty() {
                             errs.push(CobaltError::InvalidSelfParam {
                                 loc: self.loc,
                                 self_t: self_t.to_string(),
                                 param: None,
                             });
+                            params.push((Type::Null, false));
                         }
                         else {
                             let s = self_t.to_string();
-                            if !ops::impl_convertible(&self_t, &params[0].0) {
+                            if !(
+                                ops::impl_convertible(&self_t, &params[0].0, ctx) ||
+                                ops::impl_convertible(&Type::Reference(Box::new(self_t.clone())), &params[0].0, ctx) ||
+                                ops::impl_convertible(&Type::Reference(Box::new(Type::Mut(Box::new(self_t)))), &params[0].0, ctx)) {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.params[0].2.loc(),
                                     self_t: s,
@@ -593,7 +601,7 @@ impl AST for FnDefAST {
                             }
                         }
                     }
-                },
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "function"})
             }
         }

@@ -160,7 +160,7 @@ impl AST for ArrayLiteralAST {
                 ty = dt;
             }
             else if ty != dt {
-                if let Some(t) = ops::common(&ty, &dt) {
+                if let Some(t) = ops::common(&ty, &dt, ctx) {
                     ty = t;
                     elem_loc = val.loc();
                 }
