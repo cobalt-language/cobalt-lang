@@ -128,7 +128,7 @@ impl AST for StringLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "string: {:?}",self.val.as_bstr())?;
-        if let Some((ref s, _)) = self.suffix {write!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }
