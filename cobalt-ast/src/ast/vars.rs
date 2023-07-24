@@ -540,7 +540,7 @@ impl AST for VarDefAST {
         }
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
-        writeln!(f, "let {}: {}", if self.is_mut {"(mut)"} else {""}, self.name)?;
+        writeln!(f, "let{}: {}", if self.is_mut {" (mut)"} else {""}, self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
@@ -665,7 +665,7 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(CobaltError::NotAModule {
@@ -673,7 +673,7 @@ impl AST for ConstDefAST {
                     name: self.name.start(x).to_string()
                 });
                 (Value::error(), errs)
-            },
+            }
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
                 errs.push(CobaltError::RedefVariable {
                     loc: self.name.ids[x].1,
@@ -884,7 +884,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 noms.remove(&mangled);

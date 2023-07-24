@@ -8,6 +8,7 @@ pub mod color;
 /// CobaltError and SourcedError
 pub mod error;
 pub use error::*;
+pub use miette;
 
 pub fn unreachable_span() -> SourceSpan {(usize::MAX, usize::MAX).into()}
 pub fn merge_spans(a: SourceSpan, b: SourceSpan) -> SourceSpan {
