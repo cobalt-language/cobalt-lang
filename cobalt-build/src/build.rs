@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io::{Write, BufWriter};
+use cobalt_errors::miette::Severity;
 use serde::*;
 use either::Either;
 use semver::{Version, VersionReq};
@@ -12,6 +13,7 @@ use os_str_bytes::OsStrBytes;
 use cobalt_ast::ast::*;
 use cobalt_utils::CellExt as Cell;
 use cobalt_errors::*;
+use cobalt_parser::prelude::*;
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -251,9 +253,12 @@ fn build_file_1(path: &Path, ctx: &CompCtx, opts: &BuildOptions, force_build: bo
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
-    let (mut ast, errs) = cobalt_parser::parse_tl(&code);
     let file = FILES.add_file(0, name.to_string(), code);
-    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+    let lock = file.contents();
+    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+    let mut ast = ast.unwrap_or_default();
+    let errs = errs.into_iter().flat_map(cvt_err);
+    for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
     ast.file = Some(file);
     if fail && !opts.continue_comp {anyhow::bail!(CompileErrors)}
     ast.run_passes(ctx);

@@ -1,6 +1,7 @@
 use inkwell::module::Module;
 use inkwell::targets::*;
 use inkwell::execution_engine::FunctionLookupError;
+use miette::Severity;
 use std::process::Command;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
@@ -16,7 +17,7 @@ use cobalt_ast::{CompCtx, AST};
 use cobalt_errors::*;
 use cobalt_build::*;
 use cobalt_utils::Flags;
-use cobalt_parser::parse_tl;
+use cobalt_parser::prelude::*;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputType {
@@ -432,8 +433,11 @@ fn driver() -> anyhow::Result<()> {
         Cli::Debug(cmd) => match cmd {
             DbgSubcommand::Parse {files, code, locs} => {
                 for code in code {
-                    let file = FILES.add_file(0, "<command line>".to_string(), code.clone());
-                    let (mut ast, errs) = parse_tl(&code);
+                    let file = FILES.add_file(0, "<command line>".to_string(), code);
+                    let lock = file.contents();
+                    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -441,8 +445,11 @@ fn driver() -> anyhow::Result<()> {
                 }
                 for arg in files {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let file = FILES.add_file(0, arg.clone(), code.clone());
-                    let (mut ast, errs) = parse_tl(&code);
+                    let file = FILES.add_file(0, arg.clone(), code);
+                    let lock = file.contents();
+                    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     if locs {print!("({} nodes)\n{ast:#}", ast.nodes())}
@@ -524,8 +531,11 @@ fn driver() -> anyhow::Result<()> {
                 let flags = Flags {dbg_mangle: true, ..Flags::default()};
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
-                let file = FILES.add_file(0, input, code.clone());
-                let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+                let file = FILES.add_file(0, input, code);
+                let lock = file.contents();
+                let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+                let mut ast = ast.unwrap_or_default();
+                let errs = errs.into_iter().flat_map(cvt_err);
                 reporter.parse_time = Some(parse_time);
                 reporter.ast_nodes = ast.nodes();
                 ast.file = Some(file);
@@ -702,12 +712,15 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let file = FILES.add_file(0, input.to_string(), code);
+            let lock = file.contents();
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+            for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
@@ -928,12 +941,15 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let file = FILES.add_file(0, input.to_string(), code);
+            let lock = file.contents();
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+            for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {anyhow::bail!(CompileErrors)}
@@ -1089,12 +1105,15 @@ fn driver() -> anyhow::Result<()> {
                 reporter.libs_time = Some(start.elapsed());
             };
             let mut fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.clone());
-            let ((mut ast, errs), parse_time) = timeit(|| parse_tl(&code));
+            let file = FILES.add_file(0, input.to_string(), code);
+            let lock = file.contents();
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let mut ast = ast.unwrap_or_default();
+            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
-            for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+            for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
             let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
             reporter.comp_time = Some(comp_time);
             for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
@@ -1247,11 +1266,14 @@ fn driver() -> anyhow::Result<()> {
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     if Path::new(input).is_absolute() {anyhow::bail!("cannot pass absolute paths to multi-file input")}
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let lock = file.contents();
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
-                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     ast.run_passes(&ctx);
                     anyhow::Ok(ast)
                 }).collect::<anyhow::Result<Vec<_>>>()?;
@@ -1520,11 +1542,14 @@ fn driver() -> anyhow::Result<()> {
                 let mut fail = false;
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let lock = file.contents();
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
-                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     ast.run_passes(&ctx);
                     anyhow::Ok(ast)
                 }).collect::<anyhow::Result<Vec<_>>>()?;
@@ -1710,11 +1735,14 @@ fn driver() -> anyhow::Result<()> {
                 let mut fail = false;
                 let asts = inputs.iter().zip(&codes).map(|(input, code)| {
                     let file = FILES.add_file(0, input.clone(), code.clone());
-                    let ((mut ast, errs), parse_time) = timeit(|| parse_tl(code));
+                    let lock = file.contents();
+                    let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+                    let mut ast = ast.unwrap_or_default();
+                    let errs = errs.into_iter().flat_map(cvt_err);
                     *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                     reporter.ast_nodes = ast.nodes();
                     ast.file = Some(file);
-                    for err in errs {fail |= err.is_err(); eprintln!("{:?}", Report::from(err).with_source_code(file));}
+                    for err in errs {fail |= err.severity.map_or(true, |e| e > Severity::Warning); eprintln!("{:?}", Report::from(err).with_source_code(file));}
                     ast.run_passes(&ctx);
                     anyhow::Ok(ast)
                 }).collect::<anyhow::Result<Vec<_>>>()?;
