@@ -351,7 +351,7 @@ impl AST for VarDefAST {
                             name: self.name.start(x).to_string()
                         });
                         (Value::error(), errs)
-                    },
+                    }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
                             loc: self.name.ids[x].1,
@@ -377,7 +377,7 @@ impl AST for VarDefAST {
                         Value::error()
                     });
                     val.inter_val = None;
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
+                    ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData::with_vis(self.loc, vs))))
                 }
                 else {
                     let f = ctx.module.add_function(format!("cobalt.init{}", ctx.mangle(&self.name)).as_str(), ctx.context.void_type().fn_type(&[], false), Some(inkwell::module::Linkage::Private));
@@ -424,7 +424,7 @@ impl AST for VarDefAST {
                                 Some(PointerValue(gv.as_pointer_value())),
                                 None,
                                 Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut))
-                            ), VariableData::with_vis(self.loc, vs))))
+                            ).freeze(self.loc), VariableData::with_vis(self.loc, vs))))
                         }
                         else {
                             val.inter_val = None;
@@ -433,7 +433,7 @@ impl AST for VarDefAST {
                                 f.delete();
                             }
                             if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
-                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
+                            ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData::with_vis(self.loc, false))))
                         }
                     }
                     else {
@@ -452,7 +452,7 @@ impl AST for VarDefAST {
                             Value::error()
                         });
                         ctx.restore_scope(old_scope);
-                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, vs))))
+                        ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData::with_vis(self.loc, vs))))
                     }
                 };
                 match res {
@@ -463,7 +463,7 @@ impl AST for VarDefAST {
                             name: self.name.start(x).to_string()
                         });
                         (Value::error(), errs)
-                    },
+                    }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
                             loc: self.name.ids[x].1,
@@ -500,6 +500,7 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             val.comp_val = val.value(ctx);
+            val.frozen = (!self.is_mut).then_some(self.loc);
             match if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
             } 
@@ -526,7 +527,7 @@ impl AST for VarDefAST {
                         name: self.name.start(x).to_string()
                     });
                     (Value::error(), errs)
-                },
+                }
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
                     errs.push(CobaltError::RedefVariable {
                         loc: self.name.ids[x].1,
@@ -664,7 +665,7 @@ impl AST for ConstDefAST {
         });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(val.freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(CobaltError::NotAModule {
@@ -722,8 +723,8 @@ impl AST for TypeDefAST {
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
         ctx.with_vars(|v| {
-            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null.clone()).into());
-            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         {
             let mut noms = ctx.nominals.borrow_mut();
@@ -756,8 +757,8 @@ impl AST for TypeDefAST {
         });
         let old_scope = ctx.push_scope(&self.name);
         ctx.with_vars(|v| {
-            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null.clone()).into());
-            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+            v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         {
             let mut noms = ctx.nominals.borrow_mut();
@@ -780,8 +781,8 @@ impl AST for TypeDefAST {
         let old_scope = ctx.push_scope(&self.name);
         let ty = ops::impl_convert(unreachable_span(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         ctx.with_vars(|v| {
-            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
-            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         match ctx.nominals.borrow_mut().entry(mangled.clone()) {
             Entry::Occupied(mut x) => x.get_mut().0 = ty,
@@ -872,8 +873,8 @@ impl AST for TypeDefAST {
         });
         let old_scope = ctx.push_scope(&self.name);
         ctx.with_vars(|v| {
-            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).into());
-            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).into());
+            v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
+            v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         match ctx.nominals.borrow_mut().entry(mangled.clone()) {
             Entry::Occupied(mut x) => x.get_mut().0 = ty,
@@ -883,7 +884,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
-        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
+        match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
                 noms.remove(&mangled);
