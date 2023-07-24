@@ -29,11 +29,9 @@ impl AST for IfAST {
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(v, itb, ifb);
                     ctx.builder.position_at_end(itb);
-                    let (if_true, mut es) = self.if_true.codegen(ctx);
-                    errs.append(&mut es);
+                    let if_true = self.if_true.codegen_errs(ctx, &mut errs);
                     ctx.builder.position_at_end(ifb);
-                    let (if_false, mut es) = self.if_false.codegen(ctx);
-                    errs.append(&mut es);
+                    let if_false = self.if_false.codegen_errs(ctx, &mut errs);
                     if let Some(ty) = ops::common(&if_true.data_type, &if_false.data_type, ctx) {
                         ctx.builder.position_at_end(itb);
                         let if_true = ops::impl_convert(self.if_true.loc(), (if_true, None), (ty.clone(), None), ctx).unwrap_or_else(|e| {

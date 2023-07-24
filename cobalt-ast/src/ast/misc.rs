@@ -104,6 +104,18 @@ impl AST for NullAST {
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "null")}
 }
 #[derive(Debug, Clone)]
+pub struct ErrorAST {
+    loc: SourceSpan
+}
+impl ErrorAST {
+    pub fn new(loc: SourceSpan) -> Self {ErrorAST {loc}}
+}
+impl AST for ErrorAST {
+    fn loc(&self) -> SourceSpan {self.loc}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {(Value::error(), vec![])}
+    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "error")}
+}
+#[derive(Debug, Clone)]
 pub struct ErrorTypeAST {
     loc: SourceSpan
 }

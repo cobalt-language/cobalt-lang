@@ -2,77 +2,10 @@ use crate::CobaltFile;
 use thiserror::Error;
 use miette::{Diagnostic, SourceSpan};
 
-/// Zero-copy type to capture an error of what the parser found
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParserFound {
-    Eof,
-    Char(char),
-    Str(String)
-}
-impl std::fmt::Display for ParserFound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Eof => f.write_str("EOF"),
-            Self::Char(c) => write!(f, r#""{c}""#),
-            Self::Str(s) => write!(f, r#""{s}""#)
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum CobaltError {
     #[error(transparent)]
     OtherFile(#[from] Box<SourcedCobaltError>),
-    
-    // Parser errors
-    #[error("unclosed multiline comment")]
-    UnclosedComment {
-        #[label("comment starts here")]
-        loc: SourceSpan
-    },
-    #[error("expected {ex}, found {found}")]
-    ExpectedFound {
-        ex: &'static str,
-        found: ParserFound,
-        #[label]
-        loc: SourceSpan
-    },
-    #[error("unexpected global name")]
-    UnexpectedGlobal {
-        #[label("global name begins here")]
-        loc: SourceSpan
-    },
-    #[error(r#"expected "{expected}", found {found}"#)]
-    UnmatchedDelimiter {
-        expected: char,
-        found: ParserFound,
-        #[label("to match this opening here")]
-        start: SourceSpan,
-        #[label]
-        end: SourceSpan
-    },
-    #[error("unexpected decimal digit in {lit} literal")]
-    UnexpectedDecimal {
-        lit: &'static str,
-        #[label]
-        loc: SourceSpan
-    },
-    #[error("Unicode escape sequences can be at most 6 characters long")]
-    UnicodeSequenceTooLong {
-        #[label]
-        loc: SourceSpan
-    },
-    #[error("U+{val:0>4X} is not a valid Unicode codepoint")]
-    InvalidCodepoint {
-        val: u32,
-        #[label]
-        loc: SourceSpan
-    },
-    #[error("expected an expression")]
-    ExpectedExpr {
-        #[label]
-        loc: SourceSpan
-    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
@@ -160,6 +93,17 @@ pub enum CobaltError {
         tloc: SourceSpan,
         #[label("index is {idx}")]
         iloc: SourceSpan
+    },
+    #[error("cannot mutate an immutable value")]
+    CantMutateImmut {
+        #[label("value is of type `{ty}`")]
+        vloc: SourceSpan,
+        ty: String,
+        #[label("operator is `{op}`")]
+        oloc: Option<SourceSpan>,
+        op: String,
+        #[label("defined as immutable here")]
+        floc: SourceSpan
     },
 
     // Misc stuff

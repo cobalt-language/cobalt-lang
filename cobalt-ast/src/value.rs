@@ -152,19 +152,20 @@ pub struct Value<'ctx> {
     pub inter_val: Option<InterData<'ctx>>,
     pub data_type: Type,
     pub address: Rc<Cell<Option<PointerValue<'ctx>>>>,
-    pub name: Option<String>
+    pub name: Option<String>,
+    pub frozen: Option<SourceSpan>
 }
 impl<'ctx> Value<'ctx> {
-    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error, address: Rc::default(), name: None}}
-    pub fn null() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Null, address: Rc::default(), name: None}}
-    pub fn new(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type) -> Self {Value {comp_val, inter_val, data_type, address: Rc::default(), name: None}}
-    pub fn with_addr(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type, addr: PointerValue<'ctx>) -> Self {Value {comp_val, inter_val, data_type, address: Rc::new(Cell::new(Some(addr))), name: None}}
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type, address: Rc::default(), name: None}}
-    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, address: Rc::default(), name: None}}
-    pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type, address: Rc::default(), name: None}}
-    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData, address: Rc::default(), name: None}}
-    pub fn empty_mod(name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![], name)), data_type: Type::Module, address: Rc::default(), name: None}}
-    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>, name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps, name)), data_type: Type::Module, address: Rc::default(), name: None}}
+    pub fn error() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Error, address: Rc::default(), name: None, frozen: None}}
+    pub fn null() -> Self {Value {comp_val: None, inter_val: None, data_type: Type::Null, address: Rc::default(), name: None, frozen: None}}
+    pub fn new(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type) -> Self {Value {comp_val, inter_val, data_type, address: Rc::default(), name: None, frozen: None}}
+    pub fn with_addr(comp_val: Option<BasicValueEnum<'ctx>>, inter_val: Option<InterData<'ctx>>, data_type: Type, addr: PointerValue<'ctx>) -> Self {Value {comp_val, inter_val, data_type, address: Rc::new(Cell::new(Some(addr))), name: None, frozen: None}}
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: None, data_type, address: Rc::default(), name: None, frozen: None}}
+    pub fn interpreted(comp_val: BasicValueEnum<'ctx>, inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: Some(comp_val), inter_val: Some(inter_val), data_type, address: Rc::default(), name: None, frozen: None}}
+    pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {Value {comp_val: None, inter_val: Some(inter_val), data_type, address: Rc::default(), name: None, frozen: None}}
+    pub fn make_type(type_: Type) -> Self {Value {comp_val: None, inter_val: Some(InterData::Type(Box::new(type_))), data_type: Type::TypeData, address: Rc::default(), name: None, frozen: None}}
+    pub fn empty_mod(name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(HashMap::new(), vec![], name)), data_type: Type::Module, address: Rc::default(), name: None, frozen: None}}
+    pub fn make_mod(syms: HashMap<String, Symbol<'ctx>>, imps: Vec<(CompoundDottedName, bool)>, name: String) -> Self {Value {comp_val: None, inter_val: Some(InterData::Module(syms, imps, name)), data_type: Type::Module, address: Rc::default(), name: None, frozen: None}}
     
     pub fn addr(&self, ctx: &CompCtx<'ctx>) -> Option<PointerValue<'ctx>> {
         self.address.get().or_else(|| {
@@ -174,6 +175,12 @@ impl<'ctx> Value<'ctx> {
             self.address.set(Some(alloca));
             Some(alloca)
         })
+    }
+    pub fn freeze(self, loc: SourceSpan) -> Value<'ctx> {
+        Value {
+            frozen: Some(loc),
+            ..self
+        }
     }
 
     pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {self.comp_val.or_else(|| self.inter_val.as_ref().and_then(|v| self.data_type.into_compiled(v, ctx)))}

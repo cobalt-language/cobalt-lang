@@ -112,7 +112,7 @@ impl AST for StringLiteralAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         match self.suffix.as_ref().map(|(s, l)| (s.as_str(), *l)) {
             None | Some(("c" | "C", _)) => {
-                let cs = ctx.context.const_string(&self.val, self.suffix.is_some());
+                let cs = ctx.context.const_string(&self.val, true);
                 let gv = ctx.module.add_global(cs.get_type(), None, "cobalt.str");
                 gv.set_initializer(&cs);
                 gv.set_constant(true);
@@ -120,7 +120,7 @@ impl AST for StringLiteralAST {
                 (Value::interpreted(
                     gv.as_pointer_value().const_cast(ctx.context.i8_type().ptr_type(Default::default())).into(),
                     InterData::Array(self.val.iter().map(|&c| InterData::Int(c as i128)).collect()),
-                    Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32))))
+                    Type::Reference(Box::new(Type::Array(Box::new(Type::Int(8, true)), Some(self.val.len() as u32 + self.suffix.is_some() as u32))))
                 ), vec![])
             }
             Some((x, loc)) => (Value::error(), vec![CobaltError::UnknownLiteralSuffix {loc, lit: "string", suf: x.to_string()}])
@@ -128,7 +128,7 @@ impl AST for StringLiteralAST {
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {
         write!(f, "string: {:?}",self.val.as_bstr())?;
-        if let Some((ref s, _)) = self.suffix {write!(f, ", suffix: {}", s)}
+        if let Some((ref s, _)) = self.suffix {writeln!(f, ", suffix: {}", s)}
         else {writeln!(f)}
     }
 }

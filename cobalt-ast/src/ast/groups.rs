@@ -57,7 +57,7 @@ impl AST for GroupAST {
         Ok(())
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TopLevelAST {
     pub file: Option<CobaltFile>,
     pub vals: Vec<Box<dyn AST>>

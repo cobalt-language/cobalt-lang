@@ -55,7 +55,10 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         op: op.to_string(),
         lloc, rloc, oloc: loc
     };
-    match (lhs.data_type.clone(), rhs.data_type.clone()) {
+    let ldt = lhs.data_type.clone();
+    let rdt = rhs.data_type.clone();
+    let lf = lhs.frozen;
+    let out = match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Reference(l), _r) => {
             lhs.data_type = *l;
             if !(ctx.is_const.get() || matches!(lhs.data_type, Type::Mut(_))) {
@@ -1132,7 +1135,28 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx, true, true)
         }
         _ => Err(err)
-    }
+    };
+    out.map_err(|err| {
+        let tyname = ldt.to_string();
+        let non_mut = !matches!(ldt, Type::Mut(_)) && {
+            let oic = ctx.is_const.replace(true);
+            let lhs = Value {data_type: Type::Mut(Box::new(ldt)), ..Value::null()};
+            let rhs = Value {data_type: rdt, ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = bin_op(uloc, (lhs, uloc), (rhs, uloc), op, ctx, true, true).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc: lloc,
+                ty: tyname,
+                oloc: Some(loc),
+                op: op.to_string(),
+                floc: lf.unwrap()
+            }
+        } else {err}
+    })
 }
 pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>, can_move: bool) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::PreOpNotDefined {
@@ -1140,7 +1164,9 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
         op: op.to_string(),
         vloc, oloc: loc
     };
-    match val.data_type.clone() {
+    let vdt = val.data_type.clone();
+    let vf = val.frozen;
+    let out = match val.data_type.clone() {
         Type::Reference(x) => if op == "&" {
             val.data_type = Type::Pointer(x);
             Ok(val)
@@ -1348,15 +1374,58 @@ pub fn pre_op<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, SourceSpan),
             else {Err(err)}
         }
         _ => Err(err)
-    }
+    };
+    out.map_err(|err| {
+        let tyname = vdt.to_string();
+        let non_mut = (!matches!(vdt, Type::Mut(_))) && {
+            let oic = ctx.is_const.replace(true);
+            let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = post_op(uloc, (val, uloc), op, ctx, true).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc,
+                ty: tyname,
+                oloc: Some(loc),
+                op: op.to_string(),
+                floc: vf.unwrap()
+            }
+        } else {err}
+    })
 }
-pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, _ctx: &CompCtx<'ctx>, _can_move: bool) -> Result<Value<'ctx>, CobaltError> {
+pub fn post_op<'ctx>(loc: SourceSpan, (val, vloc): (Value<'ctx>, SourceSpan), op: &str, ctx: &CompCtx<'ctx>, can_move: bool) -> Result<Value<'ctx>, CobaltError> {
+    #![allow(clippy::redundant_clone, clippy::only_used_in_recursion)]
     let err = CobaltError::PostOpNotDefined {
         val: val.data_type.to_string(),
         op: op.to_string(),
         vloc, oloc: loc
     };
-    Err(err)
+    let vdt = val.data_type.clone();
+    let vf = val.frozen;
+    let out = Err(err);
+    out.map_err(|err| {
+        let tyname = vdt.to_string();
+        let non_mut = (!matches!(vdt, Type::Mut(_))) && {
+            let oic = ctx.is_const.replace(true);
+            let val = Value {data_type: Type::Mut(Box::new(vdt)), ..Value::null()};
+            let uloc = unreachable_span();
+            let non_mut = post_op(uloc, (val, uloc), op, ctx, can_move).is_ok();
+            ctx.is_const.set(oic);
+            non_mut
+        };
+        if non_mut {
+            CobaltError::CantMutateImmut {
+                vloc,
+                ty: tyname,
+                oloc: Some(loc),
+                op: op.to_string(),
+                floc: vf.unwrap()
+            }
+        } else {err}
+    })
 }
 pub fn subscript<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (mut idx, iloc): (Value<'ctx>, SourceSpan), ctx: &CompCtx<'ctx>) -> Result<Value<'ctx>, CobaltError> {
     let err = CobaltError::SubscriptNotDefined {
@@ -1734,13 +1803,24 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
         if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
-                return Ok(Value::new(val.addr(ctx).map(From::from), None, target))
+                return if let Some(floc) = val.frozen {Err(CobaltError::CantMutateImmut {
+                    vloc: vloc.unwrap_or(loc),
+                    ty: val.data_type.to_string(),
+                    oloc: None,
+                    op: "".to_string(),
+                    floc
+                })}
+                else {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
             }
         }
     }
     match val.data_type.clone() {
         Type::Reference(b) => {
-            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            if let Type::Reference(t) = &target {
+                if covariant(&b, t) {
+                    return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));
+                }
+            }
             match *b {
                 Type::Mut(b) => match *b {
                     Type::Array(b, Some(l)) => match target {
@@ -1953,13 +2033,24 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
         if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
-                return Ok(Value::new(val.addr(ctx).map(From::from), None, target))
+                return if let Some(floc) = val.frozen {Err(CobaltError::CantMutateImmut {
+                    vloc: vloc.unwrap_or(loc),
+                    ty: val.data_type.to_string(),
+                    oloc: None,
+                    op: "".to_string(),
+                    floc
+                })}
+                else {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
             }
         }
     }
     match val.data_type {
         Type::Reference(b) => {
-            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            if let Type::Reference(t) = &target {
+                if covariant(&b, t) {
+                    return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));
+                }
+            }
             match *b {
                 Type::Mut(b) => match *b {
                     Type::Array(b, Some(l)) => match target {
