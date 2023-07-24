@@ -6,6 +6,7 @@ pub mod ops;
 pub mod types;
 pub mod varmap;
 pub mod value;
+pub mod cfg;
 
 pub use dottedname::*;
 pub use context::*;
