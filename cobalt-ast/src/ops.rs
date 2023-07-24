@@ -1785,7 +1785,11 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     }
     match val.data_type.clone() {
         Type::Reference(b) => {
-            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            if let Type::Reference(t) = &target {
+                if covariant(&b, t) {
+                    return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));
+                }
+            }
             match *b {
                 Type::Mut(b) => match *b {
                     Type::Array(b, Some(l)) => match target {
@@ -2005,7 +2009,11 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     }
     match val.data_type {
         Type::Reference(b) => {
-            if covariant(&b, &target) {return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));}
+            if let Type::Reference(t) = &target {
+                if covariant(&b, t) {
+                    return Ok(Value::new(val.comp_val, val.inter_val, Type::Reference(b)));
+                }
+            }
             match *b {
                 Type::Mut(b) => match *b {
                     Type::Array(b, Some(l)) => match target {
