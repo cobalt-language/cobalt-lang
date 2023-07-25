@@ -28,6 +28,7 @@ pub struct Move<'ctx> {
 impl PartialOrd for Move<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering::*;
+        if self.inst.get_parent() != other.inst.get_parent() {return None}
         if self.inst == other.inst {return Some(self.idx.cmp(&other.idx))}
         let mut i = self.inst.get_next_instruction();
         while let Some(inst) = i {
@@ -50,6 +51,7 @@ impl<'ctx> PartialEq<InstructionValue<'ctx>> for Move<'ctx> {
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Move<'ctx> {
     fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<std::cmp::Ordering> {
+        if self.inst.get_parent() != other.get_parent() {return None}
         use std::cmp::Ordering::*;
         if self.inst == *other {return Some(Equal)}
         let mut i = self.inst.get_next_instruction();
