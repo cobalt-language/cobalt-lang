@@ -3,7 +3,8 @@ use bstr::ByteSlice;
 use cobalt_llvm::inkwell::values::FunctionValue;
 use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, InstructionValue, IntValue};
 use inkwell::basic_block::BasicBlock;
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
 #[derive(Debug, Clone, Copy)]
 pub enum Terminator<'ctx> {
     /// this block does not branch to another block
@@ -188,15 +189,58 @@ impl<'ctx> Cfg<'ctx> {
     /// validate the affinity of a CFG: all values are moved from at most once
     /// Double moves are returned
     /// returns Err if not finalized
-    pub fn validate(&self) -> Result<Vec<(Move<'ctx>, Move<'ctx>)>, NotFinalized> {
+    pub fn validate(&self) -> Result<Vec<(&Move<'ctx>, &Move<'ctx>)>, NotFinalized> {
         if !self.finalized {return Err(NotFinalized)}
-        // TODO: implement
-        Ok(vec![])
+        let mut errs = vec![];
+        for start in 0..self.blocks.len() {
+            let mut moves = HashMap::<&str, &Move>::new();
+            for m in &self.blocks[start].moves {
+                match moves.entry(m.name.as_str()) {
+                    Entry::Occupied(e) => {
+                        let e = *e.get();
+                        if m < e {
+                            errs.push((m, e));
+                        }
+                        else {
+                            errs.push((e, m));
+                        }
+                    }
+                    Entry::Vacant(e) => {e.insert(m);}
+                }
+            }
+            let mut queue = match self.blocks[start].term {
+                Terminator::Ret => VecDeque::new(),
+                Terminator::UBr(b) => VecDeque::from([b]),
+                Terminator::CBr(_, t, f) => VecDeque::from([t, f]),
+                _ => unreachable!()
+            };
+            while let Some(next) = queue.pop_front() {
+                let block = &self.blocks[next];
+                for m in &block.moves {
+                    if let Some(e) = moves.get(m.name.as_str()) {
+                        errs.push((e, m));
+                    }
+                }
+                match block.term {
+                    Terminator::Ret => {},
+                    Terminator::UBr(b) => queue.push_back(b),
+                    Terminator::CBr(_, t, f) => {
+                        queue.push_back(t);
+                        queue.push_back(f);
+                    }
+                    _ => unreachable!()
+                }
+            }
+        }
+        errs.sort_by_key(|v| v.0.name.as_str());
+        // TODO: error deduplication
+        Ok(errs)
     }
     /// check if the variable with a given name has been moved from by an instruction
     /// returns Err if not finalized
     pub fn is_moved(&self, _name: &str, _inst: Option<InstructionValue<'ctx>>) -> Result<IsMoved<'ctx>, NotFinalized> {
         if !self.finalized {return Err(NotFinalized)}
+        if self.blocks.is_empty() {return Ok(IsMoved::No)}
         // TODO: implement
         Ok(IsMoved::No)
     }
