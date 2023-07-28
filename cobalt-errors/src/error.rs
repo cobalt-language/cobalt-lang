@@ -222,6 +222,15 @@ pub enum CobaltError {
         loc: SourceSpan,
         ty: String
     },
+    #[error("cannot move from variable twice")]
+    DoubleMove {
+        #[label("{name} {} moved here{}", if *.guaranteed {"is"} else {"may be"}, if .prev.is_none() {" in previous iteration"} else {""})]
+        loc: SourceSpan,
+        #[label("previously moved here")]
+        prev: Option<SourceSpan>,
+        name: String,
+        guaranteed: bool
+    },
 
     // @asm issues
     #[error("invalid creation of inline assembly")]

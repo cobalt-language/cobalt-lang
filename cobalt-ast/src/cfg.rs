@@ -116,6 +116,13 @@ pub enum IsMoved<'ctx> {
     No,
     Maybe(IntValue<'ctx>)
 }
+#[derive(Debug, Clone)]
+pub struct DoubleMove {
+    pub name: String,
+    pub loc: SourceSpan,
+    pub prev: Option<SourceSpan>,
+    pub guaranteed: bool
+}
 /// control flow graph
 #[derive(Debug)]
 pub struct Cfg<'a, 'ctx: 'a> {
@@ -219,8 +226,9 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             Self {blocks}
         }
     }
-    /// Search CFG for relevant moves
-    pub fn validate(&self) -> Vec<(TrustMeRef<'a, Move<'ctx>>, TrustMeRef<'a, Move<'ctx>>)> {
+    /// Search CFG for double moves
+    /// If a double move is found, return the first move, the second, and whether or not it's guaranteed to happen
+    pub fn validate(&self) -> Vec<DoubleMove> {
         todo!()
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
