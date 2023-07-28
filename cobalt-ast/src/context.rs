@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::mem::MaybeUninit;
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::{HashMap, Entry};
+use std::collections::HashSet;
 use std::io::{self, Write, Read, BufRead};
 use either::Either::{self, *};
 use owned_chars::OwnedCharsExt;
@@ -20,6 +21,8 @@ pub struct CompCtx<'ctx> {
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
+    pub moves: RefCell<Vec<HashSet<cfg::Move<'ctx>>>>,
+    pub stores: RefCell<Vec<HashSet<cfg::Store<'ctx>>>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
@@ -39,6 +42,8 @@ impl<'ctx> CompCtx<'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             nominals: RefCell::default(),
+            moves: RefCell::default(),
+            stores: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -67,6 +72,8 @@ impl<'ctx> CompCtx<'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             nominals: RefCell::default(),
+            moves: RefCell::default(),
+            stores: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),

@@ -1,22 +1,21 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
 use std::collections::VecDeque;
-use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue, MetadataValue};
+use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
 };
-pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>, ctx: &CompCtx<'ctx>, loc: SourceSpan) {
+pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>, idx: usize, ctx: &CompCtx<'ctx>, loc: SourceSpan) {
     if !ctx.is_const.get() {
         if let (Some(name), true) = (&val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
-            let kind = ctx.context.get_kind_id("cobalt.move");
-            let mut meta = inst.get_metadata(kind).map_or_else(Vec::new, MetadataValue::get_node_values);
-            let mloc = ctx.context.metadata_string(&format!("{}+{}", loc.offset(), loc.len()));
-            let mnam = ctx.context.metadata_string(name);
-            let node = ctx.context.metadata_node(&[mloc.into(), mnam.into()]);
-            meta.push(node.into());
-            inst.set_metadata(ctx.context.metadata_node(&meta), kind).unwrap(); // the Err variant only appears if the metadata is not a node
+            let mut moves = ctx.moves.borrow_mut();
+            moves.last_mut().unwrap().insert(cfg::Move {
+                name: name.clone(),
+                real: !ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
+                inst, idx, loc
+            });
         }
     }
 }
@@ -88,7 +87,14 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
         (Type::Mut(l), r) => if op == "=" {
             rhs = impl_convert(rloc, (rhs, None), (*l, Some(lloc)), ctx)?;
             if let (Some(PointerValue(lv)), Some(rv)) = (lhs.comp_val, rhs.value(ctx)) {
-                ctx.builder.build_store(lv, rv);
+                let inst = ctx.builder.build_store(lv, rv);
+                if let (Some(name), true) = (&lhs.name, ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx)) {
+                    ctx.stores.borrow_mut().last_mut().unwrap().insert(cfg::Store {
+                        inst,
+                        name: name.clone(),
+                        real: !ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx) // don't check for dtor twice if we can avoid it
+                    });
+                }
             }
             lhs.inter_val = None;
             Ok(lhs)
@@ -2638,7 +2644,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 val.and_then(|v| {
                     let call = ctx.builder.build_indirect_call(fty?, v, &args_v, "");
                     let inst = call.try_as_basic_value().right_or_else(|v| v.as_instruction_value().unwrap());
-                    for (val, loc) in args {mark_as_move(&val, inst, ctx, loc)}
+                    for (n, (val, loc)) in args.into_iter().enumerate() {mark_as_move(&val, inst, n, ctx, loc)}
                     call.try_as_basic_value().left()
                 }),
                 None,

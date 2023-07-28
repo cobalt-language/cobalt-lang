@@ -78,7 +78,7 @@ impl AST for BitCastAST {
         }
         if let (Some(llt), Some(ctval)) = (t.llvm_type(ctx), val.comp_val) {
             let bc = ctx.builder.build_bitcast(ctval, llt, "");
-            if let Some(iv) = bc.as_instruction_value() {ops::mark_as_move(&val, iv, ctx, self.loc());}
+            if let Some(iv) = bc.as_instruction_value() {ops::mark_as_move(&val, iv, 0, ctx, self.loc());}
             val.comp_val = Some(bc);
             val.data_type = t;
             (val, errs)

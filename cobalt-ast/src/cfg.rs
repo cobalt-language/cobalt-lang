@@ -1,12 +1,13 @@
+#![allow(dead_code)] // TODO: remove before merge
 use crate::*;
-use bstr::ByteSlice;
-use cobalt_llvm::inkwell::values::FunctionValue;
-use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, InstructionValue, IntValue};
+use inkwell::values::{BasicValueEnum, InstructionValue, IntValue};
 use inkwell::basic_block::BasicBlock;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::collections::{HashSet, HashMap};
+use std::cell::Ref;
+static UNIT: () = ();
 #[derive(Debug, Clone, Copy)]
-pub enum Terminator<'ctx> {
+enum Terminator<'ctx> {
     /// this block does not branch to another block
     Ret,
     /// unconditional branch to a block
@@ -22,7 +23,9 @@ pub struct Move<'ctx> {
     pub inst: InstructionValue<'ctx>,
     pub idx: usize,
     pub loc: SourceSpan,
-    pub name: String
+    pub name: String,
+    /// whether this is tracked or just for debugging
+    pub real: bool
 }
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl PartialOrd for Move<'_> {
@@ -67,191 +70,166 @@ impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Move<'ctx> {
         None
     }
 }
-#[derive(Debug, Clone)]
-pub struct Block<'ctx> {
-    pub moves: Vec<Move<'ctx>>,
-    pub block: BasicBlock<'ctx>,
-    pub term: Terminator<'ctx>
-}
-impl<'ctx> Block<'ctx> {
-    pub fn parse(block: BasicBlock<'ctx>, ctx: &CompCtx<'ctx>) -> Self {
-        let kind = ctx.context.get_kind_id("cobalt.move");
-        let mut i = block.get_first_instruction();
-        let mut this = Block {block, moves: vec![], term: Terminator::Ret};
-        while let Some(inst) = i {
-            'node_parse: {
-                use BasicMetadataValueEnum::MetadataValue;
-                if let Some(moves) = inst.get_metadata(kind) {
-                    if !moves.is_node() {break 'node_parse}
-                    let vals = moves.get_node_values();
-                    this.moves.reserve(vals.len());
-                    for (idx, val) in vals.into_iter().enumerate() {
-                        if let MetadataValue(val) = val {
-                            if !val.is_node() {continue}
-                            if val.get_node_size() != 2 {continue}
-                            let vals = val.get_node_values();
-                            if let (MetadataValue(loc), MetadataValue(name)) = (vals[0], vals[1]) {
-                                if !loc.is_string() {continue}
-                                if !name.is_string() {continue}
-                                if let Some(name) = name.get_string_value().and_then(|v| std::str::from_utf8(v.to_bytes()).ok().map(String::from)) {
-                                    if let Some(loc) = loc.get_string_value().and_then(|v| {
-                                        let v = v.to_bytes();
-                                        let (off, len) = v.split_at(v.find_byte(b'+')?);
-                                        Some(SourceSpan::from((std::str::from_utf8(off).ok()?.parse::<usize>().ok()?, std::str::from_utf8(len).ok()?.parse::<usize>().ok()?)))
-                                    }) {
-                                        this.moves.push(Move {inst, idx, name, loc})
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            i = inst.get_next_instruction();
-            if i.is_none() {
-                use inkwell::values::InstructionOpcode as Op;
-                this.term = match dbg!(inst).get_opcode() {
-                    Op::Br => match inst.get_num_operands() {
-                        1 => if let Some(either::Right(blk)) = inst.get_operand(0) {Terminator::UBrLazy(blk)} else {Terminator::Ret},
-                        3 => if let (
-                            Some(either::Left(cond)),
-                            Some(either::Right(itb)),
-                            Some(either::Right(ifb))
-                        ) = (inst.get_operand(0), inst.get_operand(1), inst.get_operand(2)) {Terminator::CBrLazy(cond, itb, ifb)} else {Terminator::Ret}
-                        _ => Terminator::Ret
-                    }
-                    _ => Terminator::Ret
-                };
-            }
-        }
-        this
+impl Hash for Move<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inst.hash(state);
+        self.idx.hash(state);
     }
 }
-pub struct Cfg<'ctx> {
-    blocks: Vec<Block<'ctx>>,
-    finalized: bool
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Store<'ctx> {
+    pub inst: InstructionValue<'ctx>,
+    pub name: String,
+    pub real: bool
 }
-impl<'ctx> Cfg<'ctx> {
-    /// take a list of blocks and create a CFG that has *not* been finalized
-    #[inline(always)]
-    pub fn new(blocks: Vec<Block<'ctx>>) -> Self {Self {blocks, finalized: false}}
-    #[inline(always)]
-    pub fn parse_fn(f: FunctionValue<'ctx>, ctx: &CompCtx<'ctx>) -> Self {
-        let mut this = Self {
-            blocks: f.get_basic_blocks().into_iter().map(|block| Block::parse(block, ctx)).collect(),
-            finalized: false
-        };
-        this.finalize();
-        this
-    }
-    #[inline(always)]
-    pub fn parse_blocks(blocks: impl IntoIterator<Item = BasicBlock<'ctx>>, ctx: &CompCtx<'ctx>) -> Self {
-        let mut this = Self {
-            blocks: blocks.into_iter().map(|block| Block::parse(block, ctx)).collect(),
-            finalized: false
-        };
-        this.finalize();
-        this
-    }
-    #[inline(always)]
-    pub fn blocks(&self) -> &Vec<Block<'ctx>> {&self.blocks}
-    #[inline(always)]
-    pub fn blocks_mut(&mut self) -> &mut Vec<Block<'ctx>> {
-        self.finalized = false;
-        &mut self.blocks
-    }
-    #[inline(always)]
-    pub fn into_blocks(self) -> Vec<Block<'ctx>> {self.blocks}
-    
-    /// finalize the blocks, converting lazy terminators into normal ones (replace references to blocks with their indices)
-    pub fn finalize(&mut self) {
-        if self.finalized {return}
-        let blocks = self.blocks.iter().enumerate().map(|(n, &Block {block, ..})| (block, n)).collect::<HashMap<_, _>>();
-        for Block {term, ..} in &mut self.blocks {
-            match term {
-                Terminator::UBrLazy(b) =>
-                    if let Some(&b) = blocks.get(b) {
-                        *term = Terminator::UBr(b)
-                    }
-                    else {
-                        *term = Terminator::Ret
-                    }
-                Terminator::CBrLazy(c, t, f) =>
-                    if let (Some(&t), Some(&f)) = (blocks.get(t), blocks.get(f)) {
-                        *term = Terminator::CBr(*c, t, f);
-                    }
-                    else {
-                        *term = Terminator::Ret
-                    }
-                _ => {}
-            }
-        }
-        self.finalized = true;
-    }
-    /// validate the affinity of a CFG: all values are moved from at most once
-    /// Double moves are returned
-    /// returns Err if not finalized
-    pub fn validate(&self) -> Result<Vec<(&Move<'ctx>, &Move<'ctx>)>, NotFinalized> {
-        if !self.finalized {return Err(NotFinalized)}
-        let mut errs = vec![];
-        for start in 0..self.blocks.len() {
-            let mut moves = HashMap::<&str, &Move>::new();
-            for m in &self.blocks[start].moves {
-                match moves.entry(m.name.as_str()) {
-                    Entry::Occupied(e) => {
-                        let e = *e.get();
-                        if m < e {
-                            errs.push((m, e));
-                        }
-                        else {
-                            errs.push((e, m));
-                        }
-                    }
-                    Entry::Vacant(e) => {e.insert(m);}
-                }
-            }
-            let mut queue = match self.blocks[start].term {
-                Terminator::Ret => VecDeque::new(),
-                Terminator::UBr(b) => VecDeque::from([b]),
-                Terminator::CBr(_, t, f) => VecDeque::from([t, f]),
-                _ => unreachable!()
-            };
-            while let Some(next) = queue.pop_front() {
-                let block = &self.blocks[next];
-                for m in &block.moves {
-                    if let Some(e) = moves.get(m.name.as_str()) {
-                        errs.push((e, m));
-                    }
-                }
-                match block.term {
-                    Terminator::Ret => {},
-                    Terminator::UBr(b) => queue.push_back(b),
-                    Terminator::CBr(_, t, f) => {
-                        queue.push_back(t);
-                        queue.push_back(f);
-                    }
-                    _ => unreachable!()
-                }
-            }
-        }
-        errs.sort_by_key(|v| v.0.name.as_str());
-        // TODO: error deduplication
-        Ok(errs)
-    }
-    /// check if the variable with a given name has been moved from by an instruction
-    /// returns Err if not finalized
-    pub fn is_moved(&self, _name: &str, _inst: Option<InstructionValue<'ctx>>) -> Result<IsMoved<'ctx>, NotFinalized> {
-        if !self.finalized {return Err(NotFinalized)}
-        if self.blocks.is_empty() {return Ok(IsMoved::No)}
-        // TODO: implement
-        Ok(IsMoved::No)
+impl Hash for Store<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inst.hash(state);
     }
 }
-#[derive(Debug, Clone, Copy)]
-pub struct NotFinalized;
+// TODO: come up with a better name
+/// A reference to a value in a RefCell, but constructed in a way that allows added flexibility
+#[derive(Debug)]
+pub struct TrustMeRef<'a, T>(*const T, Ref<'a, ()>);
+impl<'a, T> TrustMeRef<'a, T> {
+    /// # Safety
+    /// `val` must come from the same RefCell as `lock`
+    #[inline(always)]
+    pub unsafe fn new(val: *const T, lock: Ref<'a, ()>) -> Self {Self(val, lock)}
+}
+impl<T> std::ops::Deref for TrustMeRef<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {unsafe {&*self.0}}
+}
+/// structure of a block
+#[derive(Debug)]
+struct Block<'a, 'ctx> {
+    block: BasicBlock<'ctx>,
+    // these pointers are safe because they're borrowed from a container in a RefCell, which cannot be mutated because of the Ref
+    moves: HashSet<*const Move<'ctx>>,
+    term: Terminator<'ctx>,
+    _ref: Ref<'a, ()>
+}
 #[derive(Debug, Clone, Copy)]
 pub enum IsMoved<'ctx> {
     Yes,
     No,
     Maybe(IntValue<'ctx>)
+}
+/// control flow graph
+#[derive(Debug)]
+pub struct Cfg<'a, 'ctx: 'a> {
+    blocks: Vec<Block<'a, 'ctx>>
+}
+impl<'a, 'ctx> Cfg<'a, 'ctx> {
+    /// create a CFG tracking the moves between `start` and `end`
+    pub fn new(start: InstructionValue<'ctx>, end: InstructionValue<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
+        let start_block = start.get_parent().expect("start and end instructions for CFG must be in blocks");
+        let end_block = end.get_parent().expect("start and end instructions for CFG must be in blocks");
+        if start_block == end_block {
+            let inv = 'check: { // end <= start
+                let mut i = Some(end);
+                while let Some(inst) = i {
+                    if inst == start {break 'check true}
+                    i = inst.get_next_instruction();
+                }
+                false
+            };
+            if inv {return Self {blocks: vec![]}}
+            let borrow = ctx.moves.borrow();
+            let moves = borrow.last().unwrap().iter().filter(|m| m.inst.get_parent().unwrap() == start_block && **m >= start && **m <= end).map(|v| v as _).collect();
+            let term = start_block.get_terminator();
+            Self {
+                blocks: vec![Block {
+                    block: start_block,
+                    term: term.map_or(Terminator::Ret, |term| if term.get_opcode() == inkwell::values::InstructionOpcode::Br {
+                        todo!()
+                    } else {Terminator::Ret}),
+                    moves,
+                    _ref: Ref::map(borrow, |_| &UNIT)
+                }]
+            }
+        }
+        else {
+            let borrow = ctx.moves.borrow();
+            let mut moves = HashMap::new();
+            for m in borrow.last().unwrap().iter() {
+                moves.entry(m.inst.get_parent().unwrap()).or_insert_with(HashSet::new).insert(std::ptr::addr_of!(*m));
+            }
+            moves.entry(start_block).or_insert_with(HashSet::new).retain(|m| unsafe {
+                **m >= start
+            });
+            let mut seen = HashSet::from([end_block]);
+            let mut queue = vec![start_block]; // depth-first traversal, with the queue being in reverse order (last element first)
+            let mut blocks = vec![];
+            while let Some(block) = queue.pop() {
+                seen.insert(block);
+                let term = block.get_terminator().map_or(Terminator::Ret, |term| if term.get_opcode() == inkwell::values::InstructionOpcode::Br {
+                    match term.get_num_operands() {
+                        1 => if let Some(either::Right(b)) = term.get_operand(0) {
+                            if !seen.contains(&b) {queue.push(b)}
+                            Terminator::UBrLazy(b)
+                        } else {Terminator::Ret}
+                        3 => if let (
+                            Some(either::Left(c)),
+                            Some(either::Right(t)),
+                            Some(either::Right(f))
+                         ) = (term.get_operand(0), term.get_operand(1), term.get_operand(2)) {
+                            if !seen.contains(&t) {queue.push(t)}
+                            if !seen.contains(&f) {queue.push(f)}
+                            Terminator::CBrLazy(c, t, f)
+                        } else {Terminator::Ret}
+                        _ => Terminator::Ret
+                    }
+                } else {Terminator::Ret});
+                blocks.push(Block {
+                    block, term,
+                    moves: moves.remove(&block).unwrap_or_default(),
+                    _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
+                });
+            }
+            { // end block
+                let term = end_block.get_terminator().map_or(Terminator::Ret, |term| if term.get_opcode() == inkwell::values::InstructionOpcode::Br {
+                    match term.get_num_operands() {
+                        1 => if let Some(either::Right(b)) = term.get_operand(0) {Terminator::UBrLazy(b)} else {Terminator::Ret}
+                        3 => if let (
+                            Some(either::Left(c)),
+                            Some(either::Right(t)),
+                            Some(either::Right(f))
+                         ) = (term.get_operand(0), term.get_operand(1), term.get_operand(2)) {Terminator::CBrLazy(c, t, f)} else {Terminator::Ret}
+                        _ => Terminator::Ret
+                    }
+                } else {Terminator::Ret});
+                let mut moves = moves.remove(&end_block).unwrap_or_default();
+                moves.retain(|m| unsafe {**m <= end});
+                blocks.push(Block {
+                    block: end_block,
+                    term, moves,
+                    _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
+                });
+            }
+            let map = blocks.iter().enumerate().map(|(n, b)| (b.block, n)).collect::<HashMap<_, _>>();
+            for block in &mut blocks {
+                match block.term {
+                    Terminator::UBrLazy(b) => block.term = if let Some(&b) = map.get(&b) {Terminator::UBr(b)} else {Terminator::Ret},
+                    Terminator::CBrLazy(c, t, f) => block.term = if let (Some(&t), Some(&f)) = (map.get(&t), map.get(&f)) {Terminator::CBr(c, t, f)} else {Terminator::Ret},
+                    _ => {}
+                }
+            }
+            Self {blocks}
+        }
+    }
+    /// Search CFG for relevant moves
+    pub fn validate(&self) -> Vec<(TrustMeRef<'a, Move<'ctx>>, TrustMeRef<'a, Move<'ctx>>)> {
+        todo!()
+    }
+    /// Check if a value has been moved before an instruction value, or by the end of the graph
+    pub fn is_moved(&self, _inst: Option<InstructionValue<'ctx>>) -> IsMoved<'ctx> {
+        todo!()
+    }
+    /// Insert destructor calls before stores if necessary.
+    /// If `at_end` is true, insert the destructors for all values in the top VarMap layer as well
+    pub fn insert_dtors(&self, _ctx: &CompCtx<'ctx>, _at_end: bool) {
+        todo!()
+    }
 }
