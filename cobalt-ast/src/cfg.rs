@@ -229,15 +229,24 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     /// Search CFG for double moves
     /// If a double move is found, return the first move, the second, and whether or not it's guaranteed to happen
     pub fn validate(&self) -> Vec<DoubleMove> {
-        todo!()
+        warn();
+        vec![]
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
     pub fn is_moved(&self, _inst: Option<InstructionValue<'ctx>>) -> IsMoved<'ctx> {
-        todo!()
+        warn();
+        IsMoved::Yes
     }
     /// Insert destructor calls before stores if necessary.
     /// If `at_end` is true, insert the destructors for all values in the top VarMap layer as well
     pub fn insert_dtors(&self, _ctx: &CompCtx<'ctx>, _at_end: bool) {
-        todo!()
+        warn();
+    }
+}
+use std::sync::atomic::{AtomicBool, Ordering};
+static SHOULD_WARN: AtomicBool = AtomicBool::new(true);
+fn warn() {
+    if SHOULD_WARN.fetch_and(false, Ordering::Relaxed) {
+        eprintln!("destructors haven't been implemented yet!");
     }
 }
