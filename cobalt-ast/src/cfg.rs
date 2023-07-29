@@ -1,3 +1,4 @@
+// I'm so sorry to whoever has to decipher what happens in here
 use crate::*;
 use inkwell::values::{BasicValueEnum, InstructionValue, IntValue};
 use inkwell::basic_block::BasicBlock;
@@ -245,24 +246,26 @@ impl Ord for DoubleMove {
 #[derive(Debug)]
 pub struct Cfg<'a, 'ctx: 'a> {
     blocks: Vec<Block<'a, 'ctx>>,
-    last: InstructionValue<'ctx>,
+    last: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>,
     preds: Vec<HashSet<usize>>
 }
 impl<'a, 'ctx> Cfg<'a, 'ctx> {
     /// create a CFG tracking the moves between `start` and `end`
-    pub fn new(start: InstructionValue<'ctx>, end: InstructionValue<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
-        let start_block = start.get_parent().expect("start and end instructions for CFG must be in blocks");
-        let end_block = end.get_parent().expect("start and end instructions for CFG must be in blocks");
+    pub fn new(start: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>, end: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>, ctx: &'a CompCtx<'ctx>) -> Self {
+        let start_block = start.right_or_else(|i| i.get_parent().expect("start and end instructions for CFG must be in blocks"));
+        let end_block = end.right_or_else(|i| i.get_parent().expect("start and end instructions for CFG must be in blocks"));
         let false_ = ctx.context.bool_type().const_zero();
         if start_block == end_block {
-            let inv = 'check: { // end <= start
-                let mut i = Some(end);
-                while let Some(inst) = i {
-                    if inst == start {break 'check true}
-                    i = inst.get_next_instruction();
+            let inv = if let (Either::Left(start), Either::Left(end)) = (start, end) {
+                'check: { // end <= start
+                    let mut i = Some(end);
+                    while let Some(inst) = i {
+                        if inst == start {break 'check true}
+                        i = inst.get_next_instruction();
+                    }
+                    false
                 }
-                false
-            };
+            } else {false};
             if inv {
                 return Self {
                     blocks: vec![Block {
@@ -279,7 +282,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
             let borrow = ctx.moves.borrow();
             let (moves, stores) = borrow.last().unwrap();
-            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.get_parent().unwrap() == start_block && **m >= start && **m <= end)).map(|e| match e {
+            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.get_parent().unwrap() == start_block && start.left().map_or(true, |start| **m >= start) && end.left().map_or(true, |end| **m <= end))).map(|e| match e {
                 Either::Left(l) => Either::Left(l as _),
                 Either::Right(r) => Either::Right(r as _)
             }).collect::<Vec<_>>();
@@ -310,7 +313,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             for s in sts {
                 moves.entry(s.inst.get_parent().unwrap()).or_insert_with(Vec::new).push(Either::Right(std::ptr::addr_of!(*s)));
             }
-            moves.entry(start_block).or_insert_with(Vec::new).retain(|e| for_both!(e, m => unsafe {**m >= start}));
+            moves.entry(start_block).or_insert_with(Vec::new).retain(|e| start.left().map_or(true, |start| for_both!(e, m => unsafe {**m >= start})));
             let mut seen = HashSet::from([end_block]);
             let mut queue = vec![start_block]; // depth-first traversal, with the queue being in reverse order (last element first)
             let mut blocks = vec![];
@@ -356,7 +359,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&end_block).unwrap_or_default();
-                moves.retain(|m| for_both!(m, m => unsafe {**m <= end}));
+                moves.retain(|e| start.left().map_or(true, |start| for_both!(e, m => unsafe {**m >= start})));
                 moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block: end_block,
@@ -510,7 +513,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
     pub fn is_moved(&self, name: &str, inst: Option<InstructionValue<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
-        let inst = inst.unwrap_or(self.last);
+        let inst = inst.map_or(self.last, Either::Left);
         let mut blk = None;
         let mut moved = [None].repeat(self.blocks.len());
         fn moved_by<'ctx>(idx: usize, moved: &mut [Option<IntValue<'ctx>>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
@@ -538,12 +541,12 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     Either::Left(u) => (**u).is_move.then_some(false),
                     Either::Right(_) => Some(true)
                 }));
-                if inst.get_parent() == Some(block.block) {blk = Some(n)}
+                if inst.either(|i| i.get_parent() == Some(block.block), |b| b == block.block) {blk = Some(n)}
             }
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
             let blk = if let Some(blk) = blk {blk} else {return false_};
-            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => **m < inst)).find_map(|e| match e {
+            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => inst.left().map_or(false, |inst| **m < inst))).find_map(|e| match e {
                 Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                 Either::Right(s) => (**s).real.then_some(false_)
             }).unwrap_or_else(|| moved_by(blk, &mut moved, ctx, &self.preds, &self.blocks))
@@ -559,9 +562,11 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 let c = self.is_moved(&m.name, Some(m.inst), ctx);
                 let db = ctx.context.append_basic_block(f, &format!("dtor.{}", m.name));
                 let mb = ctx.context.append_basic_block(f, "merge");
-                ctx.builder.build_conditional_branch(c, db, mb);
+                ctx.builder.build_conditional_branch(c, mb, db);
                 ctx.builder.position_at_end(db);
-                ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx)
+                ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx);
+                ctx.builder.build_unconditional_branch(mb);
+                ctx.builder.position_at_end(mb);
             }
         });
         if at_end {
@@ -570,9 +575,11 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     let c = self.is_moved(n, None, ctx);
                     let db = ctx.context.append_basic_block(f, &format!("dtor.{n}"));
                     let mb = ctx.context.append_basic_block(f, "merge");
-                    ctx.builder.build_conditional_branch(c, db, mb);
+                    ctx.builder.build_conditional_branch(c, mb, db);
                     ctx.builder.position_at_end(db);
-                    v.0.ins_dtor(ctx)
+                    v.0.ins_dtor(ctx);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
                 });
             })
         }

@@ -12,16 +12,18 @@ impl AST for BlockAST {
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        ctx.moves.borrow_mut().push(Default::default());
         let mut out = Value::null();
         let mut errs = vec![];
-        let start = ctx.builder.get_insert_block().and_then(|b| b.get_last_instruction());
+        let start = ctx.builder.get_insert_block().map(|b| b.get_last_instruction().ok_or(b));
         self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
-        let end = ctx.builder.get_insert_block().and_then(|b| b.get_last_instruction());
+        let end = ctx.builder.get_insert_block().map(|b| b.get_last_instruction().ok_or(b));
         if let (Some(start), Some(end)) = (start, end) {
-            let graph = cfg::Cfg::new(start, end, ctx);
+            let graph = cfg::Cfg::new(either::Either::from(start).flip(), either::Either::from(end).flip(), ctx);
             graph.insert_dtors(ctx, true);
             errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
         }
+        ctx.moves.borrow_mut().pop();
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }

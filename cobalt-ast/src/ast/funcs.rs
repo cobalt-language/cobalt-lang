@@ -288,6 +288,7 @@ impl AST for FnDefAST {
         let mut vis_spec = None;
         let mut fn_type = None;
         let mut target_match = 2u8;
+        let mut dtor = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
             match ann.as_str() {
@@ -602,6 +603,41 @@ impl AST for FnDefAST {
                         }
                     }
                 }
+                "op" if self.in_struct => {
+                    match arg.as_deref() {
+                        Some("drop") => {
+                            if let Some(prev) = dtor {
+                                errs.push(CobaltError::RedefAnnArgument {
+                                    name: "op(drop)",
+                                    loc, prev
+                                });
+                            }
+                            else {
+                                if params.len() == 1 {
+                                    let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
+                                    if params[0].0 == Type::Reference(Box::new(self_t.clone())) || params[0].0 == Type::Reference(Box::new(Type::Mut(Box::new(self_t)))) {
+                                        dtor = Some(loc);
+                                        continue;
+                                    }
+                                }
+                                errs.push(CobaltError::InvalidOpParams {
+                                    loc,
+                                    op: "drop",
+                                    ex: "(&mut self_t)",
+                                    found: params.iter().map(|t| t.0.to_string()).collect()
+                                });
+                            }
+                        }
+                        _ => { // TODO: add another error for invalid operators?
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "op",
+                                found: arg.clone(),
+                                expected: Some("operator to overload"),
+                                loc
+                            });
+                        }
+                    }
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "function"})
             }
         }
@@ -903,6 +939,11 @@ impl AST for FnDefAST {
         if is_extern.is_none() {
             if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
             else {ctx.builder.clear_insertion_position();}
+        }
+        if dtor.is_some() && !ctx.prepass.get() {
+            let mut borrow = ctx.nom_info.borrow_mut();
+            let dval = &mut borrow.last_mut().unwrap().dtor;
+            *dval = dval.or(val.0.comp_val.map(|v| unsafe {std::mem::transmute(v.as_value_ref())}));
         }
         val
     }

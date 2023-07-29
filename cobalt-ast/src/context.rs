@@ -22,6 +22,7 @@ pub struct CompCtx<'ctx> {
     pub var_scope: Counter<usize>,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
     pub moves: RefCell<Vec<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>>,
+    pub nom_info: RefCell<Vec<NominalInfo<'ctx>>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
@@ -42,6 +43,7 @@ impl<'ctx> CompCtx<'ctx> {
             var_scope: 0.into(),
             nominals: RefCell::default(),
             moves: RefCell::default(),
+            nom_info: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -71,6 +73,7 @@ impl<'ctx> CompCtx<'ctx> {
             var_scope: 0.into(),
             nominals: RefCell::default(),
             moves: RefCell::default(),
+            nom_info: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),

@@ -231,6 +231,15 @@ pub enum CobaltError {
         name: String,
         guaranteed: bool
     },
+    #[error("invalid parameters for overloaded operator function")]
+    #[help("for `{op}`, the parameters should be ({ex})")]
+    InvalidOpParams {
+        #[label("found ({})", .found.join(", "))]
+        loc: SourceSpan,
+        op: &'static str,
+        ex: &'static str,
+        found: Vec<String>
+    },
 
     // @asm issues
     #[error("invalid creation of inline assembly")]

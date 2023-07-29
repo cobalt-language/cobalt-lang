@@ -723,6 +723,7 @@ impl AST for TypeDefAST {
         });
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
@@ -735,6 +736,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
@@ -757,6 +759,7 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
@@ -769,6 +772,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
     fn fwddef_prepass(&self, ctx: &CompCtx) {
@@ -780,6 +784,7 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
         let ty = ops::impl_convert(unreachable_span(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
@@ -793,6 +798,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
@@ -873,6 +879,7 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
@@ -885,6 +892,7 @@ impl AST for TypeDefAST {
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
