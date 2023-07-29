@@ -178,7 +178,6 @@ impl<T> std::ops::Deref for TrustMeRef<'_, T> {
     fn deref(&self) -> &Self::Target {unsafe {&*self.0}}
 }
 /// structure of a block
-#[derive(Debug)]
 struct Block<'a, 'ctx> {
     block: BasicBlock<'ctx>,
     // these pointers are safe because they're borrowed from a container in a RefCell, which cannot be mutated because of the Ref
@@ -190,6 +189,21 @@ struct Block<'a, 'ctx> {
     reached: IntValue<'ctx>,
     // marker to for safety
     _ref: Ref<'a, ()>
+}
+impl std::fmt::Debug for Block<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+        f.debug_struct("Block")
+            .field("block", &self.block)
+            .field("moves", &self.moves.iter().map(|e| match e {
+                Either::Left(u) => Either::Left(&**u),
+                Either::Right(u) => Either::Right(&**u)
+            }).collect::<Vec<_>>())
+            .field("term", &self.term)
+            .field("reached", &self.reached)
+            .finish()
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleMove {
@@ -546,7 +560,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
             let blk = if let Some(blk) = blk {blk} else {return false_};
-            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => inst.left().map_or(false, |inst| **m < inst))).find_map(|e| match e {
+            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => inst.left().map_or(false, |inst| **m <= inst))).find_map(|e| match e {
                 Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                 Either::Right(s) => (**s).real.then_some(false_)
             }).unwrap_or_else(|| moved_by(blk, &mut moved, ctx, &self.preds, &self.blocks))
