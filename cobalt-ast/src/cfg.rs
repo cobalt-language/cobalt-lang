@@ -268,7 +268,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 Either::Left(l) => Either::Left(l as _),
                 Either::Right(r) => Either::Right(r as _)
             }).collect::<Vec<_>>();
-            moves.sort_by(cmp_ops);
+            moves.sort_unstable_by(cmp_ops);
             let term = start_block.get_terminator();
             Self {
                 blocks: vec![Block {
@@ -316,7 +316,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&block).unwrap_or_default();
-                moves.sort_by(cmp_ops);
+                moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block, term, moves,
                     _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
@@ -336,7 +336,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&end_block).unwrap_or_default();
                 moves.retain(|m| for_both!(m, m => unsafe {**m <= end}));
-                moves.sort_by(cmp_ops);
+                moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block: end_block,
                     term, moves,
@@ -358,7 +358,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     pub fn validate(&self) -> Vec<DoubleMove> {
         warn();
         let mut errs: Vec<DoubleMove> = vec![];
-        errs.sort();
+        errs.sort_unstable();
         errs.dedup_by_key(|m| m.loc);
         errs
     }
