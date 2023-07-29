@@ -11,7 +11,7 @@ pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>
     if !ctx.is_const.get() {
         if let (Some(name), true) = (&val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
             let mut moves = ctx.moves.borrow_mut();
-            moves.last_mut().unwrap().insert(cfg::Move {
+            moves.last_mut().unwrap().0.insert(cfg::Move {
                 name: name.clone(),
                 real: !ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
                 inst, idx, loc
@@ -89,7 +89,7 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             if let (Some(PointerValue(lv)), Some(rv)) = (lhs.comp_val, rhs.value(ctx)) {
                 let inst = ctx.builder.build_store(lv, rv);
                 if let (Some(name), true) = (&lhs.name, ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx)) {
-                    ctx.stores.borrow_mut().last_mut().unwrap().insert(cfg::Store {
+                    ctx.moves.borrow_mut().last_mut().unwrap().1.insert(cfg::Store {
                         inst,
                         name: name.clone(),
                         real: !ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx) // don't check for dtor twice if we can avoid it
