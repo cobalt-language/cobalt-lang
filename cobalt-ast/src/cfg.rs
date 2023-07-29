@@ -1,4 +1,3 @@
-#![allow(dead_code)] // TODO: remove before merge
 use crate::*;
 use inkwell::values::{BasicValueEnum, InstructionValue, IntValue};
 use inkwell::basic_block::BasicBlock;
@@ -187,14 +186,9 @@ struct Block<'a, 'ctx> {
     // these are used to prevent extra allocations
     input: Cell<bool>,
     output: Cell<Option<bool>>,
+    reached: IntValue<'ctx>,
     // marker to for safety
     _ref: Ref<'a, ()>
-}
-#[derive(Debug, Clone, Copy)]
-pub enum IsMoved<'ctx> {
-    Yes,
-    No,
-    Maybe(IntValue<'ctx>)
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleMove {
@@ -250,13 +244,16 @@ impl Ord for DoubleMove {
 /// control flow graph
 #[derive(Debug)]
 pub struct Cfg<'a, 'ctx: 'a> {
-    blocks: Vec<Block<'a, 'ctx>>
+    blocks: Vec<Block<'a, 'ctx>>,
+    last: InstructionValue<'ctx>,
+    preds: Vec<HashSet<usize>>
 }
 impl<'a, 'ctx> Cfg<'a, 'ctx> {
     /// create a CFG tracking the moves between `start` and `end`
     pub fn new(start: InstructionValue<'ctx>, end: InstructionValue<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
         let start_block = start.get_parent().expect("start and end instructions for CFG must be in blocks");
         let end_block = end.get_parent().expect("start and end instructions for CFG must be in blocks");
+        let false_ = ctx.context.bool_type().const_zero();
         if start_block == end_block {
             let inv = 'check: { // end <= start
                 let mut i = Some(end);
@@ -266,7 +263,20 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 }
                 false
             };
-            if inv {return Self {blocks: vec![]}}
+            if inv {
+                return Self {
+                    blocks: vec![Block {
+                        block: start_block,
+                        term: Terminator::Ret,
+                        moves: vec![],
+                        input: Cell::default(), output: Cell::default(),
+                        reached: ctx.context.bool_type().const_all_ones(),
+                        _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
+                    }],
+                    preds: vec![HashSet::new()],
+                    last: end
+                }
+            }
             let borrow = ctx.moves.borrow();
             let (moves, stores) = borrow.last().unwrap();
             let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.get_parent().unwrap() == start_block && **m >= start && **m <= end)).map(|e| match e {
@@ -283,8 +293,11 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     } else {Terminator::Ret}),
                     moves,
                     input: Cell::default(), output: Cell::default(),
+                    reached: ctx.context.bool_type().const_all_ones(),
                     _ref: Ref::map(borrow, |_| &UNIT)
-                }]
+                }],
+                preds: vec![HashSet::new()],
+                last: end
             }
         }
         else {
@@ -326,6 +339,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 blocks.push(Block {
                     block, term, moves,
                     input: Cell::default(), output: Cell::default(),
+                    reached: false_,
                     _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
                 });
             }
@@ -348,6 +362,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     block: end_block,
                     term, moves,
                     input: Cell::default(), output: Cell::default(),
+                    reached: false_,
                     _ref: Ref::map(ctx.moves.borrow(), |_| &UNIT)
                 });
             }
@@ -355,11 +370,70 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             for block in &mut blocks {
                 match block.term {
                     Terminator::UBrLazy(b) => block.term = if let Some(&b) = map.get(&b) {Terminator::UBr(b)} else {Terminator::Ret},
-                    Terminator::CBrLazy(c, t, f) => block.term = if let (Some(&t), Some(&f)) = (map.get(&t), map.get(&f)) {Terminator::CBr(c, t, f)} else {Terminator::Ret},
+                    Terminator::CBrLazy(c, t, f) => block.term = if let (Some(&t), Some(&f)) = (map.get(&t), map.get(&f)) {
+                        if t == f {Terminator::UBr(t)} else {Terminator::CBr(c, t, f)}
+                    } else {Terminator::Ret},
                     _ => {}
                 }
             }
-            Self {blocks}
+            blocks[0].reached = ctx.context.bool_type().const_all_ones();
+            let mut seen = HashSet::new();
+            let mut queue = match blocks[0].term {
+                Terminator::UBr(b) => {
+                    seen.insert((0, b));
+                    vec![(0, false, b)]
+                }
+                Terminator::CBr(_, t, f) => {
+                    seen.insert((0, t));
+                    seen.insert((0, f));
+                    vec![(0, false, f), (0, true, t)]
+                }
+                _ => vec![]
+            };
+            while let Some((prev, pos, next)) = queue.pop() {
+                match blocks[prev].term {
+                    Terminator::UBr(_) => blocks[next].reached = blocks[prev].reached,
+                    Terminator::CBr(..) => blocks[next].reached = {
+                        let mut val = blocks[prev].reached;
+                        if !pos {
+                            val = ctx.builder.build_not(val, "");
+                        }
+                        val
+                    },
+                    _ => unreachable!()
+                }
+                match blocks[next].term {
+                    Terminator::UBr(b) => {
+                        if !seen.contains(&(next, b)) {
+                            seen.insert((next, b));
+                            queue.push((next, false, b));
+                        }
+                    }
+                    Terminator::CBr(_, t, f) => {
+                        if !seen.contains(&(next, f)) {
+                            seen.insert((next, f));
+                            queue.push((next, false, f));
+                        }
+                        if !seen.contains(&(next, t)) {
+                            seen.insert((next, t));
+                            queue.push((next, true, t));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut preds = std::iter::repeat_with(HashSet::new).take(blocks.len()).collect::<Vec<_>>();
+            for (n, block) in blocks.iter().enumerate() {
+                match block.term {
+                    Terminator::UBr(b) => {preds[b].insert(n);}
+                    Terminator::CBr(_, t, f) => {
+                        preds[t].insert(n);
+                        preds[f].insert(n);
+                    }
+                    _ => {}
+                }
+            }
+            Self {blocks, preds, last: end}
         }
     }
     /// Search CFG for double moves
@@ -381,14 +455,16 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                             Either::Left(u) => {
                                 let u = &**u;
                                 if let Some(prev) = prev {
-                                    errs.push(DoubleMove {
-                                        name: var.to_string(),
-                                        loc: u.loc,
-                                        prev: (u.loc != prev).then_some(prev),
-                                        guaranteed: true
-                                    })
+                                    if u.real {
+                                        errs.push(DoubleMove {
+                                            name: var.to_string(),
+                                            loc: u.loc,
+                                            prev: (u.loc != prev).then_some(prev),
+                                            guaranteed: true
+                                        })
+                                    }
                                 }
-                                if u.is_move {
+                                if u.is_move && u.real {
                                     prev = Some(u.loc);
                                 }
                             }
@@ -408,8 +484,8 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     while let Some(idx) = queue.pop() {
                         let next = &self.blocks[idx];
                         if next.input.get() {
-                            let loc = next.moves.iter().find_map(|m| m.left().map(|m| (*m).loc)).unwrap();
-                            let prev = block.moves.iter().rev().find_map(|m| m.left().and_then(|m| (*m).is_move.then_some((*m).loc)));
+                            let loc = next.moves.iter().find_map(|m| m.left().and_then(|m| (*m).real.then_some((*m).loc))).unwrap();
+                            let prev = block.moves.iter().rev().find_map(|m| m.left().and_then(|m| ((*m).is_move && (*m).real).then_some((*m).loc)));
                             errs.push(DoubleMove {
                                 name: var.to_string(),
                                 loc,
@@ -433,9 +509,45 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         errs
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
-    pub fn is_moved(&self, _name: &str, _inst: Option<InstructionValue<'ctx>>) -> IsMoved<'ctx> {
-        warn();
-        IsMoved::Yes
+    pub fn is_moved(&self, name: &str, inst: Option<InstructionValue<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
+        let inst = inst.unwrap_or(self.last);
+        let mut blk = None;
+        let mut moved = [None].repeat(self.blocks.len());
+        fn moved_by<'ctx>(idx: usize, moved: &mut [Option<IntValue<'ctx>>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
+            if let Some(moved) = moved[idx] {return moved}
+            let false_ = ctx.context.bool_type().const_zero();
+            let mut queue = preds[idx].iter().copied().collect::<Vec<_>>();
+            let mut out = false_;
+            while let Some(idx) = queue.pop() {
+                moved_by(idx, moved, ctx, preds, blocks);
+                let block = &blocks[idx];
+                match block.output.get() {
+                    None => queue.extend(preds[idx].iter().copied()),
+                    Some(false) => out = ctx.builder.build_or(out, block.reached, ""),
+                    Some(true) => {}
+                }
+            }
+            moved[idx] = Some(out);
+            out
+        }
+        unsafe {
+            for (n, block) in self.blocks.iter().enumerate() {
+                let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name == name)).collect::<Vec<_>>();
+                block.input.set(insts.first().map_or(false, |v| v.is_left()));
+                block.output.set(insts.iter().rev().find_map(|v| match v {
+                    Either::Left(u) => (**u).is_move.then_some(false),
+                    Either::Right(_) => Some(true)
+                }));
+                if inst.get_parent() == Some(block.block) {blk = Some(n)}
+            }
+            let true_ = ctx.context.bool_type().const_all_ones();
+            let false_ = ctx.context.bool_type().const_zero();
+            let blk = if let Some(blk) = blk {blk} else {return false_};
+            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => **m < inst)).find_map(|e| match e {
+                Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
+                Either::Right(s) => (**s).real.then_some(false_)
+            }).unwrap_or_else(|| moved_by(blk, &mut moved, ctx, &self.preds, &self.blocks))
+        }
     }
     /// Insert destructor calls before stores if necessary.
     /// If `at_end` is true, insert the destructors for all values in the top VarMap layer as well
@@ -444,42 +556,25 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         self.blocks.iter().flat_map(|b| &b.moves).filter_map(|e| e.as_ref().right()).for_each(|m| {
             unsafe {
                 let m = &**m;
-                match self.is_moved(&m.name, Some(m.inst)) {
-                    IsMoved::Yes => {},
-                    IsMoved::No => ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx),
-                    IsMoved::Maybe(c) => {
-                        let db = ctx.context.append_basic_block(f, &format!("dtor.{}", m.name));
-                        let mb = ctx.context.append_basic_block(f, "merge");
-                        ctx.builder.build_conditional_branch(c, db, mb);
-                        ctx.builder.position_at_end(db);
-                        ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx)
-                    }
-                }
+                let c = self.is_moved(&m.name, Some(m.inst), ctx);
+                let db = ctx.context.append_basic_block(f, &format!("dtor.{}", m.name));
+                let mb = ctx.context.append_basic_block(f, "merge");
+                ctx.builder.build_conditional_branch(c, db, mb);
+                ctx.builder.position_at_end(db);
+                ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx)
             }
         });
         if at_end {
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
-                    match self.is_moved(n, None) {
-                        IsMoved::Yes => {},
-                        IsMoved::No => v.0.ins_dtor(ctx),
-                        IsMoved::Maybe(c) => {
-                            let db = ctx.context.append_basic_block(f, &format!("dtor.{n}"));
-                            let mb = ctx.context.append_basic_block(f, "merge");
-                            ctx.builder.build_conditional_branch(c, db, mb);
-                            ctx.builder.position_at_end(db);
-                            v.0.ins_dtor(ctx)
-                        }
-                    }
+                    let c = self.is_moved(n, None, ctx);
+                    let db = ctx.context.append_basic_block(f, &format!("dtor.{n}"));
+                    let mb = ctx.context.append_basic_block(f, "merge");
+                    ctx.builder.build_conditional_branch(c, db, mb);
+                    ctx.builder.position_at_end(db);
+                    v.0.ins_dtor(ctx)
                 });
             })
         }
-    }
-}
-use std::sync::atomic::AtomicBool;
-static SHOULD_WARN: AtomicBool = AtomicBool::new(true);
-fn warn() {
-    if SHOULD_WARN.fetch_and(false, std::sync::atomic::Ordering::Relaxed) {
-        eprintln!("destructors haven't been implemented yet!");
     }
 }
