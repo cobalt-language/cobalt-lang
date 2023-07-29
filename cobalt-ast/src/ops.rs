@@ -11,7 +11,8 @@ pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>
     if !ctx.is_const.get() {
         if let (Some(name), true) = (&val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
             let mut moves = ctx.moves.borrow_mut();
-            moves.last_mut().unwrap().0.insert(cfg::Move {
+            moves.last_mut().unwrap().0.insert(cfg::Use {
+                is_move: true,
                 name: name.clone(),
                 real: !ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
                 inst, idx, loc

@@ -21,7 +21,7 @@ pub struct CompCtx<'ctx> {
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
-    pub moves: RefCell<Vec<(HashSet<cfg::Move<'ctx>>, HashSet<cfg::Store<'ctx>>)>>,
+    pub moves: RefCell<Vec<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
