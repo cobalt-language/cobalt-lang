@@ -490,9 +490,12 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 }
                 let mut queue = vec![];
-                for block in &self.blocks {
+                let mut seen = HashSet::new();
+                for (n, block) in self.blocks.iter().enumerate() {
                     if block.output.get() != Some(false) {continue}
                     queue.clear();
+                    seen.clear();
+                    seen.insert(n);
                     match block.term {
                         Terminator::UBr(b) => queue.push(b),
                         Terminator::CBr(_, t, f) => queue.extend_from_slice(&[f, t]),
@@ -512,8 +515,20 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         }
                         if next.output.get().is_none() {
                             match next.term {
-                                Terminator::UBr(b) => queue.push(b),
-                                Terminator::CBr(_, t, f) => queue.extend_from_slice(&[f, t]),
+                                Terminator::UBr(b) => if !seen.contains(&b) {
+                                    seen.insert(b);
+                                    queue.push(b);
+                                }
+                                Terminator::CBr(_, t, f) => {
+                                    if !seen.contains(&f) {
+                                        seen.insert(f);
+                                        queue.push(f);
+                                    }
+                                    if !seen.contains(&t) {
+                                        seen.insert(t);
+                                        queue.push(t);
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -529,23 +544,40 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     pub fn is_moved(&self, name: &str, inst: Option<InstructionValue<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
         let inst = inst.map_or(self.last, Either::Left);
         let mut blk = None;
-        let mut moved = [None].repeat(self.blocks.len());
-        fn moved_by<'ctx>(idx: usize, moved: &mut [Option<IntValue<'ctx>>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
-            if let Some(moved) = moved[idx] {return moved}
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum MoveState<'ctx> {
+            Unseen,
+            Seen,
+            Complete(IntValue<'ctx>)
+        }
+        let mut moved = [MoveState::Unseen].repeat(self.blocks.len());
+        fn moved_by<'ctx>(idx: usize, moved: &mut [MoveState<'ctx>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
+            // println!("moved_by({idx}, {moved:?}, ...)");
             let false_ = ctx.context.bool_type().const_zero();
-            let mut queue = preds[idx].iter().copied().collect::<Vec<_>>();
-            let mut out = false_;
-            while let Some(idx) = queue.pop() {
-                moved_by(idx, moved, ctx, preds, blocks);
-                let block = &blocks[idx];
-                match block.output.get() {
-                    None => queue.extend(preds[idx].iter().copied()),
-                    Some(false) => out = ctx.builder.build_or(out, block.reached, ""),
-                    Some(true) => {}
+            match moved[idx] {
+                MoveState::Complete(moved) => moved,
+                MoveState::Seen => false_,
+                MoveState::Unseen => {
+                    moved[idx] = MoveState::Seen;
+                    let mut queue = preds[idx].iter().copied().filter(|&q| moved[q] != MoveState::Seen).collect::<Vec<_>>();
+                    let mut out = false_;
+                    while let Some(idx) = queue.pop() {
+                        moved_by(idx, moved, ctx, preds, blocks);
+                        let block = &blocks[idx];
+                        match block.output.get() {
+                            None => {
+                                queue.extend(preds[idx].iter().copied().filter(|&q| moved[q] == MoveState::Unseen));
+                                queue.sort_unstable();
+                                queue.dedup();
+                            }
+                            Some(false) => out = ctx.builder.build_or(out, block.reached, ""),
+                            Some(true) => {}
+                        }
+                    }
+                    moved[idx] = MoveState::Complete(out);
+                    out
                 }
             }
-            moved[idx] = Some(out);
-            out
         }
         unsafe {
             for (n, block) in self.blocks.iter().enumerate() {
