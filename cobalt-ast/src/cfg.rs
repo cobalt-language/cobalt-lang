@@ -215,15 +215,17 @@ struct Block<'a, 'ctx> {
 impl std::fmt::Debug for Block<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         unsafe {
-        f.debug_struct("Block")
-            .field("block", &self.block)
-            .field("moves", &self.moves.iter().map(|e| match e {
-                Either::Left(u) => Either::Left(&**u),
-                Either::Right(u) => Either::Right(&**u)
-            }).collect::<Vec<_>>())
-            .field("term", &self.term)
-            .field("reached", &self.reached)
-            .finish()
+            f.debug_struct("Block")
+                .field("block", &self.block)
+                .field("moves", &self.moves.iter().map(|e| match e {
+                    Either::Left(u) => Either::Left(&**u),
+                    Either::Right(u) => Either::Right(&**u)
+                }).collect::<Vec<_>>())
+                .field("term", &self.term)
+                .field("reached", &self.reached)
+                .field("input", &self.input.get())
+                .field("output", &self.output.get())
+                .finish()
         }
     }
 }
@@ -525,21 +527,17 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                                 guaranteed: false
                             });
                         }
-                        if next.output.get().is_none() {
+                        if next.output.get().is_none() && !seen.contains(&idx) {
                             match next.term {
-                                Terminator::UBr(b) => if !seen.contains(&b) {
+                                Terminator::UBr(b) => {
                                     seen.insert(b);
                                     queue.push(b);
                                 }
                                 Terminator::CBr(_, t, f) => {
-                                    if !seen.contains(&f) {
-                                        seen.insert(f);
-                                        queue.push(f);
-                                    }
-                                    if !seen.contains(&t) {
-                                        seen.insert(t);
-                                        queue.push(t);
-                                    }
+                                    seen.insert(f);
+                                    seen.insert(t);
+                                    queue.push(f);
+                                    queue.push(t);
                                 }
                                 _ => {}
                             }
