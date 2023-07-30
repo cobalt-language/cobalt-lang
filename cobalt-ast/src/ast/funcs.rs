@@ -698,29 +698,33 @@ impl AST for FnDefAST {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         ctx.lex_scope.incr();
                         {
-                            let mut param_count = 0;
-                            for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
+                            let mut n = 0;
+                            for ((name, pt), (ty, is_const)) in self.params.iter().map(|x| (&x.0, x.1)).zip(params.iter()) {
                                 if name.is_empty() {
                                     if !is_const {
-                                        param_count += 1;
+                                        n += 1;
                                     }
                                     continue;
                                 }
                                 if !is_const {
-                                    let param = f.get_nth_param(param_count).unwrap();
-                                    param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
-                                        Some(param),
-                                        None,
-                                        ty.clone(),
-                                    ), VariableData::default()))).map_or((), |_| ());
-                                    param_count += 1;
+                                    let param = f.get_nth_param(n).unwrap();
+                                    param.set_name(name);
+                                    let mut val = Value::compiled(param, ty.clone());
+                                    if pt == ParamType::Mutable {
+                                        let a = ctx.builder.build_alloca(param.get_type(), name);
+                                        ctx.builder.build_store(a, val.comp_val.unwrap());
+                                        val.comp_val = Some(a.into());
+                                        val.data_type = Type::Mut(Box::new(val.data_type));
+                                    }
+                                    val.name = Some((name.clone(), ctx.lex_scope.get()));
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData::default()))).map_or((), |_| ());
+                                    n += 1;
                                 }
                                 else {
                                     ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
                                         None,
                                         None,
-                                        ty.clone(),
+                                        ty.clone()
                                     ), VariableData::default()))).map_or((), |_| ());
                                 }
                             }
@@ -821,23 +825,27 @@ impl AST for FnDefAST {
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         ctx.lex_scope.incr();
                         {
-                            let mut param_count = 0;
-                            for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
+                            let mut n = 0;
+                            for ((name, pt), (ty, is_const)) in self.params.iter().map(|x| (&x.0, x.1)).zip(params.iter()) {
                                 if name.is_empty() {
                                     if !is_const {
-                                        param_count += 1;
+                                        n += 1;
                                     }
                                     continue;
                                 }
                                 if !is_const {
-                                    let param = f.get_nth_param(param_count).unwrap();
-                                    param.set_name(name.as_str());
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
-                                        Some(param),
-                                        None,
-                                        ty.clone()
-                                    ), VariableData::default()))).map_or((), |_| ());
-                                    param_count += 1;
+                                    let param = f.get_nth_param(n).unwrap();
+                                    param.set_name(name);
+                                    let mut val = Value::compiled(param, ty.clone());
+                                    if pt == ParamType::Mutable {
+                                        let a = ctx.builder.build_alloca(param.get_type(), name);
+                                        ctx.builder.build_store(a, val.comp_val.unwrap());
+                                        val.comp_val = Some(a.into());
+                                        val.data_type = Type::Mut(Box::new(val.data_type));
+                                    }
+                                    val.name = Some((name.clone(), ctx.lex_scope.get()));
+                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData::default()))).map_or((), |_| ());
+                                    n += 1;
                                 }
                                 else {
                                     ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
