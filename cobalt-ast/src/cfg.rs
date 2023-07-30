@@ -615,26 +615,38 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             unsafe {
                 let m = &**m;
                 let c = self.is_moved(&m.name.0, m.name.1, Some(m.inst), ctx);
-                let db = ctx.context.append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
-                let mb = ctx.context.append_basic_block(f, "merge");
-                ctx.builder.build_conditional_branch(c, mb, db);
-                ctx.builder.position_at_end(db);
-                ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
-                ctx.builder.build_unconditional_branch(mb);
-                ctx.builder.position_at_end(mb);
+                match c.get_zero_extended_constant() {
+                    Some(0) => ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx),
+                    Some(1) => {}
+                    _ => {
+                        let db = ctx.context.append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
+                        let mb = ctx.context.append_basic_block(f, "merge");
+                        ctx.builder.build_conditional_branch(c, mb, db);
+                        ctx.builder.position_at_end(db);
+                        ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
+                        ctx.builder.build_unconditional_branch(mb);
+                        ctx.builder.position_at_end(mb);
+                    }
+                }
             }
         });
         if at_end {
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
                     let c = self.is_moved(n, ctx.lex_scope.get(), None, ctx);
-                    let db = ctx.context.append_basic_block(f, &format!("dtor.{n}"));
-                    let mb = ctx.context.append_basic_block(f, "merge");
-                    ctx.builder.build_conditional_branch(c, mb, db);
-                    ctx.builder.position_at_end(db);
-                    v.0.ins_dtor(ctx);
-                    ctx.builder.build_unconditional_branch(mb);
-                    ctx.builder.position_at_end(mb);
+                    match c.get_zero_extended_constant() {
+                        Some(0) => v.0.ins_dtor(ctx),
+                        Some(1) => {}
+                        _ => {
+                            let db = ctx.context.append_basic_block(f, &format!("dtor.{n}.{}", ctx.lex_scope.get()));
+                            let mb = ctx.context.append_basic_block(f, "merge");
+                            ctx.builder.build_conditional_branch(c, mb, db);
+                            ctx.builder.position_at_end(db);
+                            v.0.ins_dtor(ctx);
+                            ctx.builder.build_unconditional_branch(mb);
+                            ctx.builder.position_at_end(mb);
+                        }
+                    }
                 });
             })
         }
