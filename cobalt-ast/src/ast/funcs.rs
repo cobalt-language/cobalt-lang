@@ -728,6 +728,10 @@ impl AST for FnDefAST {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
                         let body = self.body.codegen_errs(ctx, &mut errs);
+                        let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
+                        graph.insert_dtors(ctx, true);
+                        errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        std::mem::drop(graph);
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
                         b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
@@ -847,6 +851,10 @@ impl AST for FnDefAST {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
                         self.body.codegen_errs(ctx, &mut errs);
+                        let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
+                        graph.insert_dtors(ctx, true);
+                        errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        std::mem::drop(graph);
                         ctx.builder.build_return(None);
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
