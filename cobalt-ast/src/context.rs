@@ -20,8 +20,9 @@ pub struct CompCtx<'ctx> {
     pub null_type: inkwell::types::BasicTypeEnum<'ctx>,
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
+    pub lex_scope: Counter<usize>,
     pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
-    pub moves: RefCell<Vec<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>>,
+    pub moves: RefCell<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>,
     pub nom_info: RefCell<Vec<NominalInfo<'ctx>>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
@@ -41,6 +42,7 @@ impl<'ctx> CompCtx<'ctx> {
             null_type: ctx.opaque_struct_type("null").into(),
             priority: i32::MAX.into(),
             var_scope: 0.into(),
+            lex_scope: 0.into(),
             nominals: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
@@ -71,6 +73,7 @@ impl<'ctx> CompCtx<'ctx> {
             null_type: ctx.opaque_struct_type("null").into(),
             priority: i32::MAX.into(),
             var_scope: 0.into(),
+            lex_scope: 0.into(),
             nominals: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
@@ -175,8 +178,8 @@ impl<'ctx> CompCtx<'ctx> {
     }
     pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'ctx>> {
         self.with_vars(|v| v.lookup(name, global)).or_else(|| match name {
-            x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
-            x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
+            x if x.as_bytes()[0] == 0x69 && x.len() > 1 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
+            x if x.as_bytes()[0] == 0x75 && x.len() > 1 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
             _ => None
         })
     }

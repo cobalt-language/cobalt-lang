@@ -152,7 +152,7 @@ pub struct Value<'ctx> {
     pub inter_val: Option<InterData<'ctx>>,
     pub data_type: Type,
     pub address: Rc<Cell<Option<PointerValue<'ctx>>>>,
-    pub name: Option<String>,
+    pub name: Option<(String, usize)>,
     pub frozen: Option<SourceSpan>
 }
 impl<'ctx> Value<'ctx> {

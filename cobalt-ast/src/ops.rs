@@ -1,21 +1,32 @@
 use crate::*;
 use std::cmp::{min, max, Ordering};
 use std::collections::VecDeque;
-use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue, InstructionValue};
+use inkwell::values::{BasicValueEnum::{self, *}, BasicMetadataValueEnum, BasicValue};
 use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::StructType};
 use inkwell::{
     IntPredicate::{SLT, ULT, SGT, UGT, SLE, ULE, SGE, UGE, EQ, NE},
     FloatPredicate::{OLT, OGT, OLE, OGE, OEQ, ONE}
 };
-pub(crate) fn mark_as_move<'ctx>(val: &Value<'ctx>, inst: InstructionValue<'ctx>, idx: usize, ctx: &CompCtx<'ctx>, loc: SourceSpan) {
+pub fn mark_move<'ctx>(val: &Value<'ctx>, inst: cfg::Location<'ctx>, ctx: &CompCtx<'ctx>, loc: SourceSpan) {
     if !ctx.is_const.get() {
         if let (Some(name), true) = (&val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
-            let mut moves = ctx.moves.borrow_mut();
-            moves.last_mut().unwrap().0.insert(cfg::Use {
+            ctx.moves.borrow_mut().0.insert(cfg::Use {
                 is_move: true,
                 name: name.clone(),
                 real: !ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
-                inst, idx, loc
+                inst, loc
+            });
+        }
+    }
+}
+pub fn mark_use<'ctx>(val: &Value<'ctx>, inst: cfg::Location<'ctx>, ctx: &CompCtx<'ctx>, loc: SourceSpan) {
+    if !ctx.is_const.get() {
+        if let (Some(name), true) = (&val.name, ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx)) {
+            ctx.moves.borrow_mut().0.insert(cfg::Use {
+                is_move: false,
+                name: name.clone(),
+                real: !ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
+                inst, loc
             });
         }
     }
@@ -90,8 +101,8 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
             if let (Some(PointerValue(lv)), Some(rv)) = (lhs.comp_val, rhs.value(ctx)) {
                 let inst = ctx.builder.build_store(lv, rv);
                 if let (Some(name), true) = (&lhs.name, ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx)) {
-                    ctx.moves.borrow_mut().last_mut().unwrap().1.insert(cfg::Store {
-                        inst,
+                    ctx.moves.borrow_mut().1.insert(cfg::Store {
+                        inst: inst.into(),
                         name: name.clone(),
                         real: !ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx) // don't check for dtor twice if we can avoid it
                     });
@@ -2645,7 +2656,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 val.and_then(|v| {
                     let call = ctx.builder.build_indirect_call(fty?, v, &args_v, "");
                     let inst = call.try_as_basic_value().right_or_else(|v| v.as_instruction_value().unwrap());
-                    for (n, (val, loc)) in args.into_iter().enumerate() {mark_as_move(&val, inst, n, ctx, loc)}
+                    for (n, (val, loc)) in args.into_iter().enumerate() {mark_move(&val, cfg::Location::Inst(inst, n), ctx, loc)}
                     call.try_as_basic_value().left()
                 }),
                 None,

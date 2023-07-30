@@ -500,7 +500,7 @@ impl AST for VarDefAST {
             });
             ctx.restore_scope(old_scope);
             val.comp_val = val.value(ctx);
-            val.name = self.name.ids.get(0).map(|x| x.0.clone());
+            val.name = self.name.ids.get(0).map(|x| (x.0.clone(), ctx.lex_scope.get()));
             val.frozen = (!self.is_mut).then_some(self.loc);
             match if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))

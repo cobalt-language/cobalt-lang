@@ -8,6 +8,82 @@ use std::cell::{Cell, Ref};
 use either::{Either, for_both};
 use std::cmp::{PartialOrd, Ordering};
 static UNIT: () = ();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Location<'ctx> {
+    Block(BasicBlock<'ctx>),
+    Inst(InstructionValue<'ctx>, usize),
+    AfterInst(InstructionValue<'ctx>)
+}
+impl<'ctx> Location<'ctx> {
+    pub fn block(self) -> BasicBlock<'ctx> {
+        match self {
+            Self::Block(b) => b,
+            Self::Inst(i, _) | Self::AfterInst(i) => i.get_parent().unwrap()
+        }
+    }
+    pub fn current(ctx: &CompCtx<'ctx>) -> Option<Self> {
+        let b = ctx.builder.get_insert_block()?;
+        Some(b.get_last_instruction().map(Self::AfterInst).unwrap_or(Self::Block(b)))
+    }
+}
+impl<'ctx> From<InstructionValue<'ctx>> for Location<'ctx> {
+    fn from(value: InstructionValue<'ctx>) -> Self {
+        Self::Inst(value, 0)
+    }
+}
+impl<'ctx> From<Result<InstructionValue<'ctx>, BasicBlock<'ctx>>> for Location<'ctx> {
+    fn from(value: Result<InstructionValue<'ctx>, BasicBlock<'ctx>>) -> Self {
+        match value {
+            Ok(i) => i.into(),
+            Err(b) => Self::Block(b)
+        }
+    }
+}
+impl PartialOrd for Location<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.block() != other.block() {return None}
+        use Location::*;
+        use Ordering::*;
+        match (*self, *other) {
+            (Block(_), Block(_)) => Some(Equal),
+            (Inst(lb, ln), Inst(rb, rn)) => {
+                let c = cmp_insts(lb, rb)?;
+                Some(if c == Equal {ln.cmp(&rn)} else {c})
+            }
+            (AfterInst(lb), AfterInst(rb)) => cmp_insts(lb, rb),
+            (Block(_), _) => Some(Less),
+            (_, Block(_)) => Some(Greater),
+            (AfterInst(_), _) => Some(Greater),
+            (_, AfterInst(_)) => Some(Less)
+        }
+    }
+}
+impl<'ctx> PartialEq<InstructionValue<'ctx>> for Location<'ctx> {
+    fn eq(&self, other: &InstructionValue<'ctx>) -> bool {
+        *self == Self::Inst(*other, 0)
+    }
+}
+impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Location<'ctx> {
+    fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<Ordering> {
+        self.partial_cmp(&Self::Inst(*other, 0))
+    }
+}
+pub fn cmp_insts(lhs: InstructionValue, rhs: InstructionValue) -> Option<Ordering> {
+    if lhs.get_parent() != rhs.get_parent() {return None}
+    use Ordering::*;
+    if lhs == rhs {return Some(Equal)}
+    let mut i = lhs.get_next_instruction();
+    while let Some(inst) = i {
+        if inst == rhs {return Some(Less)}
+        i = inst.get_next_instruction();
+    }
+    i = rhs.get_next_instruction();
+    while let Some(inst) = i {
+        if inst == lhs {return Some(Greater)}
+        i = inst.get_next_instruction();
+    }
+    None
+}
 #[derive(Debug, Clone, Copy)]
 enum Terminator<'ctx> {
     /// this block does not branch to another block
@@ -22,10 +98,9 @@ enum Terminator<'ctx> {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Use<'ctx> {
-    pub inst: InstructionValue<'ctx>,
-    pub idx: usize,
+    pub inst: Location<'ctx>,
     pub loc: SourceSpan,
-    pub name: String,
+    pub name: (String, usize),
     pub is_move: bool,
     /// whether this is tracked or just for debugging
     pub real: bool
@@ -33,20 +108,7 @@ pub struct Use<'ctx> {
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl PartialOrd for Use<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering::*;
-        if self.inst.get_parent() != other.inst.get_parent() {return None}
-        if self.inst == other.inst {return Some(self.idx.cmp(&other.idx))}
-        let mut i = self.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == other.inst {return Some(Less)}
-            i = inst.get_next_instruction();
-        }
-        i = other.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == self.inst {return Some(Greater)}
-            i = inst.get_next_instruction();
-        }
-        None
+        self.inst.partial_cmp(&other.inst)
     }
 }
 impl<'ctx> PartialEq<InstructionValue<'ctx>> for Use<'ctx> {
@@ -57,25 +119,12 @@ impl<'ctx> PartialEq<InstructionValue<'ctx>> for Use<'ctx> {
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Use<'ctx> {
     fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<std::cmp::Ordering> {
-        if self.inst.get_parent() != other.get_parent() {return None}
-        use std::cmp::Ordering::*;
-        if self.inst == *other {return Some(Equal)}
-        let mut i = self.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == *other {return Some(Less)}
-            i = inst.get_next_instruction();
-        }
-        i = other.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == self.inst {return Some(Greater)}
-            i = inst.get_next_instruction();
-        }
-        None
+        self.inst.partial_cmp(other)
     }
 }
 impl<'ctx> PartialOrd<Store<'ctx>> for Use<'ctx> {
     fn partial_cmp(&self, other: &Store<'ctx>) -> Option<Ordering> {
-        self.partial_cmp(&other.inst)
+        self.inst.partial_cmp(&other.inst)
     }
 }
 impl<'ctx> PartialEq<Store<'ctx>> for Use<'ctx> {
@@ -86,32 +135,18 @@ impl<'ctx> PartialEq<Store<'ctx>> for Use<'ctx> {
 impl Hash for Use<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inst.hash(state);
-        self.idx.hash(state);
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store<'ctx> {
-    pub inst: InstructionValue<'ctx>,
-    pub name: String,
+    pub inst: Location<'ctx>,
+    pub name: (String, usize),
     pub real: bool
 }
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl PartialOrd for Store<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering::*;
-        if self.inst.get_parent() != other.inst.get_parent() {return None}
-        if self.inst == other.inst {return Some(Equal)}
-        let mut i = self.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == other.inst {return Some(Less)}
-            i = inst.get_next_instruction();
-        }
-        i = other.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == self.inst {return Some(Greater)}
-            i = inst.get_next_instruction();
-        }
-        None
+        self.inst.partial_cmp(&other.inst)
     }
 }
 impl<'ctx> PartialEq<InstructionValue<'ctx>> for Store<'ctx> {
@@ -122,20 +157,7 @@ impl<'ctx> PartialEq<InstructionValue<'ctx>> for Store<'ctx> {
 /// compare the order in which moves (or their underlying instructions) occur. 
 impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Store<'ctx> {
     fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<Ordering> {
-        if self.inst.get_parent() != other.get_parent() {return None}
-        use Ordering::*;
-        if self.inst == *other {return Some(Equal)}
-        let mut i = self.inst.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == *other {return Some(Less)}
-            i = inst.get_next_instruction();
-        }
-        i = other.get_next_instruction();
-        while let Some(inst) = i {
-            if inst == self.inst {return Some(Greater)}
-            i = inst.get_next_instruction();
-        }
-        None
+        self.inst.partial_cmp(other)
     }
 }
 impl<'ctx> PartialOrd<Use<'ctx>> for Store<'ctx> {
@@ -260,27 +282,17 @@ impl Ord for DoubleMove {
 #[derive(Debug)]
 pub struct Cfg<'a, 'ctx: 'a> {
     blocks: Vec<Block<'a, 'ctx>>,
-    last: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>,
+    last: Location<'ctx>,
     preds: Vec<HashSet<usize>>
 }
 impl<'a, 'ctx> Cfg<'a, 'ctx> {
     /// create a CFG tracking the moves between `start` and `end`
-    pub fn new(start: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>, end: Either<InstructionValue<'ctx>, BasicBlock<'ctx>>, ctx: &'a CompCtx<'ctx>) -> Self {
-        let start_block = start.right_or_else(|i| i.get_parent().expect("start and end instructions for CFG must be in blocks"));
-        let end_block = end.right_or_else(|i| i.get_parent().expect("start and end instructions for CFG must be in blocks"));
+    pub fn new(start: Location<'ctx>, end: Location<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
+        let start_block = start.block();
+        let end_block = end.block();
         let false_ = ctx.context.bool_type().const_zero();
         if start_block == end_block {
-            let inv = if let (Either::Left(start), Either::Left(end)) = (start, end) {
-                'check: { // end <= start
-                    let mut i = Some(end);
-                    while let Some(inst) = i {
-                        if inst == start {break 'check true}
-                        i = inst.get_next_instruction();
-                    }
-                    false
-                }
-            } else {false};
-            if inv {
+            if end < start {
                 return Self {
                     blocks: vec![Block {
                         block: start_block,
@@ -295,8 +307,8 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 }
             }
             let borrow = ctx.moves.borrow();
-            let (moves, stores) = borrow.last().unwrap();
-            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.get_parent().unwrap() == start_block && start.left().map_or(true, |start| **m >= start) && end.left().map_or(true, |end| **m <= end))).map(|e| match e {
+            let (moves, stores) = &*borrow;
+            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.block() == start_block && m.inst >= start && m.inst <= end)).map(|e| match e {
                 Either::Left(l) => Either::Left(l as _),
                 Either::Right(r) => Either::Right(r as _)
             }).collect::<Vec<_>>();
@@ -319,15 +331,15 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         }
         else {
             let borrow = ctx.moves.borrow();
-            let (mvs, sts) = borrow.last().unwrap();
+            let (mvs, sts) = &*borrow;
             let mut moves = HashMap::new();
             for m in mvs {
-                moves.entry(m.inst.get_parent().unwrap()).or_insert_with(Vec::new).push(Either::Left(std::ptr::addr_of!(*m)));
+                moves.entry(m.inst.block()).or_insert_with(Vec::new).push(Either::Left(std::ptr::addr_of!(*m)));
             }
             for s in sts {
-                moves.entry(s.inst.get_parent().unwrap()).or_insert_with(Vec::new).push(Either::Right(std::ptr::addr_of!(*s)));
+                moves.entry(s.inst.block()).or_insert_with(Vec::new).push(Either::Right(std::ptr::addr_of!(*s)));
             }
-            moves.entry(start_block).or_insert_with(Vec::new).retain(|e| start.left().map_or(true, |start| for_both!(e, m => unsafe {**m >= start})));
+            moves.entry(start_block).or_insert_with(Vec::new).retain(|e|for_both!(e, m => unsafe {(**m).inst}) >= start);
             let mut seen = HashSet::from([end_block]);
             let mut queue = vec![start_block]; // depth-first traversal, with the queue being in reverse order (last element first)
             let mut blocks = vec![];
@@ -373,7 +385,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&end_block).unwrap_or_default();
-                moves.retain(|e| start.left().map_or(true, |start| for_both!(e, m => unsafe {**m >= start})));
+                moves.retain(|e|for_both!(e, m => unsafe {(**m).inst}) >= start);
                 moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block: end_block,
@@ -457,10 +469,10 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     pub fn validate(&self) -> Vec<DoubleMove> {
         let mut errs = vec![];
         unsafe {
-            let vars = self.blocks.iter().flat_map(|v| &v.moves).map(|m| for_both!(m, m => (**m).name.as_str()));
+            let vars = self.blocks.iter().flat_map(|v| &v.moves).map(|m| for_both!(m, m => &(**m).name));
             for var in vars {
                 for block in &self.blocks {
-                    let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name == var)).collect::<Vec<_>>();
+                    let insts = block.moves.iter().filter(|m| for_both!(m, m => &(**m).name == var)).collect::<Vec<_>>();
                     block.input.set(insts.first().map_or(false, |v| v.is_left()));
                     block.output.set(insts.iter().rev().find_map(|v| match v {
                         Either::Left(u) => (**u).is_move.then_some(false),
@@ -474,7 +486,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                                 if let Some(prev) = prev {
                                     if u.real {
                                         errs.push(DoubleMove {
-                                            name: var.to_string(),
+                                            name: var.0.clone(),
                                             loc: u.loc,
                                             prev: (u.loc != prev).then_some(prev),
                                             guaranteed: true
@@ -507,7 +519,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                             let loc = next.moves.iter().find_map(|m| m.left().and_then(|m| (*m).real.then_some((*m).loc))).unwrap();
                             let prev = block.moves.iter().rev().find_map(|m| m.left().and_then(|m| ((*m).is_move && (*m).real).then_some((*m).loc)));
                             errs.push(DoubleMove {
-                                name: var.to_string(),
+                                name: var.0.clone(),
                                 loc,
                                 prev: (prev != Some(loc)).then_some(prev).flatten(),
                                 guaranteed: false
@@ -541,8 +553,8 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         errs
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
-    pub fn is_moved(&self, name: &str, inst: Option<InstructionValue<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
-        let inst = inst.map_or(self.last, Either::Left);
+    pub fn is_moved(&self, name: &str, lex_scope: usize, inst: Option<Location<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
+        let inst = inst.unwrap_or(self.last);
         let mut blk = None;
         #[derive(Debug, Clone, Copy, PartialEq)]
         enum MoveState<'ctx> {
@@ -552,7 +564,6 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         }
         let mut moved = [MoveState::Unseen].repeat(self.blocks.len());
         fn moved_by<'ctx>(idx: usize, moved: &mut [MoveState<'ctx>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
-            // println!("moved_by({idx}, {moved:?}, ...)");
             let false_ = ctx.context.bool_type().const_zero();
             match moved[idx] {
                 MoveState::Complete(moved) => moved,
@@ -581,18 +592,18 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         }
         unsafe {
             for (n, block) in self.blocks.iter().enumerate() {
-                let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name == name)).collect::<Vec<_>>();
+                let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name.0 == name && (**m).name.1 == lex_scope)).collect::<Vec<_>>();
                 block.input.set(insts.first().map_or(false, |v| v.is_left()));
                 block.output.set(insts.iter().rev().find_map(|v| match v {
                     Either::Left(u) => (**u).is_move.then_some(false),
                     Either::Right(_) => Some(true)
                 }));
-                if inst.either(|i| i.get_parent() == Some(block.block), |b| b == block.block) {blk = Some(n)}
+                if block.block == inst.block() {blk = Some(n)}
             }
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
             let blk = if let Some(blk) = blk {blk} else {return false_};
-            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, m => inst.left().map_or(false, |inst| **m <= inst))).find_map(|e| match e {
+            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, e => (**e).inst <= inst)).find_map(|e| match e {
                 Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                 Either::Right(s) => (**s).real.then_some(false_)
             }).unwrap_or_else(|| moved_by(blk, &mut moved, ctx, &self.preds, &self.blocks))
@@ -605,12 +616,12 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         self.blocks.iter().flat_map(|b| &b.moves).filter_map(|e| e.as_ref().right()).for_each(|m| {
             unsafe {
                 let m = &**m;
-                let c = self.is_moved(&m.name, Some(m.inst), ctx);
-                let db = ctx.context.append_basic_block(f, &format!("dtor.{}", m.name));
+                let c = self.is_moved(&m.name.0, m.name.1, Some(m.inst), ctx);
+                let db = ctx.context.append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
                 let mb = ctx.context.append_basic_block(f, "merge");
                 ctx.builder.build_conditional_branch(c, mb, db);
                 ctx.builder.position_at_end(db);
-                ctx.lookup(&m.name, false).unwrap().0.ins_dtor(ctx);
+                ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
                 ctx.builder.build_unconditional_branch(mb);
                 ctx.builder.position_at_end(mb);
             }
@@ -618,7 +629,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         if at_end {
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
-                    let c = self.is_moved(n, None, ctx);
+                    let c = self.is_moved(n, ctx.lex_scope.get(), None, ctx);
                     let db = ctx.context.append_basic_block(f, &format!("dtor.{n}"));
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(c, mb, db);

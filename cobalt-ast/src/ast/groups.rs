@@ -12,18 +12,20 @@ impl AST for BlockAST {
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
-        ctx.moves.borrow_mut().push(Default::default());
+        ctx.lex_scope.incr();
         let mut out = Value::null();
         let mut errs = vec![];
-        let start = ctx.builder.get_insert_block().map(|b| b.get_last_instruction().ok_or(b));
+        let start = cfg::Location::current(ctx);
         self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
-        let end = ctx.builder.get_insert_block().map(|b| b.get_last_instruction().ok_or(b));
+        let end = cfg::Location::current(ctx);
         if let (Some(start), Some(end)) = (start, end) {
-            let graph = cfg::Cfg::new(either::Either::from(start).flip(), either::Either::from(end).flip(), ctx);
+            let graph = cfg::Cfg::new(start, end, ctx);
             graph.insert_dtors(ctx, true);
             errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
         }
-        ctx.moves.borrow_mut().pop();
+        let mut b = ctx.moves.borrow_mut();
+        b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
+        b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }

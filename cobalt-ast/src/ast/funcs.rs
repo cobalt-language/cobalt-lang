@@ -668,10 +668,9 @@ impl AST for FnDefAST {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
-                        let (val, mut es) = a.codegen(ctx);
+                        let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
-                        errs.append(&mut es);
                         match val {
                             Ok(val) => 
                                 if let Some(val) = val.inter_val {val}
@@ -697,6 +696,7 @@ impl AST for FnDefAST {
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+                        ctx.lex_scope.incr();
                         {
                             let mut param_count = 0;
                             for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
@@ -727,8 +727,10 @@ impl AST for FnDefAST {
                         }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
-                        let (body, mut es) = self.body.codegen(ctx);
-                        errs.append(&mut es);
+                        let body = self.body.codegen_errs(ctx, &mut errs);
+                        let mut b = ctx.moves.borrow_mut();
+                        b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
+                        b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
                         ctx.map_vars(|v| v.parent.unwrap());
                         ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         hoist_allocas(&ctx.builder);
@@ -740,10 +742,9 @@ impl AST for FnDefAST {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
-                        let (val, mut es) = a.codegen(ctx);
+                        let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
-                        errs.append(&mut es);
                         match val {
                             Ok(val) => 
                                 if let Some(val) = val.inter_val {val}
@@ -786,10 +787,9 @@ impl AST for FnDefAST {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
-                        let (val, mut es) = a.codegen(ctx);
+                        let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
-                        errs.append(&mut es);
                         match val {
                             Ok(val) => 
                                 if let Some(val) = val.inter_val {val}
@@ -815,6 +815,7 @@ impl AST for FnDefAST {
                     if is_extern.is_none() {
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+                        ctx.lex_scope.incr();
                         {
                             let mut param_count = 0;
                             for (name, (ty, is_const)) in self.params.iter().map(|x| &x.0).zip(params.iter()) {
@@ -845,10 +846,12 @@ impl AST for FnDefAST {
                         }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
-                        let (_, mut es) = self.body.codegen(ctx);
-                        errs.append(&mut es);
+                        self.body.codegen_errs(ctx, &mut errs);
                         ctx.builder.build_return(None);
                         hoist_allocas(&ctx.builder);
+                        let mut b = ctx.moves.borrow_mut();
+                        b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
+                        b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
                         ctx.map_vars(|v| v.parent.unwrap());
                         ctx.restore_scope(old_scope);
                     }
@@ -858,10 +861,9 @@ impl AST for FnDefAST {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
-                        let (val, mut es) = a.codegen(ctx);
+                        let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
-                        errs.append(&mut es);
                         match val {
                             Ok(val) => 
                                 if let Some(val) = val.inter_val {val}
@@ -890,10 +892,9 @@ impl AST for FnDefAST {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                 let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
                     let old_const = ctx.is_const.replace(true);
-                    let (val, mut es) = a.codegen(ctx);
+                    let val = a.codegen_errs(ctx, &mut errs);
                     let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                     ctx.is_const.set(old_const);
-                    errs.append(&mut es);
                     match val {
                         Ok(val) => 
                             if let Some(val) = val.inter_val {val}
@@ -1005,8 +1006,7 @@ impl AST for CallAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (ops::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
-            let (arg, mut es) = a.codegen(ctx);
-            errs.append(&mut es);
+            let arg = a.codegen_errs(ctx, &mut errs);
             (arg, a.loc())
         }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Value::error()}), errs)
     }
