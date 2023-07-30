@@ -511,11 +511,13 @@ impl AST for VarDefAST {
                     ctx.builder.build_store(a, v);
                     a
                 });
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                let mut val = Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
                     *ops::maybe_mut(Box::new(val.data_type), self.is_mut)
-                ), VariableData::with_vis(self.loc, false))))
+                );
+                val.name = self.name.ids.get(0).map(|x| (x.0.clone(), ctx.lex_scope.get()));
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
             }
             else {
                 if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
