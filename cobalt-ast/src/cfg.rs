@@ -614,6 +614,15 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         self.blocks.iter().flat_map(|b| &b.moves).filter_map(|e| e.as_ref().right()).for_each(|m| {
             unsafe {
                 let m = &**m;
+                match m.inst {
+                    Location::Block(b) =>
+                        if let Some(i) = b.get_first_instruction() {ctx.builder.position_before(&i)}
+                        else {ctx.builder.position_at_end(b)}
+                    Location::Inst(i, _) => ctx.builder.position_before(&i),
+                    Location::AfterInst(i) =>
+                        if let Some(i) = i.get_next_instruction() {ctx.builder.position_before(&i)}
+                        else {ctx.builder.position_at_end(i.get_parent().unwrap())}
+                }
                 let c = self.is_moved(&m.name.0, m.name.1, Some(m.inst), ctx);
                 match c.get_zero_extended_constant() {
                     Some(0) => ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx),
@@ -631,6 +640,15 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
         });
         if at_end {
+            match self.last {
+                Location::Block(b) =>
+                    if let Some(i) = b.get_first_instruction() {ctx.builder.position_before(&i)}
+                    else {ctx.builder.position_at_end(b)}
+                Location::Inst(i, _) => ctx.builder.position_before(&i),
+                Location::AfterInst(i) =>
+                    if let Some(i) = i.get_next_instruction() {ctx.builder.position_before(&i)}
+                    else {ctx.builder.position_at_end(i.get_parent().unwrap())}
+            }
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
                     let c = self.is_moved(n, ctx.lex_scope.get(), None, ctx);
