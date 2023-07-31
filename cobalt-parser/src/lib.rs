@@ -45,7 +45,7 @@ static KEYWORDS: &[&str] = &[
 /// parse an identifier. unicode-aware
 fn ident<'a>() -> impl Parser<'a, &'a str, &'a str, Extras<'a>> + Copy {
     any()
-        .filter(|&c| is_xid_start(c))
+        .filter(|&c| c == '_' || is_xid_start(c))
         .then(any().filter(|&c| is_xid_continue(c)).repeated())
         .slice()
         .try_map(|val, span| if KEYWORDS.contains(&val) {Err(Rich::custom(span, format!("`{val}` is a keyword and cannot be used as an identifier")))} else {Ok(val)})
@@ -131,7 +131,7 @@ fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
 /// - type definitions
 fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, part_expr: &BoxedASTParser<'a, 'a>) -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a {
     let full_expr = add_assigns(part_expr.clone());
-    let expr_clone = full_expr.clone();
+    let expr_clone = part_expr.clone();
     let metd = metd.unwrap_or_else(|| recursive(move |m| declarations(DeclLoc::Method, Some(m.boxed()), &expr_clone)).boxed());
     let id = if loc == DeclLoc::Global {global_id().boxed()} else {local_id().boxed()}; // TODO: remove allocation
     let anns = annotation().padded_by(ignored()).repeated().collect();
