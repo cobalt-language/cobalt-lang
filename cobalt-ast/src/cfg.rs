@@ -185,20 +185,6 @@ fn cmp_ops(l: &Either<*const Use, *const Store>, r: &Either<*const Use, *const S
         for_both!(l, l => for_both!(r, r => (**l).partial_cmp(&**r)))
     }.unwrap_or(Ordering::Equal)
 }
-// TODO: come up with a better name
-/// A reference to a value in a RefCell, but constructed in a way that allows added flexibility
-#[derive(Debug)]
-pub struct TrustMeRef<'a, T>(*const T, Ref<'a, ()>);
-impl<'a, T> TrustMeRef<'a, T> {
-    /// # Safety
-    /// `val` must come from the same RefCell as `lock`
-    #[inline(always)]
-    pub unsafe fn new(val: *const T, lock: Ref<'a, ()>) -> Self {Self(val, lock)}
-}
-impl<T> std::ops::Deref for TrustMeRef<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {unsafe {&*self.0}}
-}
 /// structure of a block
 struct Block<'a, 'ctx> {
     block: BasicBlock<'ctx>,
