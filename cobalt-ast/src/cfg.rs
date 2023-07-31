@@ -293,6 +293,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         let start_block = start.block();
         let end_block = end.block();
         let false_ = ctx.context.bool_type().const_zero();
+        let true_ = ctx.context.bool_type().const_all_ones();
         if start_block == end_block {
             if end < start {
                 return Self {
@@ -320,11 +321,19 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 blocks: vec![Block {
                     block: start_block,
                     term: term.map_or(Terminator::Ret, |term| if term.get_opcode() == inkwell::values::InstructionOpcode::Br {
-                        todo!()
+                        match term.get_num_operands() {
+                            1 => if let Some(Either::Right(b)) = term.get_operand(0) {Terminator::UBrLazy(b)} else {Terminator::Ret}
+                            3 => if let (
+                                Some(Either::Left(c)),
+                                Some(Either::Right(t)),
+                                Some(Either::Right(f))
+                             ) = (term.get_operand(0), term.get_operand(2), term.get_operand(1)) {Terminator::CBrLazy(c, t, f)} else {Terminator::Ret}
+                            _ => Terminator::Ret
+                        }
                     } else {Terminator::Ret}),
                     moves,
                     input: Cell::default(), output: Cell::default(),
-                    reached: ctx.context.bool_type().const_all_ones(),
+                    reached: true_,
                     _ref: Ref::map(borrow, |_| &UNIT)
                 }],
                 preds: vec![HashSet::new()],
@@ -357,7 +366,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                             Some(Either::Left(c)),
                             Some(Either::Right(t)),
                             Some(Either::Right(f))
-                         ) = (term.get_operand(0), term.get_operand(1), term.get_operand(2)) {
+                         ) = (term.get_operand(0), term.get_operand(2), term.get_operand(1)) {
                             if !seen.contains(&t) {queue.push(t)}
                             if !seen.contains(&f) {queue.push(f)}
                             Terminator::CBrLazy(c, t, f)
@@ -382,7 +391,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                             Some(Either::Left(c)),
                             Some(Either::Right(t)),
                             Some(Either::Right(f))
-                         ) = (term.get_operand(0), term.get_operand(1), term.get_operand(2)) {Terminator::CBrLazy(c, t, f)} else {Terminator::Ret}
+                         ) = (term.get_operand(0), term.get_operand(2), term.get_operand(1)) {Terminator::CBrLazy(c, t, f)} else {Terminator::Ret}
                         _ => Terminator::Ret
                     }
                 } else {Terminator::Ret});
@@ -407,7 +416,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     _ => {}
                 }
             }
-            blocks[0].reached = ctx.context.bool_type().const_all_ones();
+            blocks[0].reached = true_;
             let mut seen = HashSet::new();
             let mut queue = match blocks[0].term {
                 Terminator::UBr(b) => {
@@ -422,12 +431,22 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 _ => vec![]
             };
             while let Some((prev, pos, next)) = queue.pop() {
+                if let Some(i) = blocks[prev].block.get_last_instruction() {ctx.builder.position_before(&i)}
+                else {ctx.builder.position_at_end(blocks[prev].block)}
                 match blocks[prev].term {
                     Terminator::UBr(_) => blocks[next].reached = blocks[prev].reached,
-                    Terminator::CBr(..) => blocks[next].reached = {
-                        let mut val = blocks[prev].reached;
+                    Terminator::CBr(c, ..) => blocks[next].reached = {
+                        let mut val = match blocks[prev].reached.get_zero_extended_constant() {
+                            Some(0) => false_,
+                            Some(1) => c.into_int_value(),
+                            _ => ctx.builder.build_and(blocks[prev].reached, c.into_int_value(), "")
+                        };
                         if !pos {
-                            val = ctx.builder.build_not(val, "");
+                            val = match val.get_zero_extended_constant() {
+                                Some(0) => true_,
+                                Some(1) => false_,
+                                _ => ctx.builder.build_not(val, "")
+                            };
                         }
                         val
                     },
@@ -551,7 +570,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         errs
     }
     /// Check if a value has been moved before an instruction value, or by the end of the graph
-    pub fn is_moved(&self, name: &str, lex_scope: usize, inst: Option<Location<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
+    pub fn is_moved(&self, name: &str, lex_scope: Option<usize>, inst: Option<Location<'ctx>>, ctx: &CompCtx<'ctx>) -> IntValue<'ctx> {
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
         #[derive(Debug, Clone, Copy, PartialEq)]
@@ -563,6 +582,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         let mut moved = [MoveState::Unseen].repeat(self.blocks.len());
         fn moved_by<'ctx>(idx: usize, moved: &mut [MoveState<'ctx>], ctx: &CompCtx<'ctx>, preds: &[HashSet<usize>], blocks: &[Block<'_, 'ctx>]) -> IntValue<'ctx> {
             let false_ = ctx.context.bool_type().const_zero();
+            let true_ = ctx.context.bool_type().const_zero();
             match moved[idx] {
                 MoveState::Complete(moved) => moved,
                 MoveState::Seen => false_,
@@ -579,7 +599,11 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                                 queue.sort_unstable();
                                 queue.dedup();
                             }
-                            Some(false) => out = ctx.builder.build_or(out, block.reached, ""),
+                            Some(false) => out = match out.get_zero_extended_constant() {
+                                Some(0) => block.reached,
+                                Some(1) => true_,
+                                _ => ctx.builder.build_or(out, block.reached, "")
+                            },
                             Some(true) => {}
                         }
                     }
@@ -590,7 +614,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         }
         unsafe {
             for (n, block) in self.blocks.iter().enumerate() {
-                let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name.0 == name && (**m).name.1 == lex_scope)).collect::<Vec<_>>();
+                let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name.0 == name && lex_scope.map_or(true, |ls| (**m).name.1 == ls))).collect::<Vec<_>>();
                 block.input.set(insts.first().map_or(false, |v| v.is_left()));
                 block.output.set(insts.iter().rev().find_map(|v| match v {
                     Either::Left(u) => (**u).is_move.then_some(false),
@@ -623,7 +647,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         if let Some(i) = i.get_next_instruction() {ctx.builder.position_before(&i)}
                         else {ctx.builder.position_at_end(i.get_parent().unwrap())}
                 }
-                let c = self.is_moved(&m.name.0, m.name.1, Some(m.inst), ctx);
+                let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
                 match c.get_zero_extended_constant() {
                     Some(0) => ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx),
                     Some(1) => {}
@@ -651,12 +675,13 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
-                    let c = self.is_moved(n, ctx.lex_scope.get(), None, ctx);
+                    let scope = v.0.name.as_ref().map_or_else(|| ctx.lex_scope.get(), |x| x.1);
+                    let c = self.is_moved(n, Some(scope), None, ctx);
                     match c.get_zero_extended_constant() {
                         Some(0) => v.0.ins_dtor(ctx),
                         Some(1) => {}
                         _ => {
-                            let db = ctx.context.append_basic_block(f, &format!("dtor.{n}.{}", ctx.lex_scope.get()));
+                            let db = ctx.context.append_basic_block(f, &format!("dtor.{n}.{scope}"));
                             let mb = ctx.context.append_basic_block(f, "merge");
                             ctx.builder.build_conditional_branch(c, mb, db);
                             ctx.builder.position_at_end(db);

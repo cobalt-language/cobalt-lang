@@ -736,12 +736,13 @@ impl AST for FnDefAST {
                         graph.insert_dtors(ctx, true);
                         errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
                         std::mem::drop(graph);
+                        ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
+                        hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
                         b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
+                        ctx.lex_scope.decr();
                         ctx.map_vars(|v| v.parent.unwrap());
-                        ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
-                        hoist_allocas(&ctx.builder);
                         ctx.restore_scope(old_scope);
                     }
                     var
@@ -868,6 +869,7 @@ impl AST for FnDefAST {
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
                         b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
+                        ctx.lex_scope.decr();
                         ctx.map_vars(|v| v.parent.unwrap());
                         ctx.restore_scope(old_scope);
                     }
