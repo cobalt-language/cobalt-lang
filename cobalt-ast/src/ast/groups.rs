@@ -21,7 +21,15 @@ impl AST for BlockAST {
         if let (Some(start), Some(end)) = (start, end) {
             let graph = cfg::Cfg::new(start, end, ctx);
             graph.insert_dtors(ctx, true);
-            errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+            unsafe {
+                let seen = errs.iter()
+                    .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                    .collect::<std::collections::HashSet<_>>();
+                errs.extend(graph.validate()
+                    .into_iter()
+                    .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                    .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+            }
         }
         // let mut b = ctx.moves.borrow_mut();
         // b.0.retain(|v| v.name.1 < ctx.lex_scope.get());

@@ -734,7 +734,15 @@ impl AST for FnDefAST {
                         let body = self.body.codegen_errs(ctx, &mut errs);
                         let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
                         graph.insert_dtors(ctx, true);
-                        errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        unsafe {
+                            let seen = errs.iter()
+                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                                .collect::<std::collections::HashSet<_>>();
+                            errs.extend(graph.validate()
+                                .into_iter()
+                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                                .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        }
                         std::mem::drop(graph);
                         ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         hoist_allocas(&ctx.builder);
@@ -862,7 +870,15 @@ impl AST for FnDefAST {
                         self.body.codegen_errs(ctx, &mut errs);
                         let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
                         graph.insert_dtors(ctx, true);
-                        errs.extend(graph.validate().into_iter().map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        unsafe {
+                            let seen = errs.iter()
+                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                                .collect::<std::collections::HashSet<_>>();
+                            errs.extend(graph.validate()
+                                .into_iter()
+                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                                .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                        }
                         std::mem::drop(graph);
                         ctx.builder.build_return(None);
                         hoist_allocas(&ctx.builder);
