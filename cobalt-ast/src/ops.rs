@@ -1829,7 +1829,10 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if target == Type::Null {return Ok(Value::null())}
     else if target == Type::Error {return Ok(Value::error())}
     else if let Type::Reference(ref b) = target {
-        if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
+        if **b == val.data_type {
+            mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+            return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))
+        }
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
                 return if let Some(floc) = val.frozen {Err(CobaltError::CantMutateImmut {
@@ -1839,7 +1842,10 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                     op: "".to_string(),
                     floc
                 })}
-                else {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
+                else {
+                    mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+                    Ok(Value::new(val.addr(ctx).map(From::from), None, target))
+                }
             }
         }
     }
@@ -2059,7 +2065,10 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if target == Type::Null {return Ok(Value::null())}
     else if target == Type::Error {return Ok(Value::error())}
     else if let Type::Reference(ref b) = target {
-        if **b == val.data_type {return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))}
+        if **b == val.data_type {
+            mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+            return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))
+        }
         if let Type::Mut(b) = b.as_ref() {
             if **b == val.data_type {
                 return if let Some(floc) = val.frozen {Err(CobaltError::CantMutateImmut {
@@ -2069,7 +2078,10 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                     op: "".to_string(),
                     floc
                 })}
-                else {Ok(Value::new(val.addr(ctx).map(From::from), None, target))}
+                else {
+                    mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+                    Ok(Value::new(val.addr(ctx).map(From::from), None, target))
+                }
             }
         }
     }
@@ -2357,6 +2369,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             if let Type::Function(ret, args) = r.as_ref() {
                                 match mt {
                                     MethodType::Normal => {
+                                        mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                         let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                         let bm = Type::BoundMethod(ret.clone(), args.clone());
                                         let mut v = Value::metaval(iv.clone(), bm);
@@ -2372,6 +2385,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                     MethodType::Getter => {
                                         val.comp_val = val.addr(ctx).map(From::from);
                                         val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                        mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                         ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                                     }
                                 }
@@ -2391,6 +2405,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             if let Type::Function(ret, args) = r.as_ref() {
                                 match mt {
                                     MethodType::Normal => {
+                                        mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                         let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                         let bm = Type::BoundMethod(ret.clone(), args.clone());
                                         let mut v = Value::metaval(iv.clone(), bm);
@@ -2406,6 +2421,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                     MethodType::Getter => {
                                         val.comp_val = val.addr(ctx).map(From::from);
                                         val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                        mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                         ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                                     }
                                 }
@@ -2427,6 +2443,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     if let Type::Function(ret, args) = r.as_ref() {
                         match mt {
                             MethodType::Normal => {
+                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                 let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                 let bm = Type::BoundMethod(ret.clone(), args.clone());
                                 let mut v = Value::metaval(iv.clone(), bm);
@@ -2442,6 +2459,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             MethodType::Getter => {
                                 val.comp_val = val.addr(ctx).map(From::from);
                                 val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                 ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                             }
                         }
@@ -2461,6 +2479,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     if let Type::Function(ret, args) = r.as_ref() {
                         match mt {
                             MethodType::Normal => {
+                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                 let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                 let bm = Type::BoundMethod(ret.clone(), args.clone());
                                 let mut v = Value::metaval(iv.clone(), bm);
@@ -2476,6 +2495,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                             MethodType::Getter => {
                                 val.comp_val = val.addr(ctx).map(From::from);
                                 val.data_type = Type::Reference(Box::new(val.data_type.clone()));
+                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
                                 ops::call(Value::new(*comp_val, Some(iv.clone()), Type::Function(ret.clone(), args.clone())), iloc, None, vec![(val.clone(), vloc)], ctx)
                             }
                         }
