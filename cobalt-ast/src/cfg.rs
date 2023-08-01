@@ -275,7 +275,7 @@ pub struct Cfg<'a, 'ctx: 'a> {
 }
 impl<'a, 'ctx> Cfg<'a, 'ctx> {
     /// create a CFG tracking the moves between `start` and `end`
-    /// `start` is inclusive, `end` is *exclusive*
+    /// `start` and `end` are inclusive
     pub fn new(start: Location<'ctx>, end: Location<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
         let start_block = start.block();
         let end_block = end.block();
@@ -298,7 +298,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
             let borrow = ctx.moves.borrow();
             let (moves, stores) = &*borrow;
-            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.block() == start_block && m.inst >= start && m.inst < end)).map(|e| match e {
+            let mut moves = moves.iter().map(Either::Left).chain(stores.iter().map(Either::Right)).filter(|m| for_both!(m, m => m.inst.block() == start_block && m.inst >= start && m.inst <= end)).map(|e| match e {
                 Either::Left(l) => Either::Left(l as _),
                 Either::Right(r) => Either::Right(r as _)
             }).collect::<Vec<_>>();
@@ -383,7 +383,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&end_block).unwrap_or_default();
-                moves.retain(|e|for_both!(e, m => unsafe {(**m).inst}) < end);
+                moves.retain(|e|for_both!(e, m => unsafe {(**m).inst}) <= end);
                 moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block: end_block,

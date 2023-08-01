@@ -80,8 +80,19 @@ pub fn bin_op<'ctx>(loc: SourceSpan, (mut lhs, lloc): (Value<'ctx>, SourceSpan),
                     lhs.comp_val = None;
                 }
             }
-            let left_move = !lhs.data_type.has_dtor(ctx);
-            bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx, left_move, right_move)
+            if matches!(lhs.data_type, Type::Mut(_)) && op == "=" {
+                rhs = impl_convert(rloc, (rhs, None), (lhs.data_type.clone(), Some(lloc)), ctx)?;
+                if let (Some(PointerValue(lv)), Some(rv)) = (lhs.comp_val, rhs.value(ctx)) {
+                    lhs.ins_dtor(ctx);
+                    ctx.builder.build_store(lv, rv);
+                }
+                lhs.inter_val = None;
+                Ok(lhs)
+            }
+            else {
+                let left_move = !lhs.data_type.has_dtor(ctx);
+                bin_op(loc, (lhs, lloc), (rhs, rloc), op, ctx, left_move, right_move)
+            }
         }
         (_l, Type::Reference(r)) => {
             rhs.data_type = *r;
