@@ -383,7 +383,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 } else {Terminator::Ret});
                 let mut moves = moves.remove(&end_block).unwrap_or_default();
-                moves.retain(|e|for_both!(e, m => unsafe {(**m).inst}) <= end);
+                moves.retain(|e| for_both!(e, m => unsafe {(**m).inst}) <= end);
                 moves.sort_unstable_by(cmp_ops);
                 blocks.push(Block {
                     block: end_block,
@@ -612,7 +612,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
             let blk = if let Some(blk) = blk {blk} else {return false_};
-            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, e => (**e).inst <= inst)).find_map(|e| match e {
+            self.blocks[blk].moves.iter().rev().filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst)).find_map(|e| match e {
                 Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                 Either::Right(s) => (**s).real.then_some(false_)
             }).unwrap_or_else(|| moved_by(blk, &mut moved, ctx, &self.preds, &self.blocks))
