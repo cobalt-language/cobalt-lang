@@ -1831,6 +1831,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if let Type::Reference(ref b) = target {
         if **b == val.data_type {
             mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+            if val.name.is_none() {ctx.to_drop.borrow_mut().last_mut().unwrap().push(val.clone());}
             return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))
         }
         if let Type::Mut(b) = b.as_ref() {
@@ -1844,6 +1845,7 @@ pub fn impl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                 })}
                 else {
                     mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+                    if val.name.is_none() {ctx.to_drop.borrow_mut().last_mut().unwrap().push(val.clone());}
                     Ok(Value::new(val.addr(ctx).map(From::from), None, target))
                 }
             }
@@ -2067,6 +2069,7 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
     else if let Type::Reference(ref b) = target {
         if **b == val.data_type {
             mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+            if val.name.is_none() {ctx.to_drop.borrow_mut().last_mut().unwrap().push(val.clone());}
             return Ok(Value::new(if matches!(val.data_type, Type::Mut(_)) {val.value(ctx)} else {val.addr(ctx).map(From::from)}, None, target))
         }
         if let Type::Mut(b) = b.as_ref() {
@@ -2080,6 +2083,7 @@ pub fn expl_convert<'ctx>(loc: SourceSpan, (mut val, vloc): (Value<'ctx>, Option
                 })}
                 else {
                     mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, loc);
+                    if val.name.is_none() {ctx.to_drop.borrow_mut().last_mut().unwrap().push(val.clone());}
                     Ok(Value::new(val.addr(ctx).map(From::from), None, target))
                 }
             }
@@ -2370,6 +2374,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                 match mt {
                                     MethodType::Normal => {
                                         mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                        let name = val.name.clone();
                                         let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                         let bm = Type::BoundMethod(ret.clone(), args.clone());
                                         let mut v = Value::metaval(iv.clone(), bm);
@@ -2379,6 +2384,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                             let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
                                             v.comp_val = Some(v2.as_basic_value_enum());
                                         }
+                                        v.name = name;
                                         Ok(v)
                                     }
                                     MethodType::Static => Err(err),
@@ -2406,6 +2412,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                 match mt {
                                     MethodType::Normal => {
                                         mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                        let name = val.name.clone();
                                         let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                         let bm = Type::BoundMethod(ret.clone(), args.clone());
                                         let mut v = Value::metaval(iv.clone(), bm);
@@ -2415,6 +2422,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                             let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
                                             v.comp_val = Some(v2.as_basic_value_enum());
                                         }
+                                        v.name = name;
                                         Ok(v)
                                     }
                                     MethodType::Static => Err(err),
@@ -2443,7 +2451,8 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     if let Type::Function(ret, args) = r.as_ref() {
                         match mt {
                             MethodType::Normal => {
-                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                let name = val.name.clone();
                                 let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                 let bm = Type::BoundMethod(ret.clone(), args.clone());
                                 let mut v = Value::metaval(iv.clone(), bm);
@@ -2453,6 +2462,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                     let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
                                     v.comp_val = Some(v2.as_basic_value_enum());
                                 }
+                                v.name = name;
                                 Ok(v)
                             }
                             MethodType::Static => Err(err),
@@ -2479,7 +2489,8 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                     if let Type::Function(ret, args) = r.as_ref() {
                         match mt {
                             MethodType::Normal => {
-                                mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                mark_use(&val, cfg::Location::current(ctx).unwrap(), ctx, vloc);
+                                let name = val.name.clone();
                                 let this = impl_convert(vloc, (val, None), (args[0].0.clone(), Some(iloc)), ctx)?;
                                 let bm = Type::BoundMethod(ret.clone(), args.clone());
                                 let mut v = Value::metaval(iv.clone(), bm);
@@ -2489,6 +2500,7 @@ pub fn attr<'ctx>((mut val, vloc): (Value<'ctx>, SourceSpan), (id, iloc): (&str,
                                     let v2 = ctx.builder.build_insert_value(v1, *f, 1, "").unwrap();
                                     v.comp_val = Some(v2.as_basic_value_enum());
                                 }
+                                v.name = name;
                                 Ok(v)
                             }
                             MethodType::Static => Err(err),
@@ -2687,7 +2699,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 val.and_then(|v| {
                     let call = ctx.builder.build_indirect_call(fty?, v, &args_v, "");
                     let inst = call.try_as_basic_value().right_or_else(|v| v.as_instruction_value().unwrap());
-                    for (n, (val, loc)) in args.into_iter().enumerate() {mark_move(&val, cfg::Location::Inst(inst, n), ctx, loc)}
+                    for (n, (val, loc)) in args.iter().enumerate() {mark_move(val, cfg::Location::Inst(inst, n), ctx, *loc)}
                     call.try_as_basic_value().left()
                 }),
                 None,
@@ -2695,6 +2707,7 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
             ))
         }
         Type::BoundMethod(ret, params) => {
+            let name = target.name.take();
             let mut avec = Vec::with_capacity(args.len() + 1);
             avec.push((Value::new(None, None, params[0].0.clone()), loc));
             avec.append(&mut args);
@@ -2705,7 +2718,11 @@ pub fn call<'ctx>(mut target: Value<'ctx>, loc: SourceSpan, cparen: Option<Sourc
                 target.comp_val = Some(fv);
             }
             target.data_type = Type::Function(ret, params);
-            call(target, loc, cparen, avec, ctx)
+            let mut this = avec[0].0.clone();
+            this.name = name;
+            let v = call(target, loc, cparen, avec, ctx);
+            mark_move(&this, cfg::Location::current(ctx).unwrap(), ctx, loc);
+            v
         }
         Type::InlineAsm(r) => if let (Some(InterData::InlineAsm(c, b)), false) = (target.inter_val, ctx.is_const.get()) {
             let mut params = Vec::with_capacity(args.len());

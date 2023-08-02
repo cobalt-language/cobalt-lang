@@ -235,6 +235,9 @@ impl<'ctx> Value<'ctx> {
                     }
                 }
             }
+            Type::BoundMethod(_, a) => if let (Some(BasicValueEnum::StructValue(sv)), Some(ty)) = (self.comp_val, a.get(0)) {
+                Value::compiled(ctx.builder.build_extract_value(sv, 0, "").unwrap(), ty.0.clone()).ins_dtor(ctx)
+            }
             _ => {}
         }
     }

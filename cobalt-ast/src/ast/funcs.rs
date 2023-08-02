@@ -752,7 +752,9 @@ impl AST for FnDefAST {
                         }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
+                        ctx.to_drop.borrow_mut().push(Vec::new());
                         let body = self.body.codegen_errs(ctx, &mut errs);
+                        ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
                         let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
                         graph.insert_dtors(ctx, true);
                         unsafe {
@@ -903,7 +905,9 @@ impl AST for FnDefAST {
                         }
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
+                        ctx.to_drop.borrow_mut().push(Vec::new());
                         self.body.codegen_errs(ctx, &mut errs);
+                        ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
                         let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
                         graph.insert_dtors(ctx, true);
                         unsafe {

@@ -203,6 +203,7 @@ impl Type {
             }
             Type::Array(b, _) | Type::Mut(b) => b.has_dtor(ctx),
             Type::Tuple(v) => v.iter().any(|t| t.has_dtor(ctx)),
+            Type::BoundMethod(_, a) => a.get(0).map_or(false, |t| t.0.has_dtor(ctx)),
             _ => false
         }
     }

@@ -498,6 +498,7 @@ impl AST for VarDefAST {
                 errs.push(e);
                 Value::error()
             });
+            ops::mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, self.val.loc());
             ctx.restore_scope(old_scope);
             val.comp_val = val.value(ctx);
             val.name = self.name.ids.get(0).map(|x| (x.0.clone(), ctx.lex_scope.get()));

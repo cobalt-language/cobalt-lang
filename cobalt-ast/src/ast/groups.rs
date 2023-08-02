@@ -17,8 +17,10 @@ impl AST for BlockAST {
         let mut errs = vec![];
         let start = cfg::Location::current(ctx);
         self.vals.iter().for_each(|val| {
+            ctx.to_drop.borrow_mut().push(Vec::new());
             if out.name.is_none() {out.ins_dtor(ctx);}
             out = val.codegen_errs(ctx, &mut errs);
+            ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
         });
         let end = cfg::Location::current(ctx);
         if let (Some(start), Some(end)) = (start, end) {
