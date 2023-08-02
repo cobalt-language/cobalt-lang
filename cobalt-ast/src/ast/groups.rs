@@ -16,9 +16,13 @@ impl AST for BlockAST {
         let mut out = Value::null();
         let mut errs = vec![];
         let start = cfg::Location::current(ctx);
-        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
+        self.vals.iter().for_each(|val| {
+            if out.name.is_none() {out.ins_dtor(ctx);}
+            out = val.codegen_errs(ctx, &mut errs);
+        });
         let end = cfg::Location::current(ctx);
         if let (Some(start), Some(end)) = (start, end) {
+            if let Some(loc) = self.vals.last().map(|a| a.loc()) {ops::mark_move(&out, end, ctx, loc);}
             let graph = cfg::Cfg::new(start, end, ctx);
             graph.insert_dtors(ctx, true);
             unsafe {
@@ -63,7 +67,11 @@ impl AST for GroupAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
         let mut errs = vec![];
-        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
+        self.vals.iter().for_each(|val| {
+            if out.name.is_none() {out.ins_dtor(ctx);}
+            out = val.codegen_errs(ctx, &mut errs);
+        });
+        if let (Some(loc), Some(end)) = (self.vals.last().map(|a| a.loc()), cfg::Location::current(ctx)) {ops::mark_move(&out, end, ctx, loc);}
         (out, errs)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
