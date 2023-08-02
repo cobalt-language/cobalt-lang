@@ -517,7 +517,7 @@ impl AST for FnDefAST {
                         }
                     }
                 }
-                "method" if self.in_struct => {
+                "method" => if self.in_struct {
                     if let Some((_, prev)) = fn_type {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "method",
@@ -560,7 +560,14 @@ impl AST for FnDefAST {
                         }
                     }
                 }
-                "getter" if self.in_struct => {
+                else {
+                    errs.push(CobaltError::UnknownAnnotation {
+                        name: "method".to_string(),
+                        def: "non-struct function",
+                        loc
+                    })
+                }
+                "getter" => if self.in_struct {
                     if let Some((_, prev)) = fn_type {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "getter",
@@ -603,7 +610,14 @@ impl AST for FnDefAST {
                         }
                     }
                 }
-                "op" if self.in_struct => {
+                else {
+                    errs.push(CobaltError::UnknownAnnotation {
+                        name: "getter".to_string(),
+                        def: "non-struct function",
+                        loc
+                    })
+                }
+                "op" => if self.in_struct {
                     match arg.as_deref() {
                         Some("drop") => {
                             if let Some(prev) = dtor {
@@ -637,6 +651,13 @@ impl AST for FnDefAST {
                             });
                         }
                     }
+                }
+                else {
+                    errs.push(CobaltError::UnknownAnnotation {
+                        name: "op".to_string(),
+                        def: "non-struct function",
+                        loc
+                    })
                 }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "function"})
             }
@@ -744,6 +765,21 @@ impl AST for FnDefAST {
                                 .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
                         }
                         std::mem::drop(graph);
+                        if let Some((Type::Reference(b), _)) = params.get(0) {
+                            if let Type::Mut(b) = &**b {
+                                if let Type::Nominal(name) = &**b {
+                                    let b = ctx.nominals.borrow();
+                                    let base = &b[name].0;
+                                    if !ctx.nom_info.borrow().last().unwrap().no_auto_drop {
+                                        Value::new(
+                                            base.llvm_type(ctx).and_then(|_| f.get_first_param()),
+                                            None,
+                                            base.clone()
+                                        ).ins_dtor(ctx)
+                                    }
+                                }
+                            }
+                        }
                         ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
@@ -880,6 +916,21 @@ impl AST for FnDefAST {
                                 .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
                         }
                         std::mem::drop(graph);
+                        if let Some((Type::Reference(b), _)) = params.get(0) {
+                            if let Type::Mut(b) = &**b {
+                                if let Type::Nominal(name) = &**b {
+                                    let b = ctx.nominals.borrow();
+                                    let base = &b[name].0;
+                                    if !ctx.nom_info.borrow().last().unwrap().no_auto_drop {
+                                        Value::new(
+                                            base.llvm_type(ctx).and_then(|_| f.get_first_param()),
+                                            None,
+                                            base.clone()
+                                        ).ins_dtor(ctx)
+                                    }
+                                }
+                            }
+                        }
                         ctx.builder.build_return(None);
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();

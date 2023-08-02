@@ -196,7 +196,11 @@ impl Type {
     }
     pub fn has_dtor(&self, ctx: &CompCtx) -> bool {
         match self {
-            Type::Nominal(n) => ctx.nominals.borrow()[n].3.dtor.is_some(),
+            Type::Nominal(n) => {
+                let b = ctx.nominals.borrow();
+                let info = &b[n];
+                info.3.dtor.is_some() || (!info.3.no_auto_drop && info.0.has_dtor(ctx))
+            }
             Type::Array(b, _) | Type::Mut(b) => b.has_dtor(ctx),
             Type::Tuple(v) => v.iter().any(|t| t.has_dtor(ctx)),
             _ => false
@@ -484,14 +488,16 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
 }
 #[derive(Debug, Clone, Default)]
 pub struct NominalInfo<'ctx> {
-    pub dtor: Option<FunctionValue<'ctx>>
+    pub dtor: Option<FunctionValue<'ctx>>,
+    pub no_auto_drop: bool
 }
 impl<'ctx> NominalInfo<'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         if let Some(fv) = self.dtor {
             out.write_all(fv.get_name().to_bytes())?;
         }
-        out.write_all(&[0])
+        out.write_all(&[0])?;
+        out.write_all(&[u8::from(self.no_auto_drop)])
     }
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
         let mut vec = vec![];
@@ -503,6 +509,9 @@ impl<'ctx> NominalInfo<'ctx> {
             let fv = ctx.module.get_function(&name);
             Some(fv.unwrap_or_else(|| ctx.module.add_function(&name, ctx.context.void_type().fn_type(&[ctx.null_type.ptr_type(Default::default()).into()], false), None)))
         };
-        Ok(Self {dtor})
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        let no_auto_drop = c != 0;
+        Ok(Self {dtor, no_auto_drop})
     }
 }

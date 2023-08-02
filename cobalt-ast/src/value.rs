@@ -188,8 +188,17 @@ impl<'ctx> Value<'ctx> {
 
     pub fn ins_dtor(&self, ctx: &CompCtx<'ctx>) {
         match &self.data_type {
-            Type::Nominal(n) => if let (Some(addr), Some(fv)) = (self.addr(ctx), ctx.nominals.borrow()[n].3.dtor) {
-                ctx.builder.build_call(fv, &[addr.into()], "");
+            Type::Nominal(n) => if let Some(addr) = self.addr(ctx) {
+                let b = ctx.nominals.borrow();
+                let info = &b[n];
+                if let Some(fv) = info.3.dtor {
+                    ctx.builder.build_call(fv, &[addr.into()], "");
+                }
+                else if !info.3.no_auto_drop {
+                    let mut this = self.clone();
+                    this.data_type = info.0.clone();
+                    this.ins_dtor(ctx)
+                }
             }
             Type::Tuple(v) => if let Some(BasicValueEnum::StructValue(comp_val)) = self.comp_val {
                 v.iter().enumerate().for_each(|(n, t)| {
