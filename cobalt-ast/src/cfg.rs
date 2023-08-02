@@ -461,6 +461,9 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
             let mut preds = std::iter::repeat_with(HashSet::new).take(blocks.len()).collect::<Vec<_>>();
             for (n, block) in blocks.iter().enumerate() {
+                if block.reached.get_name().to_bytes().is_empty() {
+                    block.reached.set_name(&format!("reached.{}", block.block.get_name().to_str().unwrap()));
+                }
                 match block.term {
                     Terminator::UBr(b) => {preds[b].insert(n);}
                     Terminator::CBr(_, t, f) => {
@@ -596,6 +599,9 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         },
                         Some(true) => {}
                     }
+                }
+                if out.get_name().to_bytes().is_empty() {
+                    out.set_name(&format!("moved.{}.{name}{}", self.blocks[blk].block.get_name().to_str().unwrap(), lex_scope.map_or_else(String::new, |l| format!(".{l}"))));
                 }
                 out
             })
