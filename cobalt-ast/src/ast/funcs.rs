@@ -1,14 +1,16 @@
 use crate::*;
-use inkwell::types::{BasicType, BasicMetadataTypeEnum, BasicTypeEnum::*};
-use inkwell::values::{AsValueRef, FunctionValue, BasicValueEnum::*, InstructionOpcode, BasicValue};
-use inkwell::module::Linkage::*;
-use inkwell::attributes::{Attribute, AttributeLoc::Function};
 use glob::Pattern;
+use inkwell::attributes::{Attribute, AttributeLoc::Function};
+use inkwell::module::Linkage::*;
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum::*};
+use inkwell::values::{
+    AsValueRef, BasicValue, BasicValueEnum::*, FunctionValue, InstructionOpcode,
+};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
     Normal,
     Mutable,
-    Constant
+    Constant,
 }
 pub type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
 #[derive(Debug, Clone)]
@@ -19,23 +21,81 @@ pub struct FnDefAST {
     pub params: Vec<Parameter>,
     pub body: Box<dyn AST>,
     pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    pub in_struct: bool
+    pub in_struct: bool,
 }
 impl FnDefAST {
-    pub fn new(loc: SourceSpan, name: DottedName, ret: Box<dyn AST>, params: Vec<Parameter>, body: Box<dyn AST>, annotations: Vec<(String, Option<String>, SourceSpan)>, in_struct: bool) -> Self {FnDefAST {loc, name, ret, params, body, annotations, in_struct}}
+    pub fn new(
+        loc: SourceSpan,
+        name: DottedName,
+        ret: Box<dyn AST>,
+        params: Vec<Parameter>,
+        body: Box<dyn AST>,
+        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        in_struct: bool,
+    ) -> Self {
+        FnDefAST {
+            loc,
+            name,
+            ret,
+            params,
+            body,
+            annotations,
+            in_struct,
+        }
+    }
 }
 impl AST for FnDefAST {
-    fn loc(&self) -> SourceSpan {self.loc}
-    fn nodes(&self) -> usize {self.ret.nodes() + self.body.nodes() + self.params.iter().map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes())).sum::<usize>() + 1}
+    fn loc(&self) -> SourceSpan {
+        self.loc
+    }
+    fn nodes(&self) -> usize {
+        self.ret.nodes()
+            + self.body.nodes()
+            + self
+                .params
+                .iter()
+                .map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes()))
+                .sum::<usize>()
+            + 1
+    }
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let oic = ctx.is_const.replace(true);
-        let mut ret = ops::impl_convert(unreachable_span(), (self.ret.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-        while let Type::Mut(b) = ret {ret = *b}
-        let params = self.params.iter().map(|(_, pt, ty, _)| ({
-            let mut val = ops::impl_convert(unreachable_span(), (ty.codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
-            while let Type::Mut(b) = val {val = *b}
-            val
-        }, pt == &ParamType::Constant)).collect::<Vec<_>>();
+        let mut ret = ops::impl_convert(
+            unreachable_span(),
+            (self.ret.codegen(ctx).0, None),
+            (Type::TypeData, None),
+            ctx,
+        )
+        .ok()
+        .and_then(Value::into_type)
+        .unwrap_or(Type::Error);
+        while let Type::Mut(b) = ret {
+            ret = *b
+        }
+        let params = self
+            .params
+            .iter()
+            .map(|(_, pt, ty, _)| {
+                (
+                    {
+                        let mut val = ops::impl_convert(
+                            unreachable_span(),
+                            (ty.codegen(ctx).0, None),
+                            (Type::TypeData, None),
+                            ctx,
+                        )
+                        .ok()
+                        .and_then(Value::into_type)
+                        .unwrap_or(Type::Error);
+                        while let Type::Mut(b) = val {
+                            val = *b
+                        }
+                        val
+                    },
+                    pt == &ParamType::Constant,
+                )
+            })
+            .collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -50,15 +110,23 @@ impl AST for FnDefAST {
                 "link" => {
                     link_type = match arg.as_ref().map(|x| x.as_str()) {
                         Some("extern") | Some("external") => Some(External),
-                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("extern-weak")
+                        | Some("extern_weak")
+                        | Some("external-weak")
+                        | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
                         Some("private") => Some(Private),
                         Some("weak") => Some(WeakAny),
                         Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
-                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
-                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => {
+                            Some(LinkOnceAny)
+                        }
+                        Some("linkonce-odr")
+                        | Some("linkonce_odr")
+                        | Some("link-once-odr")
+                        | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
-                        _ => None
+                        _ => None,
                     }
                 }
                 "linkas" => {
@@ -73,14 +141,16 @@ impl AST for FnDefAST {
                         Some("cold") | Some("Cold") => Some(9),
                         Some("ghc") | Some("GHC") => Some(10),
                         Some("hipe") | Some("HiPE") => Some(11),
-                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => {
+                            Some(12)
+                        }
                         Some("anyreg") | Some("AnyReg") => Some(13),
                         Some("preservemost") | Some("PreserveMost") => Some(14),
                         Some("preserveall") | Some("PreserveAll") => Some(15),
                         Some("swift") | Some("Swift") => Some(16),
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
-                        _ => None
+                        _ => None,
                     });
                 }
                 "extern" => {
@@ -90,14 +160,16 @@ impl AST for FnDefAST {
                         Some("cold") | Some("Cold") => Some(9),
                         Some("ghc") | Some("GHC") => Some(10),
                         Some("hipe") | Some("HiPE") => Some(11),
-                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => {
+                            Some(12)
+                        }
                         Some("anyreg") | Some("AnyReg") => Some(13),
                         Some("preservemost") | Some("PreserveMost") => Some(14),
                         Some("preserveall") | Some("PreserveAll") => Some(15),
                         Some("swift") | Some("Swift") => Some(16),
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
-                        _ => None
+                        _ => None,
                     });
                 }
                 "inline" => {
@@ -107,21 +179,40 @@ impl AST for FnDefAST {
                             "never" | "false" | "0" => inline = Some(false),
                             _ => {}
                         }
-                    }
-                    else {
+                    } else {
                         inline = Some(true)
                     }
                 }
                 "c" | "C" => {
                     cconv = Some(0);
-                    linkas = Some((self.name.ids.last().expect("function name shouldn't be empty!").0.clone(), loc))
+                    linkas = Some((
+                        self.name
+                            .ids
+                            .last()
+                            .expect("function name shouldn't be empty!")
+                            .0
+                            .clone(),
+                        loc,
+                    ))
                 }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
-                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {
+                            arg = &arg[1..];
+                            true
+                        } else {
+                            false
+                        };
                         if let Ok(pat) = Pattern::new(arg) {
-                            if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))}
+                            if target_match != 1 {
+                                target_match = u8::from(
+                                    negate
+                                        ^ pat.matches(
+                                            &ctx.module.get_triple().as_str().to_string_lossy(),
+                                        ),
+                                )
+                            }
                         }
                     }
                 }
@@ -145,14 +236,24 @@ impl AST for FnDefAST {
                 }
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {fn_type = Some(MethodType::Normal)};
+                        let self_t = Type::Reference(Box::new(
+                            ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                                .clone(),
+                        ));
+                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {
+                            fn_type = Some(MethodType::Normal)
+                        };
                     }
                 }
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone()));
-                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {fn_type = Some(MethodType::Getter)};
+                        let self_t = Type::Reference(Box::new(
+                            ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                                .clone(),
+                        ));
+                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {
+                            fn_type = Some(MethodType::Getter)
+                        };
                     }
                 }
                 _ => {}
@@ -161,19 +262,62 @@ impl AST for FnDefAST {
         let fty = Type::Function(Box::new(ret), params);
         let vs = vis_spec.unwrap_or(ctx.export.get());
         let cf = ctx.is_cfunc(&self.name);
-        let cc = cconv.unwrap_or(if cf {0} else {8});
+        let cc = cconv.unwrap_or(if cf { 0 } else { 8 });
         let mt = fn_type.unwrap_or(MethodType::Static);
-        if target_match == 0 {return}
+        if target_match == 0 {
+            return;
+        }
         if let Type::Function(ref ret, ref params) = fty {
             if let Some(llt) = ret.llvm_type(ctx) {
                 let mut good = true;
-                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                let ps = params
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    let f = ctx.module.add_function(
+                        linkas
+                            .map_or_else(
+                                || {
+                                    if cf {
+                                        self.name.ids.last().unwrap().0.clone()
+                                    } else {
+                                        ctx.mangle(&self.name)
+                                    }
+                                },
+                                |v| v.0,
+                            )
+                            .as_str(),
+                        ft,
+                        None,
+                    );
                     match inline {
-                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
-                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        Some(true) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("alwaysinline"),
+                                0,
+                            ),
+                        ),
+                        Some(false) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("noinline"),
+                                0,
+                            ),
+                        ),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
@@ -181,33 +325,94 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen(ctx).0;
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                    })).collect();
-                    let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        Type::Reference(Box::new(fty.clone()))
-                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen(ctx).0;
+                                let val =
+                                    ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                ctx.is_const.set(old_const);
+                                val.ok()
+                                    .and_then(|v| v.inter_val)
+                                    .unwrap_or(InterData::Null)
+                            })
+                        })
+                        .collect();
+                    let _ = ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    Type::Reference(Box::new(fty.clone())),
+                                ),
+                                VariableData {
+                                    fwd: true,
+                                    ..VariableData::with_vis(self.loc, vs)
+                                },
+                            ),
+                        )
+                    });
                 }
-            }
-            else if ret.size(ctx) == SizeType::Static(0) {
+            } else if ret.size(ctx) == SizeType::Static(0) {
                 let mut good = true;
-                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                let ps = params
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None);
+                    let f = ctx.module.add_function(
+                        linkas
+                            .map_or_else(
+                                || {
+                                    if cf {
+                                        self.name.ids.last().unwrap().0.clone()
+                                    } else {
+                                        ctx.mangle(&self.name)
+                                    }
+                                },
+                                |v| v.0,
+                            )
+                            .as_str(),
+                        ft,
+                        None,
+                    );
                     match inline {
-                        Some(true) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
-                        Some(false) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        Some(true) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("alwaysinline"),
+                                0,
+                            ),
+                        ),
+                        Some(false) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("noinline"),
+                                0,
+                            ),
+                        ),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
@@ -215,70 +420,145 @@ impl AST for FnDefAST {
                         f.as_global_value().set_linkage(link)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen(ctx).0;
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                    })).collect();
-                    let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        Type::Reference(Box::new(fty.clone()))
-                    ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen(ctx).0;
+                                let val =
+                                    ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                                ctx.is_const.set(old_const);
+                                val.ok()
+                                    .and_then(|v| v.inter_val)
+                                    .unwrap_or(InterData::Null)
+                            })
+                        })
+                        .collect();
+                    let _ = ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    Type::Reference(Box::new(fty.clone())),
+                                ),
+                                VariableData {
+                                    fwd: true,
+                                    ..VariableData::with_vis(self.loc, vs)
+                                },
+                            ),
+                        )
+                    });
                 }
-            }
-            else {
+            } else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                    let old_const = ctx.is_const.replace(true);
-                    let val = a.codegen(ctx).0;
-                    let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                    ctx.is_const.set(old_const);
-                    val.ok().and_then(|v| v.inter_val).unwrap_or(InterData::Null)
-                })).collect();
-                let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                    None,
-                    Some(InterData::Function(FnData {
-                        defaults,
-                        cconv: cc,
-                        mt
-                    })),
-                    fty
-                ), VariableData {fwd: true, ..VariableData::with_vis(self.loc, vs)})));
+                let defaults = self
+                    .params
+                    .iter()
+                    .zip(cloned)
+                    .filter_map(|((_, _, _, d), (t, _))| {
+                        d.as_ref().map(|a| {
+                            let old_const = ctx.is_const.replace(true);
+                            let val = a.codegen(ctx).0;
+                            let val =
+                                ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                            ctx.is_const.set(old_const);
+                            val.ok()
+                                .and_then(|v| v.inter_val)
+                                .unwrap_or(InterData::Null)
+                        })
+                    })
+                    .collect();
+                let _ = ctx.with_vars(|v| {
+                    v.insert(
+                        &self.name,
+                        Symbol(
+                            Value::new(
+                                None,
+                                Some(InterData::Function(FnData {
+                                    defaults,
+                                    cconv: cc,
+                                    mt,
+                                })),
+                                fty,
+                            ),
+                            VariableData {
+                                fwd: true,
+                                ..VariableData::with_vis(self.loc, vs)
+                            },
+                        ),
+                    )
+                });
             }
-        }
-        else {unreachable!()};
+        } else {
+            unreachable!()
+        };
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
-        let mut ret = ops::impl_convert(self.ret.loc(), (self.ret.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
-            errs.push(e);
-            Type::Error
-        }, |v| v.into_type().unwrap_or(Type::Error));
-        if let Type::Mut(b) = ret {
-            errs.push(CobaltError::ReturnCantBeMut {loc: self.ret.loc()});
-            ret = *b;
-        }
-        while let Type::Mut(b) = ret {ret = *b}
-        let mut params = self.params.iter().map(|(_, pt, ty, _)| ({
-            let mut val = ops::impl_convert(ty.loc(), (ty.codegen_errs(ctx, &mut errs), None), (Type::TypeData, None), ctx).map_or_else(|e| {
+        let mut ret = ops::impl_convert(
+            self.ret.loc(),
+            (self.ret.codegen_errs(ctx, &mut errs), None),
+            (Type::TypeData, None),
+            ctx,
+        )
+        .map_or_else(
+            |e| {
                 errs.push(e);
                 Type::Error
-            }, |v| v.into_type().unwrap_or(Type::Error));
-            if let Type::Mut(b) = val {
-                errs.push(CobaltError::ReturnCantBeMut {loc: ty.loc()});
-                val = *b;
-            }
-            while let Type::Mut(b) = val {val = *b}
-            val
-        }, pt == &ParamType::Constant)).collect::<Vec<_>>();
+            },
+            |v| v.into_type().unwrap_or(Type::Error),
+        );
+        if let Type::Mut(b) = ret {
+            errs.push(CobaltError::ReturnCantBeMut {
+                loc: self.ret.loc(),
+            });
+            ret = *b;
+        }
+        while let Type::Mut(b) = ret {
+            ret = *b
+        }
+        let mut params = self
+            .params
+            .iter()
+            .map(|(_, pt, ty, _)| {
+                (
+                    {
+                        let mut val = ops::impl_convert(
+                            ty.loc(),
+                            (ty.codegen_errs(ctx, &mut errs), None),
+                            (Type::TypeData, None),
+                            ctx,
+                        )
+                        .map_or_else(
+                            |e| {
+                                errs.push(e);
+                                Type::Error
+                            },
+                            |v| v.into_type().unwrap_or(Type::Error),
+                        );
+                        if let Type::Mut(b) = val {
+                            errs.push(CobaltError::ReturnCantBeMut { loc: ty.loc() });
+                            val = *b;
+                        }
+                        while let Type::Mut(b) = val {
+                            val = *b
+                        }
+                        val
+                    },
+                    pt == &ParamType::Constant,
+                )
+            })
+            .collect::<Vec<_>>();
         ctx.is_const.set(oic);
         let mut link_type = None;
         let mut linkas = None;
@@ -296,44 +576,56 @@ impl AST for FnDefAST {
                     if let Some((_, prev)) = link_type {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "link",
-                            loc, prev
+                            loc,
+                            prev,
                         });
                     }
                     link_type = match arg.as_deref() {
                         Some("extern") | Some("external") => Some(External),
-                        Some("extern-weak") | Some("extern_weak") | Some("external-weak") | Some("external_weak") => Some(ExternalWeak),
+                        Some("extern-weak")
+                        | Some("extern_weak")
+                        | Some("external-weak")
+                        | Some("external_weak") => Some(ExternalWeak),
                         Some("intern") | Some("internal") => Some(Internal),
                         Some("private") => Some(Private),
                         Some("weak") => Some(WeakAny),
                         Some("weak-odr") | Some("weak_odr") => Some(WeakODR),
-                        Some("linkonce") | Some("link-once") | Some("link_once") => Some(LinkOnceAny),
-                        Some("linkonce-odr") | Some("linkonce_odr") | Some("link-once-odr") | Some("link_once_odr") => Some(LinkOnceODR),
+                        Some("linkonce") | Some("link-once") | Some("link_once") => {
+                            Some(LinkOnceAny)
+                        }
+                        Some("linkonce-odr")
+                        | Some("linkonce_odr")
+                        | Some("link-once-odr")
+                        | Some("link_once_odr") => Some(LinkOnceODR),
                         Some("common") => Some(Common),
                         _ => {
                             errs.push(CobaltError::InvalidAnnArgument {
                                 name: "link",
                                 found: arg.clone(),
                                 expected: Some("link type"),
-                                loc
+                                loc,
                             });
                             None
                         }
-                    }.map(|x| (x, loc))
+                    }
+                    .map(|x| (x, loc))
                 }
                 "linkas" => {
                     if let Some((_, prev)) = linkas {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "linkas",
-                            loc, prev
+                            loc,
+                            prev,
                         });
                     }
-                    if let Some(arg) = arg {linkas = Some((arg.clone(), loc))}
-                    else {
+                    if let Some(arg) = arg {
+                        linkas = Some((arg.clone(), loc))
+                    } else {
                         errs.push(CobaltError::InvalidAnnArgument {
                             name: "linkas",
                             found: arg.clone(),
                             expected: Some("linkage name"),
-                            loc
+                            loc,
                         });
                     }
                 }
@@ -341,7 +633,8 @@ impl AST for FnDefAST {
                     if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
-                            loc, prev
+                            loc,
+                            prev,
                         });
                     }
                     cconv = cconv.or(match arg.as_deref() {
@@ -350,37 +643,38 @@ impl AST for FnDefAST {
                                 name: "cconv",
                                 found: None,
                                 expected: Some("calling convention"),
-                                loc
+                                loc,
                             });
                             None
-                        },
+                        }
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
                         Some("ghc") | Some("GHC") => Some(10),
                         Some("hipe") | Some("HiPE") => Some(11),
-                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => {
+                            Some(12)
+                        }
                         Some("anyreg") | Some("AnyReg") => Some(13),
                         Some("preservemost") | Some("PreserveMost") => Some(14),
                         Some("preserveall") | Some("PreserveAll") => Some(15),
                         Some("swift") | Some("Swift") => Some(16),
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
-                        Some(x) => {
-                            match x.parse() {
-                                Ok(v) => Some(v),
-                                Err(_) => {
-                                    errs.push(CobaltError::InvalidAnnArgument {
-                                        name: "cconv",
-                                        found: arg.clone(),
-                                        expected: Some("calling convention"),
-                                        loc
-                                    });
-                                    None
-                                }
+                        Some(x) => match x.parse() {
+                            Ok(v) => Some(v),
+                            Err(_) => {
+                                errs.push(CobaltError::InvalidAnnArgument {
+                                    name: "cconv",
+                                    found: arg.clone(),
+                                    expected: Some("calling convention"),
+                                    loc,
+                                });
+                                None
                             }
-                        }
-                    }.map(|cc| (cc, loc)));
+                        },
+                    }
+                    .map(|cc| (cc, loc)));
                 }
                 "extern" => {
                     is_extern = Some(loc);
@@ -389,50 +683,56 @@ impl AST for FnDefAST {
                             name: "extern",
                             found: arg.clone(),
                             expected: None,
-                            loc
+                            loc,
                         });
                     }
                     if let Some((_, prev)) = cconv {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "cconv",
-                            loc, prev
+                            loc,
+                            prev,
                         });
                     }
                     cconv = cconv.or(match arg.as_deref() {
-                        None => {errs.pop(); None},
+                        None => {
+                            errs.pop();
+                            None
+                        }
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
                         Some("ghc") | Some("GHC") => Some(10),
                         Some("hipe") | Some("HiPE") => Some(11),
-                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => Some(12),
+                        Some("webkit") | Some("webkit_js") | Some("WebKit") | Some("WebKit_JS") => {
+                            Some(12)
+                        }
                         Some("anyreg") | Some("AnyReg") => Some(13),
                         Some("preservemost") | Some("PreserveMost") => Some(14),
                         Some("preserveall") | Some("PreserveAll") => Some(15),
                         Some("swift") | Some("Swift") => Some(16),
                         Some("tail") | Some("Tail") => Some(18),
                         Some("swifttail") | Some("swift_tail") | Some("SwiftTail") => Some(20),
-                        Some(x) => {
-                            match x.parse() {
-                                Ok(v) => Some(v),
-                                Err(_) => {
-                                    errs.push(CobaltError::InvalidAnnArgument {
-                                        name: "cconv",
-                                        found: None,
-                                        expected: Some("calling convention"),
-                                        loc
-                                    });
-                                    None
-                                }
+                        Some(x) => match x.parse() {
+                            Ok(v) => Some(v),
+                            Err(_) => {
+                                errs.push(CobaltError::InvalidAnnArgument {
+                                    name: "cconv",
+                                    found: None,
+                                    expected: Some("calling convention"),
+                                    loc,
+                                });
+                                None
                             }
-                        }
-                    }.map(|cc| (cc, loc)));
+                        },
+                    }
+                    .map(|cc| (cc, loc)));
                 }
                 "inline" => {
                     if let Some((_, prev)) = inline {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "inline",
-                            loc, prev
+                            loc,
+                            prev,
                         });
                     }
                     match arg.as_deref() {
@@ -442,38 +742,63 @@ impl AST for FnDefAST {
                             name: "cconv",
                             found: arg.clone(),
                             expected: Some("always or never"),
-                            loc
-                        })
+                            loc,
+                        }),
                     }
                 }
                 "c" | "C" => {
                     match arg.as_ref().map(|x| x.as_str()) {
-                        Some("") | None => {},
+                        Some("") | None => {}
                         Some("extern") => is_extern = Some(loc),
                         Some(_) => errs.push(CobaltError::InvalidAnnArgument {
                             name: "C",
                             found: arg.clone(),
                             expected: Some(r#"no argument or "extern""#),
-                            loc
-                        })
+                            loc,
+                        }),
                     }
-                    linkas = Some((self.name.ids.last().expect("variable name shouldn't be empty!").0.clone(), loc))
+                    linkas = Some((
+                        self.name
+                            .ids
+                            .last()
+                            .expect("variable name shouldn't be empty!")
+                            .0
+                            .clone(),
+                        loc,
+                    ))
                 }
                 "target" => {
                     if let Some(arg) = arg {
                         let mut arg = arg.as_str();
-                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {
+                            arg = &arg[1..];
+                            true
+                        } else {
+                            false
+                        };
                         match Pattern::new(arg) {
-                            Ok(pat) => if target_match != 1 {target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))},
-                            Err(err) => errs.push(CobaltError::GlobPatternError {pos: err.pos, msg: err.msg.to_string(), loc})
+                            Ok(pat) => {
+                                if target_match != 1 {
+                                    target_match = u8::from(
+                                        negate
+                                            ^ pat.matches(
+                                                &ctx.module.get_triple().as_str().to_string_lossy(),
+                                            ),
+                                    )
+                                }
+                            }
+                            Err(err) => errs.push(CobaltError::GlobPatternError {
+                                pos: err.pos,
+                                msg: err.msg.to_string(),
+                                loc,
+                            }),
                         }
-                    }
-                    else {
+                    } else {
                         errs.push(CobaltError::InvalidAnnArgument {
                             name: "target",
                             found: arg.clone(),
                             expected: Some("target glob"),
-                            loc
+                            loc,
                         });
                     }
                 }
@@ -481,19 +806,21 @@ impl AST for FnDefAST {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "export",
-                            loc, prev
+                            loc,
+                            prev,
                         });
-                    }
-                    else {
+                    } else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((true, loc)),
+                            None | Some("true") | Some("1") | Some("") => {
+                                vis_spec = Some((true, loc))
+                            }
                             Some("false") | Some("0") => vis_spec = Some((false, loc)),
                             Some(_) => errs.push(CobaltError::InvalidAnnArgument {
                                 name: "export",
                                 found: arg.clone(),
                                 expected: Some(r#"no argument, "true", or "false""#),
-                                loc
-                            })
+                                loc,
+                            }),
                         }
                     }
                 }
@@ -501,165 +828,198 @@ impl AST for FnDefAST {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
                             name: "private",
-                            loc, prev
+                            loc,
+                            prev,
                         });
-                    }
-                    else {
+                    } else {
                         match arg.as_deref() {
-                            None | Some("true") | Some("1") | Some("") => vis_spec = Some((false, loc)),
+                            None | Some("true") | Some("1") | Some("") => {
+                                vis_spec = Some((false, loc))
+                            }
                             Some("false") | Some("0") => vis_spec = Some((true, loc)),
                             Some(_) => errs.push(CobaltError::InvalidAnnArgument {
                                 name: "private",
                                 found: arg.clone(),
                                 expected: Some(r#"no argument, "true", or "false""#),
-                                loc
-                            })
+                                loc,
+                            }),
                         }
                     }
                 }
-                "method" => if self.in_struct {
-                    if let Some((_, prev)) = fn_type {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "method",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        if arg.is_some() {
-                            errs.push(CobaltError::InvalidAnnArgument {
+                "method" => {
+                    if self.in_struct {
+                        if let Some((_, prev)) = fn_type {
+                            errs.push(CobaltError::RedefAnnArgument {
                                 name: "method",
-                                found: arg.clone(),
-                                expected: None,
-                                loc
+                                loc,
+                                prev,
                             });
-                        }
-                        let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
-                        if params.is_empty() {
-                            errs.push(CobaltError::InvalidSelfParam {
-                                loc: self.loc,
-                                self_t: self_t.to_string(),
-                                param: None,
-                            });
-                            params.push((Type::Null, false));
-                        }
-                        else {
-                            let s = self_t.to_string();
-                            if !(
-                                ops::impl_convertible(&self_t, &params[0].0, ctx) ||
-                                ops::impl_convertible(&Type::Reference(Box::new(self_t.clone())), &params[0].0, ctx) ||
-                                ops::impl_convertible(&Type::Reference(Box::new(Type::Mut(Box::new(self_t)))), &params[0].0, ctx)) {
-                                errs.push(CobaltError::InvalidSelfParam {
-                                    loc: self.params[0].2.loc(),
-                                    self_t: s,
-                                    param: Some(params[0].0.to_string())
-                                });
-                            }
-                            else {
-                                fn_type = Some((MethodType::Normal, loc));
-                            }
-                        }
-                    }
-                }
-                else {
-                    errs.push(CobaltError::UnknownAnnotation {
-                        name: "method".to_string(),
-                        def: "non-struct function",
-                        loc
-                    })
-                }
-                "getter" => if self.in_struct {
-                    if let Some((_, prev)) = fn_type {
-                        errs.push(CobaltError::RedefAnnArgument {
-                            name: "getter",
-                            loc, prev
-                        });
-                    }
-                    else {
-                        if arg.is_some() {
-                            errs.push(CobaltError::InvalidAnnArgument {
-                                name: "getter",
-                                found: arg.clone(),
-                                expected: None,
-                                loc
-                            });
-                        }
-                        let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
-                        if params.is_empty() {
-                            errs.push(CobaltError::InvalidSelfParam {
-                                loc: self.loc,
-                                self_t: self_t.to_string(),
-                                param: None,
-                            });
-                            params.push((Type::Null, false));
-                        }
-                        else {
-                            let s = self_t.to_string();
-                            if !(
-                                ops::impl_convertible(&self_t, &params[0].0, ctx) ||
-                                ops::impl_convertible(&Type::Reference(Box::new(self_t.clone())), &params[0].0, ctx) ||
-                                ops::impl_convertible(&Type::Reference(Box::new(Type::Mut(Box::new(self_t)))), &params[0].0, ctx)) {
-                                errs.push(CobaltError::InvalidSelfParam {
-                                    loc: self.params[0].2.loc(),
-                                    self_t: s,
-                                    param: Some(params[0].0.to_string())
-                                });
-                            }
-                            else {
-                                fn_type = Some((MethodType::Getter, loc));
-                            }
-                        }
-                    }
-                }
-                else {
-                    errs.push(CobaltError::UnknownAnnotation {
-                        name: "getter".to_string(),
-                        def: "non-struct function",
-                        loc
-                    })
-                }
-                "op" => if self.in_struct {
-                    match arg.as_deref() {
-                        Some("drop") => {
-                            if let Some(prev) = dtor {
-                                errs.push(CobaltError::RedefAnnArgument {
-                                    name: "op(drop)",
-                                    loc, prev
-                                });
-                            }
-                            else {
-                                if params.len() == 1 {
-                                    let self_t = ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap()).clone();
-                                    if params[0].0 == Type::Reference(Box::new(self_t.clone())) || params[0].0 == Type::Reference(Box::new(Type::Mut(Box::new(self_t)))) {
-                                        dtor = Some(loc);
-                                        continue;
-                                    }
-                                }
-                                errs.push(CobaltError::InvalidOpParams {
+                        } else {
+                            if arg.is_some() {
+                                errs.push(CobaltError::InvalidAnnArgument {
+                                    name: "method",
+                                    found: arg.clone(),
+                                    expected: None,
                                     loc,
-                                    op: "drop",
-                                    ex: "(&mut self_t)",
-                                    found: params.iter().map(|t| t.0.to_string()).collect()
+                                });
+                            }
+                            let self_t = ctx
+                                .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                                .clone();
+                            if params.is_empty() {
+                                errs.push(CobaltError::InvalidSelfParam {
+                                    loc: self.loc,
+                                    self_t: self_t.to_string(),
+                                    param: None,
+                                });
+                                params.push((Type::Null, false));
+                            } else {
+                                let s = self_t.to_string();
+                                if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
+                                    || ops::impl_convertible(
+                                        &Type::Reference(Box::new(self_t.clone())),
+                                        &params[0].0,
+                                        ctx,
+                                    )
+                                    || ops::impl_convertible(
+                                        &Type::Reference(Box::new(Type::Mut(Box::new(self_t)))),
+                                        &params[0].0,
+                                        ctx,
+                                    ))
+                                {
+                                    errs.push(CobaltError::InvalidSelfParam {
+                                        loc: self.params[0].2.loc(),
+                                        self_t: s,
+                                        param: Some(params[0].0.to_string()),
+                                    });
+                                } else {
+                                    fn_type = Some((MethodType::Normal, loc));
+                                }
+                            }
+                        }
+                    } else {
+                        errs.push(CobaltError::UnknownAnnotation {
+                            name: "method".to_string(),
+                            def: "non-struct function",
+                            loc,
+                        })
+                    }
+                }
+                "getter" => {
+                    if self.in_struct {
+                        if let Some((_, prev)) = fn_type {
+                            errs.push(CobaltError::RedefAnnArgument {
+                                name: "getter",
+                                loc,
+                                prev,
+                            });
+                        } else {
+                            if arg.is_some() {
+                                errs.push(CobaltError::InvalidAnnArgument {
+                                    name: "getter",
+                                    found: arg.clone(),
+                                    expected: None,
+                                    loc,
+                                });
+                            }
+                            let self_t = ctx
+                                .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                                .clone();
+                            if params.is_empty() {
+                                errs.push(CobaltError::InvalidSelfParam {
+                                    loc: self.loc,
+                                    self_t: self_t.to_string(),
+                                    param: None,
+                                });
+                                params.push((Type::Null, false));
+                            } else {
+                                let s = self_t.to_string();
+                                if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
+                                    || ops::impl_convertible(
+                                        &Type::Reference(Box::new(self_t.clone())),
+                                        &params[0].0,
+                                        ctx,
+                                    )
+                                    || ops::impl_convertible(
+                                        &Type::Reference(Box::new(Type::Mut(Box::new(self_t)))),
+                                        &params[0].0,
+                                        ctx,
+                                    ))
+                                {
+                                    errs.push(CobaltError::InvalidSelfParam {
+                                        loc: self.params[0].2.loc(),
+                                        self_t: s,
+                                        param: Some(params[0].0.to_string()),
+                                    });
+                                } else {
+                                    fn_type = Some((MethodType::Getter, loc));
+                                }
+                            }
+                        }
+                    } else {
+                        errs.push(CobaltError::UnknownAnnotation {
+                            name: "getter".to_string(),
+                            def: "non-struct function",
+                            loc,
+                        })
+                    }
+                }
+                "op" => {
+                    if self.in_struct {
+                        match arg.as_deref() {
+                            Some("drop") => {
+                                if let Some(prev) = dtor {
+                                    errs.push(CobaltError::RedefAnnArgument {
+                                        name: "op(drop)",
+                                        loc,
+                                        prev,
+                                    });
+                                } else {
+                                    if params.len() == 1 {
+                                        let self_t = ctx
+                                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                                            .clone();
+                                        if params[0].0 == Type::Reference(Box::new(self_t.clone()))
+                                            || params[0].0
+                                                == Type::Reference(Box::new(Type::Mut(Box::new(
+                                                    self_t,
+                                                ))))
+                                        {
+                                            dtor = Some(loc);
+                                            continue;
+                                        }
+                                    }
+                                    errs.push(CobaltError::InvalidOpParams {
+                                        loc,
+                                        op: "drop",
+                                        ex: "(&mut self_t)",
+                                        found: params.iter().map(|t| t.0.to_string()).collect(),
+                                    });
+                                }
+                            }
+                            _ => {
+                                // TODO: add another error for invalid operators?
+                                errs.push(CobaltError::InvalidAnnArgument {
+                                    name: "op",
+                                    found: arg.clone(),
+                                    expected: Some("operator to overload"),
+                                    loc,
                                 });
                             }
                         }
-                        _ => { // TODO: add another error for invalid operators?
-                            errs.push(CobaltError::InvalidAnnArgument {
-                                name: "op",
-                                found: arg.clone(),
-                                expected: Some("operator to overload"),
-                                loc
-                            });
-                        }
+                    } else {
+                        errs.push(CobaltError::UnknownAnnotation {
+                            name: "op".to_string(),
+                            def: "non-struct function",
+                            loc,
+                        })
                     }
                 }
-                else {
-                    errs.push(CobaltError::UnknownAnnotation {
-                        name: "op".to_string(),
-                        def: "non-struct function",
-                        loc
-                    })
-                }
-                _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "function"})
+                _ => errs.push(CobaltError::UnknownAnnotation {
+                    loc,
+                    name: ann.clone(),
+                    def: "function",
+                }),
             }
         }
         let fty = Type::Function(Box::new(ret), params);
@@ -667,7 +1027,9 @@ impl AST for FnDefAST {
         let cf = ctx.is_cfunc(&self.name);
         let cc = cconv.map_or(0, |(cc, _)| cc);
         let mt = fn_type.map_or(MethodType::Static, |v| v.0);
-        if target_match == 0 {return (Value::null(), errs)}
+        if target_match == 0 {
+            return (Value::null(), errs);
+        }
         let old_ip = ctx.builder.get_insert_block();
         ctx.var_scope.incr();
         let val = if let Type::Function(ref ret, ref params) = fty {
@@ -693,7 +1055,7 @@ impl AST for FnDefAST {
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
                         match val {
-                            Ok(val) => 
+                            Ok(val) =>
                                 if let Some(val) = val.inter_val {val}
                                 else {
                                     errs.push(CobaltError::NotCompileTime {loc: a.loc()});
@@ -801,7 +1163,7 @@ impl AST for FnDefAST {
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
                         match val {
-                            Ok(val) => 
+                            Ok(val) =>
                                 if let Some(val) = val.inter_val {val}
                                 else {
                                     errs.push(CobaltError::NotCompileTime {loc: a.loc()});
@@ -846,7 +1208,7 @@ impl AST for FnDefAST {
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
                         match val {
-                            Ok(val) => 
+                            Ok(val) =>
                                 if let Some(val) = val.inter_val {val}
                                 else {
                                     errs.push(CobaltError::NotCompileTime {loc: a.loc()});
@@ -954,7 +1316,7 @@ impl AST for FnDefAST {
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                         ctx.is_const.set(old_const);
                         match val {
-                            Ok(val) => 
+                            Ok(val) =>
                                 if let Some(val) = val.inter_val {val}
                                 else {
                                     errs.push(CobaltError::NotCompileTime {loc: a.loc()});
@@ -985,7 +1347,7 @@ impl AST for FnDefAST {
                     let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
                     ctx.is_const.set(old_const);
                     match val {
-                        Ok(val) => 
+                        Ok(val) =>
                             if let Some(val) = val.inter_val {val}
                             else {
                                 errs.push(CobaltError::NotCompileTime {loc: a.loc()});
@@ -1027,32 +1389,62 @@ impl AST for FnDefAST {
         } else {unreachable!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
         ctx.var_scope.decr();
         if is_extern.is_none() {
-            if let Some(bb) = old_ip {ctx.builder.position_at_end(bb);}
-            else {ctx.builder.clear_insertion_position();}
+            if let Some(bb) = old_ip {
+                ctx.builder.position_at_end(bb);
+            } else {
+                ctx.builder.clear_insertion_position();
+            }
         }
         if dtor.is_some() && !ctx.prepass.get() {
             let mut borrow = ctx.nom_info.borrow_mut();
             let dval = &mut borrow.last_mut().unwrap().dtor;
-            *dval = dval.or(val.0.comp_val.map(|v| unsafe {std::mem::transmute(v.as_value_ref())}));
+            *dval = dval.or(val
+                .0
+                .comp_val
+                .map(|v| unsafe { std::mem::transmute(v.as_value_ref()) }));
         }
         val
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
+    fn print_impl(
+        &self,
+        f: &mut std::fmt::Formatter,
+        pre: &mut TreePrefix,
+        file: Option<CobaltFile>,
+    ) -> std::fmt::Result {
         writeln!(f, "function: {}", self.name)?;
         writeln!(f, "{pre}├── annotations:")?;
         pre.push(false);
         for (n, (name, arg, _)) in self.annotations.iter().enumerate() {
-            writeln!(f, "{pre}{}@{name}{}", if n + 1 < self.annotations.len() {"├── "} else {"└── "}, arg.as_ref().map(|x| format!("({x})")).unwrap_or_default())?;
+            writeln!(
+                f,
+                "{pre}{}@{name}{}",
+                if n + 1 < self.annotations.len() {
+                    "├── "
+                } else {
+                    "└── "
+                },
+                arg.as_ref().map(|x| format!("({x})")).unwrap_or_default()
+            )?;
         }
         pre.pop();
         writeln!(f, "{pre}├── parameters:")?;
         pre.push(false);
         for (n, (param, param_ty, ty, default)) in self.params.iter().enumerate() {
-            writeln!(f, "{pre}{}{}{}", if n + 1 < self.params.len() {"├── "} else {"└── "}, match param_ty {
-                ParamType::Normal => "",
-                ParamType::Mutable => "mut ",
-                ParamType::Constant => "const "
-            }, param)?;
+            writeln!(
+                f,
+                "{pre}{}{}{}",
+                if n + 1 < self.params.len() {
+                    "├── "
+                } else {
+                    "└── "
+                },
+                match param_ty {
+                    ParamType::Normal => "",
+                    ParamType::Mutable => "mut ",
+                    ParamType::Constant => "const ",
+                },
+                param
+            )?;
             pre.push(n + 1 == self.params.len());
             if let Some(val) = default {
                 write!(f, "{pre}├── type: ")?;
@@ -1063,8 +1455,7 @@ impl AST for FnDefAST {
                 pre.push(true);
                 val.print_impl(f, pre, file)?;
                 pre.pop();
-            }
-            else {
+            } else {
                 write!(f, "{pre}└── type: ")?;
                 pre.push(true);
                 ty.print_impl(f, pre, file)?;
@@ -1084,22 +1475,53 @@ impl AST for FnDefAST {
 pub struct CallAST {
     pub cparen: SourceSpan,
     pub target: Box<dyn AST>,
-    pub args: Vec<Box<dyn AST>>
+    pub args: Vec<Box<dyn AST>>,
 }
 impl CallAST {
-    pub fn new(cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {CallAST {cparen, target, args}}
+    pub fn new(cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {
+        CallAST {
+            cparen,
+            target,
+            args,
+        }
+    }
 }
 impl AST for CallAST {
-    fn loc(&self) -> SourceSpan {merge_spans(self.target.loc(), self.cparen)}
-    fn nodes(&self) -> usize {self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1}
+    fn loc(&self) -> SourceSpan {
+        merge_spans(self.target.loc(), self.cparen)
+    }
+    fn nodes(&self) -> usize {
+        self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1
+    }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (val, mut errs) = self.target.codegen(ctx);
-        (ops::call(val, self.target.loc(), Some(self.cparen), self.args.iter().map(|a| {
-            let arg = a.codegen_errs(ctx, &mut errs);
-            (arg, a.loc())
-        }).collect(), ctx).unwrap_or_else(|err| {errs.push(err); Value::error()}), errs)
+        (
+            ops::call(
+                val,
+                self.target.loc(),
+                Some(self.cparen),
+                self.args
+                    .iter()
+                    .map(|a| {
+                        let arg = a.codegen_errs(ctx, &mut errs);
+                        (arg, a.loc())
+                    })
+                    .collect(),
+                ctx,
+            )
+            .unwrap_or_else(|err| {
+                errs.push(err);
+                Value::error()
+            }),
+            errs,
+        )
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
+    fn print_impl(
+        &self,
+        f: &mut std::fmt::Formatter,
+        pre: &mut TreePrefix,
+        file: Option<CobaltFile>,
+    ) -> std::fmt::Result {
         writeln!(f, "call")?;
         let mut count = self.args.len();
         print_ast_child(f, pre, &*self.target, count == 0, file)?;
@@ -1116,15 +1538,41 @@ pub struct IntrinsicAST {
     pub name: String,
 }
 impl IntrinsicAST {
-    pub fn new(loc: SourceSpan, name: String) -> Self {IntrinsicAST {loc, name}}
+    pub fn new(loc: SourceSpan, name: String) -> Self {
+        IntrinsicAST { loc, name }
+    }
 }
 impl AST for IntrinsicAST {
-    fn loc(&self) -> SourceSpan {self.loc}
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
-        if matches!(self.name.as_str(), "alloca" | "asm" | "sizeof" | "typeof" | "typename") {(Value::new(None, None, Type::Intrinsic(self.name.clone())), vec![])}
-        else {(Value::error(), vec![CobaltError::UnknownIntrinsic {name: self.name.clone(), loc: self.loc}])}
+    fn loc(&self) -> SourceSpan {
+        self.loc
     }
-    fn print_impl(&self, f: &mut std::fmt::Formatter, _pre: &mut TreePrefix, _file: Option<CobaltFile>) -> std::fmt::Result {writeln!(f, "intrinsic: {}", self.name)}
+    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+        if matches!(
+            self.name.as_str(),
+            "alloca" | "asm" | "sizeof" | "typeof" | "typename"
+        ) {
+            (
+                Value::new(None, None, Type::Intrinsic(self.name.clone())),
+                vec![],
+            )
+        } else {
+            (
+                Value::error(),
+                vec![CobaltError::UnknownIntrinsic {
+                    name: self.name.clone(),
+                    loc: self.loc,
+                }],
+            )
+        }
+    }
+    fn print_impl(
+        &self,
+        f: &mut std::fmt::Formatter,
+        _pre: &mut TreePrefix,
+        _file: Option<CobaltFile>,
+    ) -> std::fmt::Result {
+        writeln!(f, "intrinsic: {}", self.name)
+    }
 }
 /// Move all constant alloca instructions to the entry block of the function
 /// The return doesn't matter, but it makes it
@@ -1137,7 +1585,14 @@ pub fn hoist_allocas(b: &inkwell::builder::Builder) -> Option<()> {
         while let Some(inst) = i {
             i = inst.get_next_instruction();
             // instruction is an alloca && all operands are constant
-            if inst.get_opcode() == InstructionOpcode::Alloca && (0..inst.get_num_operands()).all(|n| inst.get_operand(n).map_or(true, |i| i.left().map_or(true, |v| v.as_instruction_value().is_none()))) {
+            if inst.get_opcode() == InstructionOpcode::Alloca
+                && (0..inst.get_num_operands()).all(|n| {
+                    inst.get_operand(n).map_or(true, |i| {
+                        i.left()
+                            .map_or(true, |v| v.as_instruction_value().is_none())
+                    })
+                })
+            {
                 let name = inst.get_name();
                 inst.remove_from_basic_block();
                 b.insert_instruction(&inst, name.and_then(|s| s.to_str().ok()));

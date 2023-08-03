@@ -1,6 +1,6 @@
 use crate::CobaltFile;
-use thiserror::Error;
 use miette::{Diagnostic, SourceSpan};
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum CobaltError {
@@ -18,7 +18,7 @@ pub enum CobaltError {
         #[label("right type is `{rhs}`")]
         rloc: SourceSpan,
         #[label]
-        oloc: SourceSpan
+        oloc: SourceSpan,
     },
     #[error(r#"prefix operator "{op}" is not defined for type `{val}`"#)]
     PreOpNotDefined {
@@ -27,7 +27,7 @@ pub enum CobaltError {
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label]
-        oloc: SourceSpan
+        oloc: SourceSpan,
     },
     #[error(r#"postfix operator "{op}" is not defined for type `{val}`"#)]
     PostOpNotDefined {
@@ -36,7 +36,7 @@ pub enum CobaltError {
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label]
-        oloc: SourceSpan
+        oloc: SourceSpan,
     },
     #[error("cannot subscript value of type `{val}` with `{sub}`")]
     SubscriptNotDefined {
@@ -45,7 +45,7 @@ pub enum CobaltError {
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label("subscript type is `{sub}`")]
-        sloc: SourceSpan
+        sloc: SourceSpan,
     },
     #[error("value of type `{val}` has no attribute `{attr}`")]
     AttrNotDefined {
@@ -54,7 +54,7 @@ pub enum CobaltError {
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label("attribute is `{attr}`")]
-        aloc: SourceSpan
+        aloc: SourceSpan,
     },
     #[error("value of type `{val}` cannot be {}plicitly converted to `{ty}`", if *.is_expl {"ex"} else {"im"})]
     InvalidConversion {
@@ -66,7 +66,7 @@ pub enum CobaltError {
         #[label("target type is `{ty}`")]
         tloc: Option<SourceSpan>,
         #[label]
-        oloc: SourceSpan
+        oloc: SourceSpan,
     },
     #[error("cannot call value of type `{val}` with arguments ({})", .args.join(", "))]
     CannotCallWithArgs {
@@ -77,13 +77,13 @@ pub enum CobaltError {
         #[label("argument types are ({})", .args.join(", "))]
         aloc: Option<SourceSpan>,
         #[related]
-        nargs: Vec<ArgError>
+        nargs: Vec<ArgError>,
     },
     #[error("invalid call to inline assembly")]
     InvalidInlineAsmCall {
         loc: SourceSpan,
         #[related]
-        args: Vec<InvalidAsmArg>
+        args: Vec<InvalidAsmArg>,
     },
     #[error("cannot access element {idx} of a tuple with length {len}")]
     TupleIdxOutOfBounds {
@@ -92,7 +92,7 @@ pub enum CobaltError {
         #[label("tuple length is {len}")]
         tloc: SourceSpan,
         #[label("index is {idx}")]
-        iloc: SourceSpan
+        iloc: SourceSpan,
     },
     #[error("cannot mutate an immutable value")]
     CantMutateImmut {
@@ -103,7 +103,7 @@ pub enum CobaltError {
         oloc: Option<SourceSpan>,
         op: String,
         #[label("defined as immutable here")]
-        floc: SourceSpan
+        floc: SourceSpan,
     },
 
     // Misc stuff
@@ -112,30 +112,30 @@ pub enum CobaltError {
         pos: usize,
         msg: String,
         #[label("error at byte {pos} of glob: {msg}")]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("value cannot be determined at compile-time")]
     NotCompileTime {
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("constant functions aren't yet supported")]
     ConstFnsArentSupported {
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("{}", if let Some(p) = param {format!("cannot convert convert self_t ({self_t}) to {p} for self parameter")} else {"function must have a self parameter".to_string()})]
     InvalidSelfParam {
         self_t: String,
         param: Option<String>,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error(r#"unknown intrinsic "@{name}""#)]
     UnknownIntrinsic {
         name: String,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("couldn't call `@{name}`")]
     InvalidIntrinsicCall {
@@ -143,7 +143,7 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan,
         #[related]
-        errs: Vec<CobaltError>
+        errs: Vec<CobaltError>,
     },
     #[error("@sizeof requires all arguments to be types")]
     ExpectedType {
@@ -151,7 +151,7 @@ pub enum CobaltError {
         loc: SourceSpan,
         #[label("argument type is {ty}")]
         aloc: SourceSpan,
-        ty: String
+        ty: String,
     },
     #[error("bit cast target must be the same size as the source")]
     DifferentBitCastSizes {
@@ -175,20 +175,20 @@ pub enum CobaltError {
         from_loc: SourceSpan,
         to_ty: String,
         #[label("source type is {from_ty}")]
-        to_loc: SourceSpan
+        to_loc: SourceSpan,
     },
     #[error(r#"unknown suffix "{suf}" for {lit} literal"#)]
     UnknownLiteralSuffix {
         suf: String,
         lit: &'static str, // integer, floating-point, character, or string
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("this array has {len} elements, but the maximum is 4294697295")]
     ArrayTooLong {
         len: usize,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("elements in array aren't the same type")]
     ArrayElementsDontMatch {
@@ -197,30 +197,30 @@ pub enum CobaltError {
         #[label("element type is {new}")]
         loc: SourceSpan,
         #[label("element type previously determined to be {current} here")]
-        prev: SourceSpan
+        prev: SourceSpan,
     },
     #[error("expected UTF-8 string")]
     NonUtf8String {
         pos: usize,
         #[label("this string should be valid UTF-8, but there was an error at byte {pos}")]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("parameter type can't be mutable")]
     #[help("try `mut param: T` instead")]
     ParamCantBeMut {
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("return type can't be mutable")]
     ReturnCantBeMut {
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("can't move out of a reference")]
     CantMoveFromReference {
         #[label("`{ty}` has a destructor, so it can't be moved out of references")]
         loc: SourceSpan,
-        ty: String
+        ty: String,
     },
     #[error("cannot move from variable twice")]
     DoubleMove {
@@ -229,7 +229,7 @@ pub enum CobaltError {
         #[label("previously moved here")]
         prev: Option<SourceSpan>,
         name: String,
-        guaranteed: bool
+        guaranteed: bool,
     },
     #[error("invalid parameters for overloaded operator function")]
     #[help("for `{op}`, the parameters should be ({ex})")]
@@ -238,7 +238,7 @@ pub enum CobaltError {
         loc: SourceSpan,
         op: &'static str,
         ex: &'static str,
-        found: Vec<String>
+        found: Vec<String>,
     },
 
     // @asm issues
@@ -252,7 +252,7 @@ pub enum CobaltError {
         #[label("second argument type is {type2} ({})", if *.const2 {"constant"} else {"runtime-only"})]
         loc2: SourceSpan,
         type2: String,
-        const2: bool
+        const2: bool,
     },
     #[error("invalid creation of inline assembly")]
     #[help("arguments should be a type, then two constant strings (i8 const* or i8[] const&)")]
@@ -268,14 +268,14 @@ pub enum CobaltError {
         #[label("third argument type is {type3} ({})", if *.const3 {"constant"} else {"runtime-only"})]
         loc3: SourceSpan,
         type3: String,
-        const3: bool
+        const3: bool,
     },
     #[error("invalid creation of inline assembly")]
     #[help("valid forms are (constraints, body) and (return, constraints, body)")]
     InvalidInlineAsm {
         nargs: usize,
         #[label("expected 2 or 3 arguments, got {nargs}")]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
 
     // @alloca
@@ -283,18 +283,18 @@ pub enum CobaltError {
     NonRuntimeAllocaType {
         ty: String,
         #[label("type is {ty}")]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("all arguments to @alloca (except for an optional type) must be integral")]
     NonIntegralAllocaArg {
         ty: String,
         #[label("argument type is {ty}")]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("@alloca needs at least one argument, but none were given")]
     AllocaNeedsArgs {
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
 
     // Annotations
@@ -303,7 +303,7 @@ pub enum CobaltError {
         name: String,
         def: &'static str, // "variable", "constant", "type", or "function"
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("{} argument for @{name} annotation{}", if .expected.is_some() {"invalid"} else {"unexpected"}, .found.as_ref().map_or_else(String::new, |f| format!(r#": "{f}""#)))]
     InvalidAnnArgument {
@@ -311,7 +311,7 @@ pub enum CobaltError {
         found: Option<String>,
         expected: Option<&'static str>,
         #[label("{}{}", .expected.as_ref().map_or_else(|| "no arguments should be given".to_string(), |ex| format!("expected {ex}")), .found.as_ref().map_or_else(String::new, |f| format!(r#", found "{f}""#)))]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("@{name} cannot be respecified")]
     RedefAnnArgument {
@@ -319,19 +319,19 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan,
         #[label("previously defined here")]
-        prev: SourceSpan
+        prev: SourceSpan,
     },
     #[error("@{name} can only be specified for global variables")]
     MustBeGlobal {
         name: &'static str,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("@{name} can only be specified for local variables")]
     MustBeLocal {
         name: &'static str,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
 
     // Variables
@@ -341,25 +341,22 @@ pub enum CobaltError {
         module: String,
         container: &'static str, // "module" or "type"
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error(r#""{name}" has not been initialized, most likely because of a cyclical dependency"#)]
     UninitializedGlobal {
         name: String,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("runtime variable cannot have a const-only type")]
     #[diagnostic(help("consider using `const` instead"))]
-    TypeIsConstOnly {
-        ty: String,
-        loc: SourceSpan
-    },
+    TypeIsConstOnly { ty: String, loc: SourceSpan },
     #[error("{name} is not a module")]
     NotAModule {
         name: String,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("{name} has already been defined")]
     RedefVariable {
@@ -367,7 +364,7 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan,
         #[label("previously defined here")]
-        prev: Option<SourceSpan>
+        prev: Option<SourceSpan>,
     },
 
     // warnings
@@ -375,8 +372,8 @@ pub enum CobaltError {
     #[diagnostic(severity(warning))]
     UselessImport {
         #[label]
-        loc: SourceSpan
-    }
+        loc: SourceSpan,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum ArgError {
@@ -384,7 +381,7 @@ pub enum ArgError {
     WrongNumArgs {
         found: usize,
         expected: usize,
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("value of type `{val}` cannot be implicitly converted to `{ty}` in {} argument", ordinal::Ordinal(.n + 1))]
     InvalidArg {
@@ -392,40 +389,51 @@ pub enum ArgError {
         ty: String,
         n: usize,
         #[label]
-        loc: SourceSpan
+        loc: SourceSpan,
     },
     #[error("{} parameter is const, but the argument is not", ordinal::Ordinal(.n + 1))]
     ArgMustBeConst {
         n: usize,
         #[label]
-        loc: SourceSpan
-    }
+        loc: SourceSpan,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 #[error("cannot pass argument of type {0} into inline assembly")]
-pub struct InvalidAsmArg(pub String, #[label("{0} is not a valid assembly type")] pub SourceSpan);
+pub struct InvalidAsmArg(
+    pub String,
+    #[label("{0} is not a valid assembly type")] pub SourceSpan,
+);
 impl CobaltError {
     pub fn with_file(self, file: CobaltFile) -> SourcedCobaltError {
-        if let Self::OtherFile(err) = self {*err}
-        else {SourcedCobaltError {err: self, file}}
+        if let Self::OtherFile(err) = self {
+            *err
+        } else {
+            SourcedCobaltError { err: self, file }
+        }
     }
     pub fn is_err(&self) -> bool {
-        self.severity().map_or(true, |s| s == miette::Severity::Error)
+        self.severity()
+            .map_or(true, |s| s == miette::Severity::Error)
     }
 }
 impl From<SourcedCobaltError> for CobaltError {
     #[inline]
-    fn from(err: SourcedCobaltError) -> Self {Self::OtherFile(Box::new(err))}
+    fn from(err: SourcedCobaltError) -> Self {
+        Self::OtherFile(Box::new(err))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
 pub struct SourcedCobaltError {
     err: CobaltError,
     #[source_code]
-    file: CobaltFile
+    file: CobaltFile,
 }
 impl std::fmt::Display for SourcedCobaltError {
     #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {write!(f, "{}", self.err)}
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.err)
+    }
 }
 impl std::error::Error for SourcedCobaltError {}

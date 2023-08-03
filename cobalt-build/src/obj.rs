@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use object::{self, write, Object, ObjectSection, ObjectSymbol, ObjectComdat};
+use object::{self, write, Object, ObjectComdat, ObjectSection, ObjectSymbol};
 
 pub fn get_writeable_object_from_file(in_object: object::File) -> object::write::Object {
     let mut out_object = object::write::Object::new(
@@ -81,7 +81,9 @@ pub fn get_writeable_object_from_file(in_object: object::File) -> object::write:
 
         let flags = match in_symbol.flags() {
             object::SymbolFlags::None => object::SymbolFlags::None,
-            object::SymbolFlags::Elf { st_info, st_other } => object::SymbolFlags::Elf { st_info, st_other },
+            object::SymbolFlags::Elf { st_info, st_other } => {
+                object::SymbolFlags::Elf { st_info, st_other }
+            }
             object::SymbolFlags::MachO { n_desc } => object::SymbolFlags::MachO { n_desc },
             object::SymbolFlags::CoffSection {
                 selection,

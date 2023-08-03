@@ -17,7 +17,7 @@ macro_rules! if_llvm_15 {
 #[cfg(not(feature = "llvm-15"))]
 #[macro_export]
 macro_rules! if_llvm_15 {
-    ($($tok:tt)*) => {}
+    ($($tok:tt)*) => {};
 }
 
 #[cfg(feature = "llvm-16")]
@@ -29,5 +29,5 @@ macro_rules! if_llvm_16 {
 #[cfg(not(feature = "llvm-16"))]
 #[macro_export]
 macro_rules! if_llvm_16 {
-    ($($tok:tt)*) => {}
+    ($($tok:tt)*) => {};
 }
