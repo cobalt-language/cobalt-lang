@@ -3,6 +3,7 @@
 // - Linking method is prefer-dynamic by default
 // - Small refactors have been made to satisfy Clippy
 
+use const_format::formatcp;
 use lazy_static::lazy_static;
 use regex::Regex;
 use semver::Version;
@@ -11,7 +12,6 @@ use std::ffi::OsStr;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::process::Command;
-use const_format::formatcp;
 
 #[cfg(not(any(feature = "llvm-15", feature = "llvm-16")))]
 compile_error!("Either LLVM 15 or LLVM 16 must be specified!");
@@ -47,7 +47,6 @@ lazy_static! {
     /// Filesystem path to an llvm-config binary for the correct version.
     static ref LLVM_CONFIG_PATH: Option<PathBuf> = locate_llvm_config();
 }
-
 
 fn target_os_is(name: &str) -> bool {
     match env::var_os("CARGO_CFG_TARGET_OS") {
@@ -102,7 +101,7 @@ fn llvm_config_binary_names() -> std::vec::IntoIter<String> {
         formatcp!("llvm-config-{LLVM_MAJOR}").into(),
         formatcp!("llvm{LLVM_MAJOR}-config").into(),
         formatcp!("llvm-config-{LLVM_MAJOR}.0").into(),
-        formatcp!("llvm-config{LLVM_MAJOR}0").into()
+        formatcp!("llvm-config{LLVM_MAJOR}0").into(),
     ];
 
     // On Windows, also search for llvm-config.exe
@@ -139,7 +138,9 @@ fn is_blocklisted_llvm(llvm_version: &Version) -> Option<&'static str> {
 
     for &(major, minor, patch, reason) in BLOCKLIST.iter() {
         let bad_version = Version {
-            major, minor, patch,
+            major,
+            minor,
+            patch,
             pre: semver::Prerelease::EMPTY,
             build: semver::BuildMetadata::EMPTY,
         };
@@ -171,7 +172,6 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
             || (llvm_version.major == CRATE_VERSION.major
                 && llvm_version.minor >= CRATE_VERSION.minor)
     }
-
 }
 
 /// Get the output from running `llvm-config` with the given argument.
@@ -244,7 +244,6 @@ fn llvm_version<S: AsRef<OsStr>>(binary: &S) -> io::Result<Version> {
     };
     Ok(Version::parse(&s).unwrap())
 }
-
 
 fn main() {
     // Behavior can be significantly affected by these vars.

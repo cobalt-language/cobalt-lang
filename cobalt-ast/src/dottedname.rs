@@ -1,27 +1,49 @@
-use crate::{SourceSpan, unreachable_span};
+use crate::{unreachable_span, SourceSpan};
 use std::fmt::*;
-use std::io::{self, Read, Write, BufRead};
+use std::io::{self, BufRead, Read, Write};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DottedName {
     pub ids: Vec<(String, SourceSpan)>,
-    pub global: bool
+    pub global: bool,
 }
 impl DottedName {
-    pub fn new(ids: Vec<(String, SourceSpan)>, global: bool) -> Self {DottedName {ids, global}}
-    pub fn absolute(ids: Vec<(String, SourceSpan)>) -> Self {Self::new(ids, true)}
-    pub fn relative(ids: Vec<(String, SourceSpan)>) -> Self {Self::new(ids, false)}
-    pub fn local(id: (String, SourceSpan)) -> Self {Self::new(vec![id], false)}
-    pub fn start(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[..(len + 1)].to_vec()}}
-    pub fn end(&self, len: usize) -> Self {DottedName {global: self.global, ids: self.ids[len..].to_vec()}}
+    pub fn new(ids: Vec<(String, SourceSpan)>, global: bool) -> Self {
+        DottedName { ids, global }
+    }
+    pub fn absolute(ids: Vec<(String, SourceSpan)>) -> Self {
+        Self::new(ids, true)
+    }
+    pub fn relative(ids: Vec<(String, SourceSpan)>) -> Self {
+        Self::new(ids, false)
+    }
+    pub fn local(id: (String, SourceSpan)) -> Self {
+        Self::new(vec![id], false)
+    }
+    pub fn start(&self, len: usize) -> Self {
+        DottedName {
+            global: self.global,
+            ids: self.ids[..(len + 1)].to_vec(),
+        }
+    }
+    pub fn end(&self, len: usize) -> Self {
+        DottedName {
+            global: self.global,
+            ids: self.ids[len..].to_vec(),
+        }
+    }
 }
 impl Display for DottedName {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        if self.global {write!(f, ".")?}
+        if self.global {
+            write!(f, ".")?
+        }
         let mut count = 0;
         for (val, _) in self.ids.iter() {
             write!(f, "{}", val)?;
             count += 1;
-            if count != self.ids.len() {write!(f, ".")?;}
+            if count != self.ids.len() {
+                write!(f, ".")?;
+            }
         }
         Ok(())
     }
@@ -30,14 +52,20 @@ impl Display for DottedName {
 pub enum CompoundDottedNameSegment {
     Identifier(String, SourceSpan),
     Glob(SourceSpan),
-    Group(Vec<Vec<CompoundDottedNameSegment>>)
+    Group(Vec<Vec<CompoundDottedNameSegment>>),
 }
 impl CompoundDottedNameSegment {
     pub fn ends_with(&self, name: &str) -> bool {
         match self {
             Self::Identifier(n, _) => n == name,
             Self::Glob(_) => true,
-            Self::Group(v) => v.iter().any(|v| if let Some(s) = v.last() {s.ends_with(name)} else {false})
+            Self::Group(v) => v.iter().any(|v| {
+                if let Some(s) = v.last() {
+                    s.ends_with(name)
+                } else {
+                    false
+                }
+            }),
         }
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -47,7 +75,7 @@ impl CompoundDottedNameSegment {
                 out.write_all(&[1])?;
                 out.write_all(id.as_bytes())?;
                 out.write_all(&[0])
-            },
+            }
             Glob(_) => out.write_all(&[2]),
             Group(groups) => {
                 out.write_all(&[3])?;
@@ -68,21 +96,33 @@ impl CompoundDottedNameSegment {
             1 => {
                 let mut name = vec![];
                 buf.read_until(0, &mut name)?;
-                if name.last() == Some(&0) {name.pop();}
-                Ok(Some(Identifier(std::str::from_utf8(&name).expect("Cobalt symbols should be valid UTF-8").to_string(), unreachable_span())))
-            },
+                if name.last() == Some(&0) {
+                    name.pop();
+                }
+                Ok(Some(Identifier(
+                    std::str::from_utf8(&name)
+                        .expect("Cobalt symbols should be valid UTF-8")
+                        .to_string(),
+                    unreachable_span(),
+                )))
+            }
             2 => Ok(Some(Glob(unreachable_span()))),
             3 => {
                 let mut out = vec![];
                 loop {
                     let mut group = vec![];
-                    while let Some(val) = Self::load(buf)? {group.push(val);}
-                    if group.is_empty() {break}
-                    else {out.push(group);}
+                    while let Some(val) = Self::load(buf)? {
+                        group.push(val);
+                    }
+                    if group.is_empty() {
+                        break;
+                    } else {
+                        out.push(group);
+                    }
                 }
                 Ok(Some(Group(out)))
-            },
-            x => panic!("read CDN segment expecting 0, 1, 2, or 3, got {x}")
+            }
+            x => panic!("read CDN segment expecting 0, 1, 2, or 3, got {x}"),
         }
     }
 }
@@ -98,10 +138,14 @@ impl Display for CompoundDottedNameSegment {
                     let mut c2 = val.len();
                     for v in val.iter() {
                         write!(f, "{}", v)?;
-                        if c2 != 1 {write!(f, ".")?}
+                        if c2 != 1 {
+                            write!(f, ".")?
+                        }
                         c2 -= 1;
                     }
-                    if count != 1 {write!(f, ", ")?}
+                    if count != 1 {
+                        write!(f, ", ")?
+                    }
                     count -= 1;
                 }
                 write!(f, "}}")
@@ -112,44 +156,75 @@ impl Display for CompoundDottedNameSegment {
 #[derive(Clone, Debug)]
 pub struct CompoundDottedName {
     pub ids: Vec<CompoundDottedNameSegment>,
-    pub global: bool
+    pub global: bool,
 }
 impl CompoundDottedName {
-    pub fn new(ids: Vec<CompoundDottedNameSegment>, global: bool) -> Self {Self {ids, global}}
-    pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, true)}
-    pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {Self::new(ids, false)}
-    pub fn local(id: CompoundDottedNameSegment) -> Self {Self::new(vec![id], false)}
-    pub fn ends_with(&self, name: &str) -> bool {if let Some(s) = self.ids.last() {s.ends_with(name)} else {false}}
+    pub fn new(ids: Vec<CompoundDottedNameSegment>, global: bool) -> Self {
+        Self { ids, global }
+    }
+    pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {
+        Self::new(ids, true)
+    }
+    pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {
+        Self::new(ids, false)
+    }
+    pub fn local(id: CompoundDottedNameSegment) -> Self {
+        Self::new(vec![id], false)
+    }
+    pub fn ends_with(&self, name: &str) -> bool {
+        if let Some(s) = self.ids.last() {
+            s.ends_with(name)
+        } else {
+            false
+        }
+    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        out.write_all(&[if self.global {2} else {1}])?;
+        out.write_all(&[if self.global { 2 } else { 1 }])?;
         self.ids.iter().try_for_each(|i| i.save(out))?;
         out.write_all(&[0])
     }
     pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Option<Self>> {
         let mut c = 0u8;
-        if buf.read_exact(std::slice::from_mut(&mut c)).is_err() {return Ok(None)};
+        if buf.read_exact(std::slice::from_mut(&mut c)).is_err() {
+            return Ok(None);
+        };
         match c {
             0 => Ok(None),
             1 | 2 => {
                 let mut ids = vec![];
-                while let Some(id) = CompoundDottedNameSegment::load(buf)? {ids.push(id)}
+                while let Some(id) = CompoundDottedNameSegment::load(buf)? {
+                    ids.push(id)
+                }
                 Ok(Some(Self::new(ids, c == 2)))
-            },
-            x => panic!("read CDN expecting 0, 1, or 2, got {x}")
+            }
+            x => panic!("read CDN expecting 0, 1, or 2, got {x}"),
         }
     }
 }
 impl From<DottedName> for CompoundDottedName {
-    fn from(other: DottedName) -> Self {Self::new(other.ids.into_iter().map(|(id, loc)| CompoundDottedNameSegment::Identifier(id, loc)).collect(), other.global)}
+    fn from(other: DottedName) -> Self {
+        Self::new(
+            other
+                .ids
+                .into_iter()
+                .map(|(id, loc)| CompoundDottedNameSegment::Identifier(id, loc))
+                .collect(),
+            other.global,
+        )
+    }
 }
 impl Display for CompoundDottedName {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        if self.global {write!(f, ".")?}
+        if self.global {
+            write!(f, ".")?
+        }
         let mut count = 0;
         for val in self.ids.iter() {
             write!(f, "{}", val)?;
             count += 1;
-            if count != self.ids.len() {write!(f, ".")?;}
+            if count != self.ids.len() {
+                write!(f, ".")?;
+            }
         }
         Ok(())
     }

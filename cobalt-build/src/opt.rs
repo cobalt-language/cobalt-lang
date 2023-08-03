@@ -1,11 +1,11 @@
-use std::process::exit;
-use std::fs::read;
-use std::env::var;
-use inkwell::passes::*;
-use inkwell::OptimizationLevel::*;
-use inkwell::module::Module;
 use cobalt_errors::{error, warning};
 use cobalt_llvm::inkwell;
+use inkwell::module::Module;
+use inkwell::passes::*;
+use inkwell::OptimizationLevel::*;
+use std::env::var;
+use std::fs::read;
+use std::process::exit;
 pub enum AdditionalArg {
     Null,
     Bool(bool),
@@ -176,8 +176,12 @@ cobalt_llvm::if_llvm_16! {
 pub fn from_file(data: &str, pm: &PassManager<Module>) {
     for (n, mut line) in data.split('\n').enumerate() {
         let n = n + 1;
-        if let Some(idx) = line.find('#') {line = &line[..idx];}
-        if line.trim().is_empty() {continue}
+        if let Some(idx) = line.find('#') {
+            line = &line[..idx];
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
         if let Some(idx) = line.find('=') {
             let pass = line[..idx].trim();
             let val = line[(idx + 1)..].trim().to_lowercase();
@@ -185,30 +189,25 @@ pub fn from_file(data: &str, pm: &PassManager<Module>) {
                 if !add_pass(pm, pass, Null) {
                     warning!("{n}: unknown pass '{pass}'");
                 }
-            }
-            else if val == "true" {
+            } else if val == "true" {
                 if !add_pass(pm, pass, Bool(true)) {
                     warning!("{n}: unknown pass '{pass}'");
                 }
-            }
-            else if val == "false" {
+            } else if val == "false" {
                 if !add_pass(pm, pass, Bool(false)) {
                     warning!("{n}: unknown pass '{pass}'");
                 }
-            }
-            else if let Ok(val) = val.parse() {
+            } else if let Ok(val) = val.parse() {
                 if !add_pass(pm, pass, Int(val)) {
                     warning!("{n}: unknown pass '{pass}'");
                 }
-            }
-            else {
+            } else {
                 warning!("{n}: unrecognized value '{val}'");
                 if !add_pass(pm, pass, Null) {
                     warning!("{n}: unknown pass '{pass}'");
                 }
             }
-        }
-        else {
+        } else {
             let pass = line.trim();
             if !add_pass(pm, pass, Null) {
                 warning!("{n}: unknown pass '{pass}'");
@@ -243,22 +242,22 @@ pub fn load_profile(name: Option<&str>, pm: &PassManager<Module>) {
         return;
     }
     match name {
-        "default" | "none" | "0" => {},
+        "default" | "none" | "0" => {}
         "less" | "1" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Less);
             pmb.populate_module_pass_manager(pm);
-        },
+        }
         "some" | "2" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Default);
             pmb.populate_module_pass_manager(pm);
-        },
+        }
         "aggressive" | "3" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Aggressive);
             pmb.populate_module_pass_manager(pm);
-        },
+        }
         _ => {
             error!("couldn't find profile {name}");
             exit(103);
