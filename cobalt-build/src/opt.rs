@@ -14,6 +14,10 @@ pub enum AdditionalArg {
 use AdditionalArg::*;
 
 pub fn add_pass(pm: &PassManager<Module>, name: &str, arg: AdditionalArg) -> bool {
+    if let Some(profile) = name.strip_prefix('@') {
+        load_profile(profile.trim(), pm);
+        return true;
+    }
     // I wish there was a better way to do this
     let name = name
         .replace("attribute", "attr")
