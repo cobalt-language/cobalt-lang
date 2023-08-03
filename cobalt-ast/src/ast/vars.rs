@@ -498,8 +498,10 @@ impl AST for VarDefAST {
                 errs.push(e);
                 Value::error()
             });
+            ops::mark_move(&val, cfg::Location::current(ctx).unwrap(), ctx, self.val.loc());
             ctx.restore_scope(old_scope);
             val.comp_val = val.value(ctx);
+            val.name = self.name.ids.get(0).map(|x| (x.0.clone(), ctx.lex_scope.get()));
             val.frozen = (!self.is_mut).then_some(self.loc);
             match if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData {scope: ctx.var_scope.get().try_into().ok(), ..VariableData::with_vis(self.loc, false)})))
@@ -510,11 +512,13 @@ impl AST for VarDefAST {
                     ctx.builder.build_store(a, v);
                     a
                 });
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
+                let mut val = Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
                     *ops::maybe_mut(Box::new(val.data_type), self.is_mut)
-                ), VariableData::with_vis(self.loc, false))))
+                );
+                val.name = self.name.ids.get(0).map(|x| (x.0.clone(), ctx.lex_scope.get()));
+                ctx.with_vars(|v| v.insert(&self.name, Symbol(val, VariableData::with_vis(self.loc, false))))
             }
             else {
                 if dt != Type::Error {errs.push(CobaltError::TypeIsConstOnly {ty: dt.to_string(), loc: self.type_.as_ref().unwrap_or(&self.val).loc()})}
@@ -566,8 +570,40 @@ impl ConstDefAST {
 impl AST for ConstDefAST {
     fn loc(&self) -> SourceSpan {merge_spans(self.loc, self.val.loc())}
     fn nodes(&self) -> usize {self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1}
-    fn varfwd_prepass(&self, ctx: &CompCtx) {let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));}
+    fn varfwd_prepass(&self, ctx: &CompCtx) {
+        let mut target_match = 2u8;
+        for (ann, arg, _) in self.annotations.iter() {
+            if ann.as_str() == "target" {
+                if let Some(arg) = arg {
+                    let mut arg = arg.as_str();
+                    let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                    if let Ok(pat) = Pattern::new(arg) {
+                        if target_match != 1 {
+                            target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                        }
+                    }
+                }
+            }
+        }
+        if target_match == 0 {return}
+        let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));
+    }
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
+        let mut target_match = 2u8;
+        for (ann, arg, _) in self.annotations.iter() {
+            if ann.as_str() == "target" {
+                if let Some(arg) = arg {
+                    let mut arg = arg.as_str();
+                    let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                    if let Ok(pat) = Pattern::new(arg) {
+                        if target_match != 1 {
+                            target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                        }
+                    }
+                }
+            }
+        }
+        if target_match == 0 {return}
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
         for err in self.codegen(ctx).1 {
@@ -712,6 +748,26 @@ impl AST for TypeDefAST {
     fn loc(&self) -> SourceSpan {self.loc}
     fn nodes(&self) -> usize {self.val.nodes() + self.methods.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn varfwd_prepass(&self, ctx: &CompCtx) {
+        let mut target_match = 2u8;
+        let mut no_auto_drop = true;
+        for (ann, arg, _) in self.annotations.iter() {
+            match ann.as_str() {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                            }
+                        }
+                    }
+                }
+                "no_auto_drop" => no_auto_drop = true,
+                _ => {}
+            }
+        }
+        if target_match == 0 {return}
         let _ = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::error(), VariableData::uninit(self.loc))));
         let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
@@ -722,21 +778,44 @@ impl AST for TypeDefAST {
         });
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
+        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         {
             let mut noms = ctx.nominals.borrow_mut();
-            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default()));}
+            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default(), Default::default()));}
         }
         self.methods.iter().for_each(|a| a.varfwd_prepass(ctx));
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
+        let mut target_match = 2u8;
+        let mut no_auto_drop = true;
+        for (ann, arg, _) in self.annotations.iter() {
+            match ann.as_str() {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                            }
+                        }
+                    }
+                }
+                "no_auto_drop" => no_auto_drop = true,
+                _ => {}
+            }
+        }
+        if target_match == 0 {return}
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
         for err in self.codegen(ctx).1 {
@@ -756,21 +835,63 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
+        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(Type::Null).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         {
             let mut noms = ctx.nominals.borrow_mut();
-            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default()));}
+            if !noms.contains_key(&mangled) {noms.insert(mangled.clone(), (Type::Null, true, Default::default(), Default::default()));}
         }
         self.methods.iter().for_each(|a| a.constinit_prepass(ctx, needs_another));
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
     fn fwddef_prepass(&self, ctx: &CompCtx) {
+        let mut vis_spec = None;
+        let mut target_match = 2u8;
+        let mut no_auto_drop = true;
+        for (ann, arg, _) in self.annotations.iter() {
+            match ann.as_str() {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = arg.as_str();
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {arg = &arg[1..]; true} else {false};
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(negate ^ pat.matches(&ctx.module.get_triple().as_str().to_string_lossy()))
+                            }
+                        }
+                    }
+                }
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                "no_auto_drop" => no_auto_drop = true,
+                _ => {}
+            }
+        }
+        if target_match == 0 {return}
         let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
@@ -779,6 +900,8 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
+        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
         let ty = ops::impl_convert(unreachable_span(), (self.val.const_codegen(ctx).0, None), (Type::TypeData, None), ctx).ok().and_then(Value::into_type).unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
@@ -786,17 +909,19 @@ impl AST for TypeDefAST {
         });
         match ctx.nominals.borrow_mut().entry(mangled.clone()) {
             Entry::Occupied(mut x) => x.get_mut().0 = ty,
-            Entry::Vacant(x) => {x.insert((ty, true, Default::default()));}
+            Entry::Vacant(x) => {x.insert((ty, true, Default::default(), Default::default()));}
         }
         self.methods.iter().for_each(|a| a.fwddef_prepass(ctx));
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
         let mut vis_spec = None;
         let mut target_match = 2u8;
+        let mut no_auto_drop = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
             match ann.as_str() {
@@ -817,7 +942,7 @@ impl AST for TypeDefAST {
                             loc
                         });
                     }
-                },
+                }
                 "export" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -837,7 +962,7 @@ impl AST for TypeDefAST {
                             })
                         }
                     }
-                },
+                }
                 "private" => {
                     if let Some((_, prev)) = vis_spec {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -857,7 +982,26 @@ impl AST for TypeDefAST {
                             })
                         }
                     }
-                },
+                }
+                "no_auto_drop" => {
+                    if let Some(prev) = no_auto_drop {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "no_auto_drop",
+                            loc, prev
+                        });
+                    }
+                    else {
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "no_auto_drop",
+                                found: arg.clone(),
+                                expected: None,
+                                loc
+                            })
+                        }
+                        no_auto_drop = Some(loc);
+                    }
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {loc, name: ann.clone(), def: "type"})
             }
         }
@@ -872,18 +1016,21 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
+        ctx.nom_info.borrow_mut().push(Default::default());
+        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop.is_some();
         ctx.with_vars(|v| {
             v.symbols.insert("base_t".to_string(), Value::make_type(ty.clone()).freeze(self.loc).into());
             v.symbols.insert("self_t".to_string(), Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc).into());
         });
         match ctx.nominals.borrow_mut().entry(mangled.clone()) {
             Entry::Occupied(mut x) => x.get_mut().0 = ty,
-            Entry::Vacant(x) => {x.insert((ty, true, Default::default()));}
+            Entry::Vacant(x) => {x.insert((ty, true, Default::default(), Default::default()));}
         }
         if !ctx.prepass.get() {self.methods.iter().for_each(|a| {a.codegen_errs(ctx, &mut errs);});}
         let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
         noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect()));
+        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         match ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc), VariableData {fwd: ctx.prepass.get(), init: !errs.iter().any(|e| matches!(e, CobaltError::UninitializedGlobal {..})), ..VariableData::with_vis(self.loc, vs)}))) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {

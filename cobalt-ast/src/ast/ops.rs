@@ -108,7 +108,7 @@ impl AST for BinOpAST {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let rhs = self.rhs.codegen_errs(ctx, &mut errs);
                 if lhs.data_type == Type::Error || rhs.data_type == Type::Error {return (Value::error(), errs)}
-                (ops::bin_op(self.loc, (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx).unwrap_or_else(|e| {
+                (ops::bin_op(self.loc, (lhs, self.lhs.loc()), (rhs, self.rhs.loc()), x, ctx, true, true).unwrap_or_else(|e| {
                     errs.push(e);
                     Value::error()
                 }), errs)
@@ -136,7 +136,7 @@ impl AST for PostfixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (ops::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (ops::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx, true).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)
@@ -161,7 +161,7 @@ impl AST for PrefixAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {return (Value::error(), errs)}
-        (ops::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx).unwrap_or_else(|e| {
+        (ops::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx, true).unwrap_or_else(|e| {
             errs.push(e);
             Value::error()
         }), errs)

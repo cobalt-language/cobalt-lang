@@ -6,11 +6,12 @@ pub mod ops;
 pub mod types;
 pub mod varmap;
 pub mod value;
+pub mod cfg;
 
 pub use dottedname::*;
 pub use context::*;
 pub use ast::AST;
-pub use types::{Type, SizeType};
+pub use types::*;
 pub use varmap::*;
 pub use value::*;
 use ast::{print_ast_child, TreePrefix};

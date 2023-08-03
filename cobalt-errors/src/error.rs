@@ -216,6 +216,30 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan
     },
+    #[error("can't move out of a reference")]
+    CantMoveFromReference {
+        #[label("`{ty}` has a destructor, so it can't be moved out of references")]
+        loc: SourceSpan,
+        ty: String
+    },
+    #[error("cannot move from variable twice")]
+    DoubleMove {
+        #[label("{name} {} moved here{}", if *.guaranteed {"is"} else {"may be"}, if .prev.is_none() {" in previous iteration"} else {""})]
+        loc: SourceSpan,
+        #[label("previously moved here")]
+        prev: Option<SourceSpan>,
+        name: String,
+        guaranteed: bool
+    },
+    #[error("invalid parameters for overloaded operator function")]
+    #[help("for `{op}`, the parameters should be ({ex})")]
+    InvalidOpParams {
+        #[label("found ({})", .found.join(", "))]
+        loc: SourceSpan,
+        op: &'static str,
+        ex: &'static str,
+        found: Vec<String>
+    },
 
     // @asm issues
     #[error("invalid creation of inline assembly")]

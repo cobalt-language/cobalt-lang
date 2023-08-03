@@ -528,7 +528,7 @@ fn driver() -> anyhow::Result<()> {
                     reporter.file_len = code.len();
                     code
                 };
-                let flags = Flags {dbg_mangle: true, ..Flags::default()};
+                let flags = Flags {dbg_mangle: true, all_move_metadata: true, ..Flags::default()};
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                 let file = FILES.add_file(0, input, code);

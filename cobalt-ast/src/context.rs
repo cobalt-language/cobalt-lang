@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::mem::MaybeUninit;
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::{HashMap, Entry};
+use std::collections::HashSet;
 use std::io::{self, Write, Read, BufRead};
 use either::Either::{self, *};
 use owned_chars::OwnedCharsExt;
@@ -19,7 +20,11 @@ pub struct CompCtx<'ctx> {
     pub null_type: inkwell::types::BasicTypeEnum<'ctx>,
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
-    pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>)>>,
+    pub lex_scope: Counter<usize>,
+    pub nominals: RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
+    pub moves: RefCell<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>,
+    pub nom_info: RefCell<Vec<NominalInfo<'ctx>>>,
+    pub to_drop: RefCell<Vec<Vec<Value<'ctx>>>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
     name: Cell<MaybeUninit<String>>
@@ -38,7 +43,11 @@ impl<'ctx> CompCtx<'ctx> {
             null_type: ctx.opaque_struct_type("null").into(),
             priority: i32::MAX.into(),
             var_scope: 0.into(),
+            lex_scope: 0.into(),
             nominals: RefCell::default(),
+            moves: RefCell::default(),
+            nom_info: RefCell::default(),
+            to_drop: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -66,7 +75,11 @@ impl<'ctx> CompCtx<'ctx> {
             null_type: ctx.opaque_struct_type("null").into(),
             priority: i32::MAX.into(),
             var_scope: 0.into(),
+            lex_scope: 0.into(),
             nominals: RefCell::default(),
+            moves: RefCell::default(),
+            nom_info: RefCell::default(),
+            to_drop: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some([
                 ("true", Value::interpreted(ctx.bool_type().const_int(1, false).into(), InterData::Int(1), Type::Int(1, false)).into()),
@@ -168,8 +181,8 @@ impl<'ctx> CompCtx<'ctx> {
     }
     pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'ctx>> {
         self.with_vars(|v| v.lookup(name, global)).or_else(|| match name {
-            x if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
-            x if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
+            x if x.as_bytes()[0] == 0x69 && x.len() > 1 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), false)),
+            x if x.as_bytes()[0] == 0x75 && x.len() > 1 && x[1..].chars().all(char::is_numeric) => Some(self.get_int_symbol(x[1..].parse().unwrap_or(64), true)),
             _ => None
         })
     }
@@ -195,11 +208,12 @@ impl<'ctx> CompCtx<'ctx> {
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         self.with_vars(|v| v.symbols.values().for_each(|s| if s.1.export {s.0.data_type.export(self)}));
-        for (n, (t, e, m)) in self.nominals.borrow().iter() {
+        for (n, (t, e, m, i)) in self.nominals.borrow().iter() {
             if *e {
                 out.write_all(n.as_bytes())?;
                 out.write_all(&[0])?;
                 t.save(out)?;
+                i.save(out)?;
                 for (n, v) in m.iter() {
                     out.write_all(n.as_bytes())?;
                     out.write_all(&[0])?;
@@ -221,8 +235,9 @@ impl<'ctx> CompCtx<'ctx> {
                 if vec.is_empty() {break}
                 let name = String::from_utf8(std::mem::take(&mut vec)).expect("Nominal types should be valid UTF-8");
                 let t = Type::load(buf)?;
+                let i = NominalInfo::load(buf, self)?;
                 if self.nominals.borrow().get(&name).map_or(false, |x| x.0.unwrapped(self) == t.unwrapped(self)) {out.push(name.clone())}
-                self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default()));
+                self.nominals.borrow_mut().insert(name.clone(), (t, false, Default::default(), i));
                 let mut ms = HashMap::new();
                 loop {
                     buf.read_until(0, &mut vec)?;

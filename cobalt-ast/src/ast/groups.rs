@@ -12,9 +12,34 @@ impl AST for BlockAST {
     fn nodes(&self) -> usize {self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1}
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
+        // ctx.lex_scope.incr();
         let mut out = Value::null();
         let mut errs = vec![];
-        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
+        let start = cfg::Location::current(ctx);
+        self.vals.iter().for_each(|val| {
+            ctx.to_drop.borrow_mut().push(Vec::new());
+            if out.name.is_none() {out.ins_dtor(ctx);}
+            out = val.codegen_errs(ctx, &mut errs);
+            ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
+        });
+        let end = cfg::Location::current(ctx);
+        if let (Some(start), Some(end)) = (start, end) {
+            if let Some(loc) = self.vals.last().map(|a| a.loc()) {ops::mark_move(&out, end, ctx, loc);}
+            let graph = cfg::Cfg::new(start, end, ctx);
+            graph.insert_dtors(ctx, true);
+            unsafe {
+                let seen = errs.iter()
+                    .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                    .collect::<std::collections::HashSet<_>>();
+                errs.extend(graph.validate()
+                    .into_iter()
+                    .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                    .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+            }
+        }
+        // let mut b = ctx.moves.borrow_mut();
+        // b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
+        // b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }
@@ -44,7 +69,11 @@ impl AST for GroupAST {
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut out = Value::null();
         let mut errs = vec![];
-        self.vals.iter().for_each(|val| {out = val.codegen_errs(ctx, &mut errs);});
+        self.vals.iter().for_each(|val| {
+            if out.name.is_none() {out.ins_dtor(ctx);}
+            out = val.codegen_errs(ctx, &mut errs);
+        });
+        if let (Some(loc), Some(end)) = (self.vals.last().map(|a| a.loc()), cfg::Location::current(ctx)) {ops::mark_move(&out, end, ctx, loc);}
         (out, errs)
     }
     fn print_impl(&self, f: &mut std::fmt::Formatter, pre: &mut TreePrefix, file: Option<CobaltFile>) -> std::fmt::Result {
