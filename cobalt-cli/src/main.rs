@@ -968,7 +968,7 @@ fn driver() -> anyhow::Result<()> {
             reporter.opt_time = Some(
                 timeit(|| {
                     let pm = inkwell::passes::PassManager::create(());
-                    opt::load_profile(profile.as_deref(), &pm);
+                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
                     pm.run_on(&ctx.module);
                 })
                 .1,
@@ -1339,7 +1339,7 @@ fn driver() -> anyhow::Result<()> {
             reporter.opt_time = Some(
                 timeit(|| {
                     let pm = inkwell::passes::PassManager::create(());
-                    opt::load_profile(profile.as_deref(), &pm);
+                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
                     pm.run_on(&ctx.module);
                 })
                 .1,
@@ -1912,7 +1912,7 @@ fn driver() -> anyhow::Result<()> {
                         reporter.insts_before += insts(&ctx.module);
                         *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
                             let pm = inkwell::passes::PassManager::create(());
-                            opt::load_profile(profile.as_deref(), &pm);
+                            opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
                             pm.run_on(&ctx.module);
                         })
                         .1;
@@ -2339,7 +2339,7 @@ fn driver() -> anyhow::Result<()> {
                         *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
                             reporter.insts_before += insts(&ctx.module);
                             let pm = inkwell::passes::PassManager::create(());
-                            opt::load_profile(profile.as_deref(), &pm);
+                            opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
                             pm.run_on(&ctx.module);
                         })
                         .1;

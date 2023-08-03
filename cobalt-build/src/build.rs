@@ -473,7 +473,7 @@ fn build_file_2(
         anyhow::bail!(CompileErrors)
     }
     let pm = inkwell::passes::PassManager::create(());
-    opt::load_profile(Some(opts.profile), &pm);
+    opt::load_profile(opts.profile, &pm);
     pm.run_on(&ctx.module);
     let target_machine = inkwell::targets::Target::from_triple(opts.triple)
         .unwrap()
