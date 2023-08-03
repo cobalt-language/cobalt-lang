@@ -145,8 +145,7 @@ pub fn from_file(data: &str, pm: &PassManager<Module>) {
         }
     }
 }
-pub fn load_profile(name: Option<&str>, pm: &PassManager<Module>) {
-    let name = name.unwrap_or("default");
+pub fn load_profile(name: &str, pm: &PassManager<Module>) {
     if let Ok(cobalt_dir) = var("COBALT_DIR") {
         if let Ok(data) = read(format!("{cobalt_dir}/profiles/{name}")) {
             from_file(&String::from_utf8_lossy(data.as_slice()), pm);
