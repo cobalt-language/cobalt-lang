@@ -202,7 +202,7 @@ fn declarations<'a>(loc: DeclLoc, metd: Option<BoxedASTParser<'a, 'a>>, part_exp
             .then(just("::").then_ignore(ignored())
                 .ignore_then(metd
                     .padded_by(ignored())
-                    .then_ignore(just(';').recover_with(skip_then_retry_until(none_of(';').ignored(), end())).ignore_then(ignored()).ignore_then(ignored()))
+                    .then_ignore(just(';').recover_with(skip_then_retry_until(none_of(";}").ignored(), end())).ignore_then(ignored()).ignore_then(ignored()))
                     .repeated().collect()
                     .delimited_by(just('{'), just('}')))
                         .or_not().map(Option::unwrap_or_default))
@@ -383,22 +383,21 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             varget,
             intrinsic,
             choice((
+                maybe_expr.clone().padded_by(ignored()).then_ignore(just(')').rewind()),
                 maybe_expr.clone()
-                    .padded_by(ignored())
-                    .recover_with(skip_then_retry_until(none_of(",;)}").ignored(), one_of(",;)}").ignored())),
-                expr.clone()
-                    .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
-                    .padded_by(ignored())
-                    .separated_by(just(',')
-                        .recover_with(skip_then_retry_until(none_of(",)").ignored(), one_of(",)").ignored().rewind())))
-                        .allow_trailing().at_least(1).collect()
-                    .map(|vals| box_ast(TupleLiteralAST::new(vals))),
-                maybe_expr.clone()
-                    .recover_with(skip_then_retry_until(none_of(",;)}").ignored(), end()))
+                    .recover_with(skip_then_retry_until(none_of(",;)}").ignored(), one_of(",;)}").ignored()))
                     .padded_by(ignored())
                     .separated_by(just(';')
-                        .recover_with(skip_then_retry_until(none_of(";)").ignored(), one_of(";)").ignored()))).at_least(2).collect()
-                    .map(|vals| box_ast(TupleLiteralAST::new(vals)))
+                        .recover_with(skip_then_retry_until(none_of(";)").ignored(), one_of(";)").ignored())))
+                        .at_least(2).collect()
+                    .map(|vals| box_ast(GroupAST::new(vals))),
+                expr.clone()
+                    .recover_with(skip_then_retry_until(none_of(",;)}").ignored(), one_of(",;)}").ignored()))
+                    .padded_by(ignored())
+                    .separated_by(just(',')
+                        .recover_with(skip_then_retry_until(none_of(",)").ignored(), one_of(",)").ignored())))
+                        .allow_trailing().at_least(1).collect()
+                    .map(|vals| box_ast(TupleLiteralAST::new(vals))),
             ))
             .delimited_by(just('('), just(')'))
             .map_with_span(|ast, span| box_ast(ParenAST::new(span.into_range().into(), ast)))
@@ -449,7 +448,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             PostfixType::Call(args, loc) => box_ast(CallAST::new(loc, ast, args))
         }).labelled("an expression").boxed();
         let prefix = choice((just("++"), just("--"), text::keyword("mut"))).map(String::from)
-            .or(one_of("+-*&~").map(String::from)).labelled("an operator")
+            .or(one_of("+-*&~!").map(String::from)).labelled("an operator")
             .map_with_span(add_loc).padded_by(ignored()).repeated()
             .foldr(postfix, |(op, loc), ast| box_ast(PrefixAST::new(loc, op, ast)))
             .labelled("an expression").boxed();
