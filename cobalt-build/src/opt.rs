@@ -171,13 +171,13 @@ pub fn load_profile(name: &str, pm: &PassManager<Module>) {
         return;
     }
     match name {
-        "default" | "none" | "0" => {}
+        "none" | "0" => {}
         "less" | "1" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Less);
             pmb.populate_module_pass_manager(pm);
         }
-        "some" | "2" => {
+        "some" | "2" | "default" => {
             let pmb = PassManagerBuilder::create();
             pmb.set_optimization_level(Default);
             pmb.populate_module_pass_manager(pm);
