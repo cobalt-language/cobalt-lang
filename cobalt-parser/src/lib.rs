@@ -46,12 +46,18 @@ type BoxedASTParser<'a, 'b> = BoxedParser<'a, 'b, Box<dyn AST>>;
 static KEYWORDS: &[&str] = &[
     "let", "mut", "const", "fn", "if", "else", "while", "for", "null", "type",
 ];
+
 /// parse an identifier. unicode-aware
 fn ident<'a>() -> impl Parser<'a, &'a str, &'a str, Extras<'a>> + Copy {
+    // First parse it, then check if it's a keyword.
+    //
+    // - 1: Accept any character which is an '_' or xid start.
+    // - 2: Then accept any number of xid_continue, storing them in a `Vec`.
+    // - 3: We want the output of this parser to be a slice.
     any()
-        .filter(|&c| c == '_' || is_xid_start(c))
-        .then(any().filter(|&c| is_xid_continue(c)).repeated())
-        .slice()
+        .filter(|&c| c == '_' || is_xid_start(c)) // 1
+        .then(any().filter(|&c| is_xid_continue(c)).repeated()) // 2
+        .slice() // 3
         .try_map(|val, span| {
             if KEYWORDS.contains(&val) {
                 Err(Rich::custom(
@@ -64,6 +70,7 @@ fn ident<'a>() -> impl Parser<'a, &'a str, &'a str, Extras<'a>> + Copy {
         })
         .labelled("an identifier")
 }
+
 fn local_id<'a>() -> impl Parser<'a, &'a str, DottedName, Extras<'a>> + Copy {
     ident()
         .map_with_span(|id, loc| DottedName::local((id.to_string(), loc.into_range().into())))
@@ -83,7 +90,13 @@ fn global_id<'a>() -> impl Parser<'a, &'a str, DottedName, Extras<'a>> + Copy {
         .map(|(global, ids)| DottedName::new(ids, global))
         .labelled("a global identifier")
 }
+
+/// Parses (well, ignores) patterns that Cobalt should ignore, such as whitespace and comments.
 fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
+    // Consume any number of either
+    // - whitespace
+    // - multiline comments
+    // - single-line comments
     choice((
         // whitespace
         any().filter(|c: &char| c.is_whitespace()).ignored(),
@@ -102,6 +115,7 @@ fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
     .ignored()
     .labelled("whitespace")
 }
+
 /// where a declaration is being parsed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeclLoc {
@@ -112,20 +126,30 @@ enum DeclLoc {
     /// global scope- do I need to explain this?
     Global,
 }
+
+/// Parser for an annotation, e.g. `@C(extern)`.
+///
+/// The output is (annotation name, annotation argument, source span), e.g. for
+/// `@C(extern)` the annotation name is "C" and the annotation argument is "extern".
 fn annotation<'a>(
 ) -> impl Parser<'a, &'a str, (String, Option<String>, SourceSpan), Extras<'a>> + Copy {
+    // - 1: Accept an `@` (but don't store it), then an identifier (so no keywords).
+    // - 2: The argument can be any sequence of characters that does not include ')' and is
+    // surrounded by parentheses.
+    // - 3: Since not every annotation has an argument, don't fail if there isn't one.
     just('@')
-        .ignore_then(ident())
+        .ignore_then(ident()) // 1
         .then(
             none_of(')')
                 .repeated()
                 .collect()
-                .delimited_by(just('('), just(')'))
-                .or_not(),
+                .delimited_by(just('('), just(')')) // 2
+                .or_not(), // 3
         )
         .map_with_span(|(name, arg), loc| (name.to_string(), arg, loc.into_range().into()))
         .labelled("an annotation")
 }
+
 fn cdn<'a>() -> impl Parser<'a, &'a str, CompoundDottedName, Extras<'a>> + Clone {
     use CompoundDottedNameSegment::*;
     let cdns = recursive(|cdns| {
@@ -164,6 +188,7 @@ fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
         .map(|((anns, loc), cdn)| ImportAST::new(loc.into_range().into(), cdn, anns))
         .labelled("an import")
 }
+
 /// parse declarations. these are:
 /// - functions
 /// - variables
@@ -508,6 +533,7 @@ fn declarations<'a>(
     ])
     .labelled("a declaration")
 }
+
 /// create a parser for a statement.
 /// it requires an expression parser to passed, otherwise it would require infinite recursion
 fn def_stmt<'a>(expr: BoxedASTParser<'a, 'a>) -> BoxedASTParser<'a, 'a> {
@@ -581,13 +607,25 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
     })
     .labelled("a top-level declaration")
 }
+
 /// add assignments and control flow to parser
 fn add_assigns<'a: 'b, 'b>(
     expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a,
 ) -> BoxedASTParser<'a, 'b> {
+    // - 1: After the initial parser is done, the input can be followed up by any of these options.
+    // The order in which they are listed indicates their precedence. After this `then()`, the
+    // output will be (output of `expr`, operator).
+    //
+    // - 2: Right associative folding. Consider this input:
+    // ```
+    // x = y+=z<<=a
+    // ```
+    // This will parse as (x, =, (y, +=, (z, <<=, a))). Note this is the opposite direction of
+    // associativity to math operations.
     let prev = expr
         .clone()
         .then(
+            // 1
             choice(
                 [
                     "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
@@ -600,20 +638,51 @@ fn add_assigns<'a: 'b, 'b>(
         )
         .repeated()
         .foldr(expr, |(lhs, (op, loc)), rhs| {
+            // 2
             box_ast(BinOpAST::new(loc, op, lhs, rhs))
         })
         .labelled("an expression")
         .boxed();
+
+    // - 1: Parse an if/else section, e.g.
+    // ```
+    // if (x == 3i32) {
+    //   x += 1;
+    // };
+    // ```
+    // -- 1a: The conditional will begin with `(` or `{`...
+    // -- 1b: ...but don't immediately fail if not. In any case we have were expecting an
+    // expression (something accepted by `expr`) and just consumed one character of it.
+    // Rewind one character and parse it using `expr`.
+    // -- 1c: The reason for having (1a) and (1b) in the first place is just for better error
+    // messaging; we want to know if the user just forgot to wrap their condition in
+    // parentheses/braces.
+    // -- 1d: This parses the body of the section, e.g. `{ x += 1; }`.
+    // -- 1e: There may or may not be an else clause.
+    // -- 1f: If there was an "else" clause, then unwrap it, or just put a dummy ast node in
+    // it's place.
+    //
+    // - 2: Parse a while section, e.g.
+    // ```
+    // while (x > 0i32) {
+    //  x -= 1;
+    // };
+    // ```
+    // This is functionally very similar to the if/else parsing.
+    //
+    // - 3: Error recovery strategy: maybe we're just seeing an else clause for some reason.
+    // If that's the consume it. In any case, an error is thrown.
     recursive(|expr| {
         choice([
-            text::keyword("if")
+            text::keyword("if") // 1
                 .ignore_then(ignored())
                 .ignore_then(
                     one_of("({")
-                        .or_not()
-                        .rewind()
+                        .or_not() // 1a
+                        .rewind() // 1b
                         .then(expr.clone())
                         .validate(|(o, ast), loc, e| {
+                            // 1c
                             if o.is_none() {
                                 e.emit(Rich::custom(
                                     loc,
@@ -624,12 +693,13 @@ fn add_assigns<'a: 'b, 'b>(
                         })
                         .labelled("a condition"),
                 )
-                .then(expr.clone().padded_by(ignored()))
+                .then(expr.clone().padded_by(ignored())) // 1d
                 .then(
                     text::keyword("else")
                         .ignore_then(expr.clone().padded_by(ignored()))
-                        .or_not()
+                        .or_not() // 1e
                         .map_with_span(|expr, loc| {
+                            // 1f
                             expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))
                         }),
                 )
@@ -642,12 +712,12 @@ fn add_assigns<'a: 'b, 'b>(
                     ))
                 })
                 .boxed(),
-            text::keyword("while")
+            text::keyword("while") // 2
                 .ignore_then(ignored())
                 .ignore_then(
                     one_of("({")
                         .or_not()
-                        .rewind()
+                        .rewind() // 2a
                         .then(expr.clone())
                         .validate(|(o, ast), loc, e| {
                             if o.is_none() {
@@ -667,11 +737,12 @@ fn add_assigns<'a: 'b, 'b>(
                 .boxed(),
             prev,
         ])
-        .recover_with(via_parser(text::keyword("else").ignore_then(expr)))
+        .recover_with(via_parser(text::keyword("else").ignore_then(expr))) // 3
     })
     .labelled("an expression")
     .boxed()
 }
+
 /// create a parser for expressions, without assignment
 fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
     type Cbi = utils::CharBytesIterator;
