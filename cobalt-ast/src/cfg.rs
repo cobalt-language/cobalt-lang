@@ -204,8 +204,19 @@ struct Block<'a, 'ctx> {
     // these pointers are safe because they're borrowed from a container in a RefCell, which cannot be mutated because of the Ref
     moves: Vec<Either<*const Use<'ctx>, *const Store<'ctx>>>,
     term: Terminator<'ctx>,
-    // these are used to prevent extra allocations
+
+    // These are used to prevent extra allocations.
+    //
+    // During analysis we analyze each variable one at a time, and reuse these fields during that
+    // analysis.
+    //
+    /// - `true`: we need the variable to be initialized
+    /// - `false`: it doesn't need to be initialized (this doesn't mean it's not used, but if it
+    /// is, there's a store before it)
     input: Cell<bool>,
+    /// - `Some(true)`: after this block, the variable is initialized (no moves after the last store)
+    /// - `Some(false)`: after this block, the variable is uninitialized (ends in a move)
+    /// - `None`: after this block, the variable is in the same state as it was before
     output: Cell<Option<bool>>,
     reached: IntValue<'ctx>,
     // marker to for safety
@@ -606,15 +617,31 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             }
         }
     }
+
     /// Search CFG for double moves
     pub fn validate(&self) -> Vec<DoubleMove> {
         let mut errs = vec![];
         unsafe {
+            // Get all the variables which have moved.
             let vars = self
                 .blocks
                 .iter()
                 .flat_map(|v| &v.moves)
                 .map(|m| for_both!(m, m => &(**m).name));
+
+            // For each of these variables, look inside each block and find all the move
+            // instructions for it.
+            //
+            // - 2: Consider the first of these instructions, i.e. the first move instruction
+            // for this variable in this block. If it's a use, then the variable must be
+            // initialized on entry to the block.
+            //
+            // - 3: Now consider the last of these instructions. If it's a use, check if that use
+            // moves the variable and if so mark the variable as unitialized/moved. If it is a
+            // store, then the variable is initialized on exit from the block.
+            //
+            // - 4: Now go through the rest of the instructions and look for a double move, i.e. a
+            // use after move.
             for var in vars {
                 for block in &self.blocks {
                     let insts = block
@@ -622,14 +649,19 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         .iter()
                         .filter(|m| for_both!(m, m => &(**m).name == var))
                         .collect::<Vec<_>>();
-                    block
+
+                    block // 2
                         .input
                         .set(insts.first().map_or(false, |v| v.is_left()));
+
                     block.output.set(insts.iter().rev().find_map(|v| match v {
+                        // 3
                         Either::Left(u) => (**u).is_move.then_some(false),
                         Either::Right(_) => Some(true),
                     }));
-                    let mut prev = None;
+
+                    // 4
+                    let mut prev = None; // location of previous move
                     for inst in insts {
                         match inst {
                             Either::Left(u) => {
@@ -652,6 +684,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         }
                     }
                 }
+
                 let mut queue = vec![];
                 let mut seen = HashSet::new();
                 for (n, block) in self.blocks.iter().enumerate() {
