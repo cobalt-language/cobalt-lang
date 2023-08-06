@@ -729,11 +729,23 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
     }
     Some(ctx.context.struct_type(&vec, false).into())
 }
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NominalInfo<'ctx> {
     pub dtor: Option<FunctionValue<'ctx>>,
     pub no_auto_drop: bool,
+    pub is_linear_type: bool,
 }
+
+impl<'ctx> Default for NominalInfo<'ctx> {
+    fn default() -> Self {
+        Self {
+            is_linear_type: true,
+            dtor: None,
+            no_auto_drop: false,
+        }
+    }
+}
+
 impl<'ctx> NominalInfo<'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         if let Some(fv) = self.dtor {
@@ -766,6 +778,10 @@ impl<'ctx> NominalInfo<'ctx> {
         let mut c = 0u8;
         buf.read_exact(std::slice::from_mut(&mut c))?;
         let no_auto_drop = c != 0;
-        Ok(Self { dtor, no_auto_drop })
+        Ok(Self {
+            dtor,
+            no_auto_drop,
+            is_linear_type: true,
+        })
     }
 }

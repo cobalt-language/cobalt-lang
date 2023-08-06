@@ -1123,10 +1123,17 @@ impl AST for FnDefAST {
                             let seen = errs.iter()
                                 .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
                                 .collect::<std::collections::HashSet<_>>();
-                            errs.extend(graph.validate()
+                            errs.extend(graph.validate(ctx)
                                 .into_iter()
-                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
-                                .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                                .filter(|ce| match ce {
+                                    CobaltError::DoubleMove{name, loc, ..} => {
+                                        !seen.contains(&(*loc, name.as_str()))
+                                    } 
+                                    
+                                    CobaltError::LinearTypeNotUsed { .. } => true,
+
+                                    _ => false
+                                }));
                         }
                         std::mem::drop(graph);
                         if let Some((Type::Reference(b), _)) = params.get(0) {
@@ -1276,10 +1283,17 @@ impl AST for FnDefAST {
                             let seen = errs.iter()
                                 .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
                                 .collect::<std::collections::HashSet<_>>();
-                            errs.extend(graph.validate()
+                            errs.extend(graph.validate(ctx)
                                 .into_iter()
-                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
-                                .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
+                                .filter(|ce| match ce {
+                                    CobaltError::DoubleMove{name, loc, ..} => {
+                                        !seen.contains(&(*loc, name.as_str()))
+                                    } 
+                                    
+                                    CobaltError::LinearTypeNotUsed { .. } => true,
+
+                                    _ => false
+                                }));
                         }
                         std::mem::drop(graph);
                         if let Some((Type::Reference(b), _)) = params.get(0) {

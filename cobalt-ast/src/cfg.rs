@@ -246,6 +246,7 @@ impl std::fmt::Debug for Block<'_, '_> {
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleMove {
     pub name: String,
@@ -291,6 +292,13 @@ impl Ord for DoubleMove {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearTypeNotUsed {
+    pub name: String,
+    pub loc: SourceSpan,
+}
+
 /// control flow graph
 #[derive(Debug)]
 pub struct Cfg<'a, 'ctx: 'a> {
@@ -619,7 +627,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     }
 
     /// Search CFG for double moves
-    pub fn validate(&self) -> Vec<DoubleMove> {
+    pub fn validate(&self, ctx: &'a CompCtx<'ctx>) -> Vec<cobalt_errors::CobaltError> {
         let mut errs = vec![];
         unsafe {
             // Get all the variables which have moved.
@@ -642,6 +650,10 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             //
             // - 4: Now go through the rest of the instructions and look for a double move, i.e. a
             // use after move.
+            //
+            // Note however that this doesn't capture all possible uses after move;
+            // for example, it will not detect if the variable was used once but was unitialized
+            // upon entering the block. This is the next step.
             for var in vars {
                 for block in &self.blocks {
                     let insts = block
@@ -685,10 +697,17 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     }
                 }
 
-                let mut queue = vec![];
+                // Handle possible double moves relating to the initialization status of the
+                // variable entering/exiting the block.
+                //
+                // - 1: Blocks to analyze, in order.
+                // - 2: If the initialization status is the same at the beginning and end of the
+                // block then we don't need to worry.
+                let mut queue = vec![]; // 1
                 let mut seen = HashSet::new();
                 for (n, block) in self.blocks.iter().enumerate() {
                     if block.output.get() != Some(false) {
+                        // 1
                         continue;
                     }
                     queue.clear();
@@ -737,10 +756,111 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                 }
             }
         }
+
         errs.sort_unstable();
         errs.dedup_by_key(|m| m.loc);
+
+        let mut to_return = errs
+            .iter()
+            .map(
+                |DoubleMove {
+                     name,
+                     loc,
+                     prev,
+                     guaranteed,
+                 }| CobaltError::DoubleMove {
+                    loc: *loc,
+                    prev: *prev,
+                    name: name.clone(),
+                    guaranteed: *guaranteed,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        to_return.append(&mut self.validate_linear_types(ctx));
+        to_return
+    }
+
+    fn validate_linear_types(&self, ctx: &'a CompCtx<'ctx>) -> Vec<cobalt_errors::CobaltError> {
+        let mut errs = Vec::new();
+
+        // Go through each variable, see if it's a linear type.
+        //
+        // - 1: We check if it has been moved at least once by verifying that the variable
+        // appears in the moves list.
+        unsafe {
+            ctx.with_vars(|v| {
+                v.symbols.iter().for_each(|(n, v)| {
+                    println!("handling var {}", n);
+
+                    let is_linear_type = {
+                        let to_return: bool;
+
+                        let nominal_behavior = |type_name: &String| {
+                            println!("Nominal");
+                            if let Some((_, _, _, nom_info)) = ctx.nominals.borrow().get(type_name)
+                            {
+                                nom_info.is_linear_type
+                            } else {
+                                false
+                            }
+                        };
+
+                        // See if it's a nominal type.
+                        match &v.0.data_type {
+                            Type::Nominal(type_name) => {
+                                to_return = nominal_behavior(type_name);
+                            }
+
+                            Type::Mut(ref boxed_type) => {
+                                if let Type::Nominal(ref type_name) = **boxed_type {
+                                    to_return = nominal_behavior(&type_name);
+                                } else {
+                                    to_return = false;
+                                }
+                            }
+
+                            _ => {
+                                println!("Not nominal: {:?}", v.0.data_type);
+                                to_return = false;
+                            }
+                        }
+
+                        to_return
+                    };
+
+                    if !is_linear_type {
+                        ()
+                    }
+
+                    // 1
+                    let vars = self
+                        .blocks
+                        .iter()
+                        .flat_map(|v| &v.moves)
+                        .map(|m| for_both!(m, m => &(**m).name));
+
+                    let mut moved = false;
+                    for var in vars {
+                        if var.0.as_str() == n.as_str() {
+                            moved = true;
+                        }
+                    }
+
+                    if !moved {
+                        println!("Linear but not moved!");
+                        errs.push(CobaltError::LinearTypeNotUsed {
+                            name: n.clone(),
+                            loc: v.1.loc.unwrap(),
+                        });
+                    }
+                })
+            });
+        }
+
         errs
     }
+
     /// Check if a value has been moved before an instruction value, or by the end of the graph
     pub fn is_moved(
         &self,
@@ -751,9 +871,14 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     ) -> IntValue<'ctx> {
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
+
+        // - 1: Pick out the instructions which include the variable and match the lexical scope.
+        // - 2: Set whether the variable is initialized entering/exiting the block.
         unsafe {
             for (n, block) in self.blocks.iter().enumerate() {
+                // 1
                 let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name.0 == name && lex_scope.map_or(true, |ls| (**m).name.1 == ls))).collect::<Vec<_>>();
+                // 2
                 block
                     .input
                     .set(insts.first().map_or(false, |v| v.is_left()));
@@ -765,19 +890,31 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                     blk = Some(n)
                 }
             }
+
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
+
             let blk = if let Some(blk) = blk {
                 blk
             } else {
+                // We are checking if the value has moved before an instruction which does not even
+                // belong to the same block as the value, so it doesn't make sense to compare them.
+                // But for convention we will return false.
                 return false_;
             };
+
+            // - 1: Starting from the last move and going backwards...
+            // - 2: If the move is wrt this variable and happens before the specified
+            // instruction...
+            // - 3: If the move is a use, then yes the variable has moved before the instruction.
+            // If the move was a store then the variable hasn't moved.
             self.blocks[blk]
                 .moves
                 .iter()
-                .rev()
-                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst))
+                .rev() // 1
+                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst)) // 2
                 .find_map(|e| match e {
+                    // 3
                     Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                     Either::Right(s) => (**s).real.then_some(false_),
                 })
