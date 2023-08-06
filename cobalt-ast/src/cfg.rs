@@ -791,13 +791,10 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         unsafe {
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
-                    println!("handling var {}", n);
-
                     let is_linear_type = {
                         let to_return: bool;
 
                         let nominal_behavior = |type_name: &String| {
-                            println!("Nominal");
                             if let Some((_, _, _, nom_info)) = ctx.nominals.borrow().get(type_name)
                             {
                                 nom_info.is_linear_type
@@ -821,7 +818,6 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                             }
 
                             _ => {
-                                println!("Not nominal: {:?}", v.0.data_type);
                                 to_return = false;
                             }
                         }
@@ -829,30 +825,27 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
                         to_return
                     };
 
-                    if !is_linear_type {
-                        ()
-                    }
+                    if is_linear_type {
+                        // 1
+                        let vars = self
+                            .blocks
+                            .iter()
+                            .flat_map(|v| &v.moves)
+                            .map(|m| for_both!(m, m => &(**m).name));
 
-                    // 1
-                    let vars = self
-                        .blocks
-                        .iter()
-                        .flat_map(|v| &v.moves)
-                        .map(|m| for_both!(m, m => &(**m).name));
-
-                    let mut moved = false;
-                    for var in vars {
-                        if var.0.as_str() == n.as_str() {
-                            moved = true;
+                        let mut moved = false;
+                        for var in vars {
+                            if var.0.as_str() == n.as_str() {
+                                moved = true;
+                            }
                         }
-                    }
 
-                    if !moved {
-                        println!("Linear but not moved!");
-                        errs.push(CobaltError::LinearTypeNotUsed {
-                            name: n.clone(),
-                            loc: v.1.loc.unwrap(),
-                        });
+                        if !moved {
+                            errs.push(CobaltError::LinearTypeNotUsed {
+                                name: n.clone(),
+                                loc: v.1.loc.unwrap(),
+                            });
+                        }
                     }
                 })
             });

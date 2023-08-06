@@ -1350,6 +1350,7 @@ impl AST for TypeDefAST {
     fn varfwd_prepass(&self, ctx: &CompCtx) {
         let mut target_match = 2u8;
         let mut no_auto_drop = true;
+        let mut linear = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1374,6 +1375,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "linear" => linear = true,
                 _ => {}
             }
         }
@@ -1410,6 +1412,7 @@ impl AST for TypeDefAST {
         let old_scope = ctx.push_scope(&self.name);
         ctx.nom_info.borrow_mut().push(Default::default());
         ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        ctx.nom_info.borrow_mut().last_mut().unwrap().is_linear_type = linear;
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),
@@ -1446,6 +1449,7 @@ impl AST for TypeDefAST {
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
         let mut target_match = 2u8;
         let mut no_auto_drop = true;
+        let mut linear = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1470,6 +1474,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "linear" => linear = true,
                 _ => {}
             }
         }
@@ -1510,6 +1515,7 @@ impl AST for TypeDefAST {
         let old_scope = ctx.push_scope(&self.name);
         ctx.nom_info.borrow_mut().push(Default::default());
         ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        ctx.nom_info.borrow_mut().last_mut().unwrap().is_linear_type = linear;
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),
@@ -1549,6 +1555,7 @@ impl AST for TypeDefAST {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = true;
+        let mut linear = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1591,6 +1598,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "linear" => linear = true,
                 _ => {}
             }
         }
@@ -1620,6 +1628,7 @@ impl AST for TypeDefAST {
         let old_scope = ctx.push_scope(&self.name);
         ctx.nom_info.borrow_mut().push(Default::default());
         ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        ctx.nom_info.borrow_mut().last_mut().unwrap().is_linear_type = linear;
         let ty = ops::impl_convert(
             unreachable_span(),
             (self.val.const_codegen(ctx).0, None),
@@ -1663,6 +1672,7 @@ impl AST for TypeDefAST {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = None;
+        let mut linear = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
             match ann.as_str() {
@@ -1764,6 +1774,25 @@ impl AST for TypeDefAST {
                         no_auto_drop = Some(loc);
                     }
                 }
+                "linear" => {
+                    if let Some(prev) = no_auto_drop {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "linear",
+                            loc,
+                            prev,
+                        });
+                    } else {
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "linear",
+                                found: arg.clone(),
+                                expected: None,
+                                loc,
+                            })
+                        }
+                        linear = Some(loc);
+                    }
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {
                     loc,
                     name: ann.clone(),
@@ -1817,6 +1846,7 @@ impl AST for TypeDefAST {
         let old_scope = ctx.push_scope(&self.name);
         ctx.nom_info.borrow_mut().push(Default::default());
         ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop.is_some();
+        ctx.nom_info.borrow_mut().last_mut().unwrap().is_linear_type = linear.is_some();
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),

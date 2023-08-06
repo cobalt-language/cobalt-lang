@@ -739,7 +739,7 @@ pub struct NominalInfo<'ctx> {
 impl<'ctx> Default for NominalInfo<'ctx> {
     fn default() -> Self {
         Self {
-            is_linear_type: true,
+            is_linear_type: false,
             dtor: None,
             no_auto_drop: false,
         }
@@ -781,7 +781,7 @@ impl<'ctx> NominalInfo<'ctx> {
         Ok(Self {
             dtor,
             no_auto_drop,
-            is_linear_type: true,
+            is_linear_type: false,
         })
     }
 }
