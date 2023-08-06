@@ -6,6 +6,7 @@ use inkwell::types::{
 };
 use inkwell::values::BasicValueEnum;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::*;
 use std::io::{self, BufRead, Read, Write};
 use SizeType::*;
@@ -81,6 +82,8 @@ pub enum Type {
     BoundMethod(Box<Type>, Vec<(Type, bool)>),
     Nominal(String),
     Tuple(Vec<Type>),
+    /// IMPORTANT: this *must* be in the correct order- it must be sorted according to `struct_order`
+    Struct(Vec<Type>, HashMap<String, usize>),
     Error,
 }
 impl Display for Type {
@@ -161,9 +164,42 @@ impl Display for Type {
                 }
                 write!(f, ")")
             }
+            Struct(fields, lookup) => write!(
+                f,
+                "{{{}}}",
+                lookup
+                    .iter()
+                    .map(|(name, idx)| format!("{name}: {}", fields[*idx]))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Error => write!(f, "<error>"),
         }
     }
+}
+/// determine the most efficient layout for struct fields
+pub fn struct_order(
+    lhs: &Type,
+    rhs: &Type,
+    names: Option<(&str, &str)>,
+    ctx: &CompCtx,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering::*;
+    let mut ord = rhs.align(ctx).cmp(&lhs.align(ctx));
+    if ord != Equal {
+        return ord;
+    }
+    ord = match (lhs.size(ctx), rhs.size(ctx)) {
+        (Meta, _) | (_, Meta) => Equal,
+        (Dynamic, Dynamic) => Equal,
+        (_, Dynamic) => Less,
+        (Dynamic, _) => Greater,
+        (Static(l), Static(r)) => r.cmp(&l),
+    };
+    if ord != Equal {
+        return ord;
+    }
+    names.map_or(Equal, |(l, r)| l.cmp(r))
 }
 impl Type {
     pub fn size(&self, ctx: &CompCtx) -> SizeType {
@@ -201,6 +237,23 @@ impl Type {
                     v
                 }
             }),
+            Struct(fields, _) => fields.iter().fold(Static(0), |v, t| {
+                if let Static(bs) = v {
+                    let n = t.size(ctx);
+                    if let Static(ns) = n {
+                        let a = t.align(ctx) as u32;
+                        if a == 0 || a == 1 {
+                            Static(bs + ns)
+                        } else {
+                            Static(((bs + a - 1) / a) * a + ns)
+                        }
+                    } else {
+                        n
+                    }
+                } else {
+                    v
+                }
+            }),
             Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx),
         }
     }
@@ -221,7 +274,7 @@ impl Type {
             Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => 0,
             Pointer(_) | Reference(_) | BoundMethod(..) => ctx.flags.word_size,
             Mut(b) => b.align(ctx),
-            Tuple(v) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
+            Tuple(v) | Type::Struct(v, _) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
             Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx),
         }
     }
@@ -294,12 +347,12 @@ impl Type {
             Mut(b) => b
                 .llvm_type(ctx)
                 .map(|t| t.ptr_type(Default::default()).into()),
-            Tuple(v) => {
-                let mut vec = Vec::with_capacity(v.len());
-                for t in v {
-                    vec.push(t.llvm_type(ctx)?);
-                }
-                Some(ctx.context.struct_type(&vec, false).into())
+            Tuple(v) | Struct(v, _) => {
+                let fields = v
+                    .iter()
+                    .map(|t| t.llvm_type(ctx))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(ctx.context.struct_type(&fields, false).into())
             }
             Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx),
         }
@@ -312,7 +365,7 @@ impl Type {
                 info.3.dtor.is_some() || (!info.3.no_auto_drop && info.0.has_dtor(ctx))
             }
             Type::Array(b, _) | Type::Mut(b) => b.has_dtor(ctx),
-            Type::Tuple(v) => v.iter().any(|t| t.has_dtor(ctx)),
+            Type::Tuple(v) | Type::Struct(v, _) => v.iter().any(|t| t.has_dtor(ctx)),
             Type::BoundMethod(_, a) => a.get(0).map_or(false, |t| t.0.has_dtor(ctx)),
             _ => false,
         }
@@ -330,7 +383,7 @@ impl Type {
                     false
                 }
             }
-            Type::Tuple(vs) => {
+            Type::Tuple(vs) | Type::Struct(vs, _) => {
                 if let InterData::Array(is) = v {
                     vs.len() == is.len()
                         && vs.iter().zip(is).all(|(t, v)| t.can_be_compiled(v, ctx))
@@ -417,7 +470,7 @@ impl Type {
                     None
                 }
             }
-            Type::Tuple(vs) => {
+            Type::Tuple(vs) | Type::Struct(vs, _) => {
                 self.can_be_compiled(v, ctx).then_some(())?;
                 if let InterData::Array(is) = v {
                     let (vals, types): (Vec<_>, Vec<_>) = vs
@@ -454,7 +507,7 @@ impl Type {
             | Type::Mut(b)
             | Type::Array(b, _)
             | Type::InlineAsm(b) => b.contains_nominal(),
-            Type::Tuple(v) => v.iter().any(|t| t.contains_nominal()),
+            Type::Tuple(v) | Type::Struct(v, _) => v.iter().any(|t| t.contains_nominal()),
             Type::Function(r, a) => {
                 r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
             }
@@ -499,6 +552,16 @@ impl Type {
                 if v.iter().any(|t| t.contains_nominal()) {
                     Cow::Owned(Type::Tuple(
                         v.iter().map(|t| t.unwrapped(ctx).into_owned()).collect(),
+                    ))
+                } else {
+                    Cow::Borrowed(self)
+                }
+            }
+            Type::Struct(v, l) => {
+                if v.iter().any(|t| t.contains_nominal()) {
+                    Cow::Owned(Type::Struct(
+                        v.iter().map(|t| t.unwrapped(ctx).into_owned()).collect(),
+                        l.clone(),
                     ))
                 } else {
                     Cow::Borrowed(self)
@@ -602,6 +665,19 @@ impl Type {
                 out.write_all(&buf)?;
                 v.iter().try_for_each(|t| t.save(out))
             }
+            Struct(fields, l) => {
+                out.write_all(&[22])?;
+                let mut rev_lookup = [None].repeat(fields.len());
+                for (k, &v) in l {
+                    rev_lookup[v] = Some(k);
+                }
+                for (n, ty) in fields.iter().enumerate() {
+                    out.write_all(rev_lookup[n].unwrap().as_bytes())?;
+                    out.write_all(&[0])?;
+                    ty.save(out)?;
+                }
+                out.write_all(&[0])
+            }
             BoundMethod(r, p) => {
                 out.write_all(&[21])?;
                 out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
@@ -697,7 +773,24 @@ impl Type {
                 }
                 Type::BoundMethod(Box::new(ret), vec)
             }
-            x => panic!("read type value expecting value in 1..=21, got {x}"),
+            22 => {
+                let mut fields = vec![];
+                let mut lookup = HashMap::new();
+                loop {
+                    let mut vec = vec![];
+                    buf.read_until(0, &mut vec)?;
+                    if vec.last() == Some(&0) {
+                        vec.pop();
+                    }
+                    if vec.is_empty() {
+                        break;
+                    }
+                    lookup.insert(String::from_utf8(vec).unwrap(), fields.len());
+                    fields.push(Type::load(buf)?);
+                }
+                Type::Struct(fields, lookup)
+            }
+            x => panic!("read type value expecting value in 1..=22, got {x}"),
         })
     }
     /// Ensure that any symbols reachable from this type are exported
@@ -709,7 +802,7 @@ impl Type {
             | Type::Mut(b)
             | Type::Array(b, _)
             | Type::InlineAsm(b) => b.export(ctx),
-            Type::Tuple(v) => v.iter().for_each(|t| t.export(ctx)),
+            Type::Tuple(v) | Type::Struct(v, _) => v.iter().for_each(|t| t.export(ctx)),
             Type::Function(r, a) => {
                 r.export(ctx);
                 a.iter().for_each(|t| t.0.export(ctx));
