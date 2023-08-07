@@ -94,7 +94,7 @@ pub fn print_ast_child(
     last: bool,
     file: Option<CobaltFile>,
 ) -> Result {
-    write!(f, "{}{}", pre, if last { "└── " } else { "├── " })?;
+    write!(f, "{pre}{} ", if last { "└──" } else { "├──" })?;
     if f.alternate() {
         if let Some(Err(e)) = (|| -> Option<Result> {
             let file = file?;
