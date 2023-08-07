@@ -946,66 +946,59 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                     [('(', ')'), ('{', '}')],
                     |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into())),
                 ))),
-            empty()
-                .map_with_state(|_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| {
-                    state.push(Default::default())
-                }) // push new field set onto stack
-                .then(
-                    ident()
-                        .map_with_span(|i, s| (i, s))
-                        .try_map_with_state(|(name, span), _, state| {
-                            if let Some(_prev) = state.last_mut().unwrap().insert(name, span) {
-                                Err(Rich::custom(span, format!("redefinition of {name}")))
-                            } else {
-                                Ok(name.to_string())
-                            }
-                        })
-                        .recover_with(skip_until(
-                            one_of(",:}").ignored(),
-                            none_of(",:}").ignored(),
-                            String::new,
-                        ))
-                        .then_ignore(just(':').padded_by(ignored()))
-                        .then(expr.clone()) // parse `name: type`
-                        .separated_by(just(',').padded_by(ignored()))
-                        .allow_trailing()
-                        .at_least(1)
-                        .collect::<HashMap<_, _>>(),
-                )
-                .then(empty().map_with_state(
-                    |_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| state.pop(),
-                ))
-                .delimited_by(
-                    just('{').then_ignore(ignored()),
-                    ignored().ignore_then(just('}')),
-                )
-                .map_with_span(|fields, loc| {
-                    box_ast(StructLiteralAST::new(loc.into_range().into(), fields.0 .1))
-                })
-                .recover_with(via_parser(nested_delimiters(
-                    '{',
-                    '}',
-                    [('[', ']'), ('(', ')')],
-                    |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into())),
-                ))),
             // block
-            def_stmt(
-                raw_expr
-                    .or_not()
-                    .map_with_span(|ast, span: SimpleSpan| {
-                        ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into())))
-                    })
+            choice([
+                empty()
+                    .map_with_state(|_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| {
+                        state.push(Default::default())
+                    }) // push new field set onto stack
+                    .then(
+                        ident()
+                            .map_with_span(|i, s| (i, s))
+                            .try_map_with_state(|(name, span), _, state| {
+                                if let Some(_prev) = state.last_mut().unwrap().insert(name, span) {
+                                    Err(Rich::custom(span, format!("redefinition of {name}")))
+                                } else {
+                                    Ok(name.to_string())
+                                }
+                            })
+                            .then_ignore(just(':').padded_by(ignored()))
+                            .then(expr.clone()) // parse `name: type`
+                            .separated_by(just(',').padded_by(ignored()))
+                            .allow_trailing()
+                            .at_least(1)
+                            .collect::<HashMap<_, _>>(),
+                    )
+                    .then(empty().map_with_state(
+                        |_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| state.pop(),
+                    ))
+                    .map(|x| either::Right(x.0 .1))
                     .boxed(),
-            )
-            .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
-            .padded_by(ignored())
-            .separated_by(just(';').recover_with(skip_then_retry_until(
-                none_of(";}").ignored(),
-                one_of(";}").ignored(),
-            )))
-            .collect()
+                def_stmt(
+                    raw_expr
+                        .or_not()
+                        .map_with_span(|ast, span: SimpleSpan| {
+                            ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into())))
+                        })
+                        .boxed(),
+                )
+                .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
+                .padded_by(ignored())
+                .separated_by(just(';').recover_with(skip_then_retry_until(
+                    none_of(";}").ignored(),
+                    one_of(";}").ignored(),
+                )))
+                .collect()
+                .map(either::Left)
+                .boxed(),
+            ])
             .delimited_by(just('{'), just('}'))
-            .map_with_span(|vals, span| box_ast(BlockAST::new(span.into_range().into(), vals)))
+            .map_with_span(|vals, span| match vals {
+                either::Left(vals) => box_ast(BlockAST::new(span.into_range().into(), vals)),
+                either::Right(vals) => {
+                    box_ast(StructLiteralAST::new(span.into_range().into(), vals))
+                }
+            })
             .recover_with(via_parser(nested_delimiters(
                 '{',
                 '}',
