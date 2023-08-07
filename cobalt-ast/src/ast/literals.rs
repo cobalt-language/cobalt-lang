@@ -600,7 +600,9 @@ impl AST for StructLiteralAST {
         file: Option<CobaltFile>,
     ) -> std::fmt::Result {
         writeln!(f, "struct")?;
-        for (n, (name, val)) in self.vals.iter().enumerate() {
+        let mut v = self.vals.iter().collect::<Vec<_>>();
+        v.sort_by_key(|x| x.0);
+        for (n, (name, val)) in v.into_iter().enumerate() {
             let last = n == self.vals.len() - 1;
             write!(f, "{pre}{} {name}: ", if last { "└──" } else { "├──" })?;
             if f.alternate() {
