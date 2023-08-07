@@ -231,6 +231,12 @@ pub enum CobaltError {
         name: String,
         guaranteed: bool,
     },
+    #[error("variable of linear type must be used exactly once")]
+    LinearTypeNotUsed {
+        #[label("{name} defined here")]
+        loc: SourceSpan,
+        name: String,
+    },
     #[error("invalid parameters for overloaded operator function")]
     #[help("for `{op}`, the parameters should be ({ex})")]
     InvalidOpParams {
