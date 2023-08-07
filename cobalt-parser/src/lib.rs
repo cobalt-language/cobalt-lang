@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use chumsky::{error::RichReason, prelude::*};
 use cobalt_ast::{ast::*, *};
 use cobalt_errors::miette::{LabeledSpan, MietteDiagnostic, SourceSpan};
 use cobalt_errors::*;
+use std::collections::HashMap;
 use unicode_ident::*;
 mod utils;
 pub mod prelude {
