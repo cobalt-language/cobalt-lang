@@ -826,6 +826,7 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
 pub struct NominalInfo<'ctx> {
     pub dtor: Option<FunctionValue<'ctx>>,
     pub no_auto_drop: bool,
+    pub transparent: bool,
 }
 impl<'ctx> NominalInfo<'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -833,7 +834,7 @@ impl<'ctx> NominalInfo<'ctx> {
             out.write_all(fv.get_name().to_bytes())?;
         }
         out.write_all(&[0])?;
-        out.write_all(&[u8::from(self.no_auto_drop)])
+        out.write_all(&[u8::from(self.no_auto_drop) << 1 | u8::from(self.transparent)])
     }
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
         let mut vec = vec![];
@@ -858,7 +859,12 @@ impl<'ctx> NominalInfo<'ctx> {
         };
         let mut c = 0u8;
         buf.read_exact(std::slice::from_mut(&mut c))?;
-        let no_auto_drop = c != 0;
-        Ok(Self { dtor, no_auto_drop })
+        let no_auto_drop = c & 1 != 0;
+        let transparent = c & 2 != 0;
+        Ok(Self {
+            dtor,
+            no_auto_drop,
+            transparent,
+        })
     }
 }

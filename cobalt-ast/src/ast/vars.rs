@@ -1349,7 +1349,8 @@ impl AST for TypeDefAST {
     }
     fn varfwd_prepass(&self, ctx: &CompCtx) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1374,6 +1375,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1408,8 +1410,12 @@ impl AST for TypeDefAST {
         });
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),
@@ -1445,7 +1451,8 @@ impl AST for TypeDefAST {
     }
     fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1470,6 +1477,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1508,8 +1516,12 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),
@@ -1548,7 +1560,8 @@ impl AST for TypeDefAST {
     fn fwddef_prepass(&self, ctx: &CompCtx) {
         let mut vis_spec = None;
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match ann.as_str() {
                 "target" => {
@@ -1591,6 +1604,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1618,8 +1632,12 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         let ty = ops::impl_convert(
             unreachable_span(),
             (self.val.const_codegen(ctx).0, None),
@@ -1663,6 +1681,7 @@ impl AST for TypeDefAST {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = None;
+        let mut transparent = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
             match ann.as_str() {
@@ -1764,6 +1783,25 @@ impl AST for TypeDefAST {
                         no_auto_drop = Some(loc);
                     }
                 }
+                "transparent" => {
+                    if let Some(prev) = transparent {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "transparent",
+                            loc,
+                            prev,
+                        });
+                    } else {
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "transparent",
+                                found: arg.clone(),
+                                expected: None,
+                                loc,
+                            })
+                        }
+                        transparent = Some(loc);
+                    }
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {
                     loc,
                     name: ann.clone(),
@@ -1815,8 +1853,12 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop.is_some();
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop.is_some();
+        info.transparent = transparent.is_some();
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".to_string(),

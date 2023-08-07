@@ -4587,8 +4587,8 @@ pub fn attr<'ctx>(
     };
     match val.data_type.clone() {
         Type::Reference(b) => match *b {
-            Type::Mut(b) => {
-                if let Type::Nominal(n) = *b {
+            Type::Mut(b) => match *b {
+                Type::Nominal(n) => {
                     if id == "__base" {
                         val.data_type = Type::Reference(Box::new(Type::Mut(Box::new(
                             ctx.nominals.borrow()[&n].0.clone(),
@@ -4596,7 +4596,14 @@ pub fn attr<'ctx>(
                         Ok(val)
                     } else {
                         let noms = ctx.nominals.borrow();
-                        let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                        let info = &noms[&n];
+                        let v = info.2.get(id).ok_or(err.clone());
+                        if let (true, Err(_)) = (info.3.transparent, &v) {
+                            val.data_type =
+                                Type::Reference(Box::new(Type::Mut(Box::new(info.0.clone()))));
+                            return attr((val, vloc), (id, iloc), ctx);
+                        }
+                        let v = v?;
                         if let Value {
                             data_type: Type::Reference(r),
                             inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4670,17 +4677,59 @@ pub fn attr<'ctx>(
                             Err(err)
                         }
                     }
-                } else {
-                    Err(err)
                 }
-            }
+                Type::Struct(mut v, l) => {
+                    if let Some(&n) = l.get(id) {
+                        let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                            if let Some(t) = v
+                                .iter()
+                                .map(|t| t.llvm_type(ctx))
+                                .collect::<Option<Vec<_>>>()
+                            {
+                                ctx.builder
+                                    .build_struct_gep(
+                                        ctx.context.struct_type(&t, false),
+                                        pv,
+                                        n as _,
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                            Some(v.swap_remove(n))
+                        } else {
+                            None
+                        };
+                        let data_type =
+                            Type::Reference(Box::new(Type::Mut(Box::new(v.swap_remove(n)))));
+                        let mut v = Value::new(comp_val, inter_val, data_type);
+                        v.name = val.name;
+                        Ok(v)
+                    } else {
+                        Err(err)
+                    }
+                }
+                _ => Err(err),
+            },
             Type::Nominal(n) => {
                 if id == "__base" {
                     val.data_type = Type::Reference(Box::new(ctx.nominals.borrow()[&n].0.clone()));
                     Ok(val)
                 } else {
                     let noms = ctx.nominals.borrow();
-                    let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                    let info = &noms[&n];
+                    let v = info.2.get(id).ok_or(err.clone());
+                    if let (true, Err(_)) = (info.3.transparent, &v) {
+                        val.data_type = Type::Reference(Box::new(info.0.clone()));
+                        return attr((val, vloc), (id, iloc), ctx);
+                    }
+                    let v = v?;
                     if let Value {
                         data_type: Type::Reference(r),
                         inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4741,10 +4790,46 @@ pub fn attr<'ctx>(
                     }
                 }
             }
+            Type::Struct(mut v, l) => {
+                if let Some(&n) = l.get(id) {
+                    let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                        if let Some(t) = v
+                            .iter()
+                            .map(|t| t.llvm_type(ctx))
+                            .collect::<Option<Vec<_>>>()
+                        {
+                            ctx.builder
+                                .build_struct_gep(
+                                    ctx.context.struct_type(&t, false),
+                                    pv,
+                                    n as _,
+                                    "",
+                                )
+                                .ok()
+                                .map(From::from)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                        Some(v.swap_remove(n))
+                    } else {
+                        None
+                    };
+                    let data_type = Type::Reference(Box::new(v.swap_remove(n)));
+                    let mut v = Value::new(comp_val, inter_val, data_type);
+                    v.name = val.name;
+                    Ok(v)
+                } else {
+                    Err(err)
+                }
+            }
             _ => Err(err),
         },
-        Type::Mut(b) => {
-            if let Type::Nominal(n) = *b {
+        Type::Mut(b) => match *b {
+            Type::Nominal(n) => {
                 if id == "__base" {
                     val.data_type = Type::Reference(Box::new(Type::Mut(Box::new(
                         ctx.nominals.borrow()[&n].0.clone(),
@@ -4752,7 +4837,13 @@ pub fn attr<'ctx>(
                     Ok(val)
                 } else {
                     let noms = ctx.nominals.borrow();
-                    let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                    let info = &noms[&n];
+                    let v = info.2.get(id).ok_or(err.clone());
+                    if let (true, Err(_)) = (info.3.transparent, &v) {
+                        val.data_type = Type::Mut(Box::new(info.0.clone()));
+                        return attr((val, vloc), (id, iloc), ctx);
+                    }
+                    let v = v?;
                     if let Value {
                         data_type: Type::Reference(r),
                         inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4817,17 +4908,58 @@ pub fn attr<'ctx>(
                         Err(err)
                     }
                 }
-            } else {
-                Err(err)
             }
-        }
+            Type::Struct(mut v, l) => {
+                if let Some(&n) = l.get(id) {
+                    let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                        if let Some(t) = v
+                            .iter()
+                            .map(|t| t.llvm_type(ctx))
+                            .collect::<Option<Vec<_>>>()
+                        {
+                            ctx.builder
+                                .build_struct_gep(
+                                    ctx.context.struct_type(&t, false),
+                                    pv,
+                                    n as _,
+                                    "",
+                                )
+                                .ok()
+                                .map(From::from)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                        Some(v.swap_remove(n))
+                    } else {
+                        None
+                    };
+                    let data_type = Type::Mut(Box::new(v.swap_remove(n)));
+                    let mut v = Value::new(comp_val, inter_val, data_type);
+                    v.name = val.name;
+                    Ok(v)
+                } else {
+                    Err(err)
+                }
+            }
+            _ => Err(err),
+        },
         Type::Nominal(n) => {
             if id == "__base" {
                 val.data_type = ctx.nominals.borrow()[&n].0.clone();
                 Ok(val)
             } else {
                 let noms = ctx.nominals.borrow();
-                let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                let info = &noms[&n];
+                let v = info.2.get(id).ok_or(err.clone());
+                if let (true, Err(_)) = (info.3.transparent, &v) {
+                    val.data_type = info.0.clone();
+                    return attr((val, vloc), (id, iloc), ctx);
+                }
+                let v = v?;
                 if let Value {
                     data_type: Type::Reference(r),
                     inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4883,6 +5015,26 @@ pub fn attr<'ctx>(
                 } else {
                     Err(err)
                 }
+            }
+        }
+        Type::Struct(mut v, l) => {
+            if let Some(&n) = l.get(id) {
+                let comp_val = if let Some(StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, n as _, "")
+                } else {
+                    None
+                };
+                let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(n))
+                } else {
+                    None
+                };
+                let data_type = v.swap_remove(n);
+                let mut v = Value::new(comp_val, inter_val, data_type);
+                v.name = val.name;
+                Ok(v)
+            } else {
+                Err(err)
             }
         }
         _ => Err(err),
