@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chumsky::{error::RichReason, prelude::*};
 use cobalt_ast::{ast::*, *};
 use cobalt_errors::miette::{LabeledSpan, MietteDiagnostic, SourceSpan};
@@ -39,7 +41,7 @@ fn box_ast<T: AST + 'static>(val: T) -> Box<dyn AST> {
     Box::new(val)
 }
 // useful type definitions
-type Extras<'a> = chumsky::extra::Full<Rich<'a, char>, (), ()>;
+type Extras<'a> = chumsky::extra::Full<Rich<'a, char>, Vec<HashMap<&'a str, SimpleSpan>>, ()>;
 type BoxedParser<'a, 'b, T> = Boxed<'a, 'b, &'a str, T, Extras<'a>>;
 type BoxedASTParser<'a, 'b> = BoxedParser<'a, 'b, Box<dyn AST>>;
 static KEYWORDS: &[&str] = &[
@@ -943,6 +945,48 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                     '[',
                     ']',
                     [('(', ')'), ('{', '}')],
+                    |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into())),
+                ))),
+            empty()
+                .map_with_state(|_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| {
+                    state.push(Default::default())
+                }) // push new field set onto stack
+                .then(
+                    ident()
+                        .map_with_span(|i, s| (i, s))
+                        .try_map_with_state(|(name, span), _, state| {
+                            if let Some(_prev) = state.last_mut().unwrap().insert(name, span) {
+                                Err(Rich::custom(span, format!("redefinition of {name}")))
+                            } else {
+                                Ok(name.to_string())
+                            }
+                        })
+                        .recover_with(skip_until(
+                            one_of(",:}").ignored(),
+                            none_of(",:}").ignored(),
+                            String::new,
+                        ))
+                        .then_ignore(just(':').padded_by(ignored()))
+                        .then(expr.clone()) // parse `name: type`
+                        .separated_by(just(',').padded_by(ignored()))
+                        .allow_trailing()
+                        .at_least(1)
+                        .collect::<HashMap<_, _>>(),
+                )
+                .then(empty().map_with_state(
+                    |_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| state.pop(),
+                ))
+                .delimited_by(
+                    just('{').then_ignore(ignored()),
+                    ignored().ignore_then(just('}')),
+                )
+                .map_with_span(|fields, loc| {
+                    box_ast(StructLiteralAST::new(loc.into_range().into(), fields.0 .1))
+                })
+                .recover_with(via_parser(nested_delimiters(
+                    '{',
+                    '}',
+                    [('[', ']'), ('(', ')')],
                     |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into())),
                 ))),
             // block
