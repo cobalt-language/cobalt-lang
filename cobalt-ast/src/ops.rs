@@ -84,6 +84,9 @@ pub fn impl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
                 }) || (impl_convertible(lb, target, ctx) && !lb.has_dtor(ctx))
             }
             Type::Mut(b) => impl_convertible(b, target, ctx),
+            Type::Tuple(v) | Type::Struct(v, _) => {
+                v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+            }
             Type::Null => *target == Type::TypeData,
             Type::Error => true,
             _ => false,
@@ -126,6 +129,9 @@ pub fn expl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
                 }) || (expl_convertible(lb, target, ctx) && !lb.has_dtor(ctx))
             }
             Type::Mut(b) => expl_convertible(b, target, ctx),
+            Type::Tuple(v) | Type::Struct(v, _) => {
+                v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+            }
             Type::Null => matches!(
                 target,
                 Type::TypeData
@@ -3844,6 +3850,31 @@ pub fn impl_convert<'ctx>(
                 Err(err)
             }
         }
+        Type::Struct(v, l) => {
+            if target == Type::TypeData {
+                if let Some(InterData::Array(a)) = val.inter_val {
+                    let mut vec = Vec::with_capacity(v.len());
+                    for (iv, dt) in a.into_iter().zip(v) {
+                        vec.push(
+                            impl_convert(
+                                unreachable_span(),
+                                (Value::metaval(iv, dt), None),
+                                (Type::TypeData, None),
+                                ctx,
+                            )
+                            .ok()
+                            .and_then(Value::into_type)
+                            .ok_or(err.clone())?,
+                        );
+                    }
+                    Ok(Value::make_type(Type::Struct(vec, l)))
+                } else {
+                    Err(err)
+                }
+            } else {
+                Err(err)
+            }
+        }
         Type::Null => {
             if target == Type::TypeData {
                 Ok(Value::make_type(Type::Null))
@@ -4482,6 +4513,31 @@ pub fn expl_convert<'ctx>(
                         );
                     }
                     Ok(Value::make_type(Type::Tuple(vec)))
+                } else {
+                    Err(err)
+                }
+            } else {
+                Err(err)
+            }
+        }
+        Type::Struct(v, l) => {
+            if target == Type::TypeData {
+                if let Some(InterData::Array(a)) = val.inter_val {
+                    let mut vec = Vec::with_capacity(v.len());
+                    for (iv, dt) in a.into_iter().zip(v) {
+                        vec.push(
+                            impl_convert(
+                                unreachable_span(),
+                                (Value::metaval(iv, dt), None),
+                                (Type::TypeData, None),
+                                ctx,
+                            )
+                            .ok()
+                            .and_then(Value::into_type)
+                            .ok_or(err.clone())?,
+                        );
+                    }
+                    Ok(Value::make_type(Type::Struct(vec, l)))
                 } else {
                     Err(err)
                 }
@@ -5725,6 +5781,10 @@ pub fn call<'ctx>(
 pub fn common(lhs: &Type, rhs: &Type, ctx: &CompCtx) -> Option<Type> {
     if lhs == rhs {
         Some(lhs.clone())
+    } else if impl_convertible(lhs, &Type::TypeData, ctx)
+        && impl_convertible(rhs, &Type::TypeData, ctx)
+    {
+        Some(Type::TypeData)
     } else if impl_convertible(lhs, rhs, ctx) {
         Some(rhs.clone())
     } else if impl_convertible(rhs, lhs, ctx) {
