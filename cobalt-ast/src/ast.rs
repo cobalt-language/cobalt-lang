@@ -101,7 +101,7 @@ pub fn print_ast_child(
             let slice = ast.loc();
             let (sl, sc) = file.source_loc(slice.offset()).ok()?;
             let (el, ec) = file.source_loc(slice.offset() + slice.len()).ok()?;
-            Some(write!(f, "({}:{}..{}:{}) ", sl, sc, el, ec))
+            Some(write!(f, "({sl}:{sc}..{el}:{ec}) "))
         })() {
             return Err(e);
         };

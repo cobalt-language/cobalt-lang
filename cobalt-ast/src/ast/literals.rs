@@ -91,7 +91,7 @@ impl AST for IntLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "int: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -167,7 +167,7 @@ impl AST for FloatLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "float: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -269,7 +269,7 @@ impl AST for CharLiteralAST {
             write!(f, "char: \\u{{{:0>X}}}", self.val)
         }?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -338,7 +338,7 @@ impl AST for StringLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "string: {:?}", self.val.as_bstr())?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -611,7 +611,7 @@ impl AST for StructLiteralAST {
                     let slice = val.loc();
                     let (sl, sc) = file.source_loc(slice.offset()).ok()?;
                     let (el, ec) = file.source_loc(slice.offset() + slice.len()).ok()?;
-                    Some(write!(f, "({}:{}..{}:{}) ", sl, sc, el, ec))
+                    Some(write!(f, "({sl}:{sc}..{el}:{ec}) "))
                 })() {
                     return Err(e);
                 };
