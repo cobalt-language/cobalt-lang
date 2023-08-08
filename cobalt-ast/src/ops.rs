@@ -85,7 +85,8 @@ pub fn impl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
             }
             Type::Mut(b) => impl_convertible(b, target, ctx),
             Type::Tuple(v) | Type::Struct(v, _) => {
-                v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+                target == &Type::TypeData
+                    && v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
             }
             Type::Null => *target == Type::TypeData,
             Type::Error => true,
@@ -130,7 +131,8 @@ pub fn expl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
             }
             Type::Mut(b) => expl_convertible(b, target, ctx),
             Type::Tuple(v) | Type::Struct(v, _) => {
-                v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+                target == &Type::TypeData
+                    && v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
             }
             Type::Null => matches!(
                 target,
