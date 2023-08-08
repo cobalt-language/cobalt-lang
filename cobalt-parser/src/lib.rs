@@ -964,6 +964,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                             })
                             .then_ignore(just(':').padded_by(ignored()))
                             .then(expr.clone()) // parse `name: type`
+                            .padded_by(ignored())
                             .separated_by(just(',').padded_by(ignored()))
                             .allow_trailing()
                             .at_least(1)
