@@ -177,7 +177,13 @@ impl Display for Type {
         }
     }
 }
-/// determine the most efficient layout for struct fields
+
+/// Determine the most efficient layout for struct fields.
+///
+/// Returns `lhs` (ordering) `rhs`. This indicates that `lhs` should be
+/// layed out before `rhs` in memory.
+///
+/// Intended to be used with `sort_by` to sort a list of fields.
 pub fn struct_order(
     lhs: &Type,
     rhs: &Type,
@@ -185,10 +191,14 @@ pub fn struct_order(
     ctx: &CompCtx,
 ) -> std::cmp::Ordering {
     use std::cmp::Ordering::*;
+
+    // If `lhs` has a larger alignment than `rhs` then it should be
+    // layed out first.
     let mut ord = rhs.align(ctx).cmp(&lhs.align(ctx));
     if ord != Equal {
         return ord;
     }
+
     ord = match (lhs.size(ctx), rhs.size(ctx)) {
         (Meta, _) | (_, Meta) => Equal,
         (Dynamic, Dynamic) => Equal,
@@ -244,6 +254,8 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx),
         }
     }
+
+    /// Returns the alignment of the type in bytes.
     pub fn align(&self, ctx: &CompCtx) -> u16 {
         match self {
             IntLiteral => 8,
@@ -261,6 +273,8 @@ impl Type {
             Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => 0,
             Pointer(_) | Reference(_) | BoundMethod(..) => ctx.flags.word_size,
             Mut(b) => b.align(ctx),
+
+            // The alignment is the alignment of the largest field.
             Tuple(v) | Type::Struct(v, _) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
             Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx),
         }

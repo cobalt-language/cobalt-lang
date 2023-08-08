@@ -525,9 +525,12 @@ impl AST for TupleLiteralAST {
         Ok(())
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct StructLiteralAST {
     loc: SourceSpan,
+
+    /// The key is the name of the field, the value is the value of the field.
     vals: HashMap<String, Box<dyn AST>>,
 }
 impl StructLiteralAST {
@@ -544,18 +547,27 @@ impl AST for StructLiteralAST {
     }
     fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
         let mut errs = vec![];
+
+        // Codegen for each field and collect the errors.
         let mut vec = self
             .vals
             .iter()
             .map(|(n, v)| (n, v.codegen_errs(ctx, &mut errs)))
             .collect::<Vec<_>>();
+
+        // Sort fields to have optimal memory layout.
         vec.sort_by(|(ln, lhs), (rn, rhs)| {
             types::struct_order(&lhs.data_type, &rhs.data_type, Some((ln, rn)), ctx)
         });
+
+        // Determine the data type of this literal just by looking at the fields it has defined.
         let mut lookup = HashMap::with_capacity(vec.len());
         for (n, (name, _)) in vec.iter().enumerate() {
             lookup.insert(name.to_string(), n);
         }
+        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
+
+        // Compute the value, if possible, of the fields.
         let comp_val = if !ctx.is_const.get() {
             let v = vec
                 .iter()
@@ -587,7 +599,7 @@ impl AST for StructLiteralAST {
             .map(|v| v.1.inter_val.clone())
             .collect::<Option<_>>()
             .map(InterData::Array);
-        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
+
         (
             Value::new(comp_val.map(From::from), inter_val, data_type),
             errs,

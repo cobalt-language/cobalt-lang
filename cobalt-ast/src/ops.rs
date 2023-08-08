@@ -3379,6 +3379,8 @@ pub fn subscript<'ctx>(
         }
     }
 }
+
+/// Implicitly convert the value `val` to the type `target`.
 pub fn impl_convert<'ctx>(
     loc: SourceSpan,
     (mut val, vloc): (Value<'ctx>, Option<SourceSpan>),
@@ -3854,14 +3856,22 @@ pub fn impl_convert<'ctx>(
         }
         Type::Struct(v, l) => {
             if target == Type::TypeData {
+                // If the struct value should be convertible to a type,
+                // then there must have interpreted data and it should
+                // be an array of type data.
                 if let Some(InterData::Array(a)) = val.inter_val {
                     let mut vec = Vec::with_capacity(v.len());
                     for (iv, dt) in a.into_iter().zip(v) {
+                        // - 1: Convert the field value
+                        // - 2: Ignore the location.
+                        // - 3: Create a value with interpreted data and
+                        // a type, but no compiled value.
+                        // - 4: Convert into a type.
                         vec.push(
                             impl_convert(
-                                unreachable_span(),
-                                (Value::metaval(iv, dt), None),
-                                (Type::TypeData, None),
+                                unreachable_span(),             // 2
+                                (Value::metaval(iv, dt), None), // 3
+                                (Type::TypeData, None),         // 4
                                 ctx,
                             )
                             .ok()
@@ -3869,6 +3879,9 @@ pub fn impl_convert<'ctx>(
                             .ok_or(err.clone())?,
                         );
                     }
+
+                    // Take our new vector of types and convert it into
+                    // a struct type, keeping the same lookup
                     Ok(Value::make_type(Type::Struct(vec, l)))
                 } else {
                     Err(err)

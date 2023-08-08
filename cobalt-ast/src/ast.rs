@@ -59,6 +59,8 @@ pub trait AST: ASTClone + std::fmt::Debug {
         ctx.is_const.set(old_is_const);
         res
     }
+
+    /// Just calls `codegen()` and appends the errors to `errs`.
     fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<CobaltError>) -> Value<'ctx> {
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);
