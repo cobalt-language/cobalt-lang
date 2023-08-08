@@ -565,7 +565,6 @@ impl AST for StructLiteralAST {
         for (n, (name, _)) in vec.iter().enumerate() {
             lookup.insert(name.to_string(), n);
         }
-        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
 
         // Compute the value, if possible, of the fields.
         let comp_val = if !ctx.is_const.get() {
@@ -599,6 +598,7 @@ impl AST for StructLiteralAST {
             .map(|v| v.1.inter_val.clone())
             .collect::<Option<_>>()
             .map(InterData::Array);
+        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
 
         (
             Value::new(comp_val.map(From::from), inter_val, data_type),
