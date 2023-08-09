@@ -115,7 +115,11 @@ impl AST for BitCastAST {
         );
         ctx.is_const.set(oic);
         let decayed = ops::decay(val.data_type.clone());
-        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx).unwrap();
+        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx)
+            .unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            });
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
@@ -132,18 +136,31 @@ impl AST for BitCastAST {
                 }
             }
             _ => {
-                errs.push(CobaltError::UnsizedBitCast {
-                    loc: self.loc,
-                    from_ty: val.data_type.to_string(),
-                    from_loc: self.val.loc(),
-                    to_ty: t.to_string(),
-                    to_loc: self.target.loc(),
-                });
+                if t == Type::Error || val.data_type == Type::Error {
+                    errs.push(CobaltError::UnsizedBitCast {
+                        loc: self.loc,
+                        from_ty: val.data_type.to_string(),
+                        from_loc: self.val.loc(),
+                        to_ty: t.to_string(),
+                        to_loc: self.target.loc(),
+                    });
+                }
                 return (Value::error(), errs);
             }
         }
         if let (Some(llt), Some(ctval)) = (t.llvm_type(ctx), val.comp_val) {
-            let bc = ctx.builder.build_bitcast(ctval, llt, "");
+            let cty = ctval.get_type();
+            let bc = if cty == llt {
+                ctval
+            } else if llt.is_array_type()
+                || llt.is_struct_type()
+                || cty.is_array_type()
+                || cty.is_struct_type()
+            {
+                ctx.builder.build_load(llt, val.addr(ctx).unwrap(), "")
+            } else {
+                ctx.builder.build_bitcast(ctval, llt, "")
+            };
             ops::mark_move(
                 &val,
                 bc.as_instruction_value()
@@ -153,11 +170,9 @@ impl AST for BitCastAST {
                 self.loc(),
             );
             val.comp_val = Some(bc);
-            val.data_type = t;
-            (val, errs)
-        } else {
-            (Value::error(), errs)
         }
+        val.data_type = t;
+        (val, errs)
     }
     fn print_impl(
         &self,
