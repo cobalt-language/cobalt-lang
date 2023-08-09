@@ -1111,10 +1111,15 @@ pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
 }
 /// create a parser for the top-level scope
 pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    top_level()
-        .repeated()
-        .collect()
-        .map(|vals| TopLevelAST::new(vals, None))
+    text::keyword("module")
+        .then_ignore(ignored())
+        .ignore_then(global_id())
+        .then_ignore(ignored())
+        .then_ignore(just(';'))
+        .padded_by(ignored())
+        .or_not()
+        .then(top_level().repeated().collect())
+        .map(|(module, vals)| TopLevelAST::new(vals, module))
         .then_ignore(ignored().then(end()))
         .boxed()
 }
