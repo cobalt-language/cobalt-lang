@@ -143,7 +143,18 @@ impl AST for BitCastAST {
             }
         }
         if let (Some(llt), Some(ctval)) = (t.llvm_type(ctx), val.comp_val) {
-            let bc = ctx.builder.build_bitcast(ctval, llt, "");
+            let cty = ctval.get_type();
+            let bc = if cty == llt {
+                ctval
+            } else if llt.is_array_type()
+                || llt.is_struct_type()
+                || cty.is_array_type()
+                || cty.is_struct_type()
+            {
+                ctx.builder.build_load(llt, val.addr(ctx).unwrap(), "")
+            } else {
+                ctx.builder.build_bitcast(ctval, llt, "")
+            };
             ops::mark_move(
                 &val,
                 bc.as_instruction_value()
