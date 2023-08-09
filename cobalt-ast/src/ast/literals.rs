@@ -2,6 +2,7 @@ use crate::*;
 use bstr::ByteSlice;
 use inkwell::types::BasicType;
 use inkwell::values::BasicValueEnum::*;
+use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct IntLiteralAST {
     loc: SourceSpan,
@@ -90,7 +91,7 @@ impl AST for IntLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "int: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -166,7 +167,7 @@ impl AST for FloatLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "float: {}", self.val)?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -268,7 +269,7 @@ impl AST for CharLiteralAST {
             write!(f, "char: \\u{{{:0>X}}}", self.val)
         }?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -337,7 +338,7 @@ impl AST for StringLiteralAST {
     ) -> std::fmt::Result {
         write!(f, "string: {:?}", self.val.as_bstr())?;
         if let Some((ref s, _)) = self.suffix {
-            writeln!(f, ", suffix: {}", s)
+            writeln!(f, ", suffix: {s}")
         } else {
             writeln!(f)
         }
@@ -520,6 +521,116 @@ impl AST for TupleLiteralAST {
         for val in self.vals.iter() {
             print_ast_child(f, pre, &**val, len == 1, file)?;
             len -= 1;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructLiteralAST {
+    loc: SourceSpan,
+
+    /// The key is the name of the field, the value is the value of the field.
+    vals: HashMap<String, Box<dyn AST>>,
+}
+impl StructLiteralAST {
+    pub fn new(loc: SourceSpan, vals: HashMap<String, Box<dyn AST>>) -> Self {
+        StructLiteralAST { loc, vals }
+    }
+}
+impl AST for StructLiteralAST {
+    fn loc(&self) -> SourceSpan {
+        self.loc
+    }
+    fn nodes(&self) -> usize {
+        self.vals.values().map(|t| t.nodes()).sum::<usize>() + 1
+    }
+    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+        let mut errs = vec![];
+
+        // Codegen for each field and collect the errors.
+        let mut vec = self
+            .vals
+            .iter()
+            .map(|(n, v)| (n, v.codegen_errs(ctx, &mut errs)))
+            .collect::<Vec<_>>();
+
+        // Sort fields to have optimal memory layout.
+        vec.sort_by(|(ln, lhs), (rn, rhs)| {
+            types::struct_order(&lhs.data_type, &rhs.data_type, Some((ln, rn)), ctx)
+        });
+
+        // Determine the data type of this literal just by looking at the fields it has defined.
+        let mut lookup = HashMap::with_capacity(vec.len());
+        for (n, (name, _)) in vec.iter().enumerate() {
+            lookup.insert(name.to_string(), n);
+        }
+
+        // Compute the value, if possible, of the fields.
+        let comp_val = if !ctx.is_const.get() {
+            let v = vec
+                .iter()
+                .map(|x| x.1.value(ctx))
+                .collect::<Option<Vec<_>>>();
+            if let Some(vals) = v {
+                let llt = ctx.context.struct_type(
+                    &vals.iter().map(|v| v.get_type()).collect::<Vec<_>>(),
+                    false,
+                );
+                Some(
+                    vals.into_iter()
+                        .enumerate()
+                        .fold(llt.get_undef(), |val, (n, elem)| {
+                            ctx.builder
+                                .build_insert_value(val, elem, n as _, "")
+                                .unwrap()
+                                .into_struct_value()
+                        }),
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let inter_val = vec
+            .iter()
+            .map(|v| v.1.inter_val.clone())
+            .collect::<Option<_>>()
+            .map(InterData::Array);
+        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
+
+        (
+            Value::new(comp_val.map(From::from), inter_val, data_type),
+            errs,
+        )
+    }
+    fn print_impl(
+        &self,
+        f: &mut std::fmt::Formatter,
+        pre: &mut TreePrefix,
+        file: Option<CobaltFile>,
+    ) -> std::fmt::Result {
+        writeln!(f, "struct")?;
+        let mut v = self.vals.iter().collect::<Vec<_>>();
+        v.sort_by_key(|x| x.0);
+        for (n, (name, val)) in v.into_iter().enumerate() {
+            let last = n == self.vals.len() - 1;
+            write!(f, "{pre}{} {name}: ", if last { "└──" } else { "├──" })?;
+            if f.alternate() {
+                if let Some(Err(e)) = (|| -> Option<std::fmt::Result> {
+                    let file = file?;
+                    let slice = val.loc();
+                    let (sl, sc) = file.source_loc(slice.offset()).ok()?;
+                    let (el, ec) = file.source_loc(slice.offset() + slice.len()).ok()?;
+                    Some(write!(f, "({sl}:{sc}..{el}:{ec}) "))
+                })() {
+                    return Err(e);
+                };
+            }
+            pre.push(last);
+            val.print_impl(f, pre, file)?;
+            pre.pop();
         }
         Ok(())
     }

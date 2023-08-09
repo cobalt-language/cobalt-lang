@@ -17,12 +17,16 @@ pub struct FnData<'ctx> {
     pub cconv: u32,
     pub mt: MethodType,
 }
+
+/// Used for compile-time constants.
 #[derive(Debug, Clone)]
 pub enum InterData<'ctx> {
     Null,
     Int(i128),
     Float(f64),
+    /// Used for tuples, structs, arrays, and bound methods.
     Array(Vec<InterData<'ctx>>),
+    /// Used for default values of function parameters.
     Function(FnData<'ctx>),
     InlineAsm(String, String),
     Type(Box<Type>),

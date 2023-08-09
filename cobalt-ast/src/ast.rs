@@ -59,6 +59,8 @@ pub trait AST: ASTClone + std::fmt::Debug {
         ctx.is_const.set(old_is_const);
         res
     }
+
+    /// Just calls `codegen()` and appends the errors to `errs`.
     fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<CobaltError>) -> Value<'ctx> {
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);
@@ -94,14 +96,14 @@ pub fn print_ast_child(
     last: bool,
     file: Option<CobaltFile>,
 ) -> Result {
-    write!(f, "{}{}", pre, if last { "└── " } else { "├── " })?;
+    write!(f, "{pre}{} ", if last { "└──" } else { "├──" })?;
     if f.alternate() {
         if let Some(Err(e)) = (|| -> Option<Result> {
             let file = file?;
             let slice = ast.loc();
             let (sl, sc) = file.source_loc(slice.offset()).ok()?;
             let (el, ec) = file.source_loc(slice.offset() + slice.len()).ok()?;
-            Some(write!(f, "({}:{}..{}:{}) ", sl, sc, el, ec))
+            Some(write!(f, "({sl}:{sc}..{el}:{ec}) "))
         })() {
             return Err(e);
         };
