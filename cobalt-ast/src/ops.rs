@@ -164,7 +164,13 @@ pub fn bin_op<'ctx>(
     let out = match (lhs.data_type.clone(), rhs.data_type.clone()) {
         (Type::Reference(l), _r) => {
             lhs.data_type = *l;
-            if !(ctx.is_const.get() || matches!(lhs.data_type, Type::Mut(_))) {
+            if !(ctx.is_const.get()
+                || matches!(lhs.data_type, Type::Mut(_))
+                || matches!(
+                    lhs.data_type.size(ctx),
+                    SizeType::Dynamic | SizeType::Static(0)
+                ))
+            {
                 if let (Some(t), Some(PointerValue(v))) =
                     (lhs.data_type.llvm_type(ctx), lhs.comp_val)
                 {
@@ -197,7 +203,13 @@ pub fn bin_op<'ctx>(
         }
         (_l, Type::Reference(r)) => {
             rhs.data_type = *r;
-            if !(ctx.is_const.get() || matches!(rhs.data_type, Type::Mut(_))) {
+            if !(ctx.is_const.get()
+                || matches!(rhs.data_type, Type::Mut(_))
+                || matches!(
+                    rhs.data_type.size(ctx),
+                    SizeType::Dynamic | SizeType::Static(0)
+                ))
+            {
                 if let (Some(t), Some(PointerValue(v))) =
                     (rhs.data_type.llvm_type(ctx), rhs.comp_val)
                 {
@@ -920,7 +932,12 @@ pub fn bin_op<'ctx>(
                     (l, _) => {
                         if left_move {
                             lhs.data_type = l;
-                            if !ctx.is_const.get() {
+                            if !(ctx.is_const.get()
+                                || matches!(
+                                    lhs.data_type.size(ctx),
+                                    SizeType::Dynamic | SizeType::Static(0)
+                                ))
+                            {
                                 if let Some(PointerValue(v)) = lhs.comp_val {
                                     lhs.comp_val = Some(ctx.builder.build_load(
                                         lhs.data_type.llvm_type(ctx).unwrap(),
@@ -945,7 +962,12 @@ pub fn bin_op<'ctx>(
         (_, Type::Mut(r)) => {
             if right_move {
                 rhs.data_type = *r;
-                if !ctx.is_const.get() {
+                if !(ctx.is_const.get()
+                    || matches!(
+                        rhs.data_type.size(ctx),
+                        SizeType::Dynamic | SizeType::Static(0)
+                    ))
+                {
                     if let Some(PointerValue(v)) = rhs.comp_val {
                         rhs.comp_val = Some(ctx.builder.build_load(
                             rhs.data_type.llvm_type(ctx).unwrap(),
@@ -2010,7 +2032,13 @@ pub fn pre_op<'ctx>(
             } else {
                 val.data_type = *x;
                 let can_move = !val.data_type.has_dtor(ctx);
-                if !(ctx.is_const.get() || matches!(val.data_type, Type::Mut(_))) {
+                if !(ctx.is_const.get()
+                    || matches!(val.data_type, Type::Mut(_))
+                    || matches!(
+                        val.data_type.size(ctx),
+                        SizeType::Dynamic | SizeType::Static(0)
+                    ))
+                {
                     if let Some(v) = val.comp_val {
                         val.comp_val = Some(ctx.builder.build_load(
                             val.data_type.llvm_type(ctx).unwrap(),
@@ -2049,7 +2077,12 @@ pub fn pre_op<'ctx>(
                 }
                 _ => {
                     val.data_type = x;
-                    if !ctx.is_const.get() {
+                    if !(ctx.is_const.get()
+                        || matches!(
+                            val.data_type.size(ctx),
+                            SizeType::Dynamic | SizeType::Static(0)
+                        ))
+                    {
                         if let Some(v) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(
                                 val.data_type.llvm_type(ctx).unwrap(),
@@ -2152,7 +2185,12 @@ pub fn pre_op<'ctx>(
             x => {
                 if can_move {
                     val.data_type = x;
-                    if !ctx.is_const.get() {
+                    if !(ctx.is_const.get()
+                        || matches!(
+                            val.data_type.size(ctx),
+                            SizeType::Dynamic | SizeType::Static(0)
+                        ))
+                    {
                         if let Some(v) = val.comp_val {
                             val.comp_val = Some(ctx.builder.build_load(
                                 val.data_type.llvm_type(ctx).unwrap(),
@@ -2413,7 +2451,21 @@ pub fn subscript<'ctx>(
     };
     match idx.data_type {
         Type::Reference(x) => {
-            if !ctx.is_const.get() {
+            if !(ctx.is_const.get()
+                || matches!(*x, Type::Mut(_))
+                || matches!(x.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+            {
+                if let Some(PointerValue(v)) = idx.comp_val {
+                    idx.comp_val = Some(ctx.builder.build_load(x.llvm_type(ctx).unwrap(), v, ""));
+                }
+            }
+            idx.data_type = *x;
+            subscript((val, vloc), (idx, iloc), ctx)
+        }
+        Type::Mut(x) => {
+            if !(ctx.is_const.get()
+                || matches!(x.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+            {
                 if let Some(PointerValue(v)) = idx.comp_val {
                     idx.comp_val = Some(ctx.builder.build_load(x.llvm_type(ctx).unwrap(), v, ""));
                 }
@@ -3538,7 +3590,10 @@ pub fn impl_convert<'ctx>(
                                 ty: val.data_type.to_string(),
                             })
                         } else {
-                            if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                            if !(ctx.is_const.get()
+                                || matches!(b, Type::Mut(_))
+                                || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+                            {
                                 if let Some(PointerValue(v)) = val.comp_val {
                                     val.comp_val = Some(ctx.builder.build_load(
                                         b.llvm_type(ctx).unwrap(),
@@ -3609,7 +3664,10 @@ pub fn impl_convert<'ctx>(
                             ty: val.data_type.to_string(),
                         })
                     } else {
-                        if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                        if !(ctx.is_const.get()
+                            || matches!(b, Type::Mut(_))
+                            || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+                        {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val =
                                     Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
@@ -3622,7 +3680,9 @@ pub fn impl_convert<'ctx>(
             }
         }
         Type::Mut(b) => {
-            if !ctx.is_const.get() {
+            if !(ctx.is_const.get()
+                || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+            {
                 if let Some(PointerValue(v)) = val.comp_val {
                     val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                 }
@@ -4022,7 +4082,10 @@ pub fn expl_convert<'ctx>(
                                 ty: b.to_string(),
                             })
                         } else {
-                            if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                            if !(ctx.is_const.get()
+                                || matches!(b, Type::Mut(_))
+                                || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+                            {
                                 if let Some(PointerValue(v)) = val.comp_val {
                                     val.comp_val = Some(ctx.builder.build_load(
                                         b.llvm_type(ctx).unwrap(),
@@ -4093,7 +4156,10 @@ pub fn expl_convert<'ctx>(
                             ty: b.to_string(),
                         })
                     } else {
-                        if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
+                        if !(ctx.is_const.get()
+                            || matches!(b, Type::Mut(_))
+                            || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+                        {
                             if let Some(PointerValue(v)) = val.comp_val {
                                 val.comp_val =
                                     Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
@@ -4106,7 +4172,9 @@ pub fn expl_convert<'ctx>(
             }
         }
         Type::Mut(b) => {
-            if !ctx.is_const.get() {
+            if !(ctx.is_const.get()
+                || matches!(b.size(ctx), SizeType::Dynamic | SizeType::Static(0)))
+            {
                 if let Some(PointerValue(v)) = val.comp_val {
                     val.comp_val = Some(ctx.builder.build_load(b.llvm_type(ctx).unwrap(), v, ""));
                 }
