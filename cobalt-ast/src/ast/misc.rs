@@ -115,7 +115,11 @@ impl AST for BitCastAST {
         );
         ctx.is_const.set(oic);
         let decayed = ops::decay(val.data_type.clone());
-        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx).unwrap();
+        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx)
+            .unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            });
         match (t.size(ctx), val.data_type.size(ctx)) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {
@@ -132,13 +136,15 @@ impl AST for BitCastAST {
                 }
             }
             _ => {
-                errs.push(CobaltError::UnsizedBitCast {
-                    loc: self.loc,
-                    from_ty: val.data_type.to_string(),
-                    from_loc: self.val.loc(),
-                    to_ty: t.to_string(),
-                    to_loc: self.target.loc(),
-                });
+                if t == Type::Error || val.data_type == Type::Error {
+                    errs.push(CobaltError::UnsizedBitCast {
+                        loc: self.loc,
+                        from_ty: val.data_type.to_string(),
+                        from_loc: self.val.loc(),
+                        to_ty: t.to_string(),
+                        to_loc: self.target.loc(),
+                    });
+                }
                 return (Value::error(), errs);
             }
         }
