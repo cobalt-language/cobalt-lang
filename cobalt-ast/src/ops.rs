@@ -84,6 +84,10 @@ pub fn impl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
                 }) || (impl_convertible(lb, target, ctx) && !lb.has_dtor(ctx))
             }
             Type::Mut(b) => impl_convertible(b, target, ctx),
+            Type::Tuple(v) | Type::Struct(v, _) => {
+                target == &Type::TypeData
+                    && v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+            }
             Type::Null => *target == Type::TypeData,
             Type::Error => true,
             _ => false,
@@ -126,6 +130,10 @@ pub fn expl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
                 }) || (expl_convertible(lb, target, ctx) && !lb.has_dtor(ctx))
             }
             Type::Mut(b) => expl_convertible(b, target, ctx),
+            Type::Tuple(v) | Type::Struct(v, _) => {
+                target == &Type::TypeData
+                    && v.iter().all(|v| impl_convertible(v, &Type::TypeData, ctx))
+            }
             Type::Null => matches!(
                 target,
                 Type::TypeData
@@ -3371,6 +3379,8 @@ pub fn subscript<'ctx>(
         }
     }
 }
+
+/// Implicitly convert the value `val` to the type `target`.
 pub fn impl_convert<'ctx>(
     loc: SourceSpan,
     (mut val, vloc): (Value<'ctx>, Option<SourceSpan>),
@@ -3837,6 +3847,42 @@ pub fn impl_convert<'ctx>(
                         );
                     }
                     Ok(Value::make_type(Type::Tuple(vec)))
+                } else {
+                    Err(err)
+                }
+            } else {
+                Err(err)
+            }
+        }
+        Type::Struct(v, l) => {
+            if target == Type::TypeData {
+                // If the struct value should be convertible to a type,
+                // then there must have interpreted data and it should
+                // be an array of type data.
+                if let Some(InterData::Array(a)) = val.inter_val {
+                    let mut vec = Vec::with_capacity(v.len());
+                    for (iv, dt) in a.into_iter().zip(v) {
+                        // - 1: Convert the field value
+                        // - 2: Ignore the location.
+                        // - 3: Create a value with interpreted data and
+                        // a type, but no compiled value.
+                        // - 4: Convert into a type.
+                        vec.push(
+                            impl_convert(
+                                unreachable_span(),             // 2
+                                (Value::metaval(iv, dt), None), // 3
+                                (Type::TypeData, None),         // 4
+                                ctx,
+                            )
+                            .ok()
+                            .and_then(Value::into_type)
+                            .ok_or(err.clone())?,
+                        );
+                    }
+
+                    // Take our new vector of types and convert it into
+                    // a struct type, keeping the same lookup
+                    Ok(Value::make_type(Type::Struct(vec, l)))
                 } else {
                     Err(err)
                 }
@@ -4489,6 +4535,31 @@ pub fn expl_convert<'ctx>(
                 Err(err)
             }
         }
+        Type::Struct(v, l) => {
+            if target == Type::TypeData {
+                if let Some(InterData::Array(a)) = val.inter_val {
+                    let mut vec = Vec::with_capacity(v.len());
+                    for (iv, dt) in a.into_iter().zip(v) {
+                        vec.push(
+                            impl_convert(
+                                unreachable_span(),
+                                (Value::metaval(iv, dt), None),
+                                (Type::TypeData, None),
+                                ctx,
+                            )
+                            .ok()
+                            .and_then(Value::into_type)
+                            .ok_or(err.clone())?,
+                        );
+                    }
+                    Ok(Value::make_type(Type::Struct(vec, l)))
+                } else {
+                    Err(err)
+                }
+            } else {
+                Err(err)
+            }
+        }
         Type::Null => match target {
             Type::TypeData => Ok(Value::make_type(Type::Null)),
             x @ (Type::IntLiteral | Type::Int(..)) => Ok(Value::interpreted(
@@ -4531,8 +4602,8 @@ pub fn attr<'ctx>(
     };
     match val.data_type.clone() {
         Type::Reference(b) => match *b {
-            Type::Mut(b) => {
-                if let Type::Nominal(n) = *b {
+            Type::Mut(b) => match *b {
+                Type::Nominal(n) => {
                     if id == "__base" {
                         val.data_type = Type::Reference(Box::new(Type::Mut(Box::new(
                             ctx.nominals.borrow()[&n].0.clone(),
@@ -4540,7 +4611,14 @@ pub fn attr<'ctx>(
                         Ok(val)
                     } else {
                         let noms = ctx.nominals.borrow();
-                        let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                        let info = &noms[&n];
+                        let v = info.2.get(id).ok_or(err.clone());
+                        if let (true, Err(_)) = (info.3.transparent, &v) {
+                            val.data_type =
+                                Type::Reference(Box::new(Type::Mut(Box::new(info.0.clone()))));
+                            return attr((val, vloc), (id, iloc), ctx);
+                        }
+                        let v = v?;
                         if let Value {
                             data_type: Type::Reference(r),
                             inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4614,17 +4692,59 @@ pub fn attr<'ctx>(
                             Err(err)
                         }
                     }
-                } else {
-                    Err(err)
                 }
-            }
+                Type::Struct(mut v, l) => {
+                    if let Some(&n) = l.get(id) {
+                        let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                            if let Some(t) = v
+                                .iter()
+                                .map(|t| t.llvm_type(ctx))
+                                .collect::<Option<Vec<_>>>()
+                            {
+                                ctx.builder
+                                    .build_struct_gep(
+                                        ctx.context.struct_type(&t, false),
+                                        pv,
+                                        n as _,
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                            Some(v.swap_remove(n))
+                        } else {
+                            None
+                        };
+                        let data_type =
+                            Type::Reference(Box::new(Type::Mut(Box::new(v.swap_remove(n)))));
+                        let mut v = Value::new(comp_val, inter_val, data_type);
+                        v.name = val.name;
+                        Ok(v)
+                    } else {
+                        Err(err)
+                    }
+                }
+                _ => Err(err),
+            },
             Type::Nominal(n) => {
                 if id == "__base" {
                     val.data_type = Type::Reference(Box::new(ctx.nominals.borrow()[&n].0.clone()));
                     Ok(val)
                 } else {
                     let noms = ctx.nominals.borrow();
-                    let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                    let info = &noms[&n];
+                    let v = info.2.get(id).ok_or(err.clone());
+                    if let (true, Err(_)) = (info.3.transparent, &v) {
+                        val.data_type = Type::Reference(Box::new(info.0.clone()));
+                        return attr((val, vloc), (id, iloc), ctx);
+                    }
+                    let v = v?;
                     if let Value {
                         data_type: Type::Reference(r),
                         inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4685,10 +4805,46 @@ pub fn attr<'ctx>(
                     }
                 }
             }
+            Type::Struct(mut v, l) => {
+                if let Some(&n) = l.get(id) {
+                    let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                        if let Some(t) = v
+                            .iter()
+                            .map(|t| t.llvm_type(ctx))
+                            .collect::<Option<Vec<_>>>()
+                        {
+                            ctx.builder
+                                .build_struct_gep(
+                                    ctx.context.struct_type(&t, false),
+                                    pv,
+                                    n as _,
+                                    "",
+                                )
+                                .ok()
+                                .map(From::from)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                        Some(v.swap_remove(n))
+                    } else {
+                        None
+                    };
+                    let data_type = Type::Reference(Box::new(v.swap_remove(n)));
+                    let mut v = Value::new(comp_val, inter_val, data_type);
+                    v.name = val.name;
+                    Ok(v)
+                } else {
+                    Err(err)
+                }
+            }
             _ => Err(err),
         },
-        Type::Mut(b) => {
-            if let Type::Nominal(n) = *b {
+        Type::Mut(b) => match *b {
+            Type::Nominal(n) => {
                 if id == "__base" {
                     val.data_type = Type::Reference(Box::new(Type::Mut(Box::new(
                         ctx.nominals.borrow()[&n].0.clone(),
@@ -4696,7 +4852,13 @@ pub fn attr<'ctx>(
                     Ok(val)
                 } else {
                     let noms = ctx.nominals.borrow();
-                    let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                    let info = &noms[&n];
+                    let v = info.2.get(id).ok_or(err.clone());
+                    if let (true, Err(_)) = (info.3.transparent, &v) {
+                        val.data_type = Type::Mut(Box::new(info.0.clone()));
+                        return attr((val, vloc), (id, iloc), ctx);
+                    }
+                    let v = v?;
                     if let Value {
                         data_type: Type::Reference(r),
                         inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4761,17 +4923,58 @@ pub fn attr<'ctx>(
                         Err(err)
                     }
                 }
-            } else {
-                Err(err)
             }
-        }
+            Type::Struct(mut v, l) => {
+                if let Some(&n) = l.get(id) {
+                    let comp_val = if let Some(PointerValue(pv)) = val.value(ctx) {
+                        if let Some(t) = v
+                            .iter()
+                            .map(|t| t.llvm_type(ctx))
+                            .collect::<Option<Vec<_>>>()
+                        {
+                            ctx.builder
+                                .build_struct_gep(
+                                    ctx.context.struct_type(&t, false),
+                                    pv,
+                                    n as _,
+                                    "",
+                                )
+                                .ok()
+                                .map(From::from)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                        Some(v.swap_remove(n))
+                    } else {
+                        None
+                    };
+                    let data_type = Type::Mut(Box::new(v.swap_remove(n)));
+                    let mut v = Value::new(comp_val, inter_val, data_type);
+                    v.name = val.name;
+                    Ok(v)
+                } else {
+                    Err(err)
+                }
+            }
+            _ => Err(err),
+        },
         Type::Nominal(n) => {
             if id == "__base" {
                 val.data_type = ctx.nominals.borrow()[&n].0.clone();
                 Ok(val)
             } else {
                 let noms = ctx.nominals.borrow();
-                let v = noms[&n].2.get(id).ok_or(err.clone())?;
+                let info = &noms[&n];
+                let v = info.2.get(id).ok_or(err.clone());
+                if let (true, Err(_)) = (info.3.transparent, &v) {
+                    val.data_type = info.0.clone();
+                    return attr((val, vloc), (id, iloc), ctx);
+                }
+                let v = v?;
                 if let Value {
                     data_type: Type::Reference(r),
                     inter_val: Some(iv @ InterData::Function(FnData { mt, .. })),
@@ -4827,6 +5030,26 @@ pub fn attr<'ctx>(
                 } else {
                     Err(err)
                 }
+            }
+        }
+        Type::Struct(mut v, l) => {
+            if let Some(&n) = l.get(id) {
+                let comp_val = if let Some(StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, n as _, "")
+                } else {
+                    None
+                };
+                let inter_val = if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(n))
+                } else {
+                    None
+                };
+                let data_type = v.swap_remove(n);
+                let mut v = Value::new(comp_val, inter_val, data_type);
+                v.name = val.name;
+                Ok(v)
+            } else {
+                Err(err)
             }
         }
         _ => Err(err),
@@ -5725,6 +5948,10 @@ pub fn call<'ctx>(
 pub fn common(lhs: &Type, rhs: &Type, ctx: &CompCtx) -> Option<Type> {
     if lhs == rhs {
         Some(lhs.clone())
+    } else if impl_convertible(lhs, &Type::TypeData, ctx)
+        && impl_convertible(rhs, &Type::TypeData, ctx)
+    {
+        Some(Type::TypeData)
     } else if impl_convertible(lhs, rhs, ctx) {
         Some(rhs.clone())
     } else if impl_convertible(rhs, lhs, ctx) {
