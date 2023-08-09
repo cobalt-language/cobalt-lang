@@ -220,40 +220,27 @@ impl Type {
                 _ => Static(ctx.flags.word_size as u32),
             },
             Mut(b) => b.size(ctx),
-            Tuple(v) => v.iter().fold(Static(0), |v, t| {
-                if let Static(bs) = v {
-                    let n = t.size(ctx);
-                    if let Static(ns) = n {
-                        let a = t.align(ctx) as u32;
-                        if a == 0 || a == 1 {
-                            Static(bs + ns)
+            Tuple(v) | Type::Struct(v, _) => {
+                let size = v.iter().fold(Static(0), |v, t| {
+                    if let Static(bs) = v {
+                        let n = t.size(ctx);
+                        if let Static(ns) = n {
+                            let a = t.align(ctx) as u32;
+                            if a == 0 || a == 1 {
+                                Static(bs + ns)
+                            } else {
+                                Static(((bs + a - 1) / a) * a + ns)
+                            }
                         } else {
-                            Static(((bs + a - 1) / a) * a + ns)
+                            n
                         }
                     } else {
-                        n
+                        v
                     }
-                } else {
-                    v
-                }
-            }),
-            Struct(fields, _) => fields.iter().fold(Static(0), |v, t| {
-                if let Static(bs) = v {
-                    let n = t.size(ctx);
-                    if let Static(ns) = n {
-                        let a = t.align(ctx) as u32;
-                        if a == 0 || a == 1 {
-                            Static(bs + ns)
-                        } else {
-                            Static(((bs + a - 1) / a) * a + ns)
-                        }
-                    } else {
-                        n
-                    }
-                } else {
-                    v
-                }
-            }),
+                });
+                let align = self.align(ctx) as u32;
+                size.map_static(|size| (size + align - 1) / align)
+            }
             Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx),
         }
     }
