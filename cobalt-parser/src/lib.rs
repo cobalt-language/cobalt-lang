@@ -1114,7 +1114,7 @@ pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
     top_level()
         .repeated()
         .collect()
-        .map(TopLevelAST::new)
+        .map(|vals| TopLevelAST::new(vals, None))
         .then_ignore(ignored().then(end()))
         .boxed()
 }
