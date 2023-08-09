@@ -164,11 +164,9 @@ impl AST for BitCastAST {
                 self.loc(),
             );
             val.comp_val = Some(bc);
-            val.data_type = t;
-            (val, errs)
-        } else {
-            (Value::error(), errs)
         }
+        val.data_type = t;
+        (val, errs)
     }
     fn print_impl(
         &self,
