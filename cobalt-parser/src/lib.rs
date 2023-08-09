@@ -558,21 +558,35 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
             )
             .then_ignore(ignored())
             .then(choice((
-                tl.repeated().collect().delimited_by(just('{'), just('}')),
+                tl.repeated()
+                    .collect()
+                    .delimited_by(just('{'), just('}'))
+                    .map(|v| (v, false)),
                 just('=')
                     .then_ignore(ignored())
                     .ignore_then(cdn())
                     .map_with_span(|cdn, loc| {
-                        vec![box_ast(ImportAST::new(
-                            loc.into_range().into(),
-                            cdn,
-                            vec![],
-                        ))]
+                        (
+                            vec![box_ast(ImportAST::new(
+                                loc.into_range().into(),
+                                cdn,
+                                vec![],
+                            ))],
+                            false,
+                        )
                     })
                     .then_ignore(just(';')),
-                just(';').to(vec![]),
+                just(';').to((vec![], true)),
             )))
-            .map(|(((anns, loc), name), body)| box_ast(ModuleAST::new(loc, name, body, anns))),
+            .validate(|(((anns, loc), name), (body, err)), span, e| {
+                if err {
+                    e.emit(Rich::custom(
+                        span,
+                        "file-level module declaration cannot go here",
+                    ))
+                }
+                box_ast(ModuleAST::new(loc, name, body, anns))
+            }),
             just(';')
                 .to_span()
                 .map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into()))),
