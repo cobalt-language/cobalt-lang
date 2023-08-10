@@ -157,28 +157,31 @@ fn cdn<'a>() -> impl Parser<'a, &'a str, CompoundDottedName, Extras<'a>> + Clone
             ident().map_with_span(|id, loc| Identifier(id.to_string(), loc.into_range().into())),
             just('*').map_with_span(|_, loc: SimpleSpan| Glob(loc.into_range().into())),
             cdns.separated_by(just('.').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored()),
+                skip_then_retry_until(none_of(".,};").ignored(), one_of(".,};").ignored()),
             ))
             .collect()
             .separated_by(just(',').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(",}").ignored(), one_of(",}").ignored()),
+                skip_then_retry_until(none_of(",};").ignored(), one_of(",};").ignored()),
             ))
             .collect()
             .delimited_by(just('{'), just('}'))
             .map(Group),
         ))
-    });
+    })
+    .labelled("an import segment");
     just('.')
         .or_not()
         .map(|o| o.is_some())
         .then_ignore(ignored())
         .then(
             cdns.separated_by(just('.').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored()),
+                skip_then_retry_until(none_of(".,};").ignored(), one_of(".,};").ignored()),
             ))
+            .at_least(1)
             .collect(),
         )
         .map(|(global, ids)| CompoundDottedName::new(ids, global))
+        .labelled("an import path")
 }
 fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
     let anns = annotation().padded_by(ignored()).repeated().collect();
@@ -556,10 +559,10 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
                         .ignore_then(ignored()),
                 ),
             import()
-                .then_ignore(ignored().then_ignore(just(';')).recover_with(skip_until(
-                    empty(),
-                    any().ignored(),
-                    || (),
+                .padded_by(ignored())
+                .then_ignore(just(';').recover_with(skip_then_retry_until(
+                    none_of(';').ignored(),
+                    just(";").ignored(),
                 )))
                 .map(box_ast),
             anns.then(
