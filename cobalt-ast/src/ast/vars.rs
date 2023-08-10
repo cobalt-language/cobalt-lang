@@ -47,6 +47,7 @@ impl AST for VarDefAST {
         let mut link_type = None;
         let mut linkas = None;
         let mut vis_spec = None;
+        let mut is_extern = false;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
@@ -79,7 +80,9 @@ impl AST for VarDefAST {
                         linkas = Some(arg.clone())
                     }
                 }
+                "extern" => is_extern = true,
                 "c" | "C" => {
+                    is_extern |= arg.as_deref() == Some("extern");
                     linkas = Some(
                         self.name
                             .ids
@@ -164,7 +167,11 @@ impl AST for VarDefAST {
                                 &linkas.unwrap_or_else(|| ctx.mangle(&self.name)),
                             );
                             match link_type {
-                                None => {}
+                                None => {
+                                    if !(vs || is_extern) {
+                                        gv.set_linkage(Private)
+                                    }
+                                }
                                 Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                                 Some((x, _)) => gv.set_linkage(x),
                             }
@@ -542,6 +549,8 @@ impl AST for VarDefAST {
                         gv.set_constant(!self.is_mut);
                         if let Some((link, _)) = link_type {
                             gv.set_linkage(link)
+                        } else if !(vs || is_extern.is_some()) {
+                            gv.set_linkage(Private)
                         }
                         ctx.with_vars(|v| {
                             v.insert(

@@ -104,6 +104,7 @@ impl AST for FnDefAST {
         let mut vis_spec = None;
         let mut fn_type = None;
         let mut target_match = 2u8;
+        let mut is_extern = false;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
             match ann.as_str() {
@@ -154,6 +155,7 @@ impl AST for FnDefAST {
                     });
                 }
                 "extern" => {
+                    is_extern = true;
                     cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
@@ -185,6 +187,7 @@ impl AST for FnDefAST {
                 }
                 "c" | "C" => {
                     cconv = Some(0);
+                    is_extern |= arg.as_deref() == Some("extern");
                     linkas = Some((
                         self.name
                             .ids
@@ -321,8 +324,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some(link) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if !(vs || is_extern || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self
@@ -347,7 +353,7 @@ impl AST for FnDefAST {
                             &self.name,
                             Symbol(
                                 Value::new(
-                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(PointerValue(gv.as_pointer_value())),
                                     Some(InterData::Function(FnData {
                                         defaults,
                                         cconv: cc,
@@ -416,8 +422,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some(link) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if !(vs || is_extern || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self
@@ -442,7 +451,7 @@ impl AST for FnDefAST {
                             &self.name,
                             Symbol(
                                 Value::new(
-                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(PointerValue(gv.as_pointer_value())),
                                     Some(InterData::Function(FnData {
                                         defaults,
                                         cconv: cc,
@@ -1045,8 +1054,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if !(vs || is_extern.is_some() || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -1068,7 +1080,7 @@ impl AST for FnDefAST {
                         }
                     })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(PointerValue(gv.as_pointer_value())),
                         Some(InterData::Function(FnData {
                             defaults,
                             cconv: cc,
@@ -1198,8 +1210,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if !(vs || is_extern.is_some() || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -1221,7 +1236,7 @@ impl AST for FnDefAST {
                         }
                     })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(PointerValue(gv.as_pointer_value())),
                         Some(InterData::Function(FnData {
                             defaults,
                             cconv: cc,
