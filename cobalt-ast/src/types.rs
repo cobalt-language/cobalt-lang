@@ -334,9 +334,14 @@ impl Type {
                         .into(),
                     )
                 }
-                Type::Mut(b) => b
-                    .llvm_type(ctx)
-                    .map(|t| t.ptr_type(Default::default()).into()),
+                Type::Mut(b) => {
+                    if b.size(ctx) == Static(0) {
+                        Some(PointerType(ctx.null_type.ptr_type(Default::default())))
+                    } else {
+                        b.llvm_type(ctx)
+                            .map(|t| t.ptr_type(Default::default()).into())
+                    }
+                }
                 b => {
                     if b.size(ctx) == Static(0) {
                         Some(PointerType(ctx.null_type.ptr_type(Default::default())))
@@ -345,9 +350,14 @@ impl Type {
                     }
                 }
             },
-            Mut(b) => b
-                .llvm_type(ctx)
-                .map(|t| t.ptr_type(Default::default()).into()),
+            Mut(b) => {
+                if b.size(ctx) == Static(0) {
+                    Some(PointerType(ctx.null_type.ptr_type(Default::default())))
+                } else {
+                    b.llvm_type(ctx)
+                        .map(|t| t.ptr_type(Default::default()).into())
+                }
+            }
             Tuple(v) | Struct(v, _) => {
                 let fields = v
                     .iter()
