@@ -411,7 +411,7 @@ impl<'src> AST<'src> for DotAST<'src> {
                             (
                                 Some(CobaltError::VariableDoesNotExist {
                                     name: self.name.0.clone(),
-                                    module: n.into(),
+                                    module: n,
                                     container: "module",
                                     loc: self.name.1,
                                 }),
@@ -446,7 +446,7 @@ impl<'src> AST<'src> for DotAST<'src> {
                     } else {
                         errs.push(CobaltError::VariableDoesNotExist {
                             name: self.name.0.clone(),
-                            module: n.clone().into(),
+                            module: n.clone(),
                             container: "type",
                             loc: self.name.1,
                         });
@@ -455,7 +455,7 @@ impl<'src> AST<'src> for DotAST<'src> {
                 } else {
                     errs.push(CobaltError::VariableDoesNotExist {
                         name: self.name.0.clone(),
-                        module: t.to_string().into(),
+                        module: t.to_string(),
                         container: "type",
                         loc: self.name.1,
                     });

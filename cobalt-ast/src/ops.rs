@@ -159,8 +159,8 @@ pub fn bin_op<'src, 'ctx>(
     right_move: bool,
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::BinOpNotDefined {
-        lhs: lhs.data_type.to_string().into(),
-        rhs: rhs.data_type.to_string().into(),
+        lhs: lhs.data_type.to_string(),
+        rhs: rhs.data_type.to_string(),
         op,
         lloc,
         rloc,
@@ -943,7 +943,7 @@ pub fn bin_op<'src, 'ctx>(
                         } else {
                             Err(CobaltError::CantMoveFromReference {
                                 loc: lloc,
-                                ty: lhs.data_type.to_string().into(),
+                                ty: lhs.data_type.to_string(),
                             })
                         }
                     }
@@ -968,7 +968,7 @@ pub fn bin_op<'src, 'ctx>(
             } else {
                 Err(CobaltError::CantMoveFromReference {
                     loc: rloc,
-                    ty: rhs.data_type.to_string().into(),
+                    ty: rhs.data_type.to_string(),
                 })
             }
         }
@@ -1985,9 +1985,9 @@ pub fn bin_op<'src, 'ctx>(
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc: lloc,
-                ty: tyname.into(),
+                ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string().into(),
+                op,
                 floc: lf.unwrap(),
             }
         } else {
@@ -1998,13 +1998,13 @@ pub fn bin_op<'src, 'ctx>(
 pub fn pre_op<'src, 'ctx>(
     loc: SourceSpan,
     (mut val, vloc): (Value<'src, 'ctx>, SourceSpan),
-    op: &str,
+    op: &'static str,
     ctx: &CompCtx<'src, 'ctx>,
     can_move: bool,
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::PreOpNotDefined {
-        val: val.data_type.to_string().into(),
-        op: op.to_string().into(),
+        val: val.data_type.to_string(),
+        op,
         vloc,
         oloc: loc,
     };
@@ -2173,7 +2173,7 @@ pub fn pre_op<'src, 'ctx>(
                 } else {
                     Err(CobaltError::CantMoveFromReference {
                         loc,
-                        ty: val.data_type.to_string().into(),
+                        ty: val.data_type.to_string(),
                     })
                 }
             }
@@ -2355,9 +2355,9 @@ pub fn pre_op<'src, 'ctx>(
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc,
-                ty: tyname.into(),
+                ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string().into(),
+                op,
                 floc: vf.unwrap(),
             }
         } else {
@@ -2368,14 +2368,14 @@ pub fn pre_op<'src, 'ctx>(
 pub fn post_op<'src, 'ctx>(
     loc: SourceSpan,
     (val, vloc): (Value<'src, 'ctx>, SourceSpan),
-    op: &str,
+    op: &'static str,
     ctx: &CompCtx<'src, 'ctx>,
     can_move: bool,
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     #![allow(clippy::redundant_clone, clippy::only_used_in_recursion)]
     let err = CobaltError::PostOpNotDefined {
-        val: val.data_type.to_string().into(),
-        op: op.to_string().into(),
+        val: val.data_type.to_string(),
+        op,
         vloc,
         oloc: loc,
     };
@@ -2398,9 +2398,9 @@ pub fn post_op<'src, 'ctx>(
         if non_mut {
             CobaltError::CantMutateImmut {
                 vloc,
-                ty: tyname.into(),
+                ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string().into(),
+                op,
                 floc: vf.unwrap(),
             }
         } else {
@@ -2414,8 +2414,8 @@ pub fn subscript<'src, 'ctx>(
     ctx: &CompCtx<'src, 'ctx>,
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::SubscriptNotDefined {
-        val: val.data_type.to_string().into(),
-        sub: idx.data_type.to_string().into(),
+        val: val.data_type.to_string(),
+        sub: idx.data_type.to_string(),
         vloc,
         sloc: iloc,
     };
@@ -3389,8 +3389,8 @@ pub fn impl_convert<'src, 'ctx>(
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::InvalidConversion {
         is_expl: false,
-        val: val.data_type.to_string().into(),
-        ty: target.to_string().into(),
+        val: val.data_type.to_string(),
+        ty: target.to_string(),
         vloc,
         tloc,
         oloc: loc,
@@ -3426,9 +3426,9 @@ pub fn impl_convert<'src, 'ctx>(
                 return if let Some(floc) = val.frozen {
                     Err(CobaltError::CantMutateImmut {
                         vloc: vloc.unwrap_or(loc),
-                        ty: val.data_type.to_string().into(),
+                        ty: val.data_type.to_string(),
                         oloc: None,
-                        op: "".to_string().into(),
+                        op: "",
                         floc,
                     })
                 } else {
@@ -3545,7 +3545,7 @@ pub fn impl_convert<'src, 'ctx>(
                         if b.has_dtor(ctx) {
                             Err(CobaltError::CantMoveFromReference {
                                 loc,
-                                ty: val.data_type.to_string().into(),
+                                ty: val.data_type.to_string(),
                             })
                         } else {
                             if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
@@ -3616,7 +3616,7 @@ pub fn impl_convert<'src, 'ctx>(
                     if b.has_dtor(ctx) {
                         Err(CobaltError::CantMoveFromReference {
                             loc,
-                            ty: val.data_type.to_string().into(),
+                            ty: val.data_type.to_string(),
                         })
                     } else {
                         if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
@@ -3909,8 +3909,8 @@ pub fn expl_convert<'src, 'ctx>(
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::InvalidConversion {
         is_expl: true,
-        val: val.data_type.to_string().into(),
-        ty: target.to_string().into(),
+        val: val.data_type.to_string(),
+        ty: target.to_string(),
         vloc,
         tloc,
         oloc: loc,
@@ -3946,9 +3946,9 @@ pub fn expl_convert<'src, 'ctx>(
                 return if let Some(floc) = val.frozen {
                     Err(CobaltError::CantMutateImmut {
                         vloc: vloc.unwrap_or(loc),
-                        ty: val.data_type.to_string().into(),
+                        ty: val.data_type.to_string(),
                         oloc: None,
-                        op: "".to_string().into(),
+                        op: "",
                         floc,
                     })
                 } else {
@@ -4065,7 +4065,7 @@ pub fn expl_convert<'src, 'ctx>(
                         if b.has_dtor(ctx) {
                             Err(CobaltError::CantMoveFromReference {
                                 loc,
-                                ty: b.to_string().into(),
+                                ty: b.to_string(),
                             })
                         } else {
                             if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
@@ -4136,7 +4136,7 @@ pub fn expl_convert<'src, 'ctx>(
                     if b.has_dtor(ctx) {
                         Err(CobaltError::CantMoveFromReference {
                             loc,
-                            ty: b.to_string().into(),
+                            ty: b.to_string(),
                         })
                     } else {
                         if !(ctx.is_const.get() && matches!(b, Type::Mut(_))) {
@@ -4595,7 +4595,7 @@ pub fn attr<'src, 'ctx>(
     ctx: &CompCtx<'src, 'ctx>,
 ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::AttrNotDefined {
-        val: val.data_type.to_string().into(),
+        val: val.data_type.to_string(),
         attr: id.to_string().into(),
         vloc,
         aloc: iloc,
@@ -5169,12 +5169,11 @@ pub fn call<'src, 'ctx>(
                         val: format!(
                             "&({})",
                             v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
-                        )
-                        .into(),
+                        ),
                         loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
                         args: args
                             .iter()
-                            .map(|(v, _)| v.data_type.to_string().into())
+                            .map(|(v, _)| v.data_type.to_string())
                             .collect(),
                         aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                         nargs: vec![],
@@ -5241,12 +5240,11 @@ pub fn call<'src, 'ctx>(
                     val: format!(
                         "&({})",
                         v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
-                    )
-                    .into(),
+                    ),
                     loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
                     args: args
                         .iter()
-                        .map(|(v, _)| v.data_type.to_string().into())
+                        .map(|(v, _)| v.data_type.to_string())
                         .collect(),
                     aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                     nargs: vec![],
@@ -5321,12 +5319,11 @@ pub fn call<'src, 'ctx>(
                         .map(|(t, _)| t.to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
-                )
-                .into(),
+                ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
                 args: args
                     .iter()
-                    .map(|(v, _)| v.data_type.to_string().into())
+                    .map(|(v, _)| v.data_type.to_string())
                     .collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
@@ -5519,12 +5516,11 @@ pub fn call<'src, 'ctx>(
                 val: format!(
                     "({})",
                     v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
-                )
-                .into(),
+                ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
                 args: args
                     .iter()
-                    .map(|(v, _)| v.data_type.to_string().into())
+                    .map(|(v, _)| v.data_type.to_string())
                     .collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
@@ -5641,20 +5637,20 @@ pub fn call<'src, 'ctx>(
                                 }
                                 (a0, a1) => Err(CobaltError::InvalidInlineAsm2 {
                                     loc1: loc0,
-                                    type1: a0.data_type.to_string().into(),
+                                    type1: a0.data_type.to_string(),
                                     const1: a0.inter_val.is_some(),
                                     loc2: loc1,
-                                    type2: a1.data_type.to_string().into(),
+                                    type2: a1.data_type.to_string(),
                                     const2: a1.inter_val.is_some(),
                                 }),
                             }
                         } else {
                             Err(CobaltError::InvalidInlineAsm2 {
                                 loc1: loc0,
-                                type1: a0.data_type.to_string().into(),
+                                type1: a0.data_type.to_string(),
                                 const1: a0.inter_val.is_some(),
                                 loc2: loc1,
-                                type2: a1.data_type.to_string().into(),
+                                type2: a1.data_type.to_string(),
                                 const2: a1.inter_val.is_some(),
                             })
                         }
@@ -5735,10 +5731,10 @@ pub fn call<'src, 'ctx>(
                                         type1: "type".into(),
                                         const1: true,
                                         loc2: loc1,
-                                        type2: a1.data_type.to_string().into(),
+                                        type2: a1.data_type.to_string(),
                                         const2: a1.inter_val.is_some(),
                                         loc3: loc2,
-                                        type3: a2.data_type.to_string().into(),
+                                        type3: a2.data_type.to_string(),
                                         const3: a2.inter_val.is_some(),
                                     }),
                                 }
@@ -5748,23 +5744,23 @@ pub fn call<'src, 'ctx>(
                                     type1: "type".into(),
                                     const1: true,
                                     loc2: loc1,
-                                    type2: a1.data_type.to_string().into(),
+                                    type2: a1.data_type.to_string(),
                                     const2: a1.inter_val.is_some(),
                                     loc3: loc2,
-                                    type3: a2.data_type.to_string().into(),
+                                    type3: a2.data_type.to_string(),
                                     const3: a2.inter_val.is_some(),
                                 })
                             }
                         } else {
                             Err(CobaltError::InvalidInlineAsm3 {
                                 loc1: loc0,
-                                type1: a0.data_type.to_string().into(),
+                                type1: a0.data_type.to_string(),
                                 const1: a0.inter_val.is_some(),
                                 loc2: loc1,
-                                type2: a1.data_type.to_string().into(),
+                                type2: a1.data_type.to_string(),
                                 const2: a1.inter_val.is_some(),
                                 loc3: loc2,
-                                type3: a2.data_type.to_string().into(),
+                                type3: a2.data_type.to_string(),
                                 const3: a2.inter_val.is_some(),
                             })
                         }
@@ -5790,7 +5786,7 @@ pub fn call<'src, 'ctx>(
                             ))
                         } else {
                             Err(CobaltError::NonRuntimeAllocaType {
-                                ty: ty.to_string().into(),
+                                ty: ty.to_string(),
                                 loc: loc0,
                             })
                         }
@@ -5830,7 +5826,7 @@ pub fn call<'src, 'ctx>(
                                 }
                                 x => {
                                     errs.push(CobaltError::NonIntegralAllocaArg {
-                                        ty: x.to_string().into(),
+                                        ty: x.to_string(),
                                         loc,
                                     });
                                     break;
@@ -5853,7 +5849,7 @@ pub fn call<'src, 'ctx>(
                             ))
                         } else {
                             errs.push(CobaltError::NonRuntimeAllocaType {
-                                ty: ty.to_string().into(),
+                                ty: ty.to_string(),
                                 loc: loc0,
                             });
                             Err(CobaltError::InvalidIntrinsicCall {
@@ -5889,7 +5885,7 @@ pub fn call<'src, 'ctx>(
                                     .ok_or_else(|| CobaltError::ExpectedType {
                                         loc,
                                         aloc,
-                                        ty: v.data_type.to_string().into(),
+                                        ty: v.data_type.to_string(),
                                     })
                             })
                             .collect::<Result<_, _>>()?,
@@ -5910,7 +5906,7 @@ pub fn call<'src, 'ctx>(
                         .ok_or_else(|| CobaltError::ExpectedType {
                             loc,
                             aloc: args[0].1,
-                            ty: args[0].0.data_type.to_string().into(),
+                            ty: args[0].0.data_type.to_string(),
                         })?
                         .to_string(),
                     _ => Type::Tuple(
@@ -5921,7 +5917,7 @@ pub fn call<'src, 'ctx>(
                                     .ok_or_else(|| CobaltError::ExpectedType {
                                         loc,
                                         aloc,
-                                        ty: v.data_type.to_string().into(),
+                                        ty: v.data_type.to_string(),
                                     })
                             })
                             .collect::<Result<_, _>>()?,
@@ -5953,11 +5949,11 @@ pub fn call<'src, 'ctx>(
             }),
         },
         t => Err(CobaltError::CannotCallWithArgs {
-            val: t.to_string().into(),
+            val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
             args: args
                 .iter()
-                .map(|(v, _)| v.data_type.to_string().into())
+                .map(|(v, _)| v.data_type.to_string())
                 .collect(),
             aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
             nargs: vec![],

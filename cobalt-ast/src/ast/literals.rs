@@ -403,8 +403,8 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
                     errs.push(CobaltError::ArrayElementsDontMatch {
                         loc: val.loc(),
                         prev: elem_loc,
-                        current: ty.to_string().into(),
-                        new: dt.to_string().into(),
+                        current: ty.to_string(),
+                        new: dt.to_string(),
                     });
                 }
             }

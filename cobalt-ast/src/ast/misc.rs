@@ -131,10 +131,10 @@ impl<'src> AST<'src> for BitCastAST<'src> {
                 if d != s {
                     errs.push(CobaltError::DifferentBitCastSizes {
                         loc: self.loc,
-                        from_ty: val.data_type.to_string().into(),
+                        from_ty: val.data_type.to_string(),
                         from_sz: s,
                         from_loc: self.val.loc(),
-                        to_ty: t.to_string().into(),
+                        to_ty: t.to_string(),
                         to_sz: d,
                         to_loc: self.target.loc(),
                     });
@@ -145,9 +145,9 @@ impl<'src> AST<'src> for BitCastAST<'src> {
                 if t == Type::Error || val.data_type == Type::Error {
                     errs.push(CobaltError::UnsizedBitCast {
                         loc: self.loc,
-                        from_ty: val.data_type.to_string().into(),
+                        from_ty: val.data_type.to_string(),
                         from_loc: self.val.loc(),
-                        to_ty: t.to_string().into(),
+                        to_ty: t.to_string(),
                         to_loc: self.target.loc(),
                     });
                 }

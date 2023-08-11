@@ -802,7 +802,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.into(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -882,7 +882,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             if params.is_empty() {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.loc,
-                                    self_t: self_t.to_string().into(),
+                                    self_t: self_t.to_string(),
                                     param: None,
                                 });
                                 params.push((Type::Null, false));
@@ -902,8 +902,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
                                         loc: self.params[0].2.loc(),
-                                        self_t: s.into(),
-                                        param: Some(params[0].0.to_string().into()),
+                                        self_t: s,
+                                        param: Some(params[0].0.to_string()),
                                     });
                                 } else {
                                     fn_type = Some((MethodType::Normal, loc));
@@ -941,7 +941,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             if params.is_empty() {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.loc,
-                                    self_t: self_t.to_string().into(),
+                                    self_t: self_t.to_string(),
                                     param: None,
                                 });
                                 params.push((Type::Null, false));
@@ -961,8 +961,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
                                         loc: self.params[0].2.loc(),
-                                        self_t: s.into(),
-                                        param: Some(params[0].0.to_string().into()),
+                                        self_t: s,
+                                        param: Some(params[0].0.to_string()),
                                     });
                                 } else {
                                     fn_type = Some((MethodType::Getter, loc));
@@ -1395,14 +1395,14 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(CobaltError::NotAModule {
                         loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string().into()
+                        name: self.name.start(x).to_string()
                     });
                     (Value::error(), errs)
                 },
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
                     errs.push(CobaltError::RedefVariable {
                         loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string().into(),
+                        name: self.name.start(x).to_string(),
                         prev: d
                     });
                     (Value::error(), errs)

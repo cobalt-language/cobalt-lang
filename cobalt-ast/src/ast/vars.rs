@@ -325,7 +325,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.into(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -468,7 +468,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                     .or_else(|| {
                                         if dt != Type::Error {
                                             errs.push(CobaltError::TypeIsConstOnly {
-                                                ty: dt.to_string().into(),
+                                                ty: dt.to_string(),
                                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                                             })
                                         };
@@ -485,14 +485,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                         });
                         (Value::error(), errs)
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                             prev: d,
                         });
                         (Value::error(), errs)
@@ -573,7 +573,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     val.inter_val = None;
                     if dt != Type::Error {
                         errs.push(CobaltError::TypeIsConstOnly {
-                            ty: dt.to_string().into(),
+                            ty: dt.to_string(),
                             loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                         })
                     }
@@ -588,14 +588,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                         });
                         (Value::error(), errs)
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                             prev: d,
                         });
                         (Value::error(), errs)
@@ -766,7 +766,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             }
                             if dt != Type::Error {
                                 errs.push(CobaltError::TypeIsConstOnly {
-                                    ty: dt.to_string().into(),
+                                    ty: dt.to_string(),
                                     loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                                 })
                             }
@@ -784,7 +784,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         let old_scope = ctx.push_scope(&self.name);
                         if dt != Type::Error {
                             errs.push(CobaltError::TypeIsConstOnly {
-                                ty: dt.to_string().into(),
+                                ty: dt.to_string(),
                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                             })
                         }
@@ -831,14 +831,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                         });
                         (Value::error(), errs)
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
                             loc: self.name.ids[x].1,
-                            name: self.name.start(x).to_string().into(),
+                            name: self.name.start(x).to_string(),
                             prev: d,
                         });
                         (Value::error(), errs)
@@ -951,7 +951,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             } else {
                 if dt != Type::Error {
                     errs.push(CobaltError::TypeIsConstOnly {
-                        ty: dt.to_string().into(),
+                        ty: dt.to_string(),
                         loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                     })
                 }
@@ -972,14 +972,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(CobaltError::NotAModule {
                         loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string().into(),
+                        name: self.name.start(x).to_string(),
                     });
                     (Value::error(), errs)
                 }
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
                     errs.push(CobaltError::RedefVariable {
                         loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string().into(),
+                        name: self.name.start(x).to_string(),
                         prev: d,
                     });
                     (Value::error(), errs)
@@ -1162,7 +1162,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.into(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -1286,14 +1286,14 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(CobaltError::NotAModule {
                     loc: self.name.ids[x].1,
-                    name: self.name.start(x).to_string().into(),
+                    name: self.name.start(x).to_string(),
                 });
                 (Value::error(), errs)
             }
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
                 errs.push(CobaltError::RedefVariable {
                     loc: self.name.ids[x].1,
-                    name: self.name.start(x).to_string().into(),
+                    name: self.name.start(x).to_string(),
                     prev: d,
                 });
                 (Value::error(), errs)
@@ -1725,7 +1725,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.into(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -1929,7 +1929,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                 noms.remove(&mangled);
                 errs.push(CobaltError::NotAModule {
                     loc: self.name.ids[x].1,
-                    name: self.name.start(x).to_string().into(),
+                    name: self.name.start(x).to_string(),
                 });
                 (Value::error(), errs)
             }
@@ -1937,7 +1937,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                 noms.remove(&mangled);
                 errs.push(CobaltError::RedefVariable {
                     loc: self.name.ids[x].1,
-                    name: self.name.start(x).to_string().into(),
+                    name: self.name.start(x).to_string(),
                     prev: d,
                 });
                 (Value::error(), errs)
