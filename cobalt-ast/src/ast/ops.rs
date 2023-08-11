@@ -1,25 +1,33 @@
 use crate::*;
 #[derive(Debug, Clone)]
-pub struct BinOpAST {
+pub struct BinOpAST<'src> {
     loc: SourceSpan,
-    pub op: String,
-    pub lhs: Box<dyn AST>,
-    pub rhs: Box<dyn AST>,
+    pub op: &'static str,
+    pub lhs: BoxedAST<'src>,
+    pub rhs: BoxedAST<'src>,
 }
-impl BinOpAST {
-    pub fn new(loc: SourceSpan, op: String, lhs: Box<dyn AST>, rhs: Box<dyn AST>) -> Self {
+impl<'src> BinOpAST<'src> {
+    pub fn new(
+        loc: SourceSpan,
+        op: &'static str,
+        lhs: BoxedAST<'src>,
+        rhs: BoxedAST<'src>,
+    ) -> Self {
         BinOpAST { loc, op, lhs, rhs }
     }
 }
-impl AST for BinOpAST {
+impl<'src> AST<'src> for BinOpAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.lhs.loc(), self.rhs.loc())
     }
     fn nodes(&self) -> usize {
         self.lhs.nodes() + self.rhs.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
-        match self.op.as_str() {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        match self.op {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let cond = ops::expl_convert(
@@ -233,34 +241,36 @@ impl AST for BinOpAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct PostfixAST {
+pub struct PostfixAST<'src> {
     loc: SourceSpan,
-    pub op: String,
-    pub val: Box<dyn AST>,
+    pub op: &'static str,
+    pub val: BoxedAST<'src>,
 }
-impl PostfixAST {
-    pub fn new(loc: SourceSpan, op: String, val: Box<dyn AST>) -> Self {
+impl<'src> PostfixAST<'src> {
+    pub fn new(loc: SourceSpan, op: &'static str, val: BoxedAST<'src>) -> Self {
         PostfixAST { loc, op, val }
     }
 }
-impl AST for PostfixAST {
+impl<'src> AST<'src> for PostfixAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.val.loc(), self.loc)
     }
     fn nodes(&self) -> usize {
         self.val.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {
             return (Value::error(), errs);
         }
         (
-            ops::post_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx, true)
-                .unwrap_or_else(|e| {
-                    errs.push(e);
-                    Value::error()
-                }),
+            ops::post_op(self.loc, (v, self.val.loc()), self.op, ctx, true).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            }),
             errs,
         )
     }
@@ -275,35 +285,36 @@ impl AST for PostfixAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct PrefixAST {
+pub struct PrefixAST<'src> {
     loc: SourceSpan,
-    pub op: String,
-    pub val: Box<dyn AST>,
+    pub op: &'static str,
+    pub val: BoxedAST<'src>,
 }
-impl PrefixAST {
-    pub fn new(loc: SourceSpan, op: String, val: Box<dyn AST>) -> Self {
+impl<'src> PrefixAST<'src> {
+    pub fn new(loc: SourceSpan, op: &'static str, val: BoxedAST<'src>) -> Self {
         PrefixAST { loc, op, val }
     }
 }
-impl AST for PrefixAST {
+impl<'src> AST<'src> for PrefixAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.loc, self.val.loc())
     }
     fn nodes(&self) -> usize {
         self.val.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (v, mut errs) = self.val.codegen(ctx);
         if v.data_type == Type::Error {
             return (Value::error(), errs);
         }
         (
-            ops::pre_op(self.loc, (v, self.val.loc()), self.op.as_str(), ctx, true).unwrap_or_else(
-                |e| {
-                    errs.push(e);
-                    Value::error()
-                },
-            ),
+            ops::pre_op(self.loc, (v, self.val.loc()), self.op, ctx, true).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            }),
             errs,
         )
     }
@@ -318,24 +329,27 @@ impl AST for PrefixAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct SubAST {
+pub struct SubAST<'src> {
     loc: SourceSpan,
-    pub target: Box<dyn AST>,
-    pub index: Box<dyn AST>,
+    pub target: BoxedAST<'src>,
+    pub index: BoxedAST<'src>,
 }
-impl SubAST {
-    pub fn new(loc: SourceSpan, target: Box<dyn AST>, index: Box<dyn AST>) -> Self {
+impl<'src> SubAST<'src> {
+    pub fn new(loc: SourceSpan, target: BoxedAST<'src>, index: BoxedAST<'src>) -> Self {
         SubAST { loc, target, index }
     }
 }
-impl AST for SubAST {
+impl<'src> AST<'src> for SubAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.target.nodes() + self.index.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
         if target.data_type == Type::Error || index.data_type == Type::Error {
@@ -362,23 +376,26 @@ impl AST for SubAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct DotAST {
-    pub obj: Box<dyn AST>,
-    pub name: (String, SourceSpan),
+pub struct DotAST<'src> {
+    pub obj: BoxedAST<'src>,
+    pub name: (Cow<'src, str>, SourceSpan),
 }
-impl DotAST {
-    pub fn new(obj: Box<dyn AST>, name: (String, SourceSpan)) -> Self {
+impl<'src> DotAST<'src> {
+    pub fn new(obj: BoxedAST<'src>, name: (Cow<'src, str>, SourceSpan)) -> Self {
         DotAST { obj, name }
     }
 }
-impl AST for DotAST {
+impl<'src> AST<'src> for DotAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.obj.loc(), self.name.1)
     }
     fn nodes(&self) -> usize {
         self.obj.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let r = self.obj.codegen_errs(ctx, &mut errs);
         let v = match r {
@@ -394,7 +411,7 @@ impl AST for DotAST {
                             (
                                 Some(CobaltError::VariableDoesNotExist {
                                     name: self.name.0.clone(),
-                                    module: n,
+                                    module: n.into(),
                                     container: "module",
                                     loc: self.name.1,
                                 }),
@@ -424,12 +441,12 @@ impl AST for DotAST {
                 ..
             } => {
                 if let Type::Nominal(n) = &*t {
-                    if let Some(v) = ctx.nominals.borrow()[n].2.get(&self.name.0) {
+                    if let Some(v) = ctx.nominals.borrow()[n].2.get(&*self.name.0) {
                         v.clone()
                     } else {
                         errs.push(CobaltError::VariableDoesNotExist {
                             name: self.name.0.clone(),
-                            module: n.to_string(),
+                            module: n.clone().into(),
                             container: "type",
                             loc: self.name.1,
                         });
@@ -438,7 +455,7 @@ impl AST for DotAST {
                 } else {
                     errs.push(CobaltError::VariableDoesNotExist {
                         name: self.name.0.clone(),
-                        module: t.to_string(),
+                        module: t.to_string().into(),
                         container: "type",
                         loc: self.name.1,
                     });

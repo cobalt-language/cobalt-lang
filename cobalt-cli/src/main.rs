@@ -587,9 +587,9 @@ fn driver() -> anyhow::Result<()> {
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                 let file = FILES.add_file(0, input, code);
-                let lock = file.contents();
+                let lock = unsafe { std::mem::transmute(&*file.contents()) };
                 let ((ast, errs), parse_time) =
-                    timeit(|| parse_tl().parse(&lock).into_output_errors());
+                    timeit(|| parse_tl().parse(lock).into_output_errors());
                 let mut ast = ast.unwrap_or_default();
                 let errs = errs.into_iter().flat_map(cvt_err);
                 reporter.parse_time = Some(parse_time);
@@ -930,8 +930,8 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let lock = unsafe { std::mem::transmute(&*file.contents()) };
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1301,8 +1301,8 @@ fn driver() -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let lock = unsafe { std::mem::transmute(&*file.contents()) };
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1574,8 +1574,8 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let lock = unsafe { std::mem::transmute(&*file.contents()) };
+            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(lock).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1865,9 +1865,9 @@ fn driver() -> anyhow::Result<()> {
                             anyhow::bail!("cannot pass absolute paths to multi-file input")
                         }
                         let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let lock = unsafe { std::mem::transmute(&*file.contents()) };
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(lock).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -2300,9 +2300,9 @@ fn driver() -> anyhow::Result<()> {
                     .zip(&codes)
                     .map(|(input, code)| {
                         let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let lock = unsafe { std::mem::transmute(&*file.contents()) };
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(lock).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -2628,9 +2628,9 @@ fn driver() -> anyhow::Result<()> {
                     .zip(&codes)
                     .map(|(input, code)| {
                         let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let lock = unsafe { std::mem::transmute(&*file.contents()) };
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(lock).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;

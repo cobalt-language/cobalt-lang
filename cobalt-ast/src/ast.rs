@@ -23,15 +23,15 @@ impl Display for TreePrefix {
         Ok(())
     }
 }
-pub trait ASTClone {
-    fn clone_ast(&self) -> Box<dyn AST>;
+pub trait ASTClone<'src> {
+    fn clone_ast(&self) -> Box<DynAST<'src>>;
 }
-impl<T: AST + Clone + 'static> ASTClone for T {
-    fn clone_ast(&self) -> Box<dyn AST> {
+impl<'src, T: AST<'src> + Clone + 'src> ASTClone<'src> for T {
+    fn clone_ast(&self) -> Box<DynAST<'src>> {
         Box::new(self.clone())
     }
 }
-pub trait AST: ASTClone + std::fmt::Debug {
+pub trait AST<'src>: ASTClone<'src> + std::fmt::Debug {
     fn loc(&self) -> SourceSpan;
     fn nodes(&self) -> usize {
         1
@@ -48,12 +48,19 @@ pub trait AST: ASTClone + std::fmt::Debug {
         file: Option<CobaltFile>,
     ) -> Result;
     // prepasses
-    fn varfwd_prepass(&self, _ctx: &CompCtx) {} // runs once, inserts uninit symbols with correct names
-    fn constinit_prepass(&self, _ctx: &CompCtx, _needs_another: &mut bool) {} // runs while needs_another is set to true, pretty much only for ConstDefAST
-    fn fwddef_prepass(&self, _ctx: &CompCtx) {} // create forward definitions for functions in LLVM
-                                                // code generation
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>);
-    fn const_codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn varfwd_prepass(&self, _ctx: &CompCtx<'src, '_>) {} // runs once, inserts uninit symbols with correct names
+    fn constinit_prepass(&self, _ctx: &CompCtx<'src, '_>, _needs_another: &mut bool) {} // runs while needs_another is set to true, pretty much only for ConstDefAST
+    fn fwddef_prepass(&self, _ctx: &CompCtx<'src, '_>) {} // create forward definitions for functions in LLVM
+
+    // code generation
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>);
+    fn const_codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let old_is_const = ctx.is_const.replace(true);
         let res = self.codegen(ctx);
         ctx.is_const.set(old_is_const);
@@ -61,16 +68,20 @@ pub trait AST: ASTClone + std::fmt::Debug {
     }
 
     /// Just calls `codegen()` and appends the errors to `errs`.
-    fn codegen_errs<'ctx>(&self, ctx: &CompCtx<'ctx>, errs: &mut Vec<CobaltError>) -> Value<'ctx> {
+    fn codegen_errs<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);
         val
     }
     fn const_codegen_errs<'ctx>(
         &self,
-        ctx: &CompCtx<'ctx>,
-        errs: &mut Vec<CobaltError>,
-    ) -> Value<'ctx> {
+        ctx: &CompCtx<'src, 'ctx>,
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let old_is_const = ctx.is_const.replace(true);
         let (val, mut es) = self.codegen(ctx);
         errs.append(&mut es);
@@ -78,13 +89,13 @@ pub trait AST: ASTClone + std::fmt::Debug {
         val
     }
 }
-impl Display for dyn AST {
+impl Display for dyn AST<'_> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let mut pre = TreePrefix::new();
         self.print_impl(f, &mut pre, None)
     }
 }
-impl Clone for Box<dyn AST> {
+impl Clone for BoxedAST<'_> {
     fn clone(&self) -> Self {
         self.clone_ast()
     }
@@ -113,6 +124,9 @@ pub fn print_ast_child(
     pre.pop();
     res
 }
+pub type DynAST<'src> = dyn AST<'src> + 'src;
+pub type BoxedAST<'src> = Box<DynAST<'src>>;
+
 pub mod flow;
 pub mod funcs;
 pub mod groups;

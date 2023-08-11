@@ -1,18 +1,20 @@
 use crate::CobaltFile;
 use miette::{Diagnostic, SourceSpan};
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
-pub enum CobaltError {
+pub enum CobaltError<'src> {
     #[error(transparent)]
-    OtherFile(#[from] Box<SourcedCobaltError>),
+    #[diagnostic(transparent)]
+    OtherFile(Box<SourcedCobaltError<'src>>),
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
     BinOpNotDefined {
-        lhs: String,
-        rhs: String,
-        op: String,
+        lhs: Cow<'src, str>,
+        rhs: Cow<'src, str>,
+        op: &'src str,
         #[label("left type is `{lhs}`")]
         lloc: SourceSpan,
         #[label("right type is `{rhs}`")]
@@ -22,8 +24,8 @@ pub enum CobaltError {
     },
     #[error(r#"prefix operator "{op}" is not defined for type `{val}`"#)]
     PreOpNotDefined {
-        val: String,
-        op: String,
+        val: Cow<'src, str>,
+        op: Cow<'src, str>,
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label]
@@ -31,8 +33,8 @@ pub enum CobaltError {
     },
     #[error(r#"postfix operator "{op}" is not defined for type `{val}`"#)]
     PostOpNotDefined {
-        val: String,
-        op: String,
+        val: Cow<'src, str>,
+        op: Cow<'src, str>,
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label]
@@ -40,8 +42,8 @@ pub enum CobaltError {
     },
     #[error("cannot subscript value of type `{val}` with `{sub}`")]
     SubscriptNotDefined {
-        val: String,
-        sub: String,
+        val: Cow<'src, str>,
+        sub: Cow<'src, str>,
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label("subscript type is `{sub}`")]
@@ -49,8 +51,8 @@ pub enum CobaltError {
     },
     #[error("value of type `{val}` has no attribute `{attr}`")]
     AttrNotDefined {
-        val: String,
-        attr: String,
+        val: Cow<'src, str>,
+        attr: Cow<'src, str>,
         #[label("value type is `{val}`")]
         vloc: SourceSpan,
         #[label("attribute is `{attr}`")]
@@ -59,8 +61,8 @@ pub enum CobaltError {
     #[error("value of type `{val}` cannot be {}plicitly converted to `{ty}`", if *.is_expl {"ex"} else {"im"})]
     InvalidConversion {
         is_expl: bool,
-        val: String,
-        ty: String,
+        val: Cow<'src, str>,
+        ty: Cow<'src, str>,
         #[label("value type is `{val}`")]
         vloc: Option<SourceSpan>,
         #[label("target type is `{ty}`")]
@@ -70,20 +72,20 @@ pub enum CobaltError {
     },
     #[error("cannot call value of type `{val}` with arguments ({})", .args.join(", "))]
     CannotCallWithArgs {
-        val: String,
+        val: Cow<'src, str>,
         #[label("function type is `{val}`")]
         loc: SourceSpan,
-        args: Vec<String>,
+        args: Vec<Cow<'src, str>>,
         #[label("argument types are ({})", .args.join(", "))]
         aloc: Option<SourceSpan>,
         #[related]
-        nargs: Vec<ArgError>,
+        nargs: Vec<ArgError<'src>>,
     },
     #[error("invalid call to inline assembly")]
     InvalidInlineAsmCall {
         loc: SourceSpan,
         #[related]
-        args: Vec<InvalidAsmArg>,
+        args: Vec<InvalidAsmArg<'src>>,
     },
     #[error("cannot access element {idx} of a tuple with length {len}")]
     TupleIdxOutOfBounds {
@@ -98,10 +100,10 @@ pub enum CobaltError {
     CantMutateImmut {
         #[label("value is of type `{ty}`")]
         vloc: SourceSpan,
-        ty: String,
+        ty: Cow<'src, str>,
         #[label("operator is `{op}`")]
         oloc: Option<SourceSpan>,
-        op: String,
+        op: Cow<'src, str>,
         #[label("defined as immutable here")]
         floc: SourceSpan,
     },
@@ -110,7 +112,7 @@ pub enum CobaltError {
     #[error("error in glob pattern")]
     GlobPatternError {
         pos: usize,
-        msg: String,
+        msg: Cow<'src, str>,
         #[label("error at byte {pos} of glob: {msg}")]
         loc: SourceSpan,
     },
@@ -126,14 +128,14 @@ pub enum CobaltError {
     },
     #[error("{}", if let Some(p) = param {format!("cannot convert convert self_t ({self_t}) to {p} for self parameter")} else {"function must have a self parameter".to_string()})]
     InvalidSelfParam {
-        self_t: String,
-        param: Option<String>,
+        self_t: Cow<'src, str>,
+        param: Option<Cow<'src, str>>,
         #[label]
         loc: SourceSpan,
     },
     #[error(r#"unknown intrinsic "@{name}""#)]
     UnknownIntrinsic {
-        name: String,
+        name: Cow<'src, str>,
         #[label]
         loc: SourceSpan,
     },
@@ -143,7 +145,7 @@ pub enum CobaltError {
         #[label]
         loc: SourceSpan,
         #[related]
-        errs: Vec<CobaltError>,
+        errs: Vec<Self>,
     },
     #[error("@sizeof requires all arguments to be types")]
     ExpectedType {
@@ -151,17 +153,17 @@ pub enum CobaltError {
         loc: SourceSpan,
         #[label("argument type is {ty}")]
         aloc: SourceSpan,
-        ty: String,
+        ty: Cow<'src, str>,
     },
     #[error("bit cast target must be the same size as the source")]
     DifferentBitCastSizes {
         #[label]
         loc: SourceSpan,
-        from_ty: String,
+        from_ty: Cow<'src, str>,
         from_sz: u32,
         #[label("source type is {from_ty}, which has a size of {from_sz} bytes")]
         from_loc: SourceSpan,
-        to_ty: String,
+        to_ty: Cow<'src, str>,
         to_sz: u32,
         #[label("target type is {to_ty}, which has a size of {to_sz} bytes")]
         to_loc: SourceSpan,
@@ -170,16 +172,16 @@ pub enum CobaltError {
     UnsizedBitCast {
         #[label]
         loc: SourceSpan,
-        from_ty: String,
+        from_ty: Cow<'src, str>,
         #[label("source type is {from_ty}")]
         from_loc: SourceSpan,
-        to_ty: String,
+        to_ty: Cow<'src, str>,
         #[label("source type is {from_ty}")]
         to_loc: SourceSpan,
     },
     #[error(r#"unknown suffix "{suf}" for {lit} literal"#)]
     UnknownLiteralSuffix {
-        suf: String,
+        suf: Cow<'src, str>,
         lit: &'static str, // integer, floating-point, character, or string
         #[label]
         loc: SourceSpan,
@@ -192,8 +194,8 @@ pub enum CobaltError {
     },
     #[error("elements in array aren't the same type")]
     ArrayElementsDontMatch {
-        current: String,
-        new: String,
+        current: Cow<'src, str>,
+        new: Cow<'src, str>,
         #[label("element type is {new}")]
         loc: SourceSpan,
         #[label("element type previously determined to be {current} here")]
@@ -220,7 +222,7 @@ pub enum CobaltError {
     CantMoveFromReference {
         #[label("`{ty}` has a destructor, so it can't be moved out of references")]
         loc: SourceSpan,
-        ty: String,
+        ty: Cow<'src, str>,
     },
     #[error("cannot move from variable twice")]
     DoubleMove {
@@ -228,7 +230,7 @@ pub enum CobaltError {
         loc: SourceSpan,
         #[label("previously moved here")]
         prev: Option<SourceSpan>,
-        name: String,
+        name: Cow<'src, str>,
         guaranteed: bool,
     },
     #[error("invalid parameters for overloaded operator function")]
@@ -238,7 +240,7 @@ pub enum CobaltError {
         loc: SourceSpan,
         op: &'static str,
         ex: &'static str,
-        found: Vec<String>,
+        found: Vec<Cow<'src, str>>,
     },
 
     // @asm issues
@@ -247,11 +249,11 @@ pub enum CobaltError {
     InvalidInlineAsm2 {
         #[label("first argument type is {type1} ({})", if *.const1 {"constant"} else {"runtime-only"})]
         loc1: SourceSpan,
-        type1: String,
+        type1: Cow<'src, str>,
         const1: bool,
         #[label("second argument type is {type2} ({})", if *.const2 {"constant"} else {"runtime-only"})]
         loc2: SourceSpan,
-        type2: String,
+        type2: Cow<'src, str>,
         const2: bool,
     },
     #[error("invalid creation of inline assembly")]
@@ -259,15 +261,15 @@ pub enum CobaltError {
     InvalidInlineAsm3 {
         #[label("first argument type is {type1} ({})", if *.const1 {"constant"} else {"runtime-only"})]
         loc1: SourceSpan,
-        type1: String,
+        type1: Cow<'src, str>,
         const1: bool,
         #[label("second argument type is {type2} ({})", if *.const2 {"constant"} else {"runtime-only"})]
         loc2: SourceSpan,
-        type2: String,
+        type2: Cow<'src, str>,
         const2: bool,
         #[label("third argument type is {type3} ({})", if *.const3 {"constant"} else {"runtime-only"})]
         loc3: SourceSpan,
-        type3: String,
+        type3: Cow<'src, str>,
         const3: bool,
     },
     #[error("invalid creation of inline assembly")]
@@ -281,13 +283,13 @@ pub enum CobaltError {
     // @alloca
     #[error("type for @alloca must be runtime-available")]
     NonRuntimeAllocaType {
-        ty: String,
+        ty: Cow<'src, str>,
         #[label("type is {ty}")]
         loc: SourceSpan,
     },
     #[error("all arguments to @alloca (except for an optional type) must be integral")]
     NonIntegralAllocaArg {
-        ty: String,
+        ty: Cow<'src, str>,
         #[label("argument type is {ty}")]
         loc: SourceSpan,
     },
@@ -300,17 +302,17 @@ pub enum CobaltError {
     // Annotations
     #[error(r#"unknown annotation "@{name}" for {def} definition"#)]
     UnknownAnnotation {
-        name: String,
+        name: Cow<'src, str>,
         def: &'static str, // "variable", "constant", "type", or "function"
         #[label]
         loc: SourceSpan,
     },
-    #[error("{} argument for @{name} annotation{}", if .expected.is_some() {"invalid"} else {"unexpected"}, .found.as_ref().map_or_else(String::new, |f| format!(r#": "{f}""#)))]
+    #[error("{} argument for @{name} annotation{}", if .expected.is_some() {"invalid"} else {"unexpected"}, .found.as_ref().map_or_else(Default::default, |f| format!(r#": "{f}""#)))]
     InvalidAnnArgument {
         name: &'static str,
-        found: Option<String>,
+        found: Option<Cow<'src, str>>,
         expected: Option<&'static str>,
-        #[label("{}{}", .expected.as_ref().map_or_else(|| "no arguments should be given".to_string(), |ex| format!("expected {ex}")), .found.as_ref().map_or_else(String::new, |f| format!(r#", found "{f}""#)))]
+        #[label("{}{}", .expected.as_ref().map_or_else(|| "no arguments should be given".to_string(), |ex| format!("expected {ex}")), .found.as_ref().map_or_else(Default::default, |f| format!(r#", found "{f}""#)))]
         loc: SourceSpan,
     },
     #[error("@{name} cannot be respecified")]
@@ -335,32 +337,32 @@ pub enum CobaltError {
     },
 
     // Variables
-    #[error(r#"variable "{name}" cannot be found{}"#, if .container.is_empty() {String::new()} else {format!(r#" in {container} "{module}""#)})]
+    #[error(r#"variable "{name}" cannot be found{}"#, if .container.is_empty() {"".into()} else {format!(r#" in {container} "{module}""#)})]
     VariableDoesNotExist {
-        name: String,
-        module: String,
+        name: Cow<'src, str>,
+        module: Cow<'src, str>,
         container: &'static str, // "module" or "type"
         #[label]
         loc: SourceSpan,
     },
     #[error(r#""{name}" has not been initialized, most likely because of a cyclical dependency"#)]
     UninitializedGlobal {
-        name: String,
+        name: Cow<'src, str>,
         #[label]
         loc: SourceSpan,
     },
     #[error("runtime variable cannot have a const-only type")]
     #[diagnostic(help("consider using `const` instead"))]
-    TypeIsConstOnly { ty: String, loc: SourceSpan },
+    TypeIsConstOnly { ty: Cow<'src, str>, loc: SourceSpan },
     #[error("{name} is not a module")]
     NotAModule {
-        name: String,
+        name: Cow<'src, str>,
         #[label]
         loc: SourceSpan,
     },
     #[error("{name} has already been defined")]
     RedefVariable {
-        name: String,
+        name: Cow<'src, str>,
         #[label]
         loc: SourceSpan,
         #[label("previously defined here")]
@@ -376,7 +378,7 @@ pub enum CobaltError {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
-pub enum ArgError {
+pub enum ArgError<'src> {
     #[error("expected {expected} arguments, found {found}")]
     WrongNumArgs {
         found: usize,
@@ -385,8 +387,8 @@ pub enum ArgError {
     },
     #[error("value of type `{val}` cannot be implicitly converted to `{ty}` in {} argument", ordinal::Ordinal(.n + 1))]
     InvalidArg {
-        val: String,
-        ty: String,
+        val: Cow<'src, str>,
+        ty: Cow<'src, str>,
         n: usize,
         #[label]
         loc: SourceSpan,
@@ -400,12 +402,12 @@ pub enum ArgError {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 #[error("cannot pass argument of type {0} into inline assembly")]
-pub struct InvalidAsmArg(
-    pub String,
+pub struct InvalidAsmArg<'src>(
+    pub Cow<'src, str>,
     #[label("{0} is not a valid assembly type")] pub SourceSpan,
 );
-impl CobaltError {
-    pub fn with_file(self, file: CobaltFile) -> SourcedCobaltError {
+impl<'src> CobaltError<'src> {
+    pub fn with_file(self, file: CobaltFile) -> SourcedCobaltError<'src> {
         if let Self::OtherFile(err) = self {
             *err
         } else {
@@ -417,23 +419,23 @@ impl CobaltError {
             .map_or(true, |s| s == miette::Severity::Error)
     }
 }
-impl From<SourcedCobaltError> for CobaltError {
+impl<'src> From<SourcedCobaltError<'src>> for CobaltError<'src> {
     #[inline]
-    fn from(err: SourcedCobaltError) -> Self {
+    fn from(err: SourcedCobaltError<'src>) -> Self {
         Self::OtherFile(Box::new(err))
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
-pub struct SourcedCobaltError {
-    err: CobaltError,
+pub struct SourcedCobaltError<'src> {
+    err: CobaltError<'src>,
     #[source_code]
     file: CobaltFile,
 }
-impl std::fmt::Display for SourcedCobaltError {
+impl std::fmt::Display for SourcedCobaltError<'_> {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.err)
     }
 }
-impl std::error::Error for SourcedCobaltError {}
+impl std::error::Error for SourcedCobaltError<'_> {}

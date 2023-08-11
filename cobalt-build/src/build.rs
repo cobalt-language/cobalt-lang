@@ -358,7 +358,7 @@ impl<'de> Deserialize<'de> for Dependency {
         deserializer.deserialize_any(DepVisitor)
     }
 }
-pub fn clear_mod(this: &mut HashMap<String, Symbol>) {
+pub fn clear_mod(this: &mut HashMap<std::borrow::Cow<str>, Symbol>) {
     for (_, sym) in this.iter_mut() {
         sym.1.export = false;
         match sym {
@@ -393,10 +393,10 @@ pub fn clear_mod(this: &mut HashMap<String, Symbol>) {
 /// This stops after running the prepasses to allow them to be run on all files before continuing
 fn build_file_1(
     path: &Path,
-    ctx: &CompCtx,
+    ctx: &CompCtx<'static, '_>,
     opts: &BuildOptions,
     force_build: bool,
-) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST>)> {
+) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST<'static>>)> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push("objects");
@@ -430,8 +430,8 @@ fn build_file_1(
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let file = FILES.add_file(0, name.to_string(), code);
-    let lock = file.contents();
-    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+    let lock = unsafe { std::mem::transmute(&*file.contents()) }; // TODO: make thread-safe
+    let (ast, errs) = parse_tl().parse(lock).into_output_errors();
     let mut ast = ast.unwrap_or_default();
     let errs = errs.into_iter().flat_map(cvt_err);
     for err in errs {
@@ -448,8 +448,8 @@ fn build_file_1(
 /// Finish building the file
 /// This picks up where `build_file_1` left off
 fn build_file_2(
-    ast: TopLevelAST,
-    ctx: &CompCtx,
+    ast: TopLevelAST<'static>,
+    ctx: &CompCtx<'static, '_>,
     opts: &BuildOptions,
     (out_path, head_path): (&Path, &Path),
     mut fail: bool,

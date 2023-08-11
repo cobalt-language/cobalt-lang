@@ -1,29 +1,32 @@
 use crate::*;
 use glob::Pattern;
 #[derive(Debug, Clone)]
-pub struct ModuleAST {
+pub struct ModuleAST<'src> {
     loc: SourceSpan,
-    pub name: DottedName,
-    pub vals: Vec<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
+    pub name: DottedName<'src>,
+    pub vals: Vec<BoxedAST<'src>>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
 }
-impl AST for ModuleAST {
+impl<'src> AST<'src> for ModuleAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
-        let mut errs = Vec::<CobaltError>::new();
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        let mut errs = Vec::<CobaltError<'src>>::new();
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -43,7 +46,7 @@ impl AST for ModuleAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg.into(),
                                 loc,
                             }),
                         }
@@ -118,14 +121,14 @@ impl AST for ModuleAST {
             }),
             Err(UndefVariable::NotAModule(x)) => {
                 errs.push(CobaltError::NotAModule {
-                    name: self.name.start(x).to_string(),
+                    name: self.name.start(x).to_string().into(),
                     loc: self.name.ids[x - 1].1,
                 });
                 Box::new(VarMap::new(Some(v)))
             }
             Err(UndefVariable::DoesNotExist(x)) => {
                 errs.push(CobaltError::RedefVariable {
-                    name: self.name.start(x).to_string(),
+                    name: self.name.start(x).to_string().into(),
                     loc: self.name.ids[x - 1].1,
                     prev: None,
                 });
@@ -173,12 +176,12 @@ impl AST for ModuleAST {
         Ok(())
     }
 }
-impl ModuleAST {
+impl<'src> ModuleAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: DottedName,
-        vals: Vec<Box<dyn AST>>,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        name: DottedName<'src>,
+        vals: Vec<BoxedAST<'src>>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
     ) -> Self {
         ModuleAST {
             loc,
@@ -189,16 +192,16 @@ impl ModuleAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct ImportAST {
+pub struct ImportAST<'src> {
     loc: SourceSpan,
-    pub name: CompoundDottedName,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
+    pub name: CompoundDottedName<'src>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
 }
-impl ImportAST {
+impl<'src> ImportAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: CompoundDottedName,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        name: CompoundDottedName<'src>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
     ) -> Self {
         ImportAST {
             loc,
@@ -207,20 +210,23 @@ impl ImportAST {
         }
     }
 }
-impl AST for ImportAST {
+impl<'src> AST<'src> for ImportAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -240,7 +246,7 @@ impl AST for ImportAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg.into(),
                                 loc,
                             }),
                         }
