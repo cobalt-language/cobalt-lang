@@ -429,9 +429,8 @@ fn build_file_1(
     ctx.module.set_name(name);
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
-    let file = FILES.add_file(0, name.to_string(), code);
-    let lock = unsafe { std::mem::transmute(&*file.contents()) }; // TODO: make thread-safe
-    let (ast, errs) = parse_tl().parse(lock).into_output_errors();
+    let file = FILES.add_file(0, name.to_string(), code.into());
+    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
     let mut ast = ast.unwrap_or_default();
     let errs = errs.into_iter().flat_map(cvt_err);
     for err in errs {
