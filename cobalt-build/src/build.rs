@@ -359,7 +359,7 @@ impl<'de> Deserialize<'de> for Dependency {
     }
 }
 pub fn clear_mod(this: &mut HashMap<String, Symbol>) {
-    for (_, sym) in this.iter_mut() {
+    for sym in this.values_mut() {
         sym.1.export = false;
         match sym {
             Symbol(
@@ -374,14 +374,8 @@ pub fn clear_mod(this: &mut HashMap<String, Symbol>) {
                 if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
                     if !d.fwd && d.init {
                         unsafe {
-                            if matches!(v.data_type, Type::Function(..)) {
-                                let f =
-                                    std::mem::transmute::<_, inkwell::values::FunctionValue>(pv);
-                                f.set_linkage(inkwell::module::Linkage::AvailableExternally);
-                            } else {
-                                std::mem::transmute::<_, inkwell::values::GlobalValue>(pv)
-                                    .set_externally_initialized(true)
-                            }
+                            std::mem::transmute::<_, inkwell::values::GlobalValue>(pv)
+                                .set_linkage(inkwell::module::Linkage::AvailableExternally);
                         }
                     }
                 }

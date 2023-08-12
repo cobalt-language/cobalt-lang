@@ -168,7 +168,7 @@ impl AST for VarDefAST {
                             );
                             match link_type {
                                 None => {
-                                    if !(vs || is_extern) {
+                                    if ctx.flags.private_syms && !(vs || is_extern) {
                                         gv.set_linkage(Private)
                                     }
                                 }
@@ -549,7 +549,7 @@ impl AST for VarDefAST {
                         gv.set_constant(!self.is_mut);
                         if let Some((link, _)) = link_type {
                             gv.set_linkage(link)
-                        } else if !(vs || is_extern.is_some()) {
+                        } else if ctx.flags.private_syms && !(vs || is_extern.is_some()) {
                             gv.set_linkage(Private)
                         }
                         ctx.with_vars(|v| {

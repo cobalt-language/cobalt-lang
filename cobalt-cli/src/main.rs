@@ -1827,6 +1827,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut flags = Flags {
                     dbg_mangle: debug_mangle,
                     prepass: false,
+                    private_syms: false,
                     ..Flags::default()
                 };
                 let ink_ctx = inkwell::context::Context::create();
@@ -2275,7 +2276,7 @@ fn driver() -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
-                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                let ctx = CompCtx::with_flags(&ink_ctx, "multi-jit", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
@@ -2316,46 +2317,36 @@ fn driver() -> anyhow::Result<()> {
                         anyhow::Ok(ast)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-                let mods = asts
-                    .iter()
-                    .map(|ast| {
-                        let file = ast.file.unwrap();
-                        ctx.module.set_name(&file.name());
-                        ctx.module.set_source_file_name(&file.name());
-                        let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
-                        *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
-                        for err in errs {
-                            fail |= err.is_err();
-                            eprintln!(
-                                "{:?}",
-                                Report::from(err).with_source_code(ast.file.unwrap())
-                            );
-                        }
-                        if let Err(msg) = ctx.module.verify() {
-                            error!("\n{}", msg.to_string());
-                            fail = true;
-                        }
-                        reporter.insts_before = insts(&ctx.module);
-                        *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
-                            reporter.insts_before += insts(&ctx.module);
-                            let pm = inkwell::passes::PassManager::create(());
-                            opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                            pm.run_on(&ctx.module);
-                        })
-                        .1;
-                        let m = ctx.module.clone();
-                        ctx.with_vars(|v| clear_mod(&mut v.symbols));
-                        m
-                    })
-                    .collect::<Vec<_>>();
+                asts.iter().for_each(|ast| {
+                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
+                    for err in errs {
+                        fail |= err.is_err();
+                        eprintln!(
+                            "{:?}",
+                            Report::from(err).with_source_code(ast.file.unwrap())
+                        );
+                    }
+                });
+                if let Err(msg) = ctx.module.verify() {
+                    error!("\n{}", msg.to_string());
+                    fail = true;
+                }
+                reporter.insts_before = insts(&ctx.module);
+                *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                    reporter.insts_before += insts(&ctx.module);
+                    let pm = inkwell::passes::PassManager::create(());
+                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
+                    pm.run_on(&ctx.module);
+                })
+                .1;
+                let ee = ctx
+                    .module
+                    .create_jit_execution_engine(inkwell::OptimizationLevel::None)
+                    .map_err(|m| anyhow::Error::msg(m.to_string()))?;
                 if fail {
                     anyhow::bail!(CompileErrors)
                 }
-                let (first, rest) = mods.split_first().unwrap();
-                let ee = first
-                    .create_jit_execution_engine(inkwell::OptimizationLevel::None)
-                    .map_err(|e| anyhow::Error::msg(e.to_string()))?;
-                rest.iter().for_each(|m| ee.add_module(m).unwrap());
                 reporter.finish();
                 unsafe {
                     let main_fn = match ee.get_function_value("main") {
@@ -2603,7 +2594,7 @@ fn driver() -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
-                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
@@ -2645,9 +2636,6 @@ fn driver() -> anyhow::Result<()> {
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
                 asts.iter().for_each(|ast| {
-                    let file = ast.file.unwrap();
-                    ctx.module.set_name(&file.name());
-                    ctx.module.set_source_file_name(&file.name());
                     let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                     for err in errs {
@@ -2657,12 +2645,11 @@ fn driver() -> anyhow::Result<()> {
                             Report::from(err).with_source_code(ast.file.unwrap())
                         );
                     }
-                    if let Err(msg) = ctx.module.verify() {
-                        error!("\n{}", msg.to_string());
-                        fail = true;
-                    }
-                    ctx.with_vars(|v| clear_mod(&mut v.symbols));
                 });
+                if let Err(msg) = ctx.module.verify() {
+                    error!("\n{}", msg.to_string());
+                    fail = true;
+                }
                 if fail {
                     anyhow::bail!(CompileErrors)
                 }
