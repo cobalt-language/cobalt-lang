@@ -5120,6 +5120,7 @@ pub fn attr<'ctx>(
                 Err(err)
             }
         }
+        Type::Error => Ok(Value::error()),
         _ => Err(err),
     }
 }
