@@ -588,21 +588,35 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
             )
             .then_ignore(ignored())
             .then(choice((
-                tl.repeated().collect().delimited_by(just('{'), just('}')),
+                tl.repeated()
+                    .collect()
+                    .delimited_by(just('{'), just('}'))
+                    .map(|v| (v, false)),
                 just('=')
                     .then_ignore(ignored())
                     .ignore_then(cdn())
                     .map_with_span(|cdn, loc| {
-                        vec![box_ast(ImportAST::new(
-                            loc.into_range().into(),
-                            cdn,
-                            vec![],
-                        ))]
+                        (
+                            vec![box_ast(ImportAST::new(
+                                loc.into_range().into(),
+                                cdn,
+                                vec![],
+                            ))],
+                            false,
+                        )
                     })
                     .then_ignore(just(';')),
-                just(';').to(vec![]),
+                just(';').to((vec![], true)),
             )))
-            .map(|(((anns, loc), name), body)| box_ast(ModuleAST::new(loc, name, body, anns))),
+            .validate(|(((anns, loc), name), (body, err)), span, e| {
+                if err {
+                    e.emit(Rich::custom(
+                        span,
+                        "file-level module declaration cannot go here",
+                    ))
+                }
+                box_ast(ModuleAST::new(loc, name, body, anns))
+            }),
             just(';')
                 .to_span()
                 .map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into()))),
@@ -1208,10 +1222,15 @@ pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
 }
 /// create a parser for the top-level scope
 pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    top_level()
-        .repeated()
-        .collect()
-        .map(TopLevelAST::new)
+    text::keyword("module")
+        .then_ignore(ignored())
+        .ignore_then(global_id())
+        .then_ignore(ignored())
+        .then_ignore(just(';'))
+        .padded_by(ignored())
+        .or_not()
+        .then(top_level().repeated().collect())
+        .map(|(module, vals)| TopLevelAST::new(vals, module))
         .then_ignore(ignored().then(end()))
         .boxed()
 }
