@@ -5,8 +5,8 @@ pub struct Flags {
     pub bounds_checks: bool,
     pub prepass: bool,
     pub dbg_mangle: bool,
-    pub up: bool,
     pub all_move_metadata: bool,
+    pub private_syms: bool,
 }
 impl Default for Flags {
     fn default() -> Self {
@@ -15,8 +15,8 @@ impl Default for Flags {
             bounds_checks: true,
             prepass: true,
             dbg_mangle: false,
-            up: true,
             all_move_metadata: false,
+            private_syms: true,
         }
     }
 }

@@ -155,6 +155,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
 #[derive(Debug, Clone, Default)]
 pub struct TopLevelAST<'src> {
     pub file: Option<CobaltFile>,
+    pub module: Option<DottedName<'src>>,
     pub vals: Vec<BoxedAST<'src>>,
 }
 impl<'src> AST<'src> for TopLevelAST<'src> {
@@ -168,6 +169,34 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        let mut errs = vec![];
+        let old_scope = if let Some(name) = &self.module {
+            ctx.map_vars(|mut v| match v.lookup_mod(name) {
+                Ok((m, i, _)) => Box::new(VarMap {
+                    parent: Some(v),
+                    symbols: m,
+                    imports: i,
+                }),
+                Err(UndefVariable::NotAModule(x)) => {
+                    errs.push(CobaltError::NotAModule {
+                        name: name.start(x).to_string(),
+                        loc: name.ids[x - 1].1,
+                    });
+                    Box::new(VarMap::new(Some(v)))
+                }
+                Err(UndefVariable::DoesNotExist(x)) => {
+                    errs.push(CobaltError::RedefVariable {
+                        name: name.start(x).to_string(),
+                        loc: name.ids[x - 1].1,
+                        prev: None,
+                    });
+                    Box::new(VarMap::new(Some(v)))
+                }
+            });
+            Some(ctx.push_scope(name))
+        } else {
+            None
+        };
         if ctx.flags.prepass {
             self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
             let mut again = true;
@@ -179,10 +208,14 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
             }
             self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
         }
-        let mut errs = vec![];
         self.vals
             .iter()
             .for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
+        if let Some(name) = &self.module {
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
+            ctx.restore_scope(old_scope.unwrap());
+        }
         (Value::null(), errs)
     }
     fn print_impl(
@@ -192,10 +225,15 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
         file: Option<CobaltFile>,
     ) -> std::fmt::Result {
         if let Some(ref file) = self.file {
-            writeln!(f, "{}", file.name())?
+            write!(f, "{}", file.name())?
         } else {
-            f.write_str("<file not set>\n")?
+            f.write_str("<file not set>")?
         };
+        if let Some(name) = &self.module {
+            writeln!(f, ": {name}")?;
+        } else {
+            writeln!(f)?;
+        }
         let mut count = self.vals.len();
         for val in self.vals.iter() {
             print_ast_child(f, pre, &**val, count == 1, file)?;
@@ -205,10 +243,27 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
     }
 }
 impl<'src> TopLevelAST<'src> {
-    pub fn new(vals: Vec<BoxedAST<'src>>) -> Self {
-        TopLevelAST { vals, file: None }
+    pub fn new(vals: Vec<BoxedAST<'src>>, module: Option<DottedName<'src>>) -> Self {
+        TopLevelAST {
+            vals,
+            module,
+            file: None,
+        }
     }
     pub fn run_passes(&self, ctx: &CompCtx<'src, '_>) {
+        let old_scope = if let Some(name) = &self.module {
+            ctx.map_vars(|mut v| match v.lookup_mod(name) {
+                Ok((m, i, _)) => Box::new(VarMap {
+                    parent: Some(v),
+                    symbols: m,
+                    imports: i,
+                }),
+                Err(_) => Box::new(VarMap::new(Some(v))),
+            });
+            Some(ctx.push_scope(name))
+        } else {
+            None
+        };
         self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
         let mut again = true;
         while again {
@@ -218,6 +273,11 @@ impl<'src> TopLevelAST<'src> {
                 .for_each(|val| val.constinit_prepass(ctx, &mut again));
         }
         self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        if let Some(name) = &self.module {
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
+            ctx.restore_scope(old_scope.unwrap());
+        }
     }
 }
 impl std::fmt::Display for TopLevelAST<'_> {

@@ -14,11 +14,229 @@ impl<'src> AST<'src> for ModuleAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
+    fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
+        let mut target_match = 2u8;
+        let mut vis_spec = None;
+        for (ann, arg, _) in self.annotations.iter() {
+            match &**ann {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = &**arg;
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {
+                            arg = &arg[1..];
+                            true
+                        } else {
+                            false
+                        };
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(
+                                    negate
+                                        ^ pat.matches(
+                                            &ctx.module.get_triple().as_str().to_string_lossy(),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if target_match == 0 {
+            return;
+        }
+        ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
+            Ok((m, i, _)) => Box::new(VarMap {
+                parent: Some(v),
+                symbols: m,
+                imports: i,
+            }),
+            Err(_) => Box::new(VarMap::new(Some(v))),
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        let old_vis = if let Some(v) = vis_spec {
+            ctx.export.replace(v)
+        } else {
+            false
+        };
+        self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+        ctx.restore_scope(old_scope);
+        if vis_spec.is_some() {
+            ctx.export.set(old_vis)
+        }
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
+    }
+    fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
+        let mut target_match = 2u8;
+        let mut vis_spec = None;
+        for (ann, arg, _) in self.annotations.iter() {
+            match &**ann {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = &**arg;
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {
+                            arg = &arg[1..];
+                            true
+                        } else {
+                            false
+                        };
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(
+                                    negate
+                                        ^ pat.matches(
+                                            &ctx.module.get_triple().as_str().to_string_lossy(),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if target_match == 0 {
+            return;
+        }
+        ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
+            Ok((m, i, _)) => Box::new(VarMap {
+                parent: Some(v),
+                symbols: m,
+                imports: i,
+            }),
+            Err(_) => Box::new(VarMap::new(Some(v))),
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        let old_vis = if let Some(v) = vis_spec {
+            ctx.export.replace(v)
+        } else {
+            false
+        };
+        self.vals
+            .iter()
+            .for_each(|val| val.constinit_prepass(ctx, needs_another));
+        ctx.restore_scope(old_scope);
+        if vis_spec.is_some() {
+            ctx.export.set(old_vis)
+        }
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
+    }
+    fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
+        let mut target_match = 2u8;
+        let mut vis_spec = None;
+        for (ann, arg, _) in self.annotations.iter() {
+            match &**ann {
+                "target" => {
+                    if let Some(arg) = arg {
+                        let mut arg = &**arg;
+                        let negate = if arg.as_bytes().first() == Some(&0x21) {
+                            arg = &arg[1..];
+                            true
+                        } else {
+                            false
+                        };
+                        if let Ok(pat) = Pattern::new(arg) {
+                            if target_match != 1 {
+                                target_match = u8::from(
+                                    negate
+                                        ^ pat.matches(
+                                            &ctx.module.get_triple().as_str().to_string_lossy(),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+                "export" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(true),
+                            Some("false") | Some("0") => vis_spec = Some(false),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                "private" => {
+                    if vis_spec.is_none() {
+                        match arg.as_deref() {
+                            None | Some("true") | Some("1") | Some("") => vis_spec = Some(false),
+                            Some("false") | Some("0") => vis_spec = Some(true),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if target_match == 0 {
+            return;
+        }
+        ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
+            Ok((m, i, _)) => Box::new(VarMap {
+                parent: Some(v),
+                symbols: m,
+                imports: i,
+            }),
+            Err(_) => Box::new(VarMap::new(Some(v))),
+        });
+        let old_scope = ctx.push_scope(&self.name);
+        let old_vis = if let Some(v) = vis_spec {
+            ctx.export.replace(v)
+        } else {
+            false
+        };
+        self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        ctx.restore_scope(old_scope);
+        if vis_spec.is_some() {
+            ctx.export.set(old_vis)
+        }
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
+    }
     fn codegen<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = Vec::<CobaltError<'src>>::new();
+        let mut errs = Vec::<CobaltError>::new();
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
@@ -141,17 +359,17 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         } else {
             false
         };
-        if ctx.flags.prepass {
-            self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
-            let mut again = true;
-            while again {
-                again = false;
-                self.vals
-                    .iter()
-                    .for_each(|val| val.constinit_prepass(ctx, &mut again));
-            }
-            self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
-        }
+        // if ctx.flags.prepass {
+        //     self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
+        //     let mut again = true;
+        //     while again {
+        //         again = false;
+        //         self.vals
+        //             .iter()
+        //             .for_each(|val| val.constinit_prepass(ctx, &mut again));
+        //     }
+        //     self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        // }
         errs.extend(self.vals.iter().flat_map(|val| val.codegen(ctx).1));
         ctx.restore_scope(old_scope);
         if vis_spec.is_some() {
@@ -213,6 +431,15 @@ impl<'src> ImportAST<'src> {
 impl<'src> AST<'src> for ImportAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
+    }
+    fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
+        self.codegen(ctx);
+    }
+    fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, _needs_another: &mut bool) {
+        self.codegen(ctx);
+    }
+    fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
+        self.codegen(ctx);
     }
     fn codegen<'ctx>(
         &self,

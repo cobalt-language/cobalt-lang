@@ -330,7 +330,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     let gv = f.as_global_value();
                     if let Some(link) = link_type {
                         gv.set_linkage(link)
-                    } else if !(vs || is_extern || cf) {
+                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -426,7 +426,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     let gv = f.as_global_value();
                     if let Some(link) = link_type {
                         gv.set_linkage(link)
-                    } else if !(vs || is_extern || cf) {
+                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -1064,7 +1064,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
                         gv.set_linkage(link)
-                    } else if !(vs || is_extern.is_some() || cf) {
+                    } else if ctx.flags.private_syms && !(vs || is_extern.is_some() || cf) {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -1220,7 +1220,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
                         gv.set_linkage(link)
-                    } else if !(vs || is_extern.is_some() || cf) {
+                    } else if ctx.flags.private_syms && !(vs || is_extern.is_some() || cf) {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure

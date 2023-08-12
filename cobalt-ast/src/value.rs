@@ -337,13 +337,17 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
 
     pub fn addr(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<PointerValue<'ctx>> {
-        self.address.get().or_else(|| {
-            let ctv = self.value(ctx)?;
-            let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
-            ctx.builder.build_store(alloca, ctv);
-            self.address.set(Some(alloca));
-            Some(alloca)
-        })
+        if self.data_type.size(ctx) == SizeType::Static(0) {
+            Some(ctx.null_type.ptr_type(Default::default()).const_null())
+        } else {
+            self.address.get().or_else(|| {
+                let ctv = self.value(ctx)?;
+                let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
+                ctx.builder.build_store(alloca, ctv);
+                self.address.set(Some(alloca));
+                Some(alloca)
+            })
+        }
     }
     pub fn freeze(self, loc: SourceSpan) -> Value<'src, 'ctx> {
         Value {
