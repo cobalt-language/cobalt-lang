@@ -1375,7 +1375,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
-                "linear" => linear = true,
+                "must_use" => linear = true,
                 _ => {}
             }
         }
@@ -1474,7 +1474,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
-                "linear" => linear = true,
+                "must_use" => linear = true,
                 _ => {}
             }
         }
@@ -1598,7 +1598,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
-                "linear" => linear = true,
+                "must_use" => linear = true,
                 _ => {}
             }
         }
@@ -1774,17 +1774,17 @@ impl AST for TypeDefAST {
                         no_auto_drop = Some(loc);
                     }
                 }
-                "linear" => {
+                "must_use" => {
                     if let Some(prev) = no_auto_drop {
                         errs.push(CobaltError::RedefAnnArgument {
-                            name: "linear",
+                            name: "must_use",
                             loc,
                             prev,
                         });
                     } else {
                         if arg.is_some() {
                             errs.push(CobaltError::InvalidAnnArgument {
-                                name: "linear",
+                                name: "must_use",
                                 found: arg.clone(),
                                 expected: None,
                                 loc,
