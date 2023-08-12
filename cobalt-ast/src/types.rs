@@ -729,21 +729,11 @@ pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum
     }
     Some(ctx.context.struct_type(&vec, false).into())
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NominalInfo<'ctx> {
     pub dtor: Option<FunctionValue<'ctx>>,
     pub no_auto_drop: bool,
     pub is_linear_type: bool,
-}
-
-impl<'ctx> Default for NominalInfo<'ctx> {
-    fn default() -> Self {
-        Self {
-            is_linear_type: false,
-            dtor: None,
-            no_auto_drop: false,
-        }
-    }
 }
 
 impl<'ctx> NominalInfo<'ctx> {

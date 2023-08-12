@@ -811,7 +811,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
 
                             Type::Mut(ref boxed_type) => {
                                 if let Type::Nominal(ref type_name) = **boxed_type {
-                                    to_return = nominal_behavior(&type_name);
+                                    to_return = nominal_behavior(type_name);
                                 } else {
                                     to_return = false;
                                 }
