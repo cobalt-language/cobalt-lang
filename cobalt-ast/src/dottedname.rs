@@ -1,22 +1,22 @@
-use crate::{unreachable_span, SourceSpan};
+use crate::*;
 use std::fmt::*;
 use std::io::{self, BufRead, Read, Write};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DottedName {
-    pub ids: Vec<(String, SourceSpan)>,
+pub struct DottedName<'src> {
+    pub ids: Vec<(Cow<'src, str>, SourceSpan)>,
     pub global: bool,
 }
-impl DottedName {
-    pub fn new(ids: Vec<(String, SourceSpan)>, global: bool) -> Self {
+impl<'src> DottedName<'src> {
+    pub fn new(ids: Vec<(Cow<'src, str>, SourceSpan)>, global: bool) -> Self {
         DottedName { ids, global }
     }
-    pub fn absolute(ids: Vec<(String, SourceSpan)>) -> Self {
+    pub fn absolute(ids: Vec<(Cow<'src, str>, SourceSpan)>) -> Self {
         Self::new(ids, true)
     }
-    pub fn relative(ids: Vec<(String, SourceSpan)>) -> Self {
+    pub fn relative(ids: Vec<(Cow<'src, str>, SourceSpan)>) -> Self {
         Self::new(ids, false)
     }
-    pub fn local(id: (String, SourceSpan)) -> Self {
+    pub fn local(id: (Cow<'src, str>, SourceSpan)) -> Self {
         Self::new(vec![id], false)
     }
     pub fn start(&self, len: usize) -> Self {
@@ -32,7 +32,7 @@ impl DottedName {
         }
     }
 }
-impl Display for DottedName {
+impl Display for DottedName<'_> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         if self.global {
             write!(f, ".")?
@@ -49,12 +49,12 @@ impl Display for DottedName {
     }
 }
 #[derive(Clone, Debug)]
-pub enum CompoundDottedNameSegment {
-    Identifier(String, SourceSpan),
+pub enum CompoundDottedNameSegment<'src> {
+    Identifier(Cow<'src, str>, SourceSpan),
     Glob(SourceSpan),
-    Group(Vec<Vec<CompoundDottedNameSegment>>),
+    Group(Vec<Vec<Self>>),
 }
-impl CompoundDottedNameSegment {
+impl<'src> CompoundDottedNameSegment<'src> {
     pub fn ends_with(&self, name: &str) -> bool {
         match self {
             Self::Identifier(n, _) => n == name,
@@ -102,7 +102,8 @@ impl CompoundDottedNameSegment {
                 Ok(Some(Identifier(
                     std::str::from_utf8(&name)
                         .expect("Cobalt symbols should be valid UTF-8")
-                        .to_string(),
+                        .to_string()
+                        .into(),
                     unreachable_span(),
                 )))
             }
@@ -126,7 +127,7 @@ impl CompoundDottedNameSegment {
         }
     }
 }
-impl Display for CompoundDottedNameSegment {
+impl Display for CompoundDottedNameSegment<'_> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Self::Identifier(x, _) => write!(f, "{x}"),
@@ -154,21 +155,21 @@ impl Display for CompoundDottedNameSegment {
     }
 }
 #[derive(Clone, Debug)]
-pub struct CompoundDottedName {
-    pub ids: Vec<CompoundDottedNameSegment>,
+pub struct CompoundDottedName<'src> {
+    pub ids: Vec<CompoundDottedNameSegment<'src>>,
     pub global: bool,
 }
-impl CompoundDottedName {
-    pub fn new(ids: Vec<CompoundDottedNameSegment>, global: bool) -> Self {
+impl<'src> CompoundDottedName<'src> {
+    pub fn new(ids: Vec<CompoundDottedNameSegment<'src>>, global: bool) -> Self {
         Self { ids, global }
     }
-    pub fn absolute(ids: Vec<CompoundDottedNameSegment>) -> Self {
+    pub fn absolute(ids: Vec<CompoundDottedNameSegment<'src>>) -> Self {
         Self::new(ids, true)
     }
-    pub fn relative(ids: Vec<CompoundDottedNameSegment>) -> Self {
+    pub fn relative(ids: Vec<CompoundDottedNameSegment<'src>>) -> Self {
         Self::new(ids, false)
     }
-    pub fn local(id: CompoundDottedNameSegment) -> Self {
+    pub fn local(id: CompoundDottedNameSegment<'src>) -> Self {
         Self::new(vec![id], false)
     }
     pub fn ends_with(&self, name: &str) -> bool {
@@ -201,8 +202,8 @@ impl CompoundDottedName {
         }
     }
 }
-impl From<DottedName> for CompoundDottedName {
-    fn from(other: DottedName) -> Self {
+impl<'src> From<DottedName<'src>> for CompoundDottedName<'src> {
+    fn from(other: DottedName<'src>) -> Self {
         Self::new(
             other
                 .ids
@@ -213,7 +214,7 @@ impl From<DottedName> for CompoundDottedName {
         )
     }
 }
-impl Display for CompoundDottedName {
+impl Display for CompoundDottedName<'_> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         if self.global {
             write!(f, ".")?

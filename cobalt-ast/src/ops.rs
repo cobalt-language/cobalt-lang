@@ -10,10 +10,10 @@ use inkwell::{
 };
 use std::cmp::{max, min, Ordering};
 use std::collections::VecDeque;
-pub fn mark_move<'ctx>(
-    val: &Value<'ctx>,
+pub fn mark_move<'src, 'ctx>(
+    val: &Value<'src, 'ctx>,
     inst: cfg::Location<'ctx>,
-    ctx: &CompCtx<'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
     loc: SourceSpan,
 ) {
     if !ctx.is_const.get() {
@@ -31,10 +31,10 @@ pub fn mark_move<'ctx>(
         }
     }
 }
-pub fn mark_use<'ctx>(
-    val: &Value<'ctx>,
+pub fn mark_use<'src, 'ctx>(
+    val: &Value<'src, 'ctx>,
     inst: cfg::Location<'ctx>,
-    ctx: &CompCtx<'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
     loc: SourceSpan,
 ) {
     if !ctx.is_const.get() {
@@ -149,19 +149,19 @@ pub fn expl_convertible(base: &Type, target: &Type, ctx: &CompCtx) -> bool {
             _ => false,
         }
 }
-pub fn bin_op<'ctx>(
+pub fn bin_op<'src, 'ctx>(
     loc: SourceSpan,
-    (mut lhs, lloc): (Value<'ctx>, SourceSpan),
-    (mut rhs, rloc): (Value<'ctx>, SourceSpan),
-    op: &str,
-    ctx: &CompCtx<'ctx>,
+    (mut lhs, lloc): (Value<'src, 'ctx>, SourceSpan),
+    (mut rhs, rloc): (Value<'src, 'ctx>, SourceSpan),
+    op: &'static str,
+    ctx: &CompCtx<'src, 'ctx>,
     left_move: bool,
     right_move: bool,
-) -> Result<Value<'ctx>, CobaltError> {
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::BinOpNotDefined {
         lhs: lhs.data_type.to_string(),
         rhs: rhs.data_type.to_string(),
-        op: op.to_string(),
+        op,
         lloc,
         rloc,
         oloc: loc,
@@ -2009,7 +2009,7 @@ pub fn bin_op<'ctx>(
                 vloc: lloc,
                 ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string(),
+                op,
                 floc: lf.unwrap(),
             }
         } else {
@@ -2017,16 +2017,16 @@ pub fn bin_op<'ctx>(
         }
     })
 }
-pub fn pre_op<'ctx>(
+pub fn pre_op<'src, 'ctx>(
     loc: SourceSpan,
-    (mut val, vloc): (Value<'ctx>, SourceSpan),
-    op: &str,
-    ctx: &CompCtx<'ctx>,
+    (mut val, vloc): (Value<'src, 'ctx>, SourceSpan),
+    op: &'static str,
+    ctx: &CompCtx<'src, 'ctx>,
     can_move: bool,
-) -> Result<Value<'ctx>, CobaltError> {
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::PreOpNotDefined {
         val: val.data_type.to_string(),
-        op: op.to_string(),
+        op,
         vloc,
         oloc: loc,
     };
@@ -2395,7 +2395,7 @@ pub fn pre_op<'ctx>(
                 vloc,
                 ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string(),
+                op,
                 floc: vf.unwrap(),
             }
         } else {
@@ -2403,17 +2403,17 @@ pub fn pre_op<'ctx>(
         }
     })
 }
-pub fn post_op<'ctx>(
+pub fn post_op<'src, 'ctx>(
     loc: SourceSpan,
-    (val, vloc): (Value<'ctx>, SourceSpan),
-    op: &str,
-    ctx: &CompCtx<'ctx>,
+    (val, vloc): (Value<'src, 'ctx>, SourceSpan),
+    op: &'static str,
+    ctx: &CompCtx<'src, 'ctx>,
     can_move: bool,
-) -> Result<Value<'ctx>, CobaltError> {
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     #![allow(clippy::redundant_clone, clippy::only_used_in_recursion)]
     let err = CobaltError::PostOpNotDefined {
         val: val.data_type.to_string(),
-        op: op.to_string(),
+        op,
         vloc,
         oloc: loc,
     };
@@ -2438,7 +2438,7 @@ pub fn post_op<'ctx>(
                 vloc,
                 ty: tyname,
                 oloc: Some(loc),
-                op: op.to_string(),
+                op,
                 floc: vf.unwrap(),
             }
         } else {
@@ -2446,11 +2446,11 @@ pub fn post_op<'ctx>(
         }
     })
 }
-pub fn subscript<'ctx>(
-    (mut val, vloc): (Value<'ctx>, SourceSpan),
-    (mut idx, iloc): (Value<'ctx>, SourceSpan),
-    ctx: &CompCtx<'ctx>,
-) -> Result<Value<'ctx>, CobaltError> {
+pub fn subscript<'src, 'ctx>(
+    (mut val, vloc): (Value<'src, 'ctx>, SourceSpan),
+    (mut idx, iloc): (Value<'src, 'ctx>, SourceSpan),
+    ctx: &CompCtx<'src, 'ctx>,
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::SubscriptNotDefined {
         val: val.data_type.to_string(),
         sub: idx.data_type.to_string(),
@@ -3433,12 +3433,12 @@ pub fn subscript<'ctx>(
 }
 
 /// Implicitly convert the value `val` to the type `target`.
-pub fn impl_convert<'ctx>(
+pub fn impl_convert<'src, 'ctx>(
     loc: SourceSpan,
-    (mut val, vloc): (Value<'ctx>, Option<SourceSpan>),
+    (mut val, vloc): (Value<'src, 'ctx>, Option<SourceSpan>),
     (target, tloc): (Type, Option<SourceSpan>),
-    ctx: &CompCtx<'ctx>,
-) -> Result<Value<'ctx>, CobaltError> {
+    ctx: &CompCtx<'src, 'ctx>,
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::InvalidConversion {
         is_expl: false,
         val: val.data_type.to_string(),
@@ -3480,7 +3480,7 @@ pub fn impl_convert<'ctx>(
                         vloc: vloc.unwrap_or(loc),
                         ty: val.data_type.to_string(),
                         oloc: None,
-                        op: "".to_string(),
+                        op: "",
                         floc,
                     })
                 } else {
@@ -3961,12 +3961,12 @@ pub fn impl_convert<'ctx>(
         _ => Err(err),
     }
 }
-pub fn expl_convert<'ctx>(
+pub fn expl_convert<'src, 'ctx>(
     loc: SourceSpan,
-    (mut val, vloc): (Value<'ctx>, Option<SourceSpan>),
+    (mut val, vloc): (Value<'src, 'ctx>, Option<SourceSpan>),
     (target, tloc): (Type, Option<SourceSpan>),
-    ctx: &CompCtx<'ctx>,
-) -> Result<Value<'ctx>, CobaltError> {
+    ctx: &CompCtx<'src, 'ctx>,
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::InvalidConversion {
         is_expl: true,
         val: val.data_type.to_string(),
@@ -4008,7 +4008,7 @@ pub fn expl_convert<'ctx>(
                         vloc: vloc.unwrap_or(loc),
                         ty: val.data_type.to_string(),
                         oloc: None,
-                        op: "".to_string(),
+                        op: "",
                         floc,
                     })
                 } else {
@@ -4657,14 +4657,14 @@ pub fn expl_convert<'ctx>(
         _ => Err(err),
     }
 }
-pub fn attr<'ctx>(
-    (mut val, vloc): (Value<'ctx>, SourceSpan),
+pub fn attr<'src, 'ctx>(
+    (mut val, vloc): (Value<'src, 'ctx>, SourceSpan),
     (id, iloc): (&str, SourceSpan),
-    ctx: &CompCtx<'ctx>,
-) -> Result<Value<'ctx>, CobaltError> {
+    ctx: &CompCtx<'src, 'ctx>,
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     let err = CobaltError::AttrNotDefined {
         val: val.data_type.to_string(),
-        attr: id.to_string(),
+        attr: id.to_string().into(),
         vloc,
         aloc: iloc,
     };
@@ -5124,9 +5124,9 @@ pub fn attr<'ctx>(
         _ => Err(err),
     }
 }
-fn prep_asm<'ctx>(
-    mut arg: Value<'ctx>,
-    ctx: &CompCtx<'ctx>,
+fn prep_asm<'src, 'ctx>(
+    mut arg: Value<'src, 'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
 ) -> Option<(BasicMetadataTypeEnum<'ctx>, BasicMetadataValueEnum<'ctx>)> {
     let i64_ty = ctx.context.i64_type();
     let i32_ty = ctx.context.i32_type();
@@ -5222,13 +5222,13 @@ fn prep_asm<'ctx>(
         _ => None,
     }
 }
-pub fn call<'ctx>(
-    mut target: Value<'ctx>,
+pub fn call<'src, 'ctx>(
+    mut target: Value<'src, 'ctx>,
     loc: SourceSpan,
     cparen: Option<SourceSpan>,
-    mut args: Vec<(Value<'ctx>, SourceSpan)>,
-    ctx: &CompCtx<'ctx>,
-) -> Result<Value<'ctx>, CobaltError> {
+    mut args: Vec<(Value<'src, 'ctx>, SourceSpan)>,
+    ctx: &CompCtx<'src, 'ctx>,
+) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
     match target.data_type {
         Type::Error => Ok(Value::error()),
         Type::Reference(b) => match *b {
@@ -5240,7 +5240,10 @@ pub fn call<'ctx>(
                             v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                         ),
                         loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                        args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                        args: args
+                            .iter()
+                            .map(|(v, _)| v.data_type.to_string())
+                            .collect(),
                         aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                         nargs: vec![],
                     };
@@ -5308,7 +5311,10 @@ pub fn call<'ctx>(
                         v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                     ),
                     loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                    args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                    args: args
+                        .iter()
+                        .map(|(v, _)| v.data_type.to_string())
+                        .collect(),
                     aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                     nargs: vec![],
                 };
@@ -5384,11 +5390,14 @@ pub fn call<'ctx>(
                         .join(", ")
                 ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                args: args
+                    .iter()
+                    .map(|(v, _)| v.data_type.to_string())
+                    .collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
             };
-            let mut push_arg = |arg: ArgError| {
+            let mut push_arg = |arg: ArgError<'src>| {
                 if let CobaltError::CannotCallWithArgs { nargs, .. } = &mut err {
                     nargs.push(arg)
                 }
@@ -5456,8 +5465,8 @@ pub fn call<'ctx>(
                             good = false;
                             push_arg(ArgError::InvalidArg {
                                 n,
-                                val: v.data_type.to_string(),
-                                ty: t.to_string(),
+                                val: v.data_type.to_string().into(),
+                                ty: t.to_string().into(),
                                 loc: *l,
                             });
                             Value::error()
@@ -5533,7 +5542,7 @@ pub fn call<'ctx>(
                 let mut params = Vec::with_capacity(args.len());
                 let mut comp_args = Vec::with_capacity(args.len());
                 let mut err = CobaltError::InvalidInlineAsmCall { loc, args: vec![] };
-                let mut push_arg = |arg: InvalidAsmArg| {
+                let mut push_arg = |arg: InvalidAsmArg<'src>| {
                     if let CobaltError::InvalidInlineAsmCall { args, .. } = &mut err {
                         args.push(arg)
                     }
@@ -5546,7 +5555,7 @@ pub fn call<'ctx>(
                         comp_args.push(val);
                     } else {
                         good = false;
-                        push_arg(InvalidAsmArg(n, l));
+                        push_arg(InvalidAsmArg(n.into(), l));
                     }
                 }
                 if !good {
@@ -5578,7 +5587,10 @@ pub fn call<'ctx>(
                     v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                 ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+                args: args
+                    .iter()
+                    .map(|(v, _)| v.data_type.to_string())
+                    .collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
             };
@@ -5785,7 +5797,7 @@ pub fn call<'ctx>(
                                     }
                                     (a1, a2) => Err(CobaltError::InvalidInlineAsm3 {
                                         loc1: loc0,
-                                        type1: "type".to_string(),
+                                        type1: "type".into(),
                                         const1: true,
                                         loc2: loc1,
                                         type2: a1.data_type.to_string(),
@@ -5798,7 +5810,7 @@ pub fn call<'ctx>(
                             } else {
                                 Err(CobaltError::InvalidInlineAsm3 {
                                     loc1: loc0,
-                                    type1: "type".to_string(),
+                                    type1: "type".into(),
                                     const1: true,
                                     loc2: loc1,
                                     type2: a1.data_type.to_string(),
@@ -6002,13 +6014,16 @@ pub fn call<'ctx>(
             }),
             x => Err(CobaltError::UnknownIntrinsic {
                 loc,
-                name: x.to_string(),
+                name: x.to_string().into(),
             }),
         },
         t => Err(CobaltError::CannotCallWithArgs {
             val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-            args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
+            args: args
+                .iter()
+                .map(|(v, _)| v.data_type.to_string())
+                .collect(),
             aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
             nargs: vec![],
         }),

@@ -279,7 +279,7 @@ impl Type {
             Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx),
         }
     }
-    pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         match self {
             IntLiteral => Some(IntType(ctx.context.i64_type())),
             Int(size, _) => Some(IntType(ctx.context.custom_width_int_type(*size as u32))),
@@ -381,7 +381,7 @@ impl Type {
             _ => false,
         }
     }
-    fn can_be_compiled<'ctx>(&self, v: &InterData<'ctx>, ctx: &CompCtx<'ctx>) -> bool {
+    fn can_be_compiled<'ctx>(&self, v: &InterData<'_, 'ctx>, ctx: &CompCtx<'_, 'ctx>) -> bool {
         match self {
             Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),
             Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => {
@@ -409,8 +409,8 @@ impl Type {
     }
     pub fn into_compiled<'ctx>(
         &self,
-        v: &InterData<'ctx>,
-        ctx: &CompCtx<'ctx>,
+        v: &InterData<'_, 'ctx>,
+        ctx: &CompCtx<'_, 'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
         if ctx.is_const.get() {
             return None;
@@ -826,7 +826,7 @@ impl Type {
         }
     }
 }
-pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
     let mut vec = Vec::with_capacity(v.len());
     for t in v {
         vec.push(t.llvm_type(ctx)?);
@@ -847,7 +847,7 @@ impl<'ctx> NominalInfo<'ctx> {
         out.write_all(&[0])?;
         out.write_all(&[u8::from(self.no_auto_drop) << 1 | u8::from(self.transparent)])
     }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'_, 'ctx>) -> io::Result<Self> {
         let mut vec = vec![];
         buf.read_until(0, &mut vec)?;
         if vec.last() == Some(&0) {
