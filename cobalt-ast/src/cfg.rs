@@ -21,7 +21,7 @@ impl<'ctx> Location<'ctx> {
             Self::Inst(i, _) | Self::AfterInst(i) => i.get_parent().unwrap(),
         }
     }
-    pub fn current(ctx: &CompCtx<'ctx>) -> Option<Self> {
+    pub fn current(ctx: &CompCtx<'_, 'ctx>) -> Option<Self> {
         let b = ctx.builder.get_insert_block()?;
         Some(
             b.get_last_instruction()
@@ -111,71 +111,71 @@ enum Terminator<'ctx> {
     CBrLazy(BasicValueEnum<'ctx>, BasicBlock<'ctx>, BasicBlock<'ctx>),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Use<'ctx> {
+pub struct Use<'src, 'ctx> {
     pub inst: Location<'ctx>,
     pub loc: SourceSpan,
-    pub name: (String, usize),
+    pub name: (Cow<'src, str>, usize),
     pub is_move: bool,
     /// whether this is tracked or just for debugging
     pub real: bool,
 }
 /// compare the order in which moves (or their underlying instructions) occur.
-impl PartialOrd for Use<'_> {
+impl PartialOrd for Use<'_, '_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.inst.partial_cmp(&other.inst)
     }
 }
-impl<'ctx> PartialEq<InstructionValue<'ctx>> for Use<'ctx> {
+impl<'ctx> PartialEq<InstructionValue<'ctx>> for Use<'_, 'ctx> {
     fn eq(&self, other: &InstructionValue<'ctx>) -> bool {
         self.inst == *other
     }
 }
 /// compare the order in which moves (or their underlying instructions) occur.
-impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Use<'ctx> {
+impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Use<'_, 'ctx> {
     fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<std::cmp::Ordering> {
         self.inst.partial_cmp(other)
     }
 }
-impl<'ctx> PartialOrd<Store<'ctx>> for Use<'ctx> {
-    fn partial_cmp(&self, other: &Store<'ctx>) -> Option<Ordering> {
+impl<'ctx> PartialOrd<Store<'_, 'ctx>> for Use<'_, 'ctx> {
+    fn partial_cmp(&self, other: &Store<'_, 'ctx>) -> Option<Ordering> {
         self.inst.partial_cmp(&other.inst)
     }
 }
-impl<'ctx> PartialEq<Store<'ctx>> for Use<'ctx> {
-    fn eq(&self, _other: &Store<'ctx>) -> bool {
+impl<'ctx> PartialEq<Store<'_, 'ctx>> for Use<'_, 'ctx> {
+    fn eq(&self, _other: &Store<'_, 'ctx>) -> bool {
         false
     }
 }
-impl Hash for Use<'_> {
+impl Hash for Use<'_, '_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inst.hash(state);
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Store<'ctx> {
+pub struct Store<'src, 'ctx> {
     pub inst: Location<'ctx>,
-    pub name: (String, usize),
+    pub name: (Cow<'src, str>, usize),
     pub real: bool,
 }
 /// compare the order in which moves (or their underlying instructions) occur.
-impl PartialOrd for Store<'_> {
+impl PartialOrd for Store<'_, '_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.inst.partial_cmp(&other.inst)
     }
 }
-impl<'ctx> PartialEq<InstructionValue<'ctx>> for Store<'ctx> {
+impl<'ctx> PartialEq<InstructionValue<'ctx>> for Store<'_, 'ctx> {
     fn eq(&self, other: &InstructionValue<'ctx>) -> bool {
         self.inst == *other
     }
 }
 /// compare the order in which moves (or their underlying instructions) occur.
-impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Store<'ctx> {
+impl<'ctx> PartialOrd<InstructionValue<'ctx>> for Store<'_, 'ctx> {
     fn partial_cmp(&self, other: &InstructionValue<'ctx>) -> Option<Ordering> {
         self.inst.partial_cmp(other)
     }
 }
-impl<'ctx> PartialOrd<Use<'ctx>> for Store<'ctx> {
-    fn partial_cmp(&self, other: &Use<'ctx>) -> Option<Ordering> {
+impl<'ctx> PartialOrd<Use<'_, 'ctx>> for Store<'_, 'ctx> {
+    fn partial_cmp(&self, other: &Use<'_, 'ctx>) -> Option<Ordering> {
         use Ordering::*;
         other.partial_cmp(self).map(|v| match v {
             Less => Greater,
@@ -184,12 +184,12 @@ impl<'ctx> PartialOrd<Use<'ctx>> for Store<'ctx> {
         })
     }
 }
-impl<'ctx> PartialEq<Use<'ctx>> for Store<'ctx> {
-    fn eq(&self, _other: &Use<'ctx>) -> bool {
+impl<'ctx> PartialEq<Use<'_, 'ctx>> for Store<'_, 'ctx> {
+    fn eq(&self, _other: &Use<'_, 'ctx>) -> bool {
         false
     }
 }
-impl Hash for Store<'_> {
+impl Hash for Store<'_, '_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inst.hash(state);
     }
@@ -199,10 +199,10 @@ fn cmp_ops(l: &Either<*const Use, *const Store>, r: &Either<*const Use, *const S
         .unwrap_or(Ordering::Equal)
 }
 /// structure of a block
-struct Block<'a, 'ctx> {
+struct Block<'a, 'src, 'ctx> {
     block: BasicBlock<'ctx>,
     // these pointers are safe because they're borrowed from a container in a RefCell, which cannot be mutated because of the Ref
-    moves: Vec<Either<*const Use<'ctx>, *const Store<'ctx>>>,
+    moves: Vec<Either<*const Use<'src, 'ctx>, *const Store<'src, 'ctx>>>,
     term: Terminator<'ctx>,
     // these are used to prevent extra allocations
     input: Cell<bool>,
@@ -211,7 +211,7 @@ struct Block<'a, 'ctx> {
     // marker to for safety
     _ref: Ref<'a, ()>,
 }
-impl std::fmt::Debug for Block<'_, '_> {
+impl std::fmt::Debug for Block<'_, '_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         unsafe {
             f.debug_struct("Block")
@@ -236,13 +236,13 @@ impl std::fmt::Debug for Block<'_, '_> {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DoubleMove {
-    pub name: String,
+pub struct DoubleMove<'src> {
+    pub name: Cow<'src, str>,
     pub loc: SourceSpan,
     pub prev: Option<SourceSpan>,
     pub guaranteed: bool,
 }
-impl PartialOrd for DoubleMove {
+impl PartialOrd for DoubleMove<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.loc.offset() == other.loc.offset() {
             if self.loc.len() == other.loc.len() {
@@ -261,7 +261,7 @@ impl PartialOrd for DoubleMove {
         }
     }
 }
-impl Ord for DoubleMove {
+impl Ord for DoubleMove<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.loc.offset() == other.loc.offset() {
             if self.loc.len() == other.loc.len() {
@@ -282,15 +282,15 @@ impl Ord for DoubleMove {
 }
 /// control flow graph
 #[derive(Debug)]
-pub struct Cfg<'a, 'ctx: 'a> {
-    blocks: Vec<Block<'a, 'ctx>>,
+pub struct Cfg<'a, 'src, 'ctx: 'a> {
+    blocks: Vec<Block<'a, 'src, 'ctx>>,
     last: Location<'ctx>,
     preds: Vec<HashSet<usize>>,
 }
-impl<'a, 'ctx> Cfg<'a, 'ctx> {
+impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
     /// create a CFG tracking the moves between `start` and `end`
     /// `start` and `end` are inclusive
-    pub fn new(start: Location<'ctx>, end: Location<'ctx>, ctx: &'a CompCtx<'ctx>) -> Self {
+    pub fn new(start: Location<'ctx>, end: Location<'ctx>, ctx: &'a CompCtx<'src, 'ctx>) -> Self {
         let start_block = start.block();
         let end_block = end.block();
         let false_ = ctx.context.bool_type().const_zero();
@@ -607,7 +607,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         }
     }
     /// Search CFG for double moves
-    pub fn validate(&self) -> Vec<DoubleMove> {
+    pub fn validate(&self) -> Vec<DoubleMove<'src>> {
         let mut errs = vec![];
         unsafe {
             let vars = self
@@ -714,7 +714,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         name: &str,
         lex_scope: Option<usize>,
         inst: Option<Location<'ctx>>,
-        ctx: &CompCtx<'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
     ) -> IntValue<'ctx> {
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
@@ -792,7 +792,7 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
     }
     /// Insert destructor calls before stores if necessary.
     /// If `at_end` is true, insert the destructors for all values in the top VarMap layer as well
-    pub fn insert_dtors(&self, ctx: &CompCtx<'ctx>, at_end: bool) {
+    pub fn insert_dtors(&self, ctx: &CompCtx<'src, 'ctx>, at_end: bool) {
         let f = ctx
             .builder
             .get_insert_block()

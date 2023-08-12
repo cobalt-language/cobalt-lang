@@ -12,27 +12,31 @@ pub enum MethodType {
     Getter,
 }
 #[derive(Debug, Clone)]
-pub struct FnData<'ctx> {
-    pub defaults: Vec<InterData<'ctx>>,
+pub struct FnData<'src, 'ctx> {
+    pub defaults: Vec<InterData<'src, 'ctx>>,
     pub cconv: u32,
     pub mt: MethodType,
 }
+
+/// Used for compile-time constants.
 #[derive(Debug, Clone)]
-pub enum InterData<'ctx> {
+pub enum InterData<'src, 'ctx> {
     Null,
     Int(i128),
     Float(f64),
-    Array(Vec<InterData<'ctx>>),
-    Function(FnData<'ctx>),
+    /// Used for tuples, structs, arrays, and bound methods.
+    Array(Vec<Self>),
+    /// Used for default values of function parameters.
+    Function(FnData<'src, 'ctx>),
     InlineAsm(String, String),
     Type(Box<Type>),
     Module(
-        HashMap<String, Symbol<'ctx>>,
-        Vec<(CompoundDottedName, bool)>,
+        HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        Vec<(CompoundDottedName<'src>, bool)>,
         String,
     ),
 }
-impl<'ctx> InterData<'ctx> {
+impl<'src, 'ctx> InterData<'src, 'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         match self {
             InterData::Null => out.write_all(&[1]),
@@ -97,7 +101,10 @@ impl<'ctx> InterData<'ctx> {
             }
         }
     }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Option<Self>> {
+    pub fn load<R: Read + BufRead>(
+        buf: &mut R,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> io::Result<Option<Self>> {
         let mut c = 0u8;
         buf.read_exact(std::slice::from_mut(&mut c))?;
         Ok(match c {
@@ -182,7 +189,9 @@ impl<'ctx> InterData<'ctx> {
                         break;
                     }
                     out.insert(
-                        String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"),
+                        String::from_utf8(name)
+                            .expect("Cobalt symbols should be valid UTF-8")
+                            .into(),
                         Symbol::load(buf, ctx)?,
                     );
                 }
@@ -200,15 +209,15 @@ impl<'ctx> InterData<'ctx> {
     }
 }
 #[derive(Debug, Clone)]
-pub struct Value<'ctx> {
+pub struct Value<'src, 'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
-    pub inter_val: Option<InterData<'ctx>>,
+    pub inter_val: Option<InterData<'src, 'ctx>>,
     pub data_type: Type,
     pub address: Rc<Cell<Option<PointerValue<'ctx>>>>,
-    pub name: Option<(String, usize)>,
+    pub name: Option<(Cow<'src, str>, usize)>,
     pub frozen: Option<SourceSpan>,
 }
-impl<'ctx> Value<'ctx> {
+impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn error() -> Self {
         Value {
             comp_val: None,
@@ -231,7 +240,7 @@ impl<'ctx> Value<'ctx> {
     }
     pub fn new(
         comp_val: Option<BasicValueEnum<'ctx>>,
-        inter_val: Option<InterData<'ctx>>,
+        inter_val: Option<InterData<'src, 'ctx>>,
         data_type: Type,
     ) -> Self {
         Value {
@@ -245,7 +254,7 @@ impl<'ctx> Value<'ctx> {
     }
     pub fn with_addr(
         comp_val: Option<BasicValueEnum<'ctx>>,
-        inter_val: Option<InterData<'ctx>>,
+        inter_val: Option<InterData<'src, 'ctx>>,
         data_type: Type,
         addr: PointerValue<'ctx>,
     ) -> Self {
@@ -270,7 +279,7 @@ impl<'ctx> Value<'ctx> {
     }
     pub fn interpreted(
         comp_val: BasicValueEnum<'ctx>,
-        inter_val: InterData<'ctx>,
+        inter_val: InterData<'src, 'ctx>,
         data_type: Type,
     ) -> Self {
         Value {
@@ -282,7 +291,7 @@ impl<'ctx> Value<'ctx> {
             frozen: None,
         }
     }
-    pub fn metaval(inter_val: InterData<'ctx>, data_type: Type) -> Self {
+    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: Type) -> Self {
         Value {
             comp_val: None,
             inter_val: Some(inter_val),
@@ -313,8 +322,8 @@ impl<'ctx> Value<'ctx> {
         }
     }
     pub fn make_mod(
-        syms: HashMap<String, Symbol<'ctx>>,
-        imps: Vec<(CompoundDottedName, bool)>,
+        syms: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        imps: Vec<(CompoundDottedName<'src>, bool)>,
         name: String,
     ) -> Self {
         Value {
@@ -327,30 +336,34 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn addr(&self, ctx: &CompCtx<'ctx>) -> Option<PointerValue<'ctx>> {
-        self.address.get().or_else(|| {
-            let ctv = self.value(ctx)?;
-            let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
-            ctx.builder.build_store(alloca, ctv);
-            self.address.set(Some(alloca));
-            Some(alloca)
-        })
+    pub fn addr(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<PointerValue<'ctx>> {
+        if self.data_type.size(ctx) == SizeType::Static(0) {
+            Some(ctx.null_type.ptr_type(Default::default()).const_null())
+        } else {
+            self.address.get().or_else(|| {
+                let ctv = self.value(ctx)?;
+                let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
+                ctx.builder.build_store(alloca, ctv);
+                self.address.set(Some(alloca));
+                Some(alloca)
+            })
+        }
     }
-    pub fn freeze(self, loc: SourceSpan) -> Value<'ctx> {
+    pub fn freeze(self, loc: SourceSpan) -> Value<'src, 'ctx> {
         Value {
             frozen: Some(loc),
             ..self
         }
     }
 
-    pub fn value(&self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
+    pub fn value(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
         self.comp_val.or_else(|| {
             self.inter_val
                 .as_ref()
                 .and_then(|v| self.data_type.into_compiled(v, ctx))
         })
     }
-    pub fn into_value(self, ctx: &CompCtx<'ctx>) -> Option<BasicValueEnum<'ctx>> {
+    pub fn into_value(self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
         self.comp_val.or_else(|| {
             self.inter_val
                 .as_ref()
@@ -358,7 +371,7 @@ impl<'ctx> Value<'ctx> {
         })
     }
 
-    pub fn ins_dtor(&self, ctx: &CompCtx<'ctx>) {
+    pub fn ins_dtor(&self, ctx: &CompCtx<'src, 'ctx>) {
         match &self.data_type {
             Type::Nominal(n) => {
                 if let Some(addr) = self.addr(ctx) {
@@ -469,8 +482,8 @@ impl<'ctx> Value<'ctx> {
     pub fn into_mod(
         self,
     ) -> Option<(
-        HashMap<String, Symbol<'ctx>>,
-        Vec<(CompoundDottedName, bool)>,
+        HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        Vec<(CompoundDottedName<'src>, bool)>,
         String,
     )> {
         if let Value {
@@ -487,8 +500,8 @@ impl<'ctx> Value<'ctx> {
     pub fn as_mod(
         &self,
     ) -> Option<(
-        &HashMap<String, Symbol<'ctx>>,
-        &Vec<(CompoundDottedName, bool)>,
+        &HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        &Vec<(CompoundDottedName<'src>, bool)>,
         &String,
     )> {
         if let Value {
@@ -505,8 +518,8 @@ impl<'ctx> Value<'ctx> {
     pub fn as_mod_mut(
         &mut self,
     ) -> Option<(
-        &mut HashMap<String, Symbol<'ctx>>,
-        &mut Vec<(CompoundDottedName, bool)>,
+        &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        &mut Vec<(CompoundDottedName<'src>, bool)>,
         &mut String,
     )> {
         if let Value {
@@ -537,7 +550,7 @@ impl<'ctx> Value<'ctx> {
         } // Interpreted value, self-punctuating
         self.data_type.save(out) // Type
     }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
         let mut var = Value::error();
         let mut name = vec![];
         buf.read_until(0, &mut name)?;

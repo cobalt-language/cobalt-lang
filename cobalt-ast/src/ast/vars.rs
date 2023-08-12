@@ -5,22 +5,22 @@ use inkwell::module::Linkage::*;
 use inkwell::values::{AsValueRef, BasicValueEnum::*, GlobalValue};
 use std::collections::{hash_map::Entry, HashSet};
 #[derive(Debug, Clone)]
-pub struct VarDefAST {
+pub struct VarDefAST<'src> {
     loc: SourceSpan,
-    pub name: DottedName,
-    pub val: Box<dyn AST>,
-    pub type_: Option<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
+    pub name: DottedName<'src>,
+    pub val: BoxedAST<'src>,
+    pub type_: Option<BoxedAST<'src>>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
     pub global: bool,
     pub is_mut: bool,
 }
-impl VarDefAST {
+impl<'src> VarDefAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: DottedName,
-        val: Box<dyn AST>,
-        type_: Option<Box<dyn AST>>,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        name: DottedName<'src>,
+        val: BoxedAST<'src>,
+        type_: Option<BoxedAST<'src>>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
         global: bool,
         is_mut: bool,
     ) -> Self {
@@ -35,24 +35,25 @@ impl VarDefAST {
         }
     }
 }
-impl AST for VarDefAST {
+impl<'src> AST<'src> for VarDefAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.loc, self.val.loc())
     }
     fn nodes(&self) -> usize {
         self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1
     }
-    fn fwddef_prepass(&self, ctx: &CompCtx) {
+    fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
         let mut vis_spec = None;
+        let mut is_extern = false;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "link" => {
-                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                    link_type = match arg.as_deref() {
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak")
                         | Some("extern_weak")
@@ -79,7 +80,9 @@ impl AST for VarDefAST {
                         linkas = Some(arg.clone())
                     }
                 }
+                "extern" => is_extern = true,
                 "c" | "C" => {
+                    is_extern |= arg.as_deref() == Some("extern");
                     linkas = Some(
                         self.name
                             .ids
@@ -91,7 +94,7 @@ impl AST for VarDefAST {
                 }
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -161,10 +164,14 @@ impl AST for VarDefAST {
                             let gv = ctx.module.add_global(
                                 t,
                                 None,
-                                &linkas.unwrap_or_else(|| ctx.mangle(&self.name)),
+                                &linkas.unwrap_or_else(|| ctx.mangle(&self.name).into()),
                             );
                             match link_type {
-                                None => {}
+                                None => {
+                                    if ctx.flags.private_syms && !(vs || is_extern) {
+                                        gv.set_linkage(Private)
+                                    }
+                                }
                                 Some((WeakAny, _)) => gv.set_linkage(ExternalWeak),
                                 Some((x, _)) => gv.set_linkage(x),
                             }
@@ -182,7 +189,10 @@ impl AST for VarDefAST {
             )
         });
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let mut is_static = false;
         let mut link_type = None;
@@ -192,7 +202,7 @@ impl AST for VarDefAST {
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "static" => {
                     if arg.is_some() {
                         errs.push(CobaltError::InvalidAnnArgument {
@@ -273,7 +283,7 @@ impl AST for VarDefAST {
                     }
                 }
                 "c" | "C" => {
-                    match arg.as_ref().map(|x| x.as_str()) {
+                    match arg.as_deref() {
                         Some("") | None => {}
                         Some("extern") => is_extern = Some(loc),
                         Some(_) => errs.push(CobaltError::InvalidAnnArgument {
@@ -295,7 +305,7 @@ impl AST for VarDefAST {
                 }
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -315,7 +325,7 @@ impl AST for VarDefAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -434,7 +444,7 @@ impl AST for VarDefAST {
                                 dt.llvm_type(ctx)
                                     .map(|t| {
                                         let mangled = linkas.map_or_else(
-                                            || ctx.mangle(&self.name),
+                                            || ctx.mangle(&self.name).into(),
                                             |(name, _)| name,
                                         );
                                         let gv = ctx
@@ -531,7 +541,7 @@ impl AST for VarDefAST {
                     } else {
                         let t = dt.llvm_type(ctx).unwrap();
                         let mangled =
-                            linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                            linkas.map_or_else(|| ctx.mangle(&self.name).into(), |(name, _)| name);
                         let gv = ctx
                             .lookup_full(&self.name)
                             .and_then(|x| -> Option<GlobalValue> {
@@ -542,6 +552,8 @@ impl AST for VarDefAST {
                         gv.set_constant(!self.is_mut);
                         if let Some((link, _)) = link_type {
                             gv.set_linkage(link)
+                        } else if ctx.flags.private_syms && !(vs || is_extern.is_some()) {
+                            gv.set_linkage(Private)
                         }
                         ctx.with_vars(|v| {
                             v.insert(
@@ -675,7 +687,7 @@ impl AST for VarDefAST {
                             });
                     if let Some(t) = dt.llvm_type(ctx) {
                         let mangled =
-                            linkas.map_or_else(|| ctx.mangle(&self.name), |(name, _)| name);
+                            linkas.map_or_else(|| ctx.mangle(&self.name).into(), |(name, _)| name);
                         let gv = ctx
                             .lookup_full(&self.name)
                             .and_then(|x| -> Option<GlobalValue> {
@@ -916,7 +928,7 @@ impl AST for VarDefAST {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx
                         .builder
-                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| x.as_str()));
+                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| &**x));
                     ctx.builder.build_store(a, v);
                     a
                 });
@@ -1009,21 +1021,21 @@ impl AST for VarDefAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct ConstDefAST {
+pub struct ConstDefAST<'src> {
     loc: SourceSpan,
-    pub name: DottedName,
-    pub val: Box<dyn AST>,
-    pub type_: Option<Box<dyn AST>>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    lastmissing: CellExt<HashSet<String>>,
+    pub name: DottedName<'src>,
+    pub val: BoxedAST<'src>,
+    pub type_: Option<BoxedAST<'src>>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
+    lastmissing: CellExt<HashSet<Cow<'src, str>>>,
 }
-impl ConstDefAST {
+impl<'src> ConstDefAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: DottedName,
-        val: Box<dyn AST>,
-        type_: Option<Box<dyn AST>>,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        name: DottedName<'src>,
+        val: BoxedAST<'src>,
+        type_: Option<BoxedAST<'src>>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
     ) -> Self {
         ConstDefAST {
             loc,
@@ -1035,19 +1047,19 @@ impl ConstDefAST {
         }
     }
 }
-impl AST for ConstDefAST {
+impl<'src> AST<'src> for ConstDefAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.loc, self.val.loc())
     }
     fn nodes(&self) -> usize {
         self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1
     }
-    fn varfwd_prepass(&self, ctx: &CompCtx) {
+    fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut target_match = 2u8;
         for (ann, arg, _) in self.annotations.iter() {
-            if ann.as_str() == "target" {
+            if ann == "target" {
                 if let Some(arg) = arg {
-                    let mut arg = arg.as_str();
+                    let mut arg = &**arg;
                     let negate = if arg.as_bytes().first() == Some(&0x21) {
                         arg = &arg[1..];
                         true
@@ -1077,12 +1089,12 @@ impl AST for ConstDefAST {
             )
         });
     }
-    fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
+    fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
         let mut target_match = 2u8;
         for (ann, arg, _) in self.annotations.iter() {
-            if ann.as_str() == "target" {
+            if ann == "target" {
                 if let Some(arg) = arg {
-                    let mut arg = arg.as_str();
+                    let mut arg = &**arg;
                     let negate = if arg.as_bytes().first() == Some(&0x21) {
                         arg = &arg[1..];
                         true
@@ -1118,16 +1130,19 @@ impl AST for ConstDefAST {
         });
         ctx.prepass.set(pp);
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -1147,7 +1162,7 @@ impl AST for ConstDefAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -1314,21 +1329,21 @@ impl AST for ConstDefAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct TypeDefAST {
+pub struct TypeDefAST<'src> {
     loc: SourceSpan,
-    pub name: DottedName,
-    pub val: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
-    pub methods: Vec<Box<dyn AST>>,
-    lastmissing: CellExt<HashSet<String>>,
+    pub name: DottedName<'src>,
+    pub val: BoxedAST<'src>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
+    pub methods: Vec<BoxedAST<'src>>,
+    lastmissing: CellExt<HashSet<Cow<'src, str>>>,
 }
-impl TypeDefAST {
+impl<'src> TypeDefAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: DottedName,
-        val: Box<dyn AST>,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
-        methods: Vec<Box<dyn AST>>,
+        name: DottedName<'src>,
+        val: BoxedAST<'src>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
+        methods: Vec<BoxedAST<'src>>,
     ) -> Self {
         TypeDefAST {
             loc,
@@ -1340,21 +1355,22 @@ impl TypeDefAST {
         }
     }
 }
-impl AST for TypeDefAST {
+impl<'src> AST<'src> for TypeDefAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.val.nodes() + self.methods.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn varfwd_prepass(&self, ctx: &CompCtx) {
+    fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -1374,6 +1390,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1408,15 +1425,19 @@ impl AST for TypeDefAST {
         });
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
-                "base_t".to_string(),
+                "base_t".into(),
                 Value::make_type(Type::Null).freeze(self.loc).into(),
             );
             v.symbols.insert(
-                "self_t".to_string(),
+                "self_t".into(),
                 Value::make_type(Type::Nominal(mangled.clone()))
                     .freeze(self.loc)
                     .into(),
@@ -1443,14 +1464,15 @@ impl AST for TypeDefAST {
         noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
-    fn constinit_prepass(&self, ctx: &CompCtx, needs_another: &mut bool) {
+    fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -1470,6 +1492,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1508,15 +1531,19 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
-                "base_t".to_string(),
+                "base_t".into(),
                 Value::make_type(Type::Null).freeze(self.loc).into(),
             );
             v.symbols.insert(
-                "self_t".to_string(),
+                "self_t".into(),
                 Value::make_type(Type::Nominal(mangled.clone()))
                     .freeze(self.loc)
                     .into(),
@@ -1545,15 +1572,16 @@ impl AST for TypeDefAST {
         noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
         ctx.prepass.set(pp);
     }
-    fn fwddef_prepass(&self, ctx: &CompCtx) {
+    fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut vis_spec = None;
         let mut target_match = 2u8;
-        let mut no_auto_drop = true;
+        let mut no_auto_drop = false;
+        let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -1591,6 +1619,7 @@ impl AST for TypeDefAST {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "transparent" => transparent = true,
                 _ => {}
             }
         }
@@ -1618,8 +1647,12 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop;
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop;
+        info.transparent = transparent;
+        std::mem::drop(mb);
         let ty = ops::impl_convert(
             unreachable_span(),
             (self.val.const_codegen(ctx).0, None),
@@ -1631,11 +1664,11 @@ impl AST for TypeDefAST {
         .unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert(
-                "base_t".to_string(),
+                "base_t".into(),
                 Value::make_type(ty.clone()).freeze(self.loc).into(),
             );
             v.symbols.insert(
-                "self_t".to_string(),
+                "self_t".into(),
                 Value::make_type(Type::Nominal(mangled.clone()))
                     .freeze(self.loc)
                     .into(),
@@ -1658,17 +1691,21 @@ impl AST for TypeDefAST {
         });
         noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = None;
+        let mut transparent = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -1688,7 +1725,7 @@ impl AST for TypeDefAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -1764,6 +1801,25 @@ impl AST for TypeDefAST {
                         no_auto_drop = Some(loc);
                     }
                 }
+                "transparent" => {
+                    if let Some(prev) = transparent {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "transparent",
+                            loc,
+                            prev,
+                        });
+                    } else {
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "transparent",
+                                found: arg.clone(),
+                                expected: None,
+                                loc,
+                            })
+                        }
+                        transparent = Some(loc);
+                    }
+                }
                 _ => errs.push(CobaltError::UnknownAnnotation {
                     loc,
                     name: ann.clone(),
@@ -1815,15 +1871,19 @@ impl AST for TypeDefAST {
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        ctx.nom_info.borrow_mut().push(Default::default());
-        ctx.nom_info.borrow_mut().last_mut().unwrap().no_auto_drop = no_auto_drop.is_some();
+        let mut mb = ctx.nom_info.borrow_mut();
+        mb.push(Default::default());
+        let info = mb.last_mut().unwrap();
+        info.no_auto_drop = no_auto_drop.is_some();
+        info.transparent = transparent.is_some();
+        std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
-                "base_t".to_string(),
+                "base_t".into(),
                 Value::make_type(ty.clone()).freeze(self.loc).into(),
             );
             v.symbols.insert(
-                "self_t".to_string(),
+                "self_t".into(),
                 Value::make_type(Type::Nominal(mangled.clone()))
                     .freeze(self.loc)
                     .into(),
@@ -1921,21 +1981,24 @@ impl AST for TypeDefAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct VarGetAST {
+pub struct VarGetAST<'src> {
     loc: SourceSpan,
-    pub name: String,
+    pub name: Cow<'src, str>,
     pub global: bool,
 }
-impl VarGetAST {
-    pub fn new(loc: SourceSpan, name: String, global: bool) -> Self {
+impl<'src> VarGetAST<'src> {
+    pub fn new(loc: SourceSpan, name: Cow<'src, str>, global: bool) -> Self {
         VarGetAST { loc, name, global }
     }
 }
-impl AST for VarGetAST {
+impl<'src> AST<'src> for VarGetAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         match ctx.lookup(&self.name, self.global) {
             Some(Symbol(x, d)) if d.scope.map_or(true, |x| x.get() == ctx.var_scope.get()) => (
                 x.clone(),
@@ -1952,7 +2015,7 @@ impl AST for VarGetAST {
                 Value::error(),
                 vec![CobaltError::VariableDoesNotExist {
                     name: self.name.clone(),
-                    module: String::new(),
+                    module: Default::default(),
                     container: "",
                     loc: self.loc,
                 }],

@@ -447,9 +447,8 @@ fn driver() -> anyhow::Result<()> {
         Cli::Debug(cmd) => match cmd {
             DbgSubcommand::Parse { files, code, locs } => {
                 for code in code {
-                    let file = FILES.add_file(0, "<command line>".to_string(), code);
-                    let lock = file.contents();
-                    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+                    let file = FILES.add_file(0, "<command line>".to_string(), code.into());
+                    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
                     let mut ast = ast.unwrap_or_default();
                     let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
@@ -464,9 +463,8 @@ fn driver() -> anyhow::Result<()> {
                 }
                 for arg in files {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let file = FILES.add_file(0, arg.clone(), code);
-                    let lock = file.contents();
-                    let (ast, errs) = parse_tl().parse(&lock).into_output_errors();
+                    let file = FILES.add_file(0, arg.clone(), code.into());
+                    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
                     let mut ast = ast.unwrap_or_default();
                     let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
@@ -586,10 +584,9 @@ fn driver() -> anyhow::Result<()> {
                 };
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
-                let file = FILES.add_file(0, input, code);
-                let lock = file.contents();
+                let file = FILES.add_file(0, input, code.into());
                 let ((ast, errs), parse_time) =
-                    timeit(|| parse_tl().parse(&lock).into_output_errors());
+                    timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                 let mut ast = ast.unwrap_or_default();
                 let errs = errs.into_iter().flat_map(cvt_err);
                 reporter.parse_time = Some(parse_time);
@@ -929,9 +926,9 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let file = FILES.add_file(0, input.to_string(), code.into());
+            let ((ast, errs), parse_time) =
+                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1300,9 +1297,9 @@ fn driver() -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let file = FILES.add_file(0, input.to_string(), code.into());
+            let ((ast, errs), parse_time) =
+                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1573,9 +1570,9 @@ fn driver() -> anyhow::Result<()> {
                 reporter.libs_time = Some(start.elapsed());
             };
             let mut fail = false;
-            let file = FILES.add_file(0, input.to_string(), code);
-            let lock = file.contents();
-            let ((ast, errs), parse_time) = timeit(|| parse_tl().parse(&lock).into_output_errors());
+            let file = FILES.add_file(0, input.to_string(), code.into());
+            let ((ast, errs), parse_time) =
+                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
             let mut ast = ast.unwrap_or_default();
             let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
@@ -1827,6 +1824,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut flags = Flags {
                     dbg_mangle: debug_mangle,
                     prepass: false,
+                    private_syms: false,
                     ..Flags::default()
                 };
                 let ink_ctx = inkwell::context::Context::create();
@@ -1864,10 +1862,9 @@ fn driver() -> anyhow::Result<()> {
                         if Path::new(input).is_absolute() {
                             anyhow::bail!("cannot pass absolute paths to multi-file input")
                         }
-                        let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let file = FILES.add_file(0, input.clone(), code.clone().into());
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -1891,8 +1888,8 @@ fn driver() -> anyhow::Result<()> {
                     .iter()
                     .map(|ast| {
                         let file = ast.file.unwrap();
-                        ctx.module.set_name(&file.name());
-                        ctx.module.set_source_file_name(&file.name());
+                        ctx.module.set_name(file.name());
+                        ctx.module.set_source_file_name(file.name());
                         let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
                         *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                         for err in errs {
@@ -1917,7 +1914,7 @@ fn driver() -> anyhow::Result<()> {
                         })
                         .1;
                         reporter.insts_after += insts(&ctx.module);
-                        let input = PathBuf::from(&*file.name());
+                        let input = PathBuf::from(file.name());
                         let mut out = match &output {
                             None => input,
                             Some(p) => p.join(input),
@@ -2275,7 +2272,7 @@ fn driver() -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
-                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                let ctx = CompCtx::with_flags(&ink_ctx, "multi-jit", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
@@ -2299,10 +2296,9 @@ fn driver() -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let file = FILES.add_file(0, input.clone(), code.clone().into());
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -2316,46 +2312,36 @@ fn driver() -> anyhow::Result<()> {
                         anyhow::Ok(ast)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-                let mods = asts
-                    .iter()
-                    .map(|ast| {
-                        let file = ast.file.unwrap();
-                        ctx.module.set_name(&file.name());
-                        ctx.module.set_source_file_name(&file.name());
-                        let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
-                        *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
-                        for err in errs {
-                            fail |= err.is_err();
-                            eprintln!(
-                                "{:?}",
-                                Report::from(err).with_source_code(ast.file.unwrap())
-                            );
-                        }
-                        if let Err(msg) = ctx.module.verify() {
-                            error!("\n{}", msg.to_string());
-                            fail = true;
-                        }
-                        reporter.insts_before = insts(&ctx.module);
-                        *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
-                            reporter.insts_before += insts(&ctx.module);
-                            let pm = inkwell::passes::PassManager::create(());
-                            opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                            pm.run_on(&ctx.module);
-                        })
-                        .1;
-                        let m = ctx.module.clone();
-                        ctx.with_vars(|v| clear_mod(&mut v.symbols));
-                        m
-                    })
-                    .collect::<Vec<_>>();
+                asts.iter().for_each(|ast| {
+                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
+                    for err in errs {
+                        fail |= err.is_err();
+                        eprintln!(
+                            "{:?}",
+                            Report::from(err).with_source_code(ast.file.unwrap())
+                        );
+                    }
+                });
+                if let Err(msg) = ctx.module.verify() {
+                    error!("\n{}", msg.to_string());
+                    fail = true;
+                }
+                reporter.insts_before = insts(&ctx.module);
+                *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                    reporter.insts_before += insts(&ctx.module);
+                    let pm = inkwell::passes::PassManager::create(());
+                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
+                    pm.run_on(&ctx.module);
+                })
+                .1;
+                let ee = ctx
+                    .module
+                    .create_jit_execution_engine(inkwell::OptimizationLevel::None)
+                    .map_err(|m| anyhow::Error::msg(m.to_string()))?;
                 if fail {
                     anyhow::bail!(CompileErrors)
                 }
-                let (first, rest) = mods.split_first().unwrap();
-                let ee = first
-                    .create_jit_execution_engine(inkwell::OptimizationLevel::None)
-                    .map_err(|e| anyhow::Error::msg(e.to_string()))?;
-                rest.iter().for_each(|m| ee.add_module(m).unwrap());
                 reporter.finish();
                 unsafe {
                     let main_fn = match ee.get_function_value("main") {
@@ -2603,7 +2589,7 @@ fn driver() -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
-                let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
+                let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
@@ -2627,10 +2613,9 @@ fn driver() -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone());
-                        let lock = file.contents();
+                        let file = FILES.add_file(0, input.clone(), code.clone().into());
                         let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(&lock).into_output_errors());
+                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -2645,9 +2630,6 @@ fn driver() -> anyhow::Result<()> {
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
                 asts.iter().for_each(|ast| {
-                    let file = ast.file.unwrap();
-                    ctx.module.set_name(&file.name());
-                    ctx.module.set_source_file_name(&file.name());
                     let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                     for err in errs {
@@ -2657,12 +2639,11 @@ fn driver() -> anyhow::Result<()> {
                             Report::from(err).with_source_code(ast.file.unwrap())
                         );
                     }
-                    if let Err(msg) = ctx.module.verify() {
-                        error!("\n{}", msg.to_string());
-                        fail = true;
-                    }
-                    ctx.with_vars(|v| clear_mod(&mut v.symbols));
                 });
+                if let Err(msg) = ctx.module.verify() {
+                    error!("\n{}", msg.to_string());
+                    fail = true;
+                }
                 if fail {
                     anyhow::bail!(CompileErrors)
                 }

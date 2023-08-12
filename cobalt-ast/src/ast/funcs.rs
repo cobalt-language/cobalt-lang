@@ -12,25 +12,30 @@ pub enum ParamType {
     Mutable,
     Constant,
 }
-pub type Parameter = (String, ParamType, Box<dyn AST>, Option<Box<dyn AST>>); // parameter, mut/const, type, default
+pub type Parameter<'src> = (
+    Cow<'src, str>,
+    ParamType,
+    BoxedAST<'src>,
+    Option<BoxedAST<'src>>,
+); // parameter, mut/const, type, default
 #[derive(Debug, Clone)]
-pub struct FnDefAST {
+pub struct FnDefAST<'src> {
     loc: SourceSpan,
-    pub name: DottedName,
-    pub ret: Box<dyn AST>,
-    pub params: Vec<Parameter>,
-    pub body: Box<dyn AST>,
-    pub annotations: Vec<(String, Option<String>, SourceSpan)>,
+    pub name: DottedName<'src>,
+    pub ret: BoxedAST<'src>,
+    pub params: Vec<Parameter<'src>>,
+    pub body: BoxedAST<'src>,
+    pub annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
     pub in_struct: bool,
 }
-impl FnDefAST {
+impl<'src> FnDefAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        name: DottedName,
-        ret: Box<dyn AST>,
-        params: Vec<Parameter>,
-        body: Box<dyn AST>,
-        annotations: Vec<(String, Option<String>, SourceSpan)>,
+        name: DottedName<'src>,
+        ret: BoxedAST<'src>,
+        params: Vec<Parameter<'src>>,
+        body: BoxedAST<'src>,
+        annotations: Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
         in_struct: bool,
     ) -> Self {
         FnDefAST {
@@ -44,7 +49,7 @@ impl FnDefAST {
         }
     }
 }
-impl AST for FnDefAST {
+impl<'src> AST<'src> for FnDefAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
@@ -58,7 +63,7 @@ impl AST for FnDefAST {
                 .sum::<usize>()
             + 1
     }
-    fn fwddef_prepass(&self, ctx: &CompCtx) {
+    fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let oic = ctx.is_const.replace(true);
         let mut ret = ops::impl_convert(
             unreachable_span(),
@@ -104,11 +109,12 @@ impl AST for FnDefAST {
         let mut vis_spec = None;
         let mut fn_type = None;
         let mut target_match = 2u8;
+        let mut is_extern = false;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "link" => {
-                    link_type = match arg.as_ref().map(|x| x.as_str()) {
+                    link_type = match arg.as_deref() {
                         Some("extern") | Some("external") => Some(External),
                         Some("extern-weak")
                         | Some("extern_weak")
@@ -135,7 +141,7 @@ impl AST for FnDefAST {
                     }
                 }
                 "cconv" => {
-                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                    cconv = cconv.or(match arg.as_deref() {
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
@@ -154,7 +160,8 @@ impl AST for FnDefAST {
                     });
                 }
                 "extern" => {
-                    cconv = cconv.or(match arg.as_ref().map(|x| x.as_str()) {
+                    is_extern = true;
+                    cconv = cconv.or(match arg.as_deref() {
                         Some("c") | Some("C") => Some(0),
                         Some("fast") | Some("Fast") => Some(8),
                         Some("cold") | Some("Cold") => Some(9),
@@ -174,7 +181,7 @@ impl AST for FnDefAST {
                 }
                 "inline" => {
                     if let Some(arg) = arg {
-                        match arg.as_str() {
+                        match &**arg {
                             "always" | "true" | "1" => inline = Some(true),
                             "never" | "false" | "0" => inline = Some(false),
                             _ => {}
@@ -185,6 +192,7 @@ impl AST for FnDefAST {
                 }
                 "c" | "C" => {
                     cconv = Some(0);
+                    is_extern |= arg.as_deref() == Some("extern");
                     linkas = Some((
                         self.name
                             .ids
@@ -197,7 +205,7 @@ impl AST for FnDefAST {
                 }
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -288,18 +296,16 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(
-                        linkas
-                            .map_or_else(
-                                || {
-                                    if cf {
-                                        self.name.ids.last().unwrap().0.clone()
-                                    } else {
-                                        ctx.mangle(&self.name)
-                                    }
-                                },
-                                |v| v.0,
-                            )
-                            .as_str(),
+                        &linkas.map_or_else(
+                            || {
+                                if cf {
+                                    self.name.ids.last().unwrap().0.clone()
+                                } else {
+                                    ctx.mangle(&self.name).into()
+                                }
+                            },
+                            |v| v.0,
+                        ),
                         ft,
                         None,
                     );
@@ -321,8 +327,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some(link) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self
@@ -347,7 +356,7 @@ impl AST for FnDefAST {
                             &self.name,
                             Symbol(
                                 Value::new(
-                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(PointerValue(gv.as_pointer_value())),
                                     Some(InterData::Function(FnData {
                                         defaults,
                                         cconv: cc,
@@ -383,18 +392,16 @@ impl AST for FnDefAST {
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
                     let f = ctx.module.add_function(
-                        linkas
-                            .map_or_else(
-                                || {
-                                    if cf {
-                                        self.name.ids.last().unwrap().0.clone()
-                                    } else {
-                                        ctx.mangle(&self.name)
-                                    }
-                                },
-                                |v| v.0,
-                            )
-                            .as_str(),
+                        &linkas.map_or_else(
+                            || {
+                                if cf {
+                                    self.name.ids.last().unwrap().0.clone()
+                                } else {
+                                    ctx.mangle(&self.name).into()
+                                }
+                            },
+                            |v| v.0,
+                        ),
                         ft,
                         None,
                     );
@@ -416,8 +423,11 @@ impl AST for FnDefAST {
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some(link) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self
@@ -442,7 +452,7 @@ impl AST for FnDefAST {
                             &self.name,
                             Symbol(
                                 Value::new(
-                                    Some(PointerValue(f.as_global_value().as_pointer_value())),
+                                    Some(PointerValue(gv.as_pointer_value())),
                                     Some(InterData::Function(FnData {
                                         defaults,
                                         cconv: cc,
@@ -502,7 +512,10 @@ impl AST for FnDefAST {
             unreachable!()
         };
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
         let mut ret = ops::impl_convert(
@@ -571,7 +584,7 @@ impl AST for FnDefAST {
         let mut dtor = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
-            match ann.as_str() {
+            match &**ann {
                 "link" => {
                     if let Some((_, prev)) = link_type {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -747,7 +760,7 @@ impl AST for FnDefAST {
                     }
                 }
                 "c" | "C" => {
-                    match arg.as_ref().map(|x| x.as_str()) {
+                    match arg.as_deref() {
                         Some("") | None => {}
                         Some("extern") => is_extern = Some(loc),
                         Some(_) => errs.push(CobaltError::InvalidAnnArgument {
@@ -769,7 +782,7 @@ impl AST for FnDefAST {
                 }
                 "target" => {
                     if let Some(arg) = arg {
-                        let mut arg = arg.as_str();
+                        let mut arg = &**arg;
                         let negate = if arg.as_bytes().first() == Some(&0x21) {
                             arg = &arg[1..];
                             true
@@ -789,7 +802,7 @@ impl AST for FnDefAST {
                             }
                             Err(err) => errs.push(CobaltError::GlobPatternError {
                                 pos: err.pos,
-                                msg: err.msg.to_string(),
+                                msg: err.msg,
                                 loc,
                             }),
                         }
@@ -899,7 +912,7 @@ impl AST for FnDefAST {
                         }
                     } else {
                         errs.push(CobaltError::UnknownAnnotation {
-                            name: "method".to_string(),
+                            name: "method".into(),
                             def: "non-struct function",
                             loc,
                         })
@@ -958,7 +971,7 @@ impl AST for FnDefAST {
                         }
                     } else {
                         errs.push(CobaltError::UnknownAnnotation {
-                            name: "getter".to_string(),
+                            name: "getter".into(),
                             def: "non-struct function",
                             loc,
                         })
@@ -993,7 +1006,10 @@ impl AST for FnDefAST {
                                         loc,
                                         op: "drop",
                                         ex: "(&mut self_t)",
-                                        found: params.iter().map(|t| t.0.to_string()).collect(),
+                                        found: params
+                                            .iter()
+                                            .map(|t| t.0.to_string().into())
+                                            .collect(),
                                     });
                                 }
                             }
@@ -1009,7 +1025,7 @@ impl AST for FnDefAST {
                         }
                     } else {
                         errs.push(CobaltError::UnknownAnnotation {
-                            name: "op".to_string(),
+                            name: "op".into(),
                             def: "non-struct function",
                             loc,
                         })
@@ -1038,15 +1054,18 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None));
+                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(&linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name).into()}, |v| v.0), ft, None));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if ctx.flags.private_syms && !(vs || is_extern.is_some() || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -1068,7 +1087,7 @@ impl AST for FnDefAST {
                         }
                     })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(PointerValue(gv.as_pointer_value())),
                         Some(InterData::Function(FnData {
                             defaults,
                             cconv: cc,
@@ -1121,11 +1140,11 @@ impl AST for FnDefAST {
                         graph.insert_dtors(ctx, true);
                         unsafe {
                             let seen = errs.iter()
-                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(&**name as *const str)))} else {None})
                                 .collect::<std::collections::HashSet<_>>();
                             errs.extend(graph.validate()
                                 .into_iter()
-                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, &**name)))
                                 .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
                         }
                         std::mem::drop(graph);
@@ -1191,15 +1210,18 @@ impl AST for FnDefAST {
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name)}, |v| v.0).as_str(), ft, None));
+                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(&linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name).into()}, |v| v.0), ft, None));
                     match inline {
                         Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
                         Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
+                    let gv = f.as_global_value();
                     if let Some((link, _)) = link_type {
-                        f.as_global_value().set_linkage(link)
+                        gv.set_linkage(link)
+                    } else if ctx.flags.private_syms && !(vs || is_extern.is_some() || cf) {
+                        gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                     let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
@@ -1221,7 +1243,7 @@ impl AST for FnDefAST {
                         }
                     })).collect();
                     let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(f.as_global_value().as_pointer_value())),
+                        Some(PointerValue(gv.as_pointer_value())),
                         Some(InterData::Function(FnData {
                             defaults,
                             cconv: cc,
@@ -1274,11 +1296,11 @@ impl AST for FnDefAST {
                         graph.insert_dtors(ctx, true);
                         unsafe {
                             let seen = errs.iter()
-                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(name.as_str() as *const str)))} else {None})
+                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(&**name as *const str)))} else {None})
                                 .collect::<std::collections::HashSet<_>>();
                             errs.extend(graph.validate()
                                 .into_iter()
-                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name.as_str())))
+                                .filter(|cfg::DoubleMove {name, loc, ..}| !seen.contains(&(*loc, name)))
                                 .map(|cfg::DoubleMove {name, loc, prev, guaranteed}| CobaltError::DoubleMove {loc, prev, name, guaranteed}));
                         }
                         std::mem::drop(graph);
@@ -1472,13 +1494,13 @@ impl AST for FnDefAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct CallAST {
+pub struct CallAST<'src> {
     pub cparen: SourceSpan,
-    pub target: Box<dyn AST>,
-    pub args: Vec<Box<dyn AST>>,
+    pub target: BoxedAST<'src>,
+    pub args: Vec<BoxedAST<'src>>,
 }
-impl CallAST {
-    pub fn new(cparen: SourceSpan, target: Box<dyn AST>, args: Vec<Box<dyn AST>>) -> Self {
+impl<'src> CallAST<'src> {
+    pub fn new(cparen: SourceSpan, target: BoxedAST<'src>, args: Vec<BoxedAST<'src>>) -> Self {
         CallAST {
             cparen,
             target,
@@ -1486,14 +1508,17 @@ impl CallAST {
         }
     }
 }
-impl AST for CallAST {
+impl<'src> AST<'src> for CallAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.target.loc(), self.cparen)
     }
     fn nodes(&self) -> usize {
         self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (
             ops::call(
@@ -1533,26 +1558,29 @@ impl AST for CallAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct IntrinsicAST {
+pub struct IntrinsicAST<'src> {
     loc: SourceSpan,
-    pub name: String,
+    pub name: Cow<'src, str>,
 }
-impl IntrinsicAST {
-    pub fn new(loc: SourceSpan, name: String) -> Self {
+impl<'src> IntrinsicAST<'src> {
+    pub fn new(loc: SourceSpan, name: Cow<'src, str>) -> Self {
         IntrinsicAST { loc, name }
     }
 }
-impl AST for IntrinsicAST {
+impl<'src> AST<'src> for IntrinsicAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(&self, _ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        _ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         if matches!(
-            self.name.as_str(),
+            &*self.name,
             "alloca" | "asm" | "sizeof" | "typeof" | "typename"
         ) {
             (
-                Value::new(None, None, Type::Intrinsic(self.name.clone())),
+                Value::new(None, None, Type::Intrinsic(self.name.to_string())),
                 vec![],
             )
         } else {

@@ -1,22 +1,25 @@
 use crate::*;
 #[derive(Debug, Clone)]
-pub struct BlockAST {
+pub struct BlockAST<'src> {
     loc: SourceSpan,
-    pub vals: Vec<Box<dyn AST>>,
+    pub vals: Vec<BoxedAST<'src>>,
 }
-impl BlockAST {
-    pub fn new(loc: SourceSpan, vals: Vec<Box<dyn AST>>) -> Self {
+impl<'src> BlockAST<'src> {
+    pub fn new(loc: SourceSpan, vals: Vec<BoxedAST<'src>>) -> Self {
         BlockAST { loc, vals }
     }
 }
-impl AST for BlockAST {
+impl<'src> AST<'src> for BlockAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         // ctx.lex_scope.incr();
         let mut out = Value::null();
@@ -47,7 +50,7 @@ impl AST for BlockAST {
                     .iter()
                     .filter_map(|err| {
                         if let CobaltError::DoubleMove { loc, name, .. } = err {
-                            Some((*loc, &*(name.as_str() as *const str)))
+                            Some((*loc, &*(&**name as *const str)))
                         } else {
                             None
                         }
@@ -58,7 +61,7 @@ impl AST for BlockAST {
                         .validate()
                         .into_iter()
                         .filter(|cfg::DoubleMove { name, loc, .. }| {
-                            !seen.contains(&(*loc, name.as_str()))
+                            !seen.contains(&(*loc, &**name))
                         })
                         .map(
                             |cfg::DoubleMove {
@@ -98,23 +101,26 @@ impl AST for BlockAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct GroupAST {
-    pub vals: Vec<Box<dyn AST>>,
+pub struct GroupAST<'src> {
+    pub vals: Vec<BoxedAST<'src>>,
 }
-impl GroupAST {
-    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
+impl<'src> GroupAST<'src> {
+    pub fn new(vals: Vec<BoxedAST<'src>>) -> Self {
         assert!(!vals.is_empty());
         GroupAST { vals }
     }
 }
-impl AST for GroupAST {
+impl<'src> AST<'src> for GroupAST<'src> {
     fn loc(&self) -> SourceSpan {
         merge_spans(self.vals[0].loc(), self.vals.last().unwrap().loc())
     }
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut out = Value::null();
         let mut errs = vec![];
         self.vals.iter().for_each(|val| {
@@ -147,18 +153,50 @@ impl AST for GroupAST {
     }
 }
 #[derive(Debug, Clone, Default)]
-pub struct TopLevelAST {
+pub struct TopLevelAST<'src> {
     pub file: Option<CobaltFile>,
-    pub vals: Vec<Box<dyn AST>>,
+    pub module: Option<DottedName<'src>>,
+    pub vals: Vec<BoxedAST<'src>>,
 }
-impl AST for TopLevelAST {
+impl<'src> AST<'src> for TopLevelAST<'src> {
     fn loc(&self) -> SourceSpan {
         unreachable_span()
     }
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        let mut errs = vec![];
+        let old_scope = if let Some(name) = &self.module {
+            ctx.map_vars(|mut v| match v.lookup_mod(name) {
+                Ok((m, i, _)) => Box::new(VarMap {
+                    parent: Some(v),
+                    symbols: m,
+                    imports: i,
+                }),
+                Err(UndefVariable::NotAModule(x)) => {
+                    errs.push(CobaltError::NotAModule {
+                        name: name.start(x).to_string(),
+                        loc: name.ids[x - 1].1,
+                    });
+                    Box::new(VarMap::new(Some(v)))
+                }
+                Err(UndefVariable::DoesNotExist(x)) => {
+                    errs.push(CobaltError::RedefVariable {
+                        name: name.start(x).to_string(),
+                        loc: name.ids[x - 1].1,
+                        prev: None,
+                    });
+                    Box::new(VarMap::new(Some(v)))
+                }
+            });
+            Some(ctx.push_scope(name))
+        } else {
+            None
+        };
         if ctx.flags.prepass {
             self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
             let mut again = true;
@@ -170,10 +208,14 @@ impl AST for TopLevelAST {
             }
             self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
         }
-        let mut errs = vec![];
         self.vals
             .iter()
             .for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
+        if let Some(name) = &self.module {
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
+            ctx.restore_scope(old_scope.unwrap());
+        }
         (Value::null(), errs)
     }
     fn print_impl(
@@ -183,10 +225,15 @@ impl AST for TopLevelAST {
         file: Option<CobaltFile>,
     ) -> std::fmt::Result {
         if let Some(ref file) = self.file {
-            writeln!(f, "{}", file.name())?
+            write!(f, "{}", file.name())?
         } else {
-            f.write_str("<file not set>\n")?
+            f.write_str("<file not set>")?
         };
+        if let Some(name) = &self.module {
+            writeln!(f, ": {name}")?;
+        } else {
+            writeln!(f)?;
+        }
         let mut count = self.vals.len();
         for val in self.vals.iter() {
             print_ast_child(f, pre, &**val, count == 1, file)?;
@@ -195,11 +242,28 @@ impl AST for TopLevelAST {
         Ok(())
     }
 }
-impl TopLevelAST {
-    pub fn new(vals: Vec<Box<dyn AST>>) -> Self {
-        TopLevelAST { vals, file: None }
+impl<'src> TopLevelAST<'src> {
+    pub fn new(vals: Vec<BoxedAST<'src>>, module: Option<DottedName<'src>>) -> Self {
+        TopLevelAST {
+            vals,
+            module,
+            file: None,
+        }
     }
-    pub fn run_passes(&self, ctx: &CompCtx) {
+    pub fn run_passes(&self, ctx: &CompCtx<'src, '_>) {
+        let old_scope = if let Some(name) = &self.module {
+            ctx.map_vars(|mut v| match v.lookup_mod(name) {
+                Ok((m, i, _)) => Box::new(VarMap {
+                    parent: Some(v),
+                    symbols: m,
+                    imports: i,
+                }),
+                Err(_) => Box::new(VarMap::new(Some(v))),
+            });
+            Some(ctx.push_scope(name))
+        } else {
+            None
+        };
         self.vals.iter().for_each(|val| val.varfwd_prepass(ctx));
         let mut again = true;
         while again {
@@ -209,9 +273,14 @@ impl TopLevelAST {
                 .for_each(|val| val.constinit_prepass(ctx, &mut again));
         }
         self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
+        if let Some(name) = &self.module {
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
+            ctx.restore_scope(old_scope.unwrap());
+        }
     }
 }
-impl std::fmt::Display for TopLevelAST {
+impl std::fmt::Display for TopLevelAST<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut pre = TreePrefix::new();
         self.print_impl(f, &mut pre, self.file)

@@ -1,17 +1,17 @@
 use crate::*;
 #[derive(Debug, Clone)]
-pub struct IfAST {
+pub struct IfAST<'src> {
     loc: SourceSpan,
-    pub cond: Box<dyn AST>,
-    pub if_true: Box<dyn AST>,
-    pub if_false: Box<dyn AST>,
+    pub cond: BoxedAST<'src>,
+    pub if_true: BoxedAST<'src>,
+    pub if_false: BoxedAST<'src>,
 }
-impl IfAST {
+impl<'src> IfAST<'src> {
     pub fn new(
         loc: SourceSpan,
-        cond: Box<dyn AST>,
-        if_true: Box<dyn AST>,
-        if_false: Box<dyn AST>,
+        cond: BoxedAST<'src>,
+        if_true: BoxedAST<'src>,
+        if_false: BoxedAST<'src>,
     ) -> Self {
         IfAST {
             loc,
@@ -21,14 +21,17 @@ impl IfAST {
         }
     }
 }
-impl AST for IfAST {
+impl<'src> AST<'src> for IfAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         if ctx.is_const.get() {
             return (Value::null(), vec![]);
         }
@@ -146,24 +149,27 @@ impl AST for IfAST {
     }
 }
 #[derive(Debug, Clone)]
-pub struct WhileAST {
+pub struct WhileAST<'src> {
     loc: SourceSpan,
-    cond: Box<dyn AST>,
-    body: Box<dyn AST>,
+    cond: BoxedAST<'src>,
+    body: BoxedAST<'src>,
 }
-impl WhileAST {
-    pub fn new(loc: SourceSpan, cond: Box<dyn AST>, body: Box<dyn AST>) -> Self {
+impl<'src> WhileAST<'src> {
+    pub fn new(loc: SourceSpan, cond: BoxedAST<'src>, body: BoxedAST<'src>) -> Self {
         WhileAST { loc, cond, body }
     }
 }
-impl AST for WhileAST {
+impl<'src> AST<'src> for WhileAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.body.nodes() + 1
     }
-    fn codegen<'ctx>(&self, ctx: &CompCtx<'ctx>) -> (Value<'ctx>, Vec<CobaltError>) {
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         if ctx.is_const.get() {
             return (Value::null(), vec![]);
         }

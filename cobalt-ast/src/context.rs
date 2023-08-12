@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-pub struct CompCtx<'ctx> {
+pub struct CompCtx<'src, 'ctx> {
     pub flags: Flags,
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
@@ -21,16 +21,28 @@ pub struct CompCtx<'ctx> {
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
     pub lex_scope: Counter<usize>,
-    pub nominals:
-        RefCell<HashMap<String, (Type, bool, HashMap<String, Value<'ctx>>, NominalInfo<'ctx>)>>,
-    pub moves: RefCell<(HashSet<cfg::Use<'ctx>>, HashSet<cfg::Store<'ctx>>)>,
+    pub nominals: RefCell<
+        HashMap<
+            String,
+            (
+                Type,
+                bool,
+                HashMap<Cow<'src, str>, Value<'src, 'ctx>>,
+                NominalInfo<'ctx>,
+            ),
+        >,
+    >,
+    pub moves: RefCell<(
+        HashSet<cfg::Use<'src, 'ctx>>,
+        HashSet<cfg::Store<'src, 'ctx>>,
+    )>,
     pub nom_info: RefCell<Vec<NominalInfo<'ctx>>>,
-    pub to_drop: RefCell<Vec<Vec<Value<'ctx>>>>,
-    int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'ctx>>>>,
-    vars: Cell<Option<Pin<Box<VarMap<'ctx>>>>>,
+    pub to_drop: RefCell<Vec<Vec<Value<'src, 'ctx>>>>,
+    int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'src, 'ctx>>>>,
+    vars: Cell<Option<Pin<Box<VarMap<'src, 'ctx>>>>>,
     name: Cell<MaybeUninit<String>>,
 }
-impl<'ctx> CompCtx<'ctx> {
+impl<'src, 'ctx> CompCtx<'src, 'ctx> {
     pub fn new(ctx: &'ctx Context, name: &str) -> Self {
         CompCtx {
             flags: Flags::default(),
@@ -58,8 +70,7 @@ impl<'ctx> CompCtx<'ctx> {
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
                             Type::Int(1, false),
-                        )
-                        .into(),
+                        ),
                     ),
                     (
                         "false",
@@ -67,27 +78,24 @@ impl<'ctx> CompCtx<'ctx> {
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
                             Type::Int(1, false),
-                        )
-                        .into(),
+                        ),
                     ),
-                    ("bool", Value::make_type(Type::Int(1, false)).into()),
-                    ("f16", Value::make_type(Type::Float16).into()),
-                    ("f32", Value::make_type(Type::Float32).into()),
-                    ("f64", Value::make_type(Type::Float64).into()),
-                    ("f128", Value::make_type(Type::Float128).into()),
+                    ("bool", Value::make_type(Type::Int(1, false))),
+                    ("f16", Value::make_type(Type::Float16)),
+                    ("f32", Value::make_type(Type::Float32)),
+                    ("f64", Value::make_type(Type::Float64)),
+                    ("f128", Value::make_type(Type::Float128)),
                     (
                         "isize",
-                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, false))
-                            .into(),
+                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, false)),
                     ),
                     (
                         "usize",
-                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, true))
-                            .into(),
+                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, true)),
                     ),
                 ]
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
+                .map(|(k, v)| (k.into(), v.into()))
                 .collect::<HashMap<_, _>>()
                 .into(),
             ))))),
@@ -120,8 +128,7 @@ impl<'ctx> CompCtx<'ctx> {
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
                             Type::Int(1, false),
-                        )
-                        .into(),
+                        ),
                     ),
                     (
                         "false",
@@ -129,25 +136,24 @@ impl<'ctx> CompCtx<'ctx> {
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
                             Type::Int(1, false),
-                        )
-                        .into(),
+                        ),
                     ),
-                    ("bool", Value::make_type(Type::Int(1, false)).into()),
-                    ("f16", Value::make_type(Type::Float16).into()),
-                    ("f32", Value::make_type(Type::Float32).into()),
-                    ("f64", Value::make_type(Type::Float64).into()),
-                    ("f128", Value::make_type(Type::Float128).into()),
+                    ("bool", Value::make_type(Type::Int(1, false))),
+                    ("f16", Value::make_type(Type::Float16)),
+                    ("f32", Value::make_type(Type::Float32)),
+                    ("f64", Value::make_type(Type::Float64)),
+                    ("f128", Value::make_type(Type::Float128)),
                     (
                         "isize",
-                        Value::make_type(Type::Int(flags.word_size * 8, false)).into(),
+                        Value::make_type(Type::Int(flags.word_size * 8, false)),
                     ),
                     (
                         "usize",
-                        Value::make_type(Type::Int(flags.word_size * 8, true)).into(),
+                        Value::make_type(Type::Int(flags.word_size * 8, true)),
                     ),
                 ]
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
+                .map(|(k, v)| (k.into(), v.into()))
                 .collect::<HashMap<_, _>>()
                 .into(),
             ))))),
@@ -155,19 +161,22 @@ impl<'ctx> CompCtx<'ctx> {
             flags,
         }
     }
-    pub fn with_vars<'a, R, F: FnOnce(&'a mut VarMap<'ctx>) -> R>(&'a self, f: F) -> R {
+    pub fn with_vars<'a, R, F: FnOnce(&'a mut VarMap<'src, 'ctx>) -> R>(&'a self, f: F) -> R {
         let mut val = self.vars.take().expect("recursive access to VarMap!");
         let out = f(unsafe { std::mem::transmute(val.as_mut().get_mut()) }); // reference stuff
         self.vars.set(Some(val));
         out
     }
-    pub fn map_vars<F: FnOnce(Box<VarMap<'ctx>>) -> Box<VarMap<'ctx>>>(&self, f: F) -> &Self {
+    pub fn map_vars<F: FnOnce(Box<VarMap<'src, 'ctx>>) -> Box<VarMap<'src, 'ctx>>>(
+        &self,
+        f: F,
+    ) -> &Self {
         self.vars.set(Some(Pin::new(f(Pin::into_inner(
             self.vars.take().expect("recursive access to VarMap!"),
         )))));
         self
     }
-    pub fn map_split_vars<R, F: FnOnce(Box<VarMap<'ctx>>) -> (Box<VarMap<'ctx>>, R)>(
+    pub fn map_split_vars<R, F: FnOnce(Box<VarMap<'src, 'ctx>>) -> (Box<VarMap<'src, 'ctx>>, R)>(
         &self,
         f: F,
     ) -> R {
@@ -186,7 +195,7 @@ impl<'ctx> CompCtx<'ctx> {
                     self.name.set(MaybeUninit::new(base));
                     b
                 })
-            && matches!(name.ids.last().unwrap().0.as_str(), "main") // this match will become larger if more intrinisic stuff is needed
+            && matches!(&*name.ids.last().unwrap().0, "main") // this match will become larger if more intrinisic stuff is needed
     }
     pub fn mangle(&self, name: &DottedName) -> String {
         let raw = if name.global {
@@ -248,7 +257,7 @@ impl<'ctx> CompCtx<'ctx> {
             Right(old) => self.name.set(MaybeUninit::new(old)),
         }
     }
-    pub fn get_int_symbol(&self, size: u16, unsigned: bool) -> &Symbol<'ctx> {
+    pub fn get_int_symbol(&self, size: u16, unsigned: bool) -> &Symbol<'src, 'ctx> {
         unsafe {
             let mut val = self.int_types.replace(MaybeUninit::uninit()).assume_init();
             let out = std::mem::transmute::<&mut _, &'ctx _>(match val.entry((size, unsigned)) {
@@ -259,7 +268,7 @@ impl<'ctx> CompCtx<'ctx> {
             out
         }
     }
-    pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'ctx>> {
+    pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'src, 'ctx>> {
         self.with_vars(|v| v.lookup(name, global))
             .or_else(|| match name {
                 x if x.as_bytes()[0] == 0x69
@@ -277,7 +286,7 @@ impl<'ctx> CompCtx<'ctx> {
                 _ => None,
             })
     }
-    pub fn lookup_full(&self, name: &DottedName) -> Option<Value<'ctx>> {
+    pub fn lookup_full(&self, name: &DottedName) -> Option<Value<'src, 'ctx>> {
         let v = self.lookup(&name.ids.first()?.0, name.global)?;
         if !v.1.init {
             return None;
@@ -336,7 +345,7 @@ impl<'ctx> CompCtx<'ctx> {
         out.write_all(&[0])?;
         self.with_vars(|v| v.save(out))
     }
-    pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<String>> {
+    pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<Cow<'src, str>>> {
         let mut out = vec![];
         while !buf.fill_buf()?.is_empty() {
             // stable implementation of BufRead::has_data_left
@@ -359,7 +368,7 @@ impl<'ctx> CompCtx<'ctx> {
                     .get(&name)
                     .map_or(false, |x| x.0.unwrapped(self) == t.unwrapped(self))
                 {
-                    out.push(name.clone())
+                    out.push(name.clone().into())
                 }
                 self.nominals
                     .borrow_mut()
@@ -375,7 +384,8 @@ impl<'ctx> CompCtx<'ctx> {
                     }
                     ms.insert(
                         String::from_utf8(std::mem::take(&mut vec))
-                            .expect("Nominal types should be valid UTF-8"),
+                            .expect("Nominal types should be valid UTF-8")
+                            .into(),
                         Value::load(buf, self)?,
                     );
                 }
@@ -386,7 +396,7 @@ impl<'ctx> CompCtx<'ctx> {
         Ok(out)
     }
 }
-impl<'ctx> Drop for CompCtx<'ctx> {
+impl Drop for CompCtx<'_, '_> {
     fn drop(&mut self) {
         unsafe {
             self.name.replace(MaybeUninit::uninit()).assume_init_drop();
