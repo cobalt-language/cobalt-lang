@@ -50,7 +50,7 @@ static KEYWORDS: &[&str] = &[
 /// operators that can be interned
 static OPS: &[&str] = &[
     "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "+", "-", "*", "/", "%",
-    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=",
+    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "mut",
 ];
 /// take op and make it 'static
 /// assumes op is an operator
@@ -247,7 +247,7 @@ fn declarations<'a>(
     .then(
         ident()
             .or_not()
-            .map(|v| v.map_or_else(Cow::default, Cow::Borrowed))
+            .map_with_span(|v, l| (v.map_or_else(Cow::default, Cow::Borrowed), l))
             .labelled("parameter name"),
     )
     .then_ignore(ignored())
@@ -295,7 +295,7 @@ fn declarations<'a>(
             .or_not()
             .labelled("default value"),
     )
-    .map(|(((pty, name), ty), default)| (name, pty, ty, default))
+    .map(|(((pty, (name, loc)), ty), default)| (loc.into_range().into(), name, pty, ty, default))
     .and_is(none_of("),").rewind())
     .boxed();
     choice([

@@ -870,6 +870,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
         inst: Option<Location<'ctx>>,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> IntValue<'ctx> {
+        let allow_eq = inst.is_none();
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
 
@@ -913,7 +914,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 .moves
                 .iter()
                 .rev() // 1
-                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst)) // 2
+                .filter(|e| for_both!(e, e => (**e).name.0 == name && ((allow_eq && (**e).inst == inst) || (**e).inst < inst))) // 2
                 .find_map(|e| match e {
                     // 3
                     Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
@@ -925,7 +926,18 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                     let mut seen = HashSet::new();
                     while let Some(idx) = queue.pop() {
                         let block = &self.blocks[idx];
-                        match block.output.get() {
+                        match if block.block == inst.block() {
+                            block.moves
+                            .iter()
+                            .rev()
+                            .filter(|e| for_both!(e, e => (**e).name.0 == name && ((allow_eq && (**e).inst == inst) || (**e).inst < inst)))
+                            .find_map(|e| match e {
+                                Either::Left(u) => ((**u).is_move && (**u).real).then_some(true),
+                                Either::Right(s) => (**s).real.then_some(false),
+                            })
+                        } else {
+                            block.output.get()
+                        } {
                             None => {
                                 let len = queue.len();
                                 queue.extend(
@@ -970,29 +982,29 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .unwrap()
             .get_parent()
             .unwrap();
+        let mut reposition = true;
         self.blocks
             .iter()
             .flat_map(|b| &b.moves)
             .filter_map(|e| e.as_ref().right())
+            .filter(|s| unsafe { (***s).name.1 } == ctx.lex_scope.get())
             .for_each(|m| unsafe {
                 let m = &**m;
-                match m.inst {
-                    Location::Block(b) => {
-                        if let Some(i) = b.get_first_instruction() {
-                            ctx.builder.position_before(&i)
-                        } else {
-                            ctx.builder.position_at_end(b)
-                        }
-                    }
-                    Location::Inst(i, _) => ctx.builder.position_before(&i),
-                    Location::AfterInst(i) => {
-                        if let Some(i) = i.get_next_instruction() {
-                            ctx.builder.position_before(&i)
-                        } else {
-                            ctx.builder.position_at_end(i.get_parent().unwrap())
-                        }
-                    }
-                }
+                let i = if let Location::Inst(i, 0) = m.inst {
+                    i
+                } else {
+                    unreachable!("store locations should only be Location::Inst(_, 0)")
+                };
+                assert_eq!(
+                    i.get_next_instruction()
+                        .map(|i| (i.get_opcode(), i.get_num_operands())),
+                    Some((inkwell::values::InstructionOpcode::Br, 1))
+                );
+                let next = i.get_next_instruction().unwrap();
+                let next_block = next.get_operand(0).unwrap().unwrap_right();
+                reposition = false;
+                ctx.builder
+                    .position_before(&i.get_next_instruction().unwrap());
                 let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
                 match c.get_zero_extended_constant() {
                     Some(0) => {
@@ -1005,33 +1017,16 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         let db = ctx
                             .context
                             .append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
-                        let mb = ctx.context.append_basic_block(f, "merge");
-                        ctx.builder.build_conditional_branch(c, mb, db);
+                        ctx.builder.build_conditional_branch(c, next_block, db);
+                        next.erase_from_basic_block();
                         ctx.builder.position_at_end(db);
                         ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
-                        ctx.builder.build_unconditional_branch(mb);
-                        ctx.builder.position_at_end(mb);
+                        ctx.builder.build_unconditional_branch(next_block);
+                        ctx.builder.position_at_end(next_block);
                     }
                 }
             });
         if at_end {
-            match self.last {
-                Location::Block(b) => {
-                    if let Some(i) = b.get_first_instruction() {
-                        ctx.builder.position_before(&i)
-                    } else {
-                        ctx.builder.position_at_end(b)
-                    }
-                }
-                Location::Inst(i, _) => ctx.builder.position_before(&i),
-                Location::AfterInst(i) => {
-                    if let Some(i) = i.get_next_instruction() {
-                        ctx.builder.position_before(&i)
-                    } else {
-                        ctx.builder.position_at_end(i.get_parent().unwrap())
-                    }
-                }
-            }
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
                     let scope =
