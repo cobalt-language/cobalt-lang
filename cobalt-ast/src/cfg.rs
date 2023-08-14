@@ -870,6 +870,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
         inst: Option<Location<'ctx>>,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> IntValue<'ctx> {
+        let allow_eq = inst.is_none();
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
 
@@ -913,7 +914,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 .moves
                 .iter()
                 .rev() // 1
-                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst)) // 2
+                .filter(|e| for_both!(e, e => (**e).name.0 == name && ((allow_eq && (**e).inst == inst) || (**e).inst < inst))) // 2
                 .find_map(|e| match e {
                     // 3
                     Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
@@ -925,7 +926,18 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                     let mut seen = HashSet::new();
                     while let Some(idx) = queue.pop() {
                         let block = &self.blocks[idx];
-                        match block.output.get() {
+                        match if block.block == inst.block() {
+                            block.moves
+                            .iter()
+                            .rev()
+                            .filter(|e| for_both!(e, e => (**e).name.0 == name && ((allow_eq && (**e).inst == inst) || (**e).inst < inst)))
+                            .find_map(|e| match e {
+                                Either::Left(u) => ((**u).is_move && (**u).real).then_some(true),
+                                Either::Right(s) => (**s).real.then_some(false),
+                            })
+                        } else {
+                            block.output.get()
+                        } {
                             None => {
                                 let len = queue.len();
                                 queue.extend(
@@ -974,6 +986,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .iter()
             .flat_map(|b| &b.moves)
             .filter_map(|e| e.as_ref().right())
+            .filter(|s| unsafe { (***s).name.1 } == ctx.lex_scope.get())
             .for_each(|m| unsafe {
                 let m = &**m;
                 match m.inst {
@@ -993,8 +1006,8 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         }
                     }
                 }
-                let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
-                match c.get_zero_extended_constant() {
+                let c = self.is_moved(&m.name.0, Some(m.name.1), Some(dbg!(m.inst)), ctx);
+                match dbg!(c).get_zero_extended_constant() {
                     Some(0) => {
                         if let Some(val) = ctx.lookup(&m.name.0, false) {
                             val.0.ins_dtor(ctx)
