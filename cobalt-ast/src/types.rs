@@ -775,3 +775,36 @@ impl<'ctx> NominalInfo<'ctx> {
         })
     }
 }
+
+pub fn is_linear_type(ty: &Type, ctx: &CompCtx) -> bool {
+    let to_return: bool;
+
+    let nominal_behavior = |type_name: &String| {
+        if let Some((_, _, _, nom_info)) = ctx.nominals.borrow().get(type_name) {
+            nom_info.is_linear_type
+        } else {
+            false
+        }
+    };
+
+    // See if it's a nominal type.
+    match ty {
+        Type::Nominal(type_name) => {
+            to_return = nominal_behavior(type_name);
+        }
+
+        Type::Mut(ref boxed_type) => {
+            if let Type::Nominal(ref type_name) = **boxed_type {
+                to_return = nominal_behavior(&type_name);
+            } else {
+                to_return = false;
+            }
+        }
+
+        _ => {
+            to_return = false;
+        }
+    }
+
+    to_return
+}

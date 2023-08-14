@@ -788,73 +788,56 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
         //
         // - 1: We check if it has been moved at least once by verifying that the variable
         // appears in the moves list.
-        unsafe {
-            ctx.with_vars(|v| {
-                v.symbols.iter().for_each(|(n, v)| {
-                    let is_linear_type = {
-                        let to_return: bool;
-
-                        let nominal_behavior = |type_name: &String| {
-                            if let Some((_, _, _, nom_info)) = ctx.nominals.borrow().get(type_name)
-                            {
-                                nom_info.is_linear_type
-                            } else {
-                                false
-                            }
-                        };
-
-                        // See if it's a nominal type.
-                        match &v.0.data_type {
-                            Type::Nominal(type_name) => {
-                                to_return = nominal_behavior(type_name);
-                            }
-
-                            Type::Mut(ref boxed_type) => {
-                                if let Type::Nominal(ref type_name) = **boxed_type {
-                                    to_return = nominal_behavior(type_name);
-                                } else {
-                                    to_return = false;
-                                }
-                            }
-
-                            _ => {
-                                to_return = false;
-                            }
-                        }
-
-                        to_return
+        ctx.with_vars(|v| {
+            v.symbols.iter().for_each(|(n, v)| {
+                let is_linear_type = is_linear_type(&v.0.data_type, ctx);
+                if is_linear_type {
+                    let lex_scope = match v.1.scope {
+                        Some(scope) => Some(scope.into()),
+                        None => None,
                     };
-
-                    if is_linear_type {
-                        // 1
-                        let vars = self
-                            .blocks
-                            .iter()
-                            .flat_map(|v| &v.moves)
-                            .map(|m| for_both!(m, m => &(**m).name));
-
-                        let mut moved = false;
-                        for var in vars {
-                            if var.0.as_str() == n.as_str() {
-                                moved = true;
-                            }
-                        }
-
-                        if !moved {
+                    let is_moved = self.is_moved(n, lex_scope, None, ctx);
+                    match is_moved.get_zero_extended_constant() {
+                        Some(1) => {}
+                        _ => {
                             errs.push(CobaltError::LinearTypeNotUsed {
                                 name: n.clone(),
-                                loc: v.1.loc.unwrap(),
+                                loc: v.1.loc.unwrap_or(0.into()),
                             });
                         }
                     }
-                })
-            });
-        }
+                }
+            })
+        });
 
         errs
     }
 
     /// Check if a value has been moved before an instruction value, or by the end of the graph
+    ///
+    /// ## Parameters
+    /// - `name`: The name of the value.
+    /// - `lex_scope`: The lexical scope of the value.
+    /// - `inst`: The instruction. If `None`, the function will check if the value has been moved
+    /// by the end of the graph.
+    /// - `ctx`: The compilation context.
+    ///
+    /// ## Returns
+    /// A boolean value indicating whether the value has been moved, represented as an `IntValue`.
+    /// If the value is guarenteed to have been moved, returns `1`. If the value is guarenteed to
+    /// not have been moved, returns `0`. If the value may or may not have been moved, a different
+    /// value is returned.
+    ///
+    /// ## Notes
+    /// To determine if the function returns `0` or `1`, you can do this:
+    /// ```rust
+    /// let is_moved = is_moved(...);
+    /// match is_moved.get_zero_extended_constant() {
+    ///    Some(0) => { /* not moved */ }
+    ///    Some(1) => { /* moved */ }
+    ///    _ => { /* maybe moved */ }
+    /// }
+    /// ```
     pub fn is_moved(
         &self,
         name: &str,
@@ -899,8 +882,8 @@ impl<'a, 'ctx> Cfg<'a, 'ctx> {
             // - 1: Starting from the last move and going backwards...
             // - 2: If the move is wrt this variable and happens before the specified
             // instruction...
-            // - 3: If the move is a use, then yes the variable has moved before the instruction.
-            // If the move was a store then the variable hasn't moved.
+            // - 3: If `e` is a use, check if it is a move. If `e` is a store, then the variable
+            // is guarenteed to be initialized (not moved) after this block.
             self.blocks[blk]
                 .moves
                 .iter()
