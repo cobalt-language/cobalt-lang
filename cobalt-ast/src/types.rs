@@ -902,7 +902,7 @@ pub fn is_linear_type(ty: &Type, ctx: &CompCtx) -> bool {
 
         Type::Mut(ref boxed_type) => {
             if let Type::Nominal(ref type_name) = **boxed_type {
-                to_return = nominal_behavior(&type_name);
+                to_return = nominal_behavior(type_name);
             } else {
                 to_return = false;
             }

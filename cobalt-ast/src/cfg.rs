@@ -795,10 +795,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             v.symbols.iter().for_each(|(n, v)| {
                 let is_linear_type = is_linear_type(&v.0.data_type, ctx);
                 if is_linear_type {
-                    let lex_scope = match v.1.scope {
-                        Some(scope) => Some(scope.into()),
-                        None => None,
-                    };
+                    let lex_scope = v.1.scope.map(From::from);
                     let is_moved = self.is_moved(n, lex_scope, None, ctx);
                     match is_moved.get_zero_extended_constant() {
                         Some(1) => {}
