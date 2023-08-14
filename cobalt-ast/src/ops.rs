@@ -258,6 +258,16 @@ pub fn bin_op<'src, 'ctx>(
                             name: name.clone(),
                             real: !ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx), // don't check for dtor twice if we can avoid it
                         });
+                        let next = ctx.context.append_basic_block(
+                            ctx.builder
+                                .get_insert_block()
+                                .unwrap()
+                                .get_parent()
+                                .unwrap(),
+                            "next",
+                        );
+                        ctx.builder.build_unconditional_branch(next);
+                        ctx.builder.position_at_end(next);
                     }
                 }
                 lhs.inter_val = None;
@@ -5246,10 +5256,7 @@ pub fn call<'src, 'ctx>(
                             v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                         ),
                         loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                        args: args
-                            .iter()
-                            .map(|(v, _)| v.data_type.to_string())
-                            .collect(),
+                        args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
                         aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                         nargs: vec![],
                     };
@@ -5317,10 +5324,7 @@ pub fn call<'src, 'ctx>(
                         v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                     ),
                     loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                    args: args
-                        .iter()
-                        .map(|(v, _)| v.data_type.to_string())
-                        .collect(),
+                    args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
                     aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                     nargs: vec![],
                 };
@@ -5396,10 +5400,7 @@ pub fn call<'src, 'ctx>(
                         .join(", ")
                 ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                args: args
-                    .iter()
-                    .map(|(v, _)| v.data_type.to_string())
-                    .collect(),
+                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
             };
@@ -5593,10 +5594,7 @@ pub fn call<'src, 'ctx>(
                     v.iter().map(Type::to_string).collect::<Vec<_>>().join(", ")
                 ),
                 loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-                args: args
-                    .iter()
-                    .map(|(v, _)| v.data_type.to_string())
-                    .collect(),
+                args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
                 aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
                 nargs: vec![],
             };
@@ -6026,10 +6024,7 @@ pub fn call<'src, 'ctx>(
         t => Err(CobaltError::CannotCallWithArgs {
             val: t.to_string(),
             loc: cparen.map_or(loc, |cp| merge_spans(loc, cp)),
-            args: args
-                .iter()
-                .map(|(v, _)| v.data_type.to_string())
-                .collect(),
+            args: args.iter().map(|(v, _)| v.data_type.to_string()).collect(),
             aloc: args.last().map(|(_, l)| merge_spans(args[0].1, *l)),
             nargs: vec![],
         }),
