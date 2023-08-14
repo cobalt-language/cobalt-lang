@@ -1364,7 +1364,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
     }
     fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = false;
+        let mut no_auto_drop = true;
+        let mut linear = false;
         let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match &**ann {
@@ -1390,6 +1391,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "must_use" => linear = true,
                 "transparent" => transparent = true,
                 _ => {}
             }
@@ -1430,6 +1432,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
         info.transparent = transparent;
+        info.is_linear_type = linear;
         std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
@@ -1466,7 +1469,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
     }
     fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
         let mut target_match = 2u8;
-        let mut no_auto_drop = false;
+        let mut no_auto_drop = true;
+        let mut linear = false;
         let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match &**ann {
@@ -1492,6 +1496,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "must_use" => linear = true,
                 "transparent" => transparent = true,
                 _ => {}
             }
@@ -1536,6 +1541,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
         info.transparent = transparent;
+        info.is_linear_type = linear;
         std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(
@@ -1575,7 +1581,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let mut vis_spec = None;
         let mut target_match = 2u8;
-        let mut no_auto_drop = false;
+        let mut no_auto_drop = true;
+        let mut linear = false;
         let mut transparent = false;
         for (ann, arg, _) in self.annotations.iter() {
             match &**ann {
@@ -1619,6 +1626,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                     }
                 }
                 "no_auto_drop" => no_auto_drop = true,
+                "must_use" => linear = true,
                 "transparent" => transparent = true,
                 _ => {}
             }
@@ -1652,6 +1660,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
         info.transparent = transparent;
+        info.is_linear_type = linear;
         std::mem::drop(mb);
         let ty = ops::impl_convert(
             unreachable_span(),
@@ -1699,6 +1708,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = None;
+        let mut linear = None;
         let mut transparent = None;
         for (ann, arg, loc) in self.annotations.iter() {
             let loc = *loc;
@@ -1801,6 +1811,25 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                         no_auto_drop = Some(loc);
                     }
                 }
+                "must_use" => {
+                    if let Some(prev) = no_auto_drop {
+                        errs.push(CobaltError::RedefAnnArgument {
+                            name: "must_use",
+                            loc,
+                            prev,
+                        });
+                    } else {
+                        if arg.is_some() {
+                            errs.push(CobaltError::InvalidAnnArgument {
+                                name: "must_use",
+                                found: arg.clone(),
+                                expected: None,
+                                loc,
+                            })
+                        }
+                        linear = Some(loc);
+                    }
+                }
                 "transparent" => {
                     if let Some(prev) = transparent {
                         errs.push(CobaltError::RedefAnnArgument {
@@ -1876,6 +1905,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop.is_some();
         info.transparent = transparent.is_some();
+        info.is_linear_type = linear.is_some();
         std::mem::drop(mb);
         ctx.with_vars(|v| {
             v.symbols.insert(

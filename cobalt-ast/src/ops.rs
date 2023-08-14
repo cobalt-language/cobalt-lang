@@ -19,7 +19,9 @@ pub fn mark_move<'src, 'ctx>(
     if !ctx.is_const.get() {
         if let (Some(name), true) = (
             &val.name,
-            ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
+            ctx.flags.all_move_metadata
+                || val.data_type.has_dtor(ctx)
+                || is_linear_type(&val.data_type, ctx),
         ) {
             ctx.moves.borrow_mut().0.insert(cfg::Use {
                 is_move: true,
@@ -40,7 +42,9 @@ pub fn mark_use<'src, 'ctx>(
     if !ctx.is_const.get() {
         if let (Some(name), true) = (
             &val.name,
-            ctx.flags.all_move_metadata || val.data_type.has_dtor(ctx),
+            ctx.flags.all_move_metadata
+                || val.data_type.has_dtor(ctx)
+                || is_linear_type(&val.data_type, ctx),
         ) {
             ctx.moves.borrow_mut().0.insert(cfg::Use {
                 is_move: false,
@@ -245,7 +249,9 @@ pub fn bin_op<'src, 'ctx>(
                     let inst = ctx.builder.build_store(lv, rv);
                     if let (Some(name), true) = (
                         &lhs.name,
-                        ctx.flags.all_move_metadata || lhs.data_type.has_dtor(ctx),
+                        ctx.flags.all_move_metadata
+                            || lhs.data_type.has_dtor(ctx)
+                            || is_linear_type(&lhs.data_type, ctx),
                     ) {
                         ctx.moves.borrow_mut().1.insert(cfg::Store {
                             inst: inst.into(),

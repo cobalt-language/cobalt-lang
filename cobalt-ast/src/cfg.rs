@@ -204,8 +204,19 @@ struct Block<'a, 'src, 'ctx> {
     // these pointers are safe because they're borrowed from a container in a RefCell, which cannot be mutated because of the Ref
     moves: Vec<Either<*const Use<'src, 'ctx>, *const Store<'src, 'ctx>>>,
     term: Terminator<'ctx>,
-    // these are used to prevent extra allocations
+
+    // These are used to prevent extra allocations.
+    //
+    // During analysis we analyze each variable one at a time, and reuse these fields during that
+    // analysis.
+    //
+    /// - `true`: we need the variable to be initialized
+    /// - `false`: it doesn't need to be initialized (this doesn't mean it's not used, but if it
+    /// is, there's a store before it)
     input: Cell<bool>,
+    /// - `Some(true)`: after this block, the variable is initialized (no moves after the last store)
+    /// - `Some(false)`: after this block, the variable is uninitialized (ends in a move)
+    /// - `None`: after this block, the variable is in the same state as it was before
     output: Cell<Option<bool>>,
     reached: IntValue<'ctx>,
     // marker to for safety
@@ -235,6 +246,7 @@ impl std::fmt::Debug for Block<'_, '_, '_> {
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoubleMove<'src> {
     pub name: Cow<'src, str>,
@@ -280,6 +292,13 @@ impl Ord for DoubleMove<'_> {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearTypeNotUsed {
+    pub name: String,
+    pub loc: SourceSpan,
+}
+
 /// control flow graph
 #[derive(Debug)]
 pub struct Cfg<'a, 'src, 'ctx: 'a> {
@@ -606,15 +625,35 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             }
         }
     }
+
     /// Search CFG for double moves
-    pub fn validate(&self) -> Vec<DoubleMove<'src>> {
+    pub fn validate(&self, ctx: &'a CompCtx<'src, 'ctx>) -> Vec<cobalt_errors::CobaltError<'src>> {
         let mut errs = vec![];
         unsafe {
+            // Get all the variables which have moved.
             let vars = self
                 .blocks
                 .iter()
                 .flat_map(|v| &v.moves)
                 .map(|m| for_both!(m, m => &(**m).name));
+
+            // For each of these variables, look inside each block and find all the move
+            // instructions for it.
+            //
+            // - 2: Consider the first of these instructions, i.e. the first move instruction
+            // for this variable in this block. If it's a use, then the variable must be
+            // initialized on entry to the block.
+            //
+            // - 3: Now consider the last of these instructions. If it's a use, check if that use
+            // moves the variable and if so mark the variable as unitialized/moved. If it is a
+            // store, then the variable is initialized on exit from the block.
+            //
+            // - 4: Now go through the rest of the instructions and look for a double move, i.e. a
+            // use after move.
+            //
+            // Note however that this doesn't capture all possible uses after move;
+            // for example, it will not detect if the variable was used once but was unitialized
+            // upon entering the block. This is the next step.
             for var in vars {
                 for block in &self.blocks {
                     let insts = block
@@ -622,14 +661,19 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         .iter()
                         .filter(|m| for_both!(m, m => &(**m).name == var))
                         .collect::<Vec<_>>();
-                    block
+
+                    block // 2
                         .input
                         .set(insts.first().map_or(false, |v| v.is_left()));
+
                     block.output.set(insts.iter().rev().find_map(|v| match v {
+                        // 3
                         Either::Left(u) => (**u).is_move.then_some(false),
                         Either::Right(_) => Some(true),
                     }));
-                    let mut prev = None;
+
+                    // 4
+                    let mut prev = None; // location of previous move
                     for inst in insts {
                         match inst {
                             Either::Left(u) => {
@@ -652,10 +696,18 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         }
                     }
                 }
-                let mut queue = vec![];
+
+                // Handle possible double moves relating to the initialization status of the
+                // variable entering/exiting the block.
+                //
+                // - 1: Blocks to analyze, in order.
+                // - 2: If the initialization status is the same at the beginning and end of the
+                // block then we don't need to worry.
+                let mut queue = vec![]; // 1
                 let mut seen = HashSet::new();
                 for (n, block) in self.blocks.iter().enumerate() {
                     if block.output.get() != Some(false) {
+                        // 1
                         continue;
                     }
                     queue.clear();
@@ -704,11 +756,113 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 }
             }
         }
+
         errs.sort_unstable();
         errs.dedup_by_key(|m| m.loc);
+
+        let mut to_return = errs
+            .iter()
+            .map(
+                |DoubleMove {
+                     name,
+                     loc,
+                     prev,
+                     guaranteed,
+                 }| CobaltError::DoubleMove {
+                    loc: *loc,
+                    prev: *prev,
+                    name: name.clone(),
+                    guaranteed: *guaranteed,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        to_return.append(&mut self.validate_linear_types(ctx));
+        to_return
+    }
+
+    fn validate_linear_types(
+        &self,
+        ctx: &'a CompCtx<'src, 'ctx>,
+    ) -> Vec<cobalt_errors::CobaltError<'src>> {
+        let mut errs = Vec::new();
+
+        ctx.with_vars(|v| {
+            v.symbols.iter().for_each(|(n, v)| {
+                let is_linear_type = is_linear_type(&v.0.data_type, ctx);
+                if is_linear_type {
+                    let lex_scope = v.1.scope.map(From::from);
+                    let is_moved = self.is_moved(n, lex_scope, None, ctx);
+                    match is_moved.get_zero_extended_constant() {
+                        Some(1) => {}
+                        _ => {
+                            errs.push(CobaltError::LinearTypeNotUsed {
+                                name: n.to_string(),
+                                loc: v.1.loc.unwrap_or(0.into()),
+                            });
+                        }
+                    }
+
+                    // A linear type must also be used before being reassigned. Currently the
+                    // only type of "store" is this situation.
+
+                    // We want to find all the store instructions, and make sure that the value
+                    // is used before the store instruction.
+                    unsafe {
+                        for block in &self.blocks {
+                            let store_instructions = block
+                                .moves
+                                .iter()
+                                .filter(|m| matches!(m, Either::Right(_)))
+                                .filter(|m| for_both!(m, m => &(**m).name.0 == n ));
+
+                            for store_instruction in store_instructions {
+                                let inst = (*store_instruction.unwrap_right()).inst;
+                                let is_moved = self.is_moved(n, lex_scope, Some(inst), ctx);
+                                match is_moved.get_zero_extended_constant() {
+                                    Some(1) => {}
+                                    _ => {
+                                        errs.push(CobaltError::LinearTypeNotUsed {
+                                            name: n.to_string(),
+                                            loc: v.1.loc.unwrap_or(0.into()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        });
+
         errs
     }
+
     /// Check if a value has been moved before an instruction value, or by the end of the graph
+    ///
+    /// ## Parameters
+    /// - `name`: The name of the value.
+    /// - `lex_scope`: The lexical scope of the value.
+    /// - `inst`: The instruction. If `None`, the function will check if the value has been moved
+    /// by the end of the graph.
+    /// - `ctx`: The compilation context.
+    ///
+    /// ## Returns
+    /// A boolean value indicating whether the value has been moved, represented as an `IntValue`.
+    /// If the value is guarenteed to have been moved, returns `1`. If the value is guarenteed to
+    /// not have been moved, returns `0`. If the value may or may not have been moved, a different
+    /// value is returned.
+    ///
+    /// ## Notes
+    /// To determine if the function returns `0` or `1`, you can do this:
+    /// ```rust,ignore
+    /// let is_moved = is_moved(...);
+    /// match is_moved.get_zero_extended_constant() {
+    ///    Some(0) => { /* not moved */ }
+    ///    Some(1) => { /* moved */ }
+    ///    _ => { /* maybe moved */ }
+    /// }
+    /// ```
     pub fn is_moved(
         &self,
         name: &str,
@@ -718,9 +872,14 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
     ) -> IntValue<'ctx> {
         let inst = inst.unwrap_or(self.last);
         let mut blk = None;
+
+        // - 1: Pick out the instructions which include the variable and match the lexical scope.
+        // - 2: Set whether the variable is initialized entering/exiting the block.
         unsafe {
             for (n, block) in self.blocks.iter().enumerate() {
+                // 1
                 let insts = block.moves.iter().filter(|m| for_both!(m, m => (**m).name.0 == name && lex_scope.map_or(true, |ls| (**m).name.1 == ls))).collect::<Vec<_>>();
+                // 2
                 block
                     .input
                     .set(insts.first().map_or(false, |v| v.is_left()));
@@ -732,19 +891,31 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                     blk = Some(n)
                 }
             }
+
             let true_ = ctx.context.bool_type().const_all_ones();
             let false_ = ctx.context.bool_type().const_zero();
+
             let blk = if let Some(blk) = blk {
                 blk
             } else {
+                // We are checking if the value has moved before an instruction which does not even
+                // belong to the same block as the value, so it doesn't make sense to compare them.
+                // But for convention we will return false.
                 return false_;
             };
+
+            // - 1: Starting from the last move and going backwards...
+            // - 2: If the move is wrt this variable and happens before the specified
+            // instruction...
+            // - 3: If `e` is a use, check if it is a move. If `e` is a store, then the variable
+            // is guarenteed to be initialized (not moved) after this block.
             self.blocks[blk]
                 .moves
                 .iter()
-                .rev()
-                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst))
+                .rev() // 1
+                .filter(|e| for_both!(e, e => (**e).name.0 == name && (**e).inst <= inst)) // 2
                 .find_map(|e| match e {
+                    // 3
                     Either::Left(u) => ((**u).is_move && (**u).real).then_some(true_),
                     Either::Right(s) => (**s).real.then_some(false_),
                 })
@@ -824,7 +995,11 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 }
                 let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
                 match c.get_zero_extended_constant() {
-                    Some(0) => ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx),
+                    Some(0) => {
+                        if let Some(val) = ctx.lookup(&m.name.0, false) {
+                            val.0.ins_dtor(ctx)
+                        }
+                    }
                     Some(1) => {}
                     _ => {
                         let db = ctx

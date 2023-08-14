@@ -56,27 +56,13 @@ impl<'src> AST<'src> for BlockAST<'src> {
                         }
                     })
                     .collect::<std::collections::HashSet<_>>();
-                errs.extend(
-                    graph
-                        .validate()
-                        .into_iter()
-                        .filter(|cfg::DoubleMove { name, loc, .. }| {
-                            !seen.contains(&(*loc, &**name))
-                        })
-                        .map(
-                            |cfg::DoubleMove {
-                                 name,
-                                 loc,
-                                 prev,
-                                 guaranteed,
-                             }| CobaltError::DoubleMove {
-                                loc,
-                                prev,
-                                name,
-                                guaranteed,
-                            },
-                        ),
-                );
+                errs.extend(graph.validate(ctx).into_iter().filter(|ce| match ce {
+                    CobaltError::DoubleMove { name, loc, .. } => !seen.contains(&(*loc, &**name)),
+
+                    CobaltError::LinearTypeNotUsed { .. } => true,
+
+                    _ => false,
+                }));
             }
         }
         // let mut b = ctx.moves.borrow_mut();
