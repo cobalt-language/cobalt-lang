@@ -2,6 +2,8 @@ use chumsky::{error::RichReason, prelude::*};
 use cobalt_ast::{ast::*, *};
 use cobalt_errors::miette::{LabeledSpan, MietteDiagnostic, SourceSpan};
 use cobalt_errors::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use unicode_ident::*;
 mod utils;
 pub mod prelude {
@@ -35,22 +37,53 @@ fn add_loc<T>(val: T, loc: SimpleSpan) -> (T, SourceSpan) {
 }
 /// wrapper around Box::new that makes the output dyn
 #[inline(always)]
-fn box_ast<T: AST + 'static>(val: T) -> Box<dyn AST> {
+fn box_ast<'src, T: AST<'src> + 'src>(val: T) -> BoxedAST<'src> {
     Box::new(val)
 }
 // useful type definitions
-type Extras<'a> = chumsky::extra::Full<Rich<'a, char>, (), ()>;
+type Extras<'a> = chumsky::extra::Full<Rich<'a, char>, Vec<HashMap<&'a str, SimpleSpan>>, ()>;
 type BoxedParser<'a, 'b, T> = Boxed<'a, 'b, &'a str, T, Extras<'a>>;
-type BoxedASTParser<'a, 'b> = BoxedParser<'a, 'b, Box<dyn AST>>;
+type BoxedASTParser<'a, 'b> = BoxedParser<'a, 'b, BoxedAST<'a>>;
 static KEYWORDS: &[&str] = &[
     "let", "mut", "const", "fn", "if", "else", "while", "for", "null", "type",
 ];
+/// operators that can be interned
+static OPS: &[&str] = &[
+    "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "+", "-", "*", "/", "%",
+    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=",
+];
+/// take op and make it 'static
+/// assumes op is an operator
+fn intern_op(op: &str) -> &'static str {
+    if let Some(op) = OPS.iter().find(|&&o| o == op) {
+        op
+    } else {
+        unreachable!("expected an operator, found {op:?}")
+    }
+}
+/// same as intern_op, but take a char instead of a &str
+fn intern_char_op(op: char) -> &'static str {
+    if let Some(op) = OPS
+        .iter()
+        .find(|o| o.len() == 1 && o.chars().next().unwrap() == op)
+    {
+        op
+    } else {
+        unreachable!("expected an operator, found {op:?}")
+    }
+}
+
 /// parse an identifier. unicode-aware
 fn ident<'a>() -> impl Parser<'a, &'a str, &'a str, Extras<'a>> + Copy {
+    // First parse it, then check if it's a keyword.
+    //
+    // - 1: Accept any character which is an '_' or xid start.
+    // - 2: Then accept any number of xid_continue, storing them in a `Vec`.
+    // - 3: We want the output of this parser to be a slice.
     any()
-        .filter(|&c| c == '_' || is_xid_start(c))
-        .then(any().filter(|&c| is_xid_continue(c)).repeated())
-        .slice()
+        .filter(|&c| c == '_' || is_xid_start(c)) // 1
+        .then(any().filter(|&c| is_xid_continue(c)).repeated()) // 2
+        .slice() // 3
         .try_map(|val, span| {
             if KEYWORDS.contains(&val) {
                 Err(Rich::custom(
@@ -63,18 +96,19 @@ fn ident<'a>() -> impl Parser<'a, &'a str, &'a str, Extras<'a>> + Copy {
         })
         .labelled("an identifier")
 }
-fn local_id<'a>() -> impl Parser<'a, &'a str, DottedName, Extras<'a>> + Copy {
+
+fn local_id<'a>() -> impl Parser<'a, &'a str, DottedName<'a>, Extras<'a>> + Copy {
     ident()
-        .map_with_span(|id, loc| DottedName::local((id.to_string(), loc.into_range().into())))
+        .map_with_span(|id, loc| DottedName::local((id.into(), loc.into_range().into())))
         .labelled("a local identifier")
 }
-fn global_id<'a>() -> impl Parser<'a, &'a str, DottedName, Extras<'a>> + Copy {
+fn global_id<'a>() -> impl Parser<'a, &'a str, DottedName<'a>, Extras<'a>> + Copy {
     just('.')
         .or_not()
         .map(|o| o.is_some())
         .then(
             ident()
-                .map_with_span(|id, loc| (id.to_string(), loc.into_range().into()))
+                .map_with_span(|id, loc| (id.into(), loc.into_range().into()))
                 .separated_by(just('.'))
                 .at_least(1)
                 .collect(),
@@ -82,7 +116,13 @@ fn global_id<'a>() -> impl Parser<'a, &'a str, DottedName, Extras<'a>> + Copy {
         .map(|(global, ids)| DottedName::new(ids, global))
         .labelled("a global identifier")
 }
+
+/// Parses (well, ignores) patterns that Cobalt should ignore, such as whitespace and comments.
 fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
+    // Consume any number of either
+    // - whitespace
+    // - multiline comments
+    // - single-line comments
     choice((
         // whitespace
         any().filter(|c: &char| c.is_whitespace()).ignored(),
@@ -101,6 +141,7 @@ fn ignored<'a>() -> impl Parser<'a, &'a str, (), Extras<'a>> + Copy {
     .ignored()
     .labelled("whitespace")
 }
+
 /// where a declaration is being parsed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeclLoc {
@@ -111,51 +152,64 @@ enum DeclLoc {
     /// global scope- do I need to explain this?
     Global,
 }
+
+/// Parser for an annotation, e.g. `@C(extern)`.
+///
+/// The output is (annotation name, annotation argument, source span), e.g. for
+/// `@C(extern)` the annotation name is "C" and the annotation argument is "extern".
 fn annotation<'a>(
-) -> impl Parser<'a, &'a str, (String, Option<String>, SourceSpan), Extras<'a>> + Copy {
+) -> impl Parser<'a, &'a str, (Cow<'a, str>, Option<Cow<'a, str>>, SourceSpan), Extras<'a>> + Copy {
+    // - 1: Accept an `@` (but don't store it), then an identifier (so no keywords).
+    // - 2: The argument can be any sequence of characters that does not include ')' and is
+    // surrounded by parentheses.
+    // - 3: Since not every annotation has an argument, don't fail if there isn't one.
     just('@')
-        .ignore_then(ident())
+        .ignore_then(ident()) // 1
         .then(
             none_of(')')
                 .repeated()
-                .collect()
-                .delimited_by(just('('), just(')'))
-                .or_not(),
+                .map_slice(Cow::Borrowed)
+                .delimited_by(just('('), just(')')) // 2
+                .or_not(), // 3
         )
-        .map_with_span(|(name, arg), loc| (name.to_string(), arg, loc.into_range().into()))
+        .map_with_span(|(name, arg), loc| (name.into(), arg, loc.into_range().into()))
         .labelled("an annotation")
 }
-fn cdn<'a>() -> impl Parser<'a, &'a str, CompoundDottedName, Extras<'a>> + Clone {
+
+fn cdn<'a>() -> impl Parser<'a, &'a str, CompoundDottedName<'a>, Extras<'a>> + Clone {
     use CompoundDottedNameSegment::*;
     let cdns = recursive(|cdns| {
         choice((
-            ident().map_with_span(|id, loc| Identifier(id.to_string(), loc.into_range().into())),
+            ident().map_with_span(|id, loc| Identifier(id.into(), loc.into_range().into())),
             just('*').map_with_span(|_, loc: SimpleSpan| Glob(loc.into_range().into())),
             cdns.separated_by(just('.').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored()),
+                skip_then_retry_until(none_of(".,};").ignored(), one_of(".,};").ignored()),
             ))
             .collect()
             .separated_by(just(',').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(",}").ignored(), one_of(",}").ignored()),
+                skip_then_retry_until(none_of(",};").ignored(), one_of(",};").ignored()),
             ))
             .collect()
             .delimited_by(just('{'), just('}'))
             .map(Group),
         ))
-    });
+    })
+    .labelled("an import segment");
     just('.')
         .or_not()
         .map(|o| o.is_some())
         .then_ignore(ignored())
         .then(
             cdns.separated_by(just('.').padded_by(ignored()).ignored().recover_with(
-                skip_then_retry_until(none_of(".,}").ignored(), one_of(".,}").ignored()),
+                skip_then_retry_until(none_of(".,};").ignored(), one_of(".,};").ignored()),
             ))
+            .at_least(1)
             .collect(),
         )
         .map(|(global, ids)| CompoundDottedName::new(ids, global))
+        .labelled("an import path")
 }
-fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
+fn import<'a>() -> impl Parser<'a, &'a str, ImportAST<'a>, Extras<'a>> + Clone {
     let anns = annotation().padded_by(ignored()).repeated().collect();
     anns.then(text::keyword("import").to_span())
         .then_ignore(ignored())
@@ -163,6 +217,7 @@ fn import<'a>() -> impl Parser<'a, &'a str, ImportAST, Extras<'a>> + Clone {
         .map(|((anns, loc), cdn)| ImportAST::new(loc.into_range().into(), cdn, anns))
         .labelled("an import")
 }
+
 /// parse declarations. these are:
 /// - functions
 /// - variables
@@ -171,7 +226,7 @@ fn declarations<'a>(
     loc: DeclLoc,
     metd: Option<BoxedASTParser<'a, 'a>>,
     part_expr: &BoxedASTParser<'a, 'a>,
-) -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a {
+) -> impl Parser<'a, &'a str, BoxedAST<'a>, Extras<'a>> + Clone + 'a {
     let full_expr = add_assigns(part_expr.clone());
     let expr_clone = part_expr.clone();
     let metd = metd.unwrap_or_else(|| {
@@ -192,7 +247,7 @@ fn declarations<'a>(
     .then(
         ident()
             .or_not()
-            .map(|v| v.map_or_else(String::new, String::from))
+            .map(|v| v.map_or_else(Cow::default, Cow::Borrowed))
             .labelled("parameter name"),
     )
     .then_ignore(ignored())
@@ -266,7 +321,7 @@ fn declarations<'a>(
                     .recover_with(skip_until(
                         any().ignored(),
                         one_of(":=;").rewind().ignored().or(end()),
-                        || DottedName::local(("<error>".to_string(), unreachable_span())),
+                        || DottedName::local(("<error>".into(), unreachable_span())),
                     )),
             )
             .then_ignore(ignored())
@@ -326,7 +381,7 @@ fn declarations<'a>(
                 .recover_with(skip_until(
                     any().ignored(),
                     one_of(":=;").rewind().ignored().or(end()),
-                    || DottedName::local(("<error>".to_string(), unreachable_span())),
+                    || DottedName::local(("<error>".into(), unreachable_span())),
                 )),
         )
         .then_ignore(ignored())
@@ -386,7 +441,7 @@ fn declarations<'a>(
                 .recover_with(skip_until(
                     any().ignored(),
                     one_of(":=;").rewind().ignored().or(end()),
-                    || DottedName::local(("<error>".to_string(), unreachable_span())),
+                    || DottedName::local(("<error>".into(), unreachable_span())),
                 )),
         )
         .then_ignore(ignored())
@@ -445,7 +500,7 @@ fn declarations<'a>(
                     .recover_with(skip_until(
                         any().ignored(),
                         one_of(":=;").rewind().ignored().or(end()),
-                        || DottedName::local(("<error>".to_string(), unreachable_span())),
+                        || DottedName::local(("<error>".into(), unreachable_span())),
                     )),
             )
             .then_ignore(ignored())
@@ -507,6 +562,7 @@ fn declarations<'a>(
     ])
     .labelled("a declaration")
 }
+
 /// create a parser for a statement.
 /// it requires an expression parser to passed, otherwise it would require infinite recursion
 fn def_stmt<'a>(expr: BoxedASTParser<'a, 'a>) -> BoxedASTParser<'a, 'a> {
@@ -517,7 +573,7 @@ fn def_stmt<'a>(expr: BoxedASTParser<'a, 'a>) -> BoxedASTParser<'a, 'a> {
     ))
     .boxed()
 }
-fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone {
+fn top_level<'a>() -> impl Parser<'a, &'a str, BoxedAST<'a>, Extras<'a>> + Clone {
     let anns = annotation().padded_by(ignored()).repeated().collect();
     recursive(|tl| {
         choice((
@@ -529,10 +585,10 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
                         .ignore_then(ignored()),
                 ),
             import()
-                .then_ignore(ignored().then_ignore(just(';')).recover_with(skip_until(
-                    empty(),
-                    any().ignored(),
-                    || (),
+                .padded_by(ignored())
+                .then_ignore(just(';').recover_with(skip_then_retry_until(
+                    none_of(';').ignored(),
+                    just(";").ignored(),
                 )))
                 .map(box_ast),
             anns.then(
@@ -553,26 +609,40 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
                     .recover_with(skip_until(
                         any().ignored(),
                         one_of("{=;").rewind().ignored().or(end()),
-                        || DottedName::local(("<error>".to_string(), unreachable_span())),
+                        || DottedName::local(("<error>".into(), unreachable_span())),
                     )),
             )
             .then_ignore(ignored())
             .then(choice((
-                tl.repeated().collect().delimited_by(just('{'), just('}')),
+                tl.repeated()
+                    .collect()
+                    .delimited_by(just('{'), just('}'))
+                    .map(|v| (v, false)),
                 just('=')
                     .then_ignore(ignored())
                     .ignore_then(cdn())
                     .map_with_span(|cdn, loc| {
-                        vec![box_ast(ImportAST::new(
-                            loc.into_range().into(),
-                            cdn,
-                            vec![],
-                        ))]
+                        (
+                            vec![box_ast(ImportAST::new(
+                                loc.into_range().into(),
+                                cdn,
+                                vec![],
+                            ))],
+                            false,
+                        )
                     })
                     .then_ignore(just(';')),
-                just(';').to(vec![]),
+                just(';').to((vec![], true)),
             )))
-            .map(|(((anns, loc), name), body)| box_ast(ModuleAST::new(loc, name, body, anns))),
+            .validate(|(((anns, loc), name), (body, err)), span, e| {
+                if err {
+                    e.emit(Rich::custom(
+                        span,
+                        "file-level module declaration cannot go here",
+                    ))
+                }
+                box_ast(ModuleAST::new(loc, name, body, anns))
+            }),
             just(';')
                 .to_span()
                 .map(|l: SimpleSpan| box_ast(NullAST::new(l.into_range().into()))),
@@ -580,39 +650,82 @@ fn top_level<'a>() -> impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone
     })
     .labelled("a top-level declaration")
 }
+
 /// add assignments and control flow to parser
 fn add_assigns<'a: 'b, 'b>(
-    expr: impl Parser<'a, &'a str, Box<dyn AST>, Extras<'a>> + Clone + 'a,
+    expr: impl Parser<'a, &'a str, BoxedAST<'a>, Extras<'a>> + Clone + 'a,
 ) -> BoxedASTParser<'a, 'b> {
+    // - 1: After the initial parser is done, the input can be followed up by any of these options.
+    // The order in which they are listed indicates their precedence. After this `then()`, the
+    // output will be (output of `expr`, operator).
+    //
+    // - 2: Right associative folding. Consider this input:
+    // ```
+    // x = y+=z<<=a
+    // ```
+    // This will parse as (x, =, (y, +=, (z, <<=, a))). Note this is the opposite direction of
+    // associativity to math operations.
     let prev = expr
         .clone()
         .then(
+            // 1
             choice(
                 [
                     "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
                 ]
                 .map(just),
             )
-            .map_with_span(|op, span: SimpleSpan| (op.to_string(), span.into_range().into()))
+            .map_with_span(|op, span: SimpleSpan| (intern_op(op), span.into_range().into()))
             .labelled("an operator")
             .padded_by(ignored()),
         )
         .repeated()
         .foldr(expr, |(lhs, (op, loc)), rhs| {
+            // 2
             box_ast(BinOpAST::new(loc, op, lhs, rhs))
         })
         .labelled("an expression")
         .boxed();
+
+    // - 1: Parse an if/else section, e.g.
+    // ```
+    // if (x == 3i32) {
+    //   x += 1;
+    // };
+    // ```
+    // -- 1a: The conditional will begin with `(` or `{`...
+    // -- 1b: ...but don't immediately fail if not. In any case we have were expecting an
+    // expression (something accepted by `expr`) and just consumed one character of it.
+    // Rewind one character and parse it using `expr`.
+    // -- 1c: The reason for having (1a) and (1b) in the first place is just for better error
+    // messaging; we want to know if the user just forgot to wrap their condition in
+    // parentheses/braces.
+    // -- 1d: This parses the body of the section, e.g. `{ x += 1; }`.
+    // -- 1e: There may or may not be an else clause.
+    // -- 1f: If there was an "else" clause, then unwrap it, or just put a dummy ast node in
+    // it's place.
+    //
+    // - 2: Parse a while section, e.g.
+    // ```
+    // while (x > 0i32) {
+    //  x -= 1;
+    // };
+    // ```
+    // This is functionally very similar to the if/else parsing.
+    //
+    // - 3: Error recovery strategy: maybe we're just seeing an else clause for some reason.
+    // If that's the consume it. In any case, an error is thrown.
     recursive(|expr| {
         choice([
-            text::keyword("if")
+            text::keyword("if") // 1
                 .ignore_then(ignored())
                 .ignore_then(
                     one_of("({")
-                        .or_not()
-                        .rewind()
+                        .or_not() // 1a
+                        .rewind() // 1b
                         .then(expr.clone())
                         .validate(|(o, ast), loc, e| {
+                            // 1c
                             if o.is_none() {
                                 e.emit(Rich::custom(
                                     loc,
@@ -623,12 +736,13 @@ fn add_assigns<'a: 'b, 'b>(
                         })
                         .labelled("a condition"),
                 )
-                .then(expr.clone().padded_by(ignored()))
+                .then(expr.clone().padded_by(ignored())) // 1d
                 .then(
                     text::keyword("else")
                         .ignore_then(expr.clone().padded_by(ignored()))
-                        .or_not()
+                        .or_not() // 1e
                         .map_with_span(|expr, loc| {
+                            // 1f
                             expr.unwrap_or_else(|| box_ast(NullAST::new(loc.into_range().into())))
                         }),
                 )
@@ -641,12 +755,12 @@ fn add_assigns<'a: 'b, 'b>(
                     ))
                 })
                 .boxed(),
-            text::keyword("while")
+            text::keyword("while") // 2
                 .ignore_then(ignored())
                 .ignore_then(
                     one_of("({")
                         .or_not()
-                        .rewind()
+                        .rewind() // 2a
                         .then(expr.clone())
                         .validate(|(o, ast), loc, e| {
                             if o.is_none() {
@@ -666,11 +780,12 @@ fn add_assigns<'a: 'b, 'b>(
                 .boxed(),
             prev,
         ])
-        .recover_with(via_parser(text::keyword("else").ignore_then(expr)))
+        .recover_with(via_parser(text::keyword("else").ignore_then(expr))) // 3
     })
     .labelled("an expression")
     .boxed()
 }
+
 /// create a parser for expressions, without assignment
 fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
     type Cbi = utils::CharBytesIterator;
@@ -693,7 +808,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
     .then_ignore(ignored())
     .then(
         ident()
-            .map_with_span(|suf, span| (suf.to_string(), span.into_range().into()))
+            .map_with_span(|suf, span| (suf.into(), span.into_range().into()))
             .or_not(),
     )
     .map(|((val, loc), suf)| box_ast(IntLiteralAST::new(loc, val, suf)));
@@ -711,7 +826,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .then_ignore(ignored())
         .then(
             ident()
-                .map_with_span(|suf, span| (suf.to_string(), span.into_range().into()))
+                .map_with_span(|suf, span| (suf.into(), span.into_range().into()))
                 .or_not(),
         )
         .map(|((val, loc), suf)| box_ast(FloatLiteralAST::new(loc, val, suf)));
@@ -758,7 +873,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .then_ignore(ignored())
         .then(
             ident()
-                .map_with_span(|suf, span| (suf.to_string(), span.into_range().into()))
+                .map_with_span(|suf, span| (suf.into(), span.into_range().into()))
                 .or_not(),
         )
         .map(|((val, loc), suf)| box_ast(CharLiteralAST::new(loc, val, suf)));
@@ -825,7 +940,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .then_ignore(ignored())
         .then(
             ident()
-                .map_with_span(|suf, span| (suf.to_string(), span.into_range().into()))
+                .map_with_span(|suf, span| (suf.into(), span.into_range().into()))
                 .or_not(),
         )
         .map(|((val, loc), suf)| {
@@ -842,11 +957,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .map(|o| o.is_some())
         .then(ident())
         .map_with_span(|(global, name), loc| {
-            box_ast(VarGetAST::new(
-                loc.into_range().into(),
-                name.to_string(),
-                global,
-            ))
+            box_ast(VarGetAST::new(loc.into_range().into(), name.into(), global))
         });
     let special = choice((
         text::keyword("null")
@@ -860,10 +971,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
     let intrinsic = just('@')
         .ignore_then(ident())
         .map_with_span(|name, span| {
-            box_ast(IntrinsicAST::new(
-                span.into_range().into(),
-                name.to_string(),
-            ))
+            box_ast(IntrinsicAST::new(span.into_range().into(), name.into()))
         })
         .labelled("an intrinsic");
     recursive(move |raw_expr| {
@@ -946,23 +1054,59 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                     |span: SimpleSpan| box_ast(ErrorAST::new(span.into_range().into())),
                 ))),
             // block
-            def_stmt(
-                raw_expr
-                    .or_not()
-                    .map_with_span(|ast, span: SimpleSpan| {
-                        ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into())))
-                    })
+            choice([
+                empty()
+                    .map_with_state(|_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| {
+                        state.push(Default::default())
+                    }) // push new field set onto stack
+                    .then(
+                        ident()
+                            .map_with_span(|i, s| (i, s))
+                            .try_map_with_state(|(name, span), _, state| {
+                                if let Some(_prev) = state.last_mut().unwrap().insert(name, span) {
+                                    Err(Rich::custom(span, format!("redefinition of {name}")))
+                                } else {
+                                    Ok(name.into())
+                                }
+                            })
+                            .then_ignore(just(':').padded_by(ignored()))
+                            .then(expr.clone()) // parse `name: type`
+                            .padded_by(ignored())
+                            .separated_by(just(',').padded_by(ignored()))
+                            .allow_trailing()
+                            .at_least(1)
+                            .collect::<HashMap<_, _>>(),
+                    )
+                    .then(empty().map_with_state(
+                        |_, _, state: &mut Vec<HashMap<&'a str, SimpleSpan>>| state.pop(),
+                    ))
+                    .map(|x| either::Right(x.0 .1))
                     .boxed(),
-            )
-            .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
-            .padded_by(ignored())
-            .separated_by(just(';').recover_with(skip_then_retry_until(
-                none_of(";}").ignored(),
-                one_of(";}").ignored(),
-            )))
-            .collect()
+                def_stmt(
+                    raw_expr
+                        .or_not()
+                        .map_with_span(|ast, span: SimpleSpan| {
+                            ast.unwrap_or_else(|| box_ast(NullAST::new(span.into_iter().into())))
+                        })
+                        .boxed(),
+                )
+                .recover_with(skip_then_retry_until(none_of(";)}").ignored(), end()))
+                .padded_by(ignored())
+                .separated_by(just(';').recover_with(skip_then_retry_until(
+                    none_of(";}").ignored(),
+                    one_of(";}").ignored(),
+                )))
+                .collect()
+                .map(either::Left)
+                .boxed(),
+            ])
             .delimited_by(just('{'), just('}'))
-            .map_with_span(|vals, span| box_ast(BlockAST::new(span.into_range().into(), vals)))
+            .map_with_span(|vals, span| match vals {
+                either::Left(vals) => box_ast(BlockAST::new(span.into_range().into(), vals)),
+                either::Right(vals) => {
+                    box_ast(StructLiteralAST::new(span.into_range().into(), vals))
+                }
+            })
             .recover_with(via_parser(nested_delimiters(
                 '{',
                 '}',
@@ -973,25 +1117,25 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
         .labelled("an atom")
         .boxed();
         #[derive(Debug, Clone)]
-        enum PostfixType {
-            Op(String, SourceSpan),
-            Attr(String, SourceSpan),
-            Sub(Box<dyn AST>, SourceSpan),
-            Call(Vec<Box<dyn AST>>, SourceSpan),
+        enum PostfixType<'src> {
+            Op(char, SourceSpan),
+            Attr(&'src str, SourceSpan),
+            Sub(BoxedAST<'src>, SourceSpan),
+            Call(Vec<BoxedAST<'src>>, SourceSpan),
         }
         let postfix = atom
             .foldl(
                 choice((
                     // postfix operator
                     one_of("?!").map_with_span(|c: char, span: SimpleSpan| {
-                        PostfixType::Op(c.to_string(), span.into_range().into())
+                        PostfixType::Op(c, span.into_range().into())
                     }),
                     // attribute
                     just('.')
                         .ignore_then(ignored())
                         .ignore_then(ident())
                         .map_with_span(|attr, span| {
-                            PostfixType::Attr(attr.to_string(), span.into_range().into())
+                            PostfixType::Attr(attr, span.into_range().into())
                         }),
                     // subscript
                     maybe_expr
@@ -1012,8 +1156,10 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                 .padded_by(ignored())
                 .repeated(),
                 |ast, op| match op {
-                    PostfixType::Op(op, loc) => box_ast(PostfixAST::new(loc, op, ast)),
-                    PostfixType::Attr(attr, loc) => box_ast(DotAST::new(ast, (attr, loc))),
+                    PostfixType::Op(op, loc) => {
+                        box_ast(PostfixAST::new(loc, intern_char_op(op), ast))
+                    }
+                    PostfixType::Attr(attr, loc) => box_ast(DotAST::new(ast, (attr.into(), loc))),
                     PostfixType::Sub(idx, loc) => box_ast(SubAST::new(loc, ast, idx)),
                     PostfixType::Call(args, loc) => box_ast(CallAST::new(loc, ast, args)),
                 },
@@ -1021,14 +1167,13 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
             .labelled("an expression")
             .boxed();
         let prefix = choice((just("++"), just("--"), text::keyword("mut")))
-            .map(String::from)
-            .or(one_of("+-*&~!").map(String::from))
+            .or(one_of("+-*&~!").slice())
             .labelled("an operator")
             .map_with_span(add_loc)
             .padded_by(ignored())
             .repeated()
             .foldr(postfix, |(op, loc), ast| {
-                box_ast(PrefixAST::new(loc, op, ast))
+                box_ast(PrefixAST::new(loc, intern_op(op), ast))
             })
             .labelled("an expression")
             .boxed();
@@ -1042,7 +1187,7 @@ fn expr_impl<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
                     choice(ops.map(just))
                         .labelled("an operator")
                         .map_with_span(|op, span: SimpleSpan| {
-                            (op.to_string(), span.into_range().into())
+                            (intern_op(op), span.into_range().into())
                         })
                         .padded_by(ignored())
                         .then(prev)
@@ -1096,11 +1241,16 @@ pub fn parse_stmt<'a: 'b, 'b>() -> BoxedASTParser<'a, 'b> {
     def_stmt(expr_impl())
 }
 /// create a parser for the top-level scope
-pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST> {
-    top_level()
-        .repeated()
-        .collect()
-        .map(TopLevelAST::new)
+pub fn parse_tl<'a: 'b, 'b>() -> BoxedParser<'a, 'b, TopLevelAST<'a>> {
+    text::keyword("module")
+        .then_ignore(ignored())
+        .ignore_then(global_id())
+        .then_ignore(ignored())
+        .then_ignore(just(';'))
+        .padded_by(ignored())
+        .or_not()
+        .then(top_level().repeated().collect())
+        .map(|(module, vals)| TopLevelAST::new(vals, module))
         .then_ignore(ignored().then(end()))
         .boxed()
 }

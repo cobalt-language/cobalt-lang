@@ -11,9 +11,9 @@ pub enum UndefVariable {
     DoesNotExist(usize),
 }
 #[derive(Debug, Clone)]
-pub enum RedefVariable<'ctx> {
-    NotAModule(usize, Symbol<'ctx>),
-    AlreadyExists(usize, Option<SourceSpan>, Symbol<'ctx>),
+pub enum RedefVariable<'src, 'ctx> {
+    NotAModule(usize, Symbol<'src, 'ctx>),
+    AlreadyExists(usize, Option<SourceSpan>, Symbol<'src, 'ctx>),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableData {
@@ -78,19 +78,19 @@ impl Default for VariableData {
         }
     }
 }
-impl<'ctx> From<Value<'ctx>> for Symbol<'ctx> {
-    fn from(val: Value<'ctx>) -> Self {
+impl<'src, 'ctx> From<Value<'src, 'ctx>> for Symbol<'src, 'ctx> {
+    fn from(val: Value<'src, 'ctx>) -> Self {
         Symbol(val, VariableData::default())
     }
 }
 #[derive(Debug, Clone)]
-pub struct Symbol<'ctx>(pub Value<'ctx>, pub VariableData);
-impl<'ctx> Symbol<'ctx> {
+pub struct Symbol<'src, 'ctx>(pub Value<'src, 'ctx>, pub VariableData);
+impl<'src, 'ctx> Symbol<'src, 'ctx> {
     pub fn into_mod(
         self,
     ) -> Option<(
-        HashMap<String, Symbol<'ctx>>,
-        Vec<(CompoundDottedName, bool)>,
+        HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        Vec<(CompoundDottedName<'src>, bool)>,
         String,
     )> {
         self.0.into_mod()
@@ -98,8 +98,8 @@ impl<'ctx> Symbol<'ctx> {
     pub fn as_mod(
         &self,
     ) -> Option<(
-        &HashMap<String, Symbol<'ctx>>,
-        &Vec<(CompoundDottedName, bool)>,
+        &HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        &Vec<(CompoundDottedName<'src>, bool)>,
         &String,
     )> {
         self.0.as_mod()
@@ -107,8 +107,8 @@ impl<'ctx> Symbol<'ctx> {
     pub fn as_mod_mut(
         &mut self,
     ) -> Option<(
-        &mut HashMap<String, Symbol<'ctx>>,
-        &mut Vec<(CompoundDottedName, bool)>,
+        &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        &mut Vec<(CompoundDottedName<'src>, bool)>,
         &mut String,
     )> {
         self.0.as_mod_mut()
@@ -119,7 +119,7 @@ impl<'ctx> Symbol<'ctx> {
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         self.0.save(out)
     }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
         Ok(Symbol(
             Value::load(buf, ctx)?,
             VariableData {
@@ -153,13 +153,13 @@ impl<'ctx> Symbol<'ctx> {
     }
 }
 #[derive(Default)]
-pub struct VarMap<'ctx> {
-    pub parent: Option<Box<VarMap<'ctx>>>,
-    pub symbols: HashMap<String, Symbol<'ctx>>,
-    pub imports: Vec<(CompoundDottedName, bool)>,
+pub struct VarMap<'src, 'ctx> {
+    pub parent: Option<Box<Self>>,
+    pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+    pub imports: Vec<(CompoundDottedName<'src>, bool)>,
 }
-impl<'ctx> VarMap<'ctx> {
-    pub fn new(parent: Option<Box<VarMap<'ctx>>>) -> Self {
+impl<'src, 'ctx> VarMap<'src, 'ctx> {
+    pub fn new(parent: Option<Box<Self>>) -> Self {
         VarMap {
             parent,
             ..Self::default()
@@ -171,7 +171,7 @@ impl<'ctx> VarMap<'ctx> {
             ..self
         }
     }
-    pub fn reparent(self, parent: Box<VarMap<'ctx>>) -> Self {
+    pub fn reparent(self, parent: Box<Self>) -> Self {
         VarMap {
             parent: Some(parent),
             ..self
@@ -192,9 +192,9 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn insert(
         &mut self,
-        name: &DottedName,
-        sym: Symbol<'ctx>,
-    ) -> Result<&Symbol<'ctx>, RedefVariable<'ctx>> {
+        name: &DottedName<'src>,
+        sym: Symbol<'src, 'ctx>,
+    ) -> Result<&Symbol<'src, 'ctx>, RedefVariable<'src, 'ctx>> {
         let mut this = if name.global {
             &mut self.root_mut().symbols
         } else {
@@ -238,19 +238,19 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn insert_mod(
         &mut self,
-        name: &DottedName,
+        name: &DottedName<'src>,
         mut sym: (
-            HashMap<String, Symbol<'ctx>>,
-            Vec<(CompoundDottedName, bool)>,
+            HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+            Vec<(CompoundDottedName<'src>, bool)>,
         ),
         mod_name: String,
     ) -> Result<
         (
-            &HashMap<String, Symbol<'ctx>>,
-            &Vec<(CompoundDottedName, bool)>,
+            &HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+            &Vec<(CompoundDottedName<'src>, bool)>,
             &String,
         ),
-        RedefVariable<'ctx>,
+        RedefVariable<'src, 'ctx>,
     > {
         let mut this = if name.global {
             &mut self.root_mut().symbols
@@ -312,11 +312,11 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn lookup_mod(
         &mut self,
-        name: &DottedName,
+        name: &DottedName<'src>,
     ) -> Result<
         (
-            HashMap<String, Symbol<'ctx>>,
-            Vec<(CompoundDottedName, bool)>,
+            HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+            Vec<(CompoundDottedName<'src>, bool)>,
             String,
         ),
         UndefVariable,
@@ -393,8 +393,8 @@ impl<'ctx> VarMap<'ctx> {
     pub fn load<R: Read + BufRead>(
         &mut self,
         buf: &mut R,
-        ctx: &CompCtx<'ctx>,
-    ) -> io::Result<Vec<String>> {
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> io::Result<Vec<Cow<'src, str>>> {
         let mut out = vec![];
         loop {
             let mut name = vec![];
@@ -406,7 +406,7 @@ impl<'ctx> VarMap<'ctx> {
                 break;
             }
             let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
-            match self.symbols.entry(name) {
+            match self.symbols.entry(name.into()) {
                 Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
                     (
                         Symbol(
@@ -441,7 +441,7 @@ impl<'ctx> VarMap<'ctx> {
         }
         Ok(out)
     }
-    pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'ctx>) -> io::Result<Self> {
+    pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
         let mut out = HashMap::new();
         let mut imports = vec![];
         loop {
@@ -454,7 +454,9 @@ impl<'ctx> VarMap<'ctx> {
                 break;
             }
             out.insert(
-                String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8"),
+                String::from_utf8(name)
+                    .expect("Cobalt symbols should be valid UTF-8")
+                    .into(),
                 Symbol::load(buf, ctx)?,
             );
         }
@@ -479,13 +481,13 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn satisfy<'vm>(
         (symbols, imports): (
-            &'vm HashMap<String, Symbol<'ctx>>,
+            &'vm HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
             &'vm Vec<(CompoundDottedName, bool)>,
         ),
         name: &str,
         pattern: &[CompoundDottedNameSegment],
-        root: &'vm VarMap<'ctx>,
-    ) -> Option<&'vm Symbol<'ctx>> {
+        root: &'vm VarMap<'src, 'ctx>,
+    ) -> Option<&'vm Symbol<'src, 'ctx>> {
         use CompoundDottedNameSegment::*;
         match pattern.first()? {
             Identifier(x, _) => {
@@ -518,7 +520,7 @@ impl<'ctx> VarMap<'ctx> {
                         ..
                     },
                     _,
-                )) = symbols.get(x.as_str())
+                )) = symbols.get(&**x)
                 {
                     Self::satisfy((s, i), name, &pattern[1..], root)
                 } else {
@@ -571,12 +573,12 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn lookup_in_mod<'vm>(
         (symbols, imports): (
-            &'vm HashMap<String, Symbol<'ctx>>,
-            &'vm Vec<(CompoundDottedName, bool)>,
+            &'vm HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+            &'vm Vec<(CompoundDottedName<'src>, bool)>,
         ),
         name: &str,
-        root: &'vm VarMap<'ctx>,
-    ) -> Option<&'vm Symbol<'ctx>> {
+        root: &'vm VarMap<'src, 'ctx>,
+    ) -> Option<&'vm Symbol<'src, 'ctx>> {
         symbols.get(name).or_else(|| {
             imports
                 .iter()
@@ -584,7 +586,7 @@ impl<'ctx> VarMap<'ctx> {
                 .find_map(|i| Self::satisfy((symbols, imports), name, &i.ids, root))
         })
     }
-    pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'ctx>> {
+    pub fn lookup(&self, name: &str, global: bool) -> Option<&Symbol<'src, 'ctx>> {
         let root = self.root();
         if global {
             root.lookup(name, false)
@@ -605,11 +607,11 @@ impl<'ctx> VarMap<'ctx> {
     }
     pub fn verify_in_mod<'vm>(
         (symbols, imports): (
-            &'vm HashMap<String, Symbol<'ctx>>,
-            &'vm Vec<(CompoundDottedName, bool)>,
+            &'vm HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+            &'vm Vec<(CompoundDottedName<'src>, bool)>,
         ),
-        pattern: &[CompoundDottedNameSegment],
-        root: &'vm VarMap<'ctx>,
+        pattern: &[CompoundDottedNameSegment<'src>],
+        root: &'vm VarMap<'src, 'ctx>,
     ) -> Vec<SourceSpan> {
         use CompoundDottedNameSegment::*;
         match pattern.first() {
@@ -665,7 +667,7 @@ impl<'ctx> VarMap<'ctx> {
             }
         }
     }
-    pub fn verify(&self, pattern: &CompoundDottedName) -> Vec<SourceSpan> {
+    pub fn verify(&self, pattern: &CompoundDottedName<'src>) -> Vec<SourceSpan> {
         let root = self.root();
         if pattern.global
             && self
@@ -685,8 +687,8 @@ impl<'ctx> VarMap<'ctx> {
         }
     }
 }
-impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
-    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+impl<'src, 'ctx> From<HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>> for VarMap<'src, 'ctx> {
+    fn from(symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>) -> Self {
         VarMap {
             parent: None,
             symbols,
@@ -694,8 +696,8 @@ impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for VarMap<'ctx> {
         }
     }
 }
-impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for Box<VarMap<'ctx>> {
-    fn from(symbols: HashMap<String, Symbol<'ctx>>) -> Self {
+impl<'src, 'ctx> From<HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>> for Box<VarMap<'src, 'ctx>> {
+    fn from(symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>) -> Self {
         Box::new(VarMap {
             parent: None,
             symbols,
@@ -703,10 +705,10 @@ impl<'ctx> From<HashMap<String, Symbol<'ctx>>> for Box<VarMap<'ctx>> {
         })
     }
 }
-fn merge<'ctx>(
-    base: &mut HashMap<String, Symbol<'ctx>>,
-    new: HashMap<String, Symbol<'ctx>>,
-) -> Vec<String> {
+fn merge<'src, 'ctx>(
+    base: &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+    new: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+) -> Vec<Cow<'src, str>> {
     let mut out = vec![];
     for (key, val) in new {
         match base.entry(key) {
@@ -730,7 +732,7 @@ fn merge<'ctx>(
                     ),
                 ) => {
                     bi.append(&mut ni);
-                    out.extend(merge(bs, ns).into_iter().map(|x| e.key().to_owned() + &x));
+                    out.extend(merge(bs, ns).into_iter().map(|x| e.key().clone() + x));
                 }
                 _ => out.push(e.key().clone()),
             },
