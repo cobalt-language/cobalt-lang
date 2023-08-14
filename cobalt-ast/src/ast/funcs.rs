@@ -13,6 +13,7 @@ pub enum ParamType {
     Constant,
 }
 pub type Parameter<'src> = (
+    SourceSpan,
     Cow<'src, str>,
     ParamType,
     BoxedAST<'src>,
@@ -59,7 +60,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             + self
                 .params
                 .iter()
-                .map(|(_, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes()))
+                .map(|(_, _, _, ty, def)| ty.nodes() + def.as_ref().map_or(0, |x| x.nodes()))
                 .sum::<usize>()
             + 1
     }
@@ -80,7 +81,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let params = self
             .params
             .iter()
-            .map(|(_, pt, ty, _)| {
+            .map(|(_, _, pt, ty, _)| {
                 (
                     {
                         let mut val = ops::impl_convert(
@@ -338,7 +339,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .params
                         .iter()
                         .zip(cloned)
-                        .filter_map(|((_, _, _, d), (t, _))| {
+                        .filter_map(|((_,_, _, _, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let val = a.codegen(ctx).0;
@@ -434,7 +435,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .params
                         .iter()
                         .zip(cloned)
-                        .filter_map(|((_, _, _, d), (t, _))| {
+                        .filter_map(|((_, _, _, _, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
                                 let val = a.codegen(ctx).0;
@@ -474,7 +475,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     .params
                     .iter()
                     .zip(cloned)
-                    .filter_map(|((_, _, _, d), (t, _))| {
+                    .filter_map(|((_, _, _, _, d), (t, _))| {
                         d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let val = a.codegen(ctx).0;
@@ -543,7 +544,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let mut params = self
             .params
             .iter()
-            .map(|(_, pt, ty, _)| {
+            .map(|(_, _, pt, ty, _)| {
                 (
                     {
                         let mut val = ops::impl_convert(
@@ -901,7 +902,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     ))
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
-                                        loc: self.params[0].2.loc(),
+                                        loc: self.params[0].3.loc(),
                                         self_t: s,
                                         param: Some(params[0].0.to_string()),
                                     });
@@ -960,7 +961,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     ))
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
-                                        loc: self.params[0].2.loc(),
+                                        loc: self.params[0].3.loc(),
                                         self_t: s,
                                         param: Some(params[0].0.to_string()),
                                     });
@@ -1068,7 +1069,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
                         let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
@@ -1101,7 +1102,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.lex_scope.incr();
                         {
                             let mut n = 0;
-                            for ((name, pt), (ty, is_const)) in self.params.iter().map(|x| (&x.0, x.1)).zip(params.iter()) {
+                            for ((loc, name, pt), (ty, is_const)) in self.params.iter().map(|x| (x.0, &x.1, x.2)).zip(params.iter()) {
                                 if name.is_empty() {
                                     if !is_const {
                                         n += 1;
@@ -1119,7 +1120,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                         val.data_type = Type::Mut(Box::new(val.data_type));
                                     }
                                     val.name = Some((name.clone(), ctx.lex_scope.get()));
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData::default()))).map_or((), |_| ());
+                                    let _ = ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData {loc: Some(loc), ..VariableData::default()})));
                                     n += 1;
                                 }
                                 else {
@@ -1183,7 +1184,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
                         let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
@@ -1231,7 +1232,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_,_, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
                         let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
@@ -1264,7 +1265,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.lex_scope.incr();
                         {
                             let mut n = 0;
-                            for ((name, pt), (ty, is_const)) in self.params.iter().map(|x| (&x.0, x.1)).zip(params.iter()) {
+                            for ((loc, name, pt), (ty, is_const)) in self.params.iter().map(|x| (x.0, &x.1, x.2)).zip(params.iter()) {
                                 if name.is_empty() {
                                     if !is_const {
                                         n += 1;
@@ -1282,7 +1283,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                         val.data_type = Type::Mut(Box::new(val.data_type));
                                     }
                                     val.name = Some((name.clone(), ctx.lex_scope.get()));
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData::default()))).map_or((), |_| ());
+                                    let _ = ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData {loc: Some(loc), ..VariableData::default()})));
                                     n += 1;
                                 }
                                 else {
@@ -1346,7 +1347,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 }
                 else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
                         let val = a.codegen_errs(ctx, &mut errs);
                         let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
@@ -1377,7 +1378,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             }
             else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, d), (t, _))| d.as_ref().map(|a| {
+                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
                     let old_const = ctx.is_const.replace(true);
                     let val = a.codegen_errs(ctx, &mut errs);
                     let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
@@ -1465,7 +1466,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         pre.pop();
         writeln!(f, "{pre}├── parameters:")?;
         pre.push(false);
-        for (n, (param, param_ty, ty, default)) in self.params.iter().enumerate() {
+        for (n, (_, param, param_ty, ty, default)) in self.params.iter().enumerate() {
             writeln!(
                 f,
                 "{pre}{}{}{}",
