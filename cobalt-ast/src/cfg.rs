@@ -970,7 +970,11 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 }
                 let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
                 match c.get_zero_extended_constant() {
-                    Some(0) => ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx),
+                    Some(0) => {
+                        if let Some(val) = ctx.lookup(&m.name.0, false) {
+                            val.0.ins_dtor(ctx)
+                        }
+                    }
                     Some(1) => {}
                     _ => {
                         let db = ctx
