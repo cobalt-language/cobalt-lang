@@ -21,7 +21,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
-        // ctx.lex_scope.incr();
+        ctx.lex_scope.incr();
         let mut out = Value::null();
         let mut errs = vec![];
         let start = cfg::Location::current(ctx);
@@ -65,9 +65,10 @@ impl<'src> AST<'src> for BlockAST<'src> {
                 }));
             }
         }
-        // let mut b = ctx.moves.borrow_mut();
-        // b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
-        // b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
+        let mut b = ctx.moves.borrow_mut();
+        b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
+        b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
+        ctx.lex_scope.decr();
         ctx.map_vars(|v| v.parent.unwrap());
         (out, errs)
     }

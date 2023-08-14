@@ -1097,6 +1097,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         Type::Reference(Box::new(fty.clone()))
                     ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         ctx.lex_scope.incr();
@@ -1132,8 +1134,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 }
                             }
                         }
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        ctx.builder.position_at_end(entry);
                         ctx.to_drop.borrow_mut().push(Vec::new());
                         let body = self.body.codegen_errs(ctx, &mut errs);
                         ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
@@ -1260,6 +1260,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         Type::Reference(Box::new(fty.clone()))
                     ), VariableData::with_vis(self.loc, vs)))).clone();
                     if is_extern.is_none() {
+                        let entry = ctx.context.append_basic_block(f, "entry");
+                        ctx.builder.position_at_end(entry);
                         let old_scope = ctx.push_scope(&self.name);
                         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
                         ctx.lex_scope.incr();
@@ -1295,8 +1297,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 }
                             }
                         }
-                        let entry = ctx.context.append_basic_block(f, "entry");
-                        ctx.builder.position_at_end(entry);
                         ctx.to_drop.borrow_mut().push(Vec::new());
                         self.body.codegen_errs(ctx, &mut errs);
                         ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
