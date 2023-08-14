@@ -787,10 +787,6 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
     ) -> Vec<cobalt_errors::CobaltError<'src>> {
         let mut errs = Vec::new();
 
-        // Go through each variable, see if it's a linear type.
-        //
-        // - 1: We check if it has been moved at least once by verifying that the variable
-        // appears in the moves list.
         ctx.with_vars(|v| {
             v.symbols.iter().for_each(|(n, v)| {
                 let is_linear_type = is_linear_type(&v.0.data_type, ctx);
@@ -804,6 +800,35 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                                 name: n.to_string(),
                                 loc: v.1.loc.unwrap_or(0.into()),
                             });
+                        }
+                    }
+
+                    // A linear type must also be used before being reassigned. Currently the
+                    // only type of "store" is this situation.
+
+                    // We want to find all the store instructions, and make sure that the value
+                    // is used before the store instruction.
+                    unsafe {
+                        for block in &self.blocks {
+                            let store_instructions = block
+                                .moves
+                                .iter()
+                                .filter(|m| matches!(m, Either::Right(_)))
+                                .filter(|m| for_both!(m, m => &(**m).name.0 == n ));
+
+                            for store_instruction in store_instructions {
+                                let inst = (*store_instruction.unwrap_right()).inst;
+                                let is_moved = self.is_moved(n, lex_scope, Some(inst), ctx);
+                                match is_moved.get_zero_extended_constant() {
+                                    Some(1) => {}
+                                    _ => {
+                                        errs.push(CobaltError::LinearTypeNotUsed {
+                                            name: n.to_string(),
+                                            loc: v.1.loc.unwrap_or(0.into()),
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
                 }
