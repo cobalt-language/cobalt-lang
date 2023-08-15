@@ -50,7 +50,7 @@ static KEYWORDS: &[&str] = &[
 /// operators that can be interned
 static OPS: &[&str] = &[
     "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "+", "-", "*", "/", "%",
-    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "mut",
+    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "mut", "++", "--",
 ];
 /// take op and make it 'static
 /// assumes op is an operator
