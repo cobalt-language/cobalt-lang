@@ -29,7 +29,7 @@ pub enum InterData<'src, 'ctx> {
     /// Used for default values of function parameters.
     Function(FnData<'src, 'ctx>),
     InlineAsm(String, String),
-    Type(Box<Type>),
+    Type(TypeRef),
     Module(
         HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         Vec<(CompoundDottedName<'src>, bool)>,
@@ -212,7 +212,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
 pub struct Value<'src, 'ctx> {
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'src, 'ctx>>,
-    pub data_type: Type,
+    pub data_type: TypeRef,
     pub address: Rc<Cell<Option<PointerValue<'ctx>>>>,
     pub name: Option<(Cow<'src, str>, usize)>,
     pub frozen: Option<SourceSpan>,
@@ -222,7 +222,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Value {
             comp_val: None,
             inter_val: None,
-            data_type: Type::Error,
+            data_type: types::Error::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -232,7 +232,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Value {
             comp_val: None,
             inter_val: None,
-            data_type: Type::Null,
+            data_type: types::TypeData::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -241,7 +241,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn new(
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
-        data_type: Type,
+        data_type: TypeRef,
     ) -> Self {
         Value {
             comp_val,
@@ -255,7 +255,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn with_addr(
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
-        data_type: Type,
+        data_type: TypeRef,
         addr: PointerValue<'ctx>,
     ) -> Self {
         Value {
@@ -267,7 +267,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
         Value {
             comp_val: Some(comp_val),
             inter_val: None,
@@ -280,7 +280,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn interpreted(
         comp_val: BasicValueEnum<'ctx>,
         inter_val: InterData<'src, 'ctx>,
-        data_type: Type,
+        data_type: TypeRef,
     ) -> Self {
         Value {
             comp_val: Some(comp_val),
@@ -291,7 +291,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: Type) -> Self {
+    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
         Value {
             comp_val: None,
             inter_val: Some(inter_val),
@@ -301,11 +301,11 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn make_type(type_: Type) -> Self {
+    pub fn make_type(type_: TypeRef) -> Self {
         Value {
             comp_val: None,
-            inter_val: Some(InterData::Type(Box::new(type_))),
-            data_type: Type::TypeData,
+            inter_val: Some(InterData::Type(type_)),
+            data_type: types::TypeData::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -315,7 +315,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Value {
             comp_val: None,
             inter_val: Some(InterData::Module(HashMap::new(), vec![], name)),
-            data_type: Type::Module,
+            data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -329,7 +329,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Value {
             comp_val: None,
             inter_val: Some(InterData::Module(syms, imps, name)),
-            data_type: Type::Module,
+            data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -337,7 +337,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
 
     pub fn addr(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<PointerValue<'ctx>> {
-        if self.data_type.size(ctx) == SizeType::Static(0) {
+        if self.data_type.size() == SizeType::Static(0) {
             Some(ctx.null_type.ptr_type(Default::default()).const_null())
         } else {
             self.address.get().or_else(|| {
@@ -455,26 +455,26 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
 
-    pub fn into_type(self) -> Option<Type> {
+    pub fn into_type(self) -> Option<TypeRef> {
         if let Value {
             data_type: Type::TypeData,
             inter_val: Some(InterData::Type(t)),
             ..
         } = self
         {
-            Some(*t)
+            Some(t)
         } else {
             None
         }
     }
-    pub fn as_type(&self) -> Option<&Type> {
+    pub fn as_type(&self) -> Option<&TypeRef> {
         if let Value {
             data_type: Type::TypeData,
             inter_val: Some(InterData::Type(t)),
             ..
         } = self
         {
-            Some(t.as_ref())
+            Some(t)
         } else {
             None
         }

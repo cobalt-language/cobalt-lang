@@ -8,6 +8,27 @@ use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Flags {
+    pub word_size: u16,
+    pub bounds_checks: bool,
+    pub prepass: bool,
+    pub dbg_mangle: bool,
+    pub all_move_metadata: bool,
+    pub private_syms: bool,
+}
+impl Default for Flags {
+    fn default() -> Self {
+        Flags {
+            word_size: std::mem::size_of::<isize>() as u16,
+            bounds_checks: true,
+            prepass: true,
+            dbg_mangle: false,
+            all_move_metadata: false,
+            private_syms: true,
+        }
+    }
+}
 pub struct CompCtx<'src, 'ctx> {
     pub flags: Flags,
     pub context: &'ctx Context,
@@ -21,17 +42,7 @@ pub struct CompCtx<'src, 'ctx> {
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
     pub lex_scope: Counter<usize>,
-    pub nominals: RefCell<
-        HashMap<
-            String,
-            (
-                Type,
-                bool,
-                HashMap<Cow<'src, str>, Value<'src, 'ctx>>,
-                NominalInfo<'ctx>,
-            ),
-        >,
-    >,
+
     pub moves: RefCell<(
         HashSet<cfg::Use<'src, 'ctx>>,
         HashSet<cfg::Store<'src, 'ctx>>,
@@ -57,7 +68,6 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             lex_scope: 0.into(),
-            nominals: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
             to_drop: RefCell::default(),
@@ -69,7 +79,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                         Value::interpreted(
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
-                            Type::Int(1, false),
+                            types::Int::bool(),
                         ),
                     ),
                     (
@@ -77,21 +87,25 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                         Value::interpreted(
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
-                            Type::Int(1, false),
+                            types::Int::bool(),
                         ),
                     ),
-                    ("bool", Value::make_type(Type::Int(1, false))),
-                    ("f16", Value::make_type(Type::Float16)),
-                    ("f32", Value::make_type(Type::Float32)),
-                    ("f64", Value::make_type(Type::Float64)),
-                    ("f128", Value::make_type(Type::Float128)),
+                    ("bool", Value::make_type(types::Int::bool())),
+                    ("f16", Value::make_type(types::Float::f16())),
+                    ("f32", Value::make_type(types::Float::f32())),
+                    ("f64", Value::make_type(types::Float::f64())),
+                    ("f128", Value::make_type(types::Float::f128())),
                     (
                         "isize",
-                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, false)),
+                        Value::make_type(types::Int::signed(
+                            std::mem::size_of::<isize>() as u16 * 8,
+                        )),
                     ),
                     (
                         "usize",
-                        Value::make_type(Type::Int(std::mem::size_of::<isize>() as u16 * 8, true)),
+                        Value::make_type(types::Int::unsigned(
+                            std::mem::size_of::<isize>() as u16 * 8,
+                        )),
                     ),
                 ]
                 .into_iter()
@@ -115,7 +129,6 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             lex_scope: 0.into(),
-            nominals: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
             to_drop: RefCell::default(),
@@ -127,7 +140,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                         Value::interpreted(
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
-                            Type::Int(1, false),
+                            types::Int::bool(),
                         ),
                     ),
                     (
@@ -135,21 +148,21 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                         Value::interpreted(
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
-                            Type::Int(1, false),
+                            types::Int::bool(),
                         ),
                     ),
-                    ("bool", Value::make_type(Type::Int(1, false))),
-                    ("f16", Value::make_type(Type::Float16)),
-                    ("f32", Value::make_type(Type::Float32)),
-                    ("f64", Value::make_type(Type::Float64)),
-                    ("f128", Value::make_type(Type::Float128)),
+                    ("bool", Value::make_type(types::Int::bool())),
+                    ("f16", Value::make_type(types::Float::f16())),
+                    ("f32", Value::make_type(types::Float::f32())),
+                    ("f64", Value::make_type(types::Float::f64())),
+                    ("f128", Value::make_type(types::Float::f128())),
                     (
                         "isize",
-                        Value::make_type(Type::Int(flags.word_size * 8, false)),
+                        Value::make_type(types::Int::signed(flags.word_size * 8)),
                     ),
                     (
                         "usize",
-                        Value::make_type(Type::Int(flags.word_size * 8, true)),
+                        Value::make_type(types::Int::unsigned(flags.word_size * 8)),
                     ),
                 ]
                 .into_iter()
@@ -262,7 +275,9 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             let mut val = self.int_types.replace(MaybeUninit::uninit()).assume_init();
             let out = std::mem::transmute::<&mut _, &'ctx _>(match val.entry((size, unsigned)) {
                 Entry::Occupied(x) => x.into_mut(),
-                Entry::Vacant(x) => x.insert(Value::make_type(Type::Int(size, unsigned)).into()),
+                Entry::Vacant(x) => {
+                    x.insert(Value::make_type(types::Int::new(size, unsigned)).into())
+                }
             });
             self.int_types.set(MaybeUninit::new(val));
             out
