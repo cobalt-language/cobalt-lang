@@ -67,7 +67,8 @@ pub trait Type: Debug + Display + Send + Sync {
     fn nom_info(&self) -> Option<NominalInfo> {
         None
     }
-    fn has_dtor(&self) -> bool {
+    fn has_dtor(&self, ctx: &CompCtx) -> bool {
+        #![allow(unused_variables)]
         false
     }
     unsafe fn downcast_impl(val: &dyn Type) -> &Self
@@ -167,11 +168,13 @@ pub fn make_id(id: impl AsRef<[u8]>) -> usize {
 }
 
 pub mod agg;
+pub mod custom;
 pub mod float;
 pub mod int;
 pub mod mem;
 pub mod meta;
 pub use agg::*;
+pub use custom::*;
 pub use float::*;
 pub use int::*;
 pub use mem::*;

@@ -42,12 +42,13 @@ pub struct CompCtx<'src, 'ctx> {
     pub priority: Counter<i32>,
     pub var_scope: Counter<usize>,
     pub lex_scope: Counter<usize>,
-
+    pub values: RefCell<slab::Slab<Value<'src, 'ctx>>>,
     pub moves: RefCell<(
         HashSet<cfg::Use<'src, 'ctx>>,
         HashSet<cfg::Store<'src, 'ctx>>,
     )>,
-    pub nom_info: RefCell<Vec<NominalInfo<'ctx>>>,
+    pub nom_info: RefCell<slab::Slab<NominalInfo<'ctx>>>,
+    pub nom_stack: RefCell<Vec<NominalInfo<'ctx>>>,
     pub to_drop: RefCell<Vec<Vec<Value<'src, 'ctx>>>>,
     int_types: Cell<MaybeUninit<HashMap<(u16, bool), Symbol<'src, 'ctx>>>>,
     vars: Cell<Option<Pin<Box<VarMap<'src, 'ctx>>>>>,
@@ -68,8 +69,10 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             lex_scope: 0.into(),
+            values: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
+            nom_stack: RefCell::default(),
             to_drop: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some(
@@ -129,8 +132,10 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             priority: i32::MAX.into(),
             var_scope: 0.into(),
             lex_scope: 0.into(),
+            values: RefCell::default(),
             moves: RefCell::default(),
             nom_info: RefCell::default(),
+            nom_stack: RefCell::default(),
             to_drop: RefCell::default(),
             int_types: Cell::new(MaybeUninit::new(HashMap::new())),
             vars: Cell::new(Some(Box::pin(VarMap::new(Some(

@@ -14,3 +14,5 @@ owned_chars = "0.3.2"
 bstr = { version = "1.5.0", default-features = false, features = ["std"] }
 derive_more = "0.99.17"
 ref-cast = "1.0.20"
+dashmap = "5.5.0"
+slab = "0.4.8"
