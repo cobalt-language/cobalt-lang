@@ -414,7 +414,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             }
             Type::Array(b, Some(s)) => {
                 if let Some(BasicValueEnum::ArrayValue(comp_val)) = self.comp_val {
-                    if b.has_dtor(ctx) {
+                    if b.has_dtor() {
                         let llt = self.data_type.llvm_type(ctx).unwrap();
                         for n in 0..*s {
                             let val = ctx.builder.build_extract_value(comp_val, n, "").unwrap();
@@ -431,7 +431,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             }
             Type::Mut(b) => {
                 if let Some(BasicValueEnum::PointerValue(comp_val)) = self.comp_val {
-                    if b.has_dtor(ctx) {
+                    if b.has_dtor() {
                         if let Some(llt) = b.llvm_type(ctx) {
                             let val = ctx.builder.build_load(llt, comp_val, "");
                             let mut val = Value::compiled(val, b.as_ref().clone());
@@ -594,7 +594,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
                         gv.set_linkage(DLLImport);
                         var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
-                } else if ret.size(ctx) == SizeType::Static(0) {
+                } else if ret.size() == SizeType::Static(0) {
                     let mut good = true;
                     let ps = params
                         .iter()

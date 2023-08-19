@@ -10,4 +10,4 @@ impl Tuple {
         unsafe { std::mem::transmute(TUPLE_INTERN.intern_ref(types)) }
     }
 }
-static TUPLE_INTERN: Interner<Vec<TypeRef>> = Interner::new();
+static TUPLE_INTERN: Interner<Box<[TypeRef]>> = Interner::new();
