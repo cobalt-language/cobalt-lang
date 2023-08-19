@@ -176,3 +176,5 @@ pub use float::*;
 pub use int::*;
 pub use mem::*;
 pub use meta::*;
+
+use ref_cast::*;

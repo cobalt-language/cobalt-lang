@@ -1,12 +1,14 @@
-use crate::*;
-#[derive(Debug, PartialEq, Eq, Hash, Display)]
+use super::*;
+#[derive(Debug, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
 pub struct Int((u16, bool));
 impl Int {
+    #[ref_cast_custom]
+    fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
         static INTERN: Interner<(u16, bool)> = Interner::new();
-        unsafe { std::mem::transmute(INTERN.intern((bits, unsigned))) }
+        Self::from_ref(INTERN.intern((bits, unsigned)))
     }
     pub fn signed(bits: u16) -> &'static Self {
         Self::new(bits, false)
@@ -37,10 +39,10 @@ impl Type for Int {
 }
 #[derive(Debug, Display)]
 #[display(fmt = "<int literal>")]
-pub struct IntLiteral;
+pub struct IntLiteral(());
 impl IntLiteral {
     pub fn new() -> &'static Self {
-        static SELF: IntLiteral = Self;
+        static SELF: IntLiteral = Self(());
         &SELF
     }
 }

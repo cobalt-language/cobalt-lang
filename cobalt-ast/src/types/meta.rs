@@ -1,10 +1,10 @@
-use crate::*;
+use super::*;
 #[derive(Debug, Display)]
 #[display(fmt = "type")]
-pub struct TypeData;
+pub struct TypeData(());
 impl TypeData {
     pub fn new() -> &'static Self {
-        static SELF: TypeData = Self;
+        static SELF: TypeData = Self(());
         &SELF
     }
 }
@@ -24,10 +24,10 @@ impl Type for TypeData {
 }
 #[derive(Debug, Display)]
 #[display(fmt = "module")]
-pub struct Module;
+pub struct Module(());
 impl Module {
     pub fn new() -> &'static Self {
-        static SELF: Module = Self;
+        static SELF: Module = Self(());
         &SELF
     }
 }
@@ -47,10 +47,10 @@ impl Type for Module {
 }
 #[derive(Debug, Display)]
 #[display(fmt = "<error>")]
-pub struct Error;
+pub struct Error(());
 impl Error {
     pub fn new() -> &'static Self {
-        static SELF: Error = Self;
+        static SELF: Error = Self(());
         &SELF
     }
 }
@@ -70,10 +70,10 @@ impl Type for Error {
 }
 #[derive(Debug, Display)]
 #[display(fmt = "null")]
-pub struct Null;
+pub struct Null(());
 impl Null {
     pub fn new() -> &'static Self {
-        static SELF: Null = Self;
+        static SELF: Null = Self(());
         &SELF
     }
 }

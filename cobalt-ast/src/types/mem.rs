@@ -1,12 +1,14 @@
-use crate::*;
-#[derive(Debug, Display)]
+use super::*;
+#[derive(Debug, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
 pub struct Reference(TypeRef);
 impl Reference {
+    #[ref_cast_custom]
+    fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
         static INTERN: Interner<TypeRef> = Interner::new();
-        unsafe { std::mem::transmute(INTERN.intern(base)) }
+        Self::from_ref(INTERN.intern(base))
     }
     pub fn base(&self) -> TypeRef {
         self.0
@@ -26,14 +28,16 @@ impl Type for Reference {
         8
     }
 }
-#[derive(Debug, Display)]
+#[derive(Debug, Display, RefCastCustom)]
 #[display(fmt = "*{}", _0)]
 #[repr(transparent)]
 pub struct Pointer(TypeRef);
 impl Pointer {
+    #[ref_cast_custom]
+    fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
         static INTERN: Interner<TypeRef> = Interner::new();
-        unsafe { std::mem::transmute(INTERN.intern(base)) }
+        Self::from_ref(INTERN.intern(base))
     }
     pub fn base(&self) -> TypeRef {
         self.0
@@ -53,14 +57,16 @@ impl Type for Pointer {
         8
     }
 }
-#[derive(Debug, Display)]
+#[derive(Debug, Display, RefCastCustom)]
 #[display(fmt = "mut {}", _0)]
 #[repr(transparent)]
 pub struct Mut(TypeRef);
 impl Mut {
+    #[ref_cast_custom]
+    fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
         static INTERN: Interner<TypeRef> = Interner::new();
-        unsafe { std::mem::transmute(INTERN.intern(base)) }
+        Self::from_ref(INTERN.intern(base))
     }
     pub fn base(&self) -> TypeRef {
         self.0

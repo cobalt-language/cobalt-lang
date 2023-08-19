@@ -17,7 +17,6 @@ pub use context::*;
 use derive_more::*;
 pub use dottedname::*;
 use std::borrow::Cow;
-pub(crate) use types::make_id;
 pub use types::{NominalInfo, SizeType, Type, TypeRef};
 pub use value::*;
 pub use varmap::*;
