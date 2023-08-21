@@ -27,7 +27,7 @@ impl Int {
     }
 }
 impl Type for Int {
-    fn kind() -> usize {
+    fn kind() -> NonZeroU64 {
         make_id("int")
     }
     fn size(&self) -> SizeType {
@@ -35,6 +35,20 @@ impl Type for Int {
     }
     fn align(&self) -> u16 {
         1 << std::cmp::min(16 - self.0 .0.leading_zeros(), 6)
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        out.write_all(&self.0 .0.to_be_bytes())?;
+        out.write_all(std::slice::from_ref(&u8::from(self.0 .1)))
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        let mut arr = [0u8; 2];
+        buf.read_exact(&mut arr);
+        let bits = u16::from_be_bytes(arr);
+        buf.read_exact(&mut arr[..1]);
+        Ok(Self::new(bits, arr[0] != 0))
     }
 }
 #[derive(Debug, Display)]
@@ -47,7 +61,7 @@ impl IntLiteral {
     }
 }
 impl Type for IntLiteral {
-    fn kind() -> usize {
+    fn kind() -> NonZeroU64 {
         make_id("intlit")
     }
     fn size(&self) -> SizeType {
@@ -55,5 +69,14 @@ impl Type for IntLiteral {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new())
     }
 }

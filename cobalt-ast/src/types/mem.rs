@@ -15,7 +15,7 @@ impl Reference {
     }
 }
 impl Type for Reference {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -26,6 +26,15 @@ impl Type for Reference {
     }
     fn align(&self) -> u16 {
         8
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.0)
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        load_type(buf).map(|t| Self::new(t) as _)
     }
 }
 #[derive(Debug, Display, RefCastCustom)]
@@ -44,7 +53,7 @@ impl Pointer {
     }
 }
 impl Type for Pointer {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -55,6 +64,15 @@ impl Type for Pointer {
     }
     fn align(&self) -> u16 {
         8
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.0)
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        load_type(buf).map(|t| Self::new(t) as _)
     }
 }
 #[derive(Debug, Display, RefCastCustom)]
@@ -73,7 +91,7 @@ impl Mut {
     }
 }
 impl Type for Mut {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -84,5 +102,14 @@ impl Type for Mut {
     }
     fn align(&self) -> u16 {
         self.0.align()
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.0)
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        load_type(buf).map(|t| Self::new(t) as _)
     }
 }

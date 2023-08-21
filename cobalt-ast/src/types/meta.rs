@@ -9,7 +9,7 @@ impl TypeData {
     }
 }
 impl Type for TypeData {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -20,6 +20,15 @@ impl Type for TypeData {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new())
     }
 }
 #[derive(Debug, Display)]
@@ -32,7 +41,7 @@ impl Module {
     }
 }
 impl Type for Module {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -43,6 +52,15 @@ impl Type for Module {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new())
     }
 }
 #[derive(Debug, Display)]
@@ -55,7 +73,7 @@ impl Error {
     }
 }
 impl Type for Error {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -66,6 +84,15 @@ impl Type for Error {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new())
     }
 }
 #[derive(Debug, Display)]
@@ -78,7 +105,7 @@ impl Null {
     }
 }
 impl Type for Null {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized,
     {
@@ -89,5 +116,14 @@ impl Type for Null {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new())
     }
 }

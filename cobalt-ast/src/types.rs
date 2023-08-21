@@ -3,6 +3,7 @@ use inkwell::values::FunctionValue;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io::{self, BufRead, Read, Write};
+use std::num::NonZeroU64;
 use std::ptr::addr_of;
 use SizeType::*;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
@@ -56,10 +57,10 @@ impl std::ops::Add for SizeType {
     }
 }
 pub trait Type: Debug + Display + Send + Sync {
-    fn kind() -> usize
+    fn kind() -> NonZeroU64
     where
         Self: Sized;
-    fn self_kind(&self) -> usize {
+    fn self_kind(&self) -> NonZeroU64 {
         Self::self_kind(&self)
     }
     fn size(&self) -> SizeType;
@@ -71,6 +72,22 @@ pub trait Type: Debug + Display + Send + Sync {
         #![allow(unused_variables)]
         false
     }
+    fn save_header(out: &mut dyn Write) -> io::Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+    fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()>;
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized;
     unsafe fn downcast_impl(val: &dyn Type) -> &Self
     where
         Self: Sized,
@@ -102,6 +119,13 @@ impl Hash for dyn Type {
     }
 }
 pub type TypeRef = &'static dyn Type;
+pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
+    buf.write_all(&ty.self_kind().get().to_be_bytes())?;
+    ty.save(buf)
+}
+pub fn load_type(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+    todo!()
+}
 #[derive(Debug, Clone, Default)]
 pub struct NominalInfo<'ctx> {
     pub dtor: Option<FunctionValue<'ctx>>,
@@ -163,8 +187,9 @@ fn pad_bytes<const N: usize>(val: &[u8]) -> [u8; N] {
 /// generate a type id from a byte string
 /// truncate or zero pad to 8 bytes
 #[inline(always)]
-pub fn make_id(id: impl AsRef<[u8]>) -> usize {
-    usize::from_be_bytes(pad_bytes(id.as_ref()))
+pub fn make_id(id: impl AsRef<[u8]>) -> NonZeroU64 {
+    NonZeroU64::new(u64::from_be_bytes(pad_bytes(id.as_ref())))
+        .expect("ID string should not be empty")
 }
 
 pub mod agg;

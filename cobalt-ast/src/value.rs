@@ -170,7 +170,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                     String::from_utf8(body).expect("Inline assembly should be valid UTF-8"),
                 ))
             }
-            8 => Some(InterData::Type(Box::new(Type::load(buf)?))),
+            8 => Some(InterData::Type(types::load_type(buf)?)),
             9 => {
                 let mut out = HashMap::new();
                 let mut imports = vec![];

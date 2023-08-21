@@ -39,7 +39,7 @@ impl Float {
     }
 }
 impl Type for Float {
-    fn kind() -> usize {
+    fn kind() -> NonZeroU64 {
         make_id("float")
     }
     fn size(&self) -> SizeType {
@@ -56,5 +56,32 @@ impl Type for Float {
             FPType::F32 => 4,
             _ => 8,
         }
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        out.write_all(std::slice::from_ref(&match self.0 {
+            FPType::F16 => 0,
+            FPType::F32 => 1,
+            FPType::F64 => 2,
+            FPType::F128 => 3,
+        }))
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: Sized,
+    {
+        let mut c = 0u8;
+        buf.read_exact(std::slice::from_mut(&mut c))?;
+        Ok(Self::new(match c {
+            0 => FPType::F16,
+            1 => FPType::F32,
+            2 => FPType::F64,
+            3 => FPType::F128,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("expected 0, 1, 2, or 3 for float type, got {c}"),
+                ))
+            }
+        }))
     }
 }
