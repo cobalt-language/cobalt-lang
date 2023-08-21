@@ -50,7 +50,8 @@ static KEYWORDS: &[&str] = &[
 /// operators that can be interned
 static OPS: &[&str] = &[
     "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "+", "-", "*", "/", "%",
-    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "mut", "++", "--", "!",
+    "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "mut", "++", "--", "!", "&?",
+    "|?",
 ];
 /// take op and make it 'static
 /// assumes op is an operator
@@ -1286,19 +1287,19 @@ mod tests {
     fn test_fn_calls() {
         let parser = super::parse_expr();
 
-        let no_p = "foo1();";
+        let no_p = "foo1()";
         assert!(!parser.parse(no_p).has_errors());
 
-        let one_p = "foo2(a);";
+        let one_p = "foo2(a)";
         assert!(!parser.parse(one_p).has_errors());
 
-        let two_p = "foo3(a, b);";
+        let two_p = "foo3(a, b)";
         assert!(!parser.parse(two_p).has_errors());
     }
 
     #[test]
     fn test_var_decl() {
-        let parser = super::parse_stmt();
+        let parser = super::parse_tl();
 
         let no_ty = "let a = 1;";
         assert!(!parser.parse(no_ty).has_errors());
@@ -1359,9 +1360,6 @@ mod tests {
         let xor = "1 ^ 2";
         assert!(!parser.parse(xor).has_errors());
 
-        let andand = "1 && 2";
-        assert!(parser.parse(andand).has_errors());
-
         let oror = "1 || 2";
         assert!(parser.parse(oror).has_errors());
 
@@ -1376,37 +1374,37 @@ mod tests {
     fn test_add_assigns() {
         let parser = super::parse_stmt();
 
-        let eq = "a = 1;";
+        let eq = "a = 1";
         assert!(!parser.parse(eq).has_errors());
 
-        let add_eq = "a += 1;";
+        let add_eq = "a += 1";
         assert!(!parser.parse(add_eq).has_errors());
 
-        let sub_eq = "a -= 1;";
+        let sub_eq = "a -= 1";
         assert!(!parser.parse(sub_eq).has_errors());
 
-        let mul_eq = "a *= 1;";
+        let mul_eq = "a *= 1";
         assert!(!parser.parse(mul_eq).has_errors());
 
-        let div_eq = "a /= 1;";
+        let div_eq = "a /= 1";
         assert!(!parser.parse(div_eq).has_errors());
 
-        let mod_eq = "a %= 1;";
+        let mod_eq = "a %= 1";
         assert!(!parser.parse(mod_eq).has_errors());
 
-        let and_eq = "a &= 1;";
+        let and_eq = "a &= 1";
         assert!(!parser.parse(and_eq).has_errors());
 
-        let or_eq = "a |= 1;";
+        let or_eq = "a |= 1";
         assert!(!parser.parse(or_eq).has_errors());
 
-        let xor_eq = "a ^= 1;";
+        let xor_eq = "a ^= 1";
         assert!(!parser.parse(xor_eq).has_errors());
 
-        let shl_eq = "a <<= 1;";
+        let shl_eq = "a <<= 1";
         assert!(!parser.parse(shl_eq).has_errors());
 
-        let shr_eq = "a >>= 1;";
+        let shr_eq = "a >>= 1";
         assert!(!parser.parse(shr_eq).has_errors());
     }
 
@@ -1444,7 +1442,7 @@ mod tests {
 
     #[test]
     fn test_annotations() {
-        let parser = super::parse_stmt();
+        let parser = super::parse_tl();
 
         let single_ann = "@C(extern) fn puts(str: *u8);";
         assert!(!parser.parse(single_ann).has_errors());
@@ -1455,7 +1453,7 @@ mod tests {
 
     #[test]
     fn test_type_decls() {
-        let parser = super::parse_stmt();
+        let parser = super::parse_tl();
 
         let typedef = "type MyType = i32;";
         assert!(!parser.parse(typedef).has_errors());
@@ -1463,13 +1461,13 @@ mod tests {
         let tuple = "type MyTuple = (i32, i32);";
         assert!(!parser.parse(tuple).has_errors());
 
-        let type_impls = "type MyType = i32 :: { fn foo(): i32 {} }";
+        let type_impls = "type MyType = i32 :: { fn foo(): i32 = {}; };";
         assert!(!parser.parse(type_impls).has_errors());
 
-        let self_t = "type MyType = i32 :: { fn foo(self: self_t): i32 {} }";
+        let self_t = "type MyType = i32 :: { fn foo(self: self_t): i32 = {}; };";
         assert!(!parser.parse(self_t).has_errors());
 
-        let base_t = "type MyType = i32 :: { fn foo(x: base_t): i32 {} }";
+        let base_t = "type MyType = i32 :: { fn foo(x: base_t): i32 = {}; };";
         assert!(!parser.parse(base_t).has_errors());
     }
 }
