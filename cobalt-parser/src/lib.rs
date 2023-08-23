@@ -1,3 +1,5 @@
+mod tokenizer;
+
 use chumsky::{error::RichReason, prelude::*};
 use cobalt_ast::{ast::*, *};
 use cobalt_errors::miette::{LabeledSpan, MietteDiagnostic, SourceSpan};
