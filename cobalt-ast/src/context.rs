@@ -82,7 +82,6 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                     (
                         "true",
                         Value::interpreted(
-                            unreachable_span(),
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
                             types::Int::bool(),
@@ -91,45 +90,23 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                     (
                         "false",
                         Value::interpreted(
-                            unreachable_span(),
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
                             types::Int::bool(),
                         ),
                     ),
-                    (
-                        "bool",
-                        Value::make_type(unreachable_span(), types::Int::bool()),
-                    ),
-                    (
-                        "f16",
-                        Value::make_type(unreachable_span(), types::Float::f16()),
-                    ),
-                    (
-                        "f32",
-                        Value::make_type(unreachable_span(), types::Float::f32()),
-                    ),
-                    (
-                        "f64",
-                        Value::make_type(unreachable_span(), types::Float::f64()),
-                    ),
-                    (
-                        "f128",
-                        Value::make_type(unreachable_span(), types::Float::f128()),
-                    ),
+                    ("bool", Value::make_type(types::Int::bool())),
+                    ("f16", Value::make_type(types::Float::f16())),
+                    ("f32", Value::make_type(types::Float::f32())),
+                    ("f64", Value::make_type(types::Float::f64())),
+                    ("f128", Value::make_type(types::Float::f128())),
                     (
                         "isize",
-                        Value::make_type(
-                            unreachable_span(),
-                            types::Int::signed(flags.word_size * 8),
-                        ),
+                        Value::make_type(types::Int::signed(flags.word_size * 8)),
                     ),
                     (
                         "usize",
-                        Value::make_type(
-                            unreachable_span(),
-                            types::Int::unsigned(flags.word_size * 8),
-                        ),
+                        Value::make_type(types::Int::unsigned(flags.word_size * 8)),
                     ),
                 ]
                 .into_iter()
@@ -242,9 +219,9 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             let mut val = self.int_types.replace(MaybeUninit::uninit()).assume_init();
             let out = std::mem::transmute::<&mut _, &'ctx _>(match val.entry((size, unsigned)) {
                 Entry::Occupied(x) => x.into_mut(),
-                Entry::Vacant(x) => x.insert(
-                    Value::make_type(unreachable_span(), types::Int::new(size, unsigned)).into(),
-                ),
+                Entry::Vacant(x) => {
+                    x.insert(Value::make_type(types::Int::new(size, unsigned)).into())
+                }
             });
             self.int_types.set(MaybeUninit::new(val));
             out

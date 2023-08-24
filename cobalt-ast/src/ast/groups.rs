@@ -16,7 +16,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -104,7 +104,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -152,7 +152,7 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

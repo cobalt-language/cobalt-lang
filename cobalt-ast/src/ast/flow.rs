@@ -28,7 +28,7 @@ impl<'src> AST<'src> for IfAST<'src> {
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -41,14 +41,14 @@ impl<'src> AST<'src> for IfAST<'src> {
         let cv = ops::expl_convert(
             self.cond.loc(),
             (cond, None),
-            (Type::Int(1, false), None),
+            (types::Int::bool(), None),
             ctx,
         )
         .unwrap_or_else(|e| {
             errs.push(e);
             Value::compiled(
                 ctx.context.bool_type().const_int(0, false).into(),
-                Type::Int(1, false),
+                types::Int::bool(),
             )
         });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
@@ -166,7 +166,7 @@ impl<'src> AST<'src> for WhileAST<'src> {
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.body.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -185,12 +185,12 @@ impl<'src> AST<'src> for WhileAST<'src> {
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
             let val =
-                ops::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx)
+                ops::expl_convert(self.cond.loc(), (c, None), (types::Int::bool(), None), ctx)
                     .unwrap_or_else(|e| {
                         errs.push(e);
                         Value::compiled(
                             ctx.context.bool_type().const_int(0, false).into(),
-                            Type::Int(1, false),
+                            types::Int::bool(),
                         )
                     })
                     .into_value(ctx)

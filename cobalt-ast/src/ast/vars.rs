@@ -142,12 +142,12 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             let t = ops::impl_convert(
                 t.loc(),
                 (t.codegen_errs(ctx, &mut errs), None),
-                (Type::TypeData, None),
+                (types::TypeData::new(), None),
                 ctx,
             )
             .ok()
-            .and_then(Value::into_type)
-            .unwrap_or(Type::Error);
+            .and_then(Value::as_type)
+            .unwrap_or(types::Error::new());
             ctx.is_const.set(oic);
             t
         }) {
@@ -189,7 +189,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             )
         });
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -413,19 +413,19 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     let t = ops::impl_convert(
                         t.loc(),
                         (t.codegen_errs(ctx, &mut errs), None),
-                        (Type::TypeData, None),
+                        (types::TypeData::new(), None),
                         ctx,
                     )
                     .map_or_else(
                         |e| {
                             errs.push(e);
-                            Type::Error
+                            types::Error::new()
                         },
                         |v| {
                             if let Some(InterData::Type(t)) = v.inter_val {
                                 *t
                             } else {
-                                Type::Error
+                                types::Error::new()
                             }
                         },
                     );
@@ -466,7 +466,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                         PointerValue(gv.as_pointer_value())
                                     })
                                     .or_else(|| {
-                                        if dt != Type::Error {
+                                        if dt != types::Error::new() {
                                             errs.push(CobaltError::TypeIsConstOnly {
                                                 ty: dt.to_string(),
                                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -506,19 +506,19 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     let t = ops::impl_convert(
                         t.loc(),
                         (t.codegen_errs(ctx, &mut errs), None),
-                        (Type::TypeData, None),
+                        (types::TypeData::new(), None),
                         ctx,
                     )
                     .map_or_else(
                         |e| {
                             errs.push(e);
-                            Type::Error
+                            types::Error::new()
                         },
                         |v| {
                             if let Some(InterData::Type(t)) = v.inter_val {
                                 *t
                             } else {
-                                Type::Error
+                                types::Error::new()
                             }
                         },
                     );
@@ -571,7 +571,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     }
                 } else {
                     val.inter_val = None;
-                    if dt != Type::Error {
+                    if dt != types::Error::new() {
                         errs.push(CobaltError::TypeIsConstOnly {
                             ty: dt.to_string(),
                             loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -610,14 +610,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         let t = ops::impl_convert(
                             t.loc(),
                             (t.codegen_errs(ctx, &mut errs), None),
-                            (Type::TypeData, None),
+                            (types::TypeData::new(), None),
                             ctx,
                         )
-                        .map_or(Type::Error, |v| {
+                        .map_or(types::Error::new(), |v| {
                             if let Some(InterData::Type(t)) = v.inter_val {
                                 *t
                             } else {
-                                Type::Error
+                                types::Error::new()
                             }
                         });
                         ctx.is_const.set(oic);
@@ -656,19 +656,19 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         let t = ops::impl_convert(
                             t.loc(),
                             (t.codegen_errs(ctx, &mut errs), None),
-                            (Type::TypeData, None),
+                            (types::TypeData::new(), None),
                             ctx,
                         )
                         .map_or_else(
                             |e| {
                                 errs.push(e);
-                                Type::Error
+                                types::Error::new()
                             },
                             |v| {
                                 if let Some(InterData::Type(t)) = v.inter_val {
                                     *t
                                 } else {
-                                    Type::Error
+                                    types::Error::new()
                                 }
                             },
                         );
@@ -764,7 +764,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                 gv.delete();
                                 f.delete();
                             }
-                            if dt != Type::Error {
+                            if dt != types::Error::new() {
                                 errs.push(CobaltError::TypeIsConstOnly {
                                     ty: dt.to_string(),
                                     loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -782,7 +782,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         }
                     } else {
                         let old_scope = ctx.push_scope(&self.name);
-                        if dt != Type::Error {
+                        if dt != types::Error::new() {
                             errs.push(CobaltError::TypeIsConstOnly {
                                 ty: dt.to_string(),
                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -795,14 +795,14 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             let t = ops::impl_convert(
                                 t.loc(),
                                 (t.codegen_errs(ctx, &mut errs), None),
-                                (Type::TypeData, None),
+                                (types::TypeData::new(), None),
                                 ctx,
                             )
-                            .map_or(Type::Error, |v| {
+                            .map_or(types::Error::new(), |v| {
                                 if let Some(InterData::Type(t)) = v.inter_val {
                                     *t
                                 } else {
-                                    Type::Error
+                                    types::Error::new()
                                 }
                             });
                             ctx.is_const.set(oic);
@@ -869,19 +869,19 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 let t = ops::impl_convert(
                     t.loc(),
                     (t.codegen_errs(ctx, &mut errs), None),
-                    (Type::TypeData, None),
+                    (types::TypeData::new(), None),
                     ctx,
                 )
                 .map_or_else(
                     |e| {
                         errs.push(e);
-                        Type::Error
+                        types::Error::new()
                     },
                     |v| {
                         if let Some(InterData::Type(t)) = v.inter_val {
                             *t
                         } else {
-                            Type::Error
+                            types::Error::new()
                         }
                     },
                 );
@@ -949,7 +949,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     )
                 })
             } else {
-                if dt != Type::Error {
+                if dt != types::Error::new() {
                     errs.push(CobaltError::TypeIsConstOnly {
                         ty: dt.to_string(),
                         loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -1130,7 +1130,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         });
         ctx.prepass.set(pp);
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -1238,19 +1238,19 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
             let t = ops::impl_convert(
                 t.loc(),
                 (t.codegen_errs(ctx, &mut errs), None),
-                (Type::TypeData, None),
+                (types::TypeData::new(), None),
                 ctx,
             )
             .map_or_else(
                 |e| {
                     errs.push(e);
-                    Type::Error
+                    types::Error::new()
                 },
                 |v| {
                     if let Some(InterData::Type(t)) = v.inter_val {
                         *t
                     } else {
-                        Type::Error
+                        types::Error::new()
                     }
                 },
             );
@@ -1437,7 +1437,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(Type::Null).freeze(self.loc).into(),
+                Value::make_type(types::Null::new()).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
@@ -1451,7 +1451,12 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             if !noms.contains_key(&mangled) {
                 noms.insert(
                     mangled.clone(),
-                    (Type::Null, true, Default::default(), Default::default()),
+                    (
+                        types::Null::new(),
+                        true,
+                        Default::default(),
+                        Default::default(),
+                    ),
                 );
             }
         }
@@ -1546,7 +1551,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(Type::Null).freeze(self.loc).into(),
+                Value::make_type(types::Null::new()).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
@@ -1560,7 +1565,12 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             if !noms.contains_key(&mangled) {
                 noms.insert(
                     mangled.clone(),
-                    (Type::Null, true, Default::default(), Default::default()),
+                    (
+                        types::Null::new(),
+                        true,
+                        Default::default(),
+                        Default::default(),
+                    ),
                 );
             }
         }
@@ -1665,12 +1675,12 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let ty = ops::impl_convert(
             unreachable_span(),
             (self.val.const_codegen(ctx).0, None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .ok()
-        .and_then(Value::into_type)
-        .unwrap_or(Type::Error);
+        .and_then(Value::as_type)
+        .unwrap_or(types::Error::new());
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
@@ -1700,7 +1710,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         });
         noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -1863,19 +1873,19 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let ty = ops::impl_convert(
             self.val.loc(),
             (self.val.codegen_errs(ctx, &mut errs), None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .map_or_else(
             |e| {
                 errs.push(e);
-                Type::Error
+                types::Error::new()
             },
             |v| {
                 if let Some(InterData::Type(t)) = v.inter_val {
                     *t
                 } else {
-                    Type::Error
+                    types::Error::new()
                 }
             },
         );
@@ -2025,7 +2035,7 @@ impl<'src> AST<'src> for VarGetAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

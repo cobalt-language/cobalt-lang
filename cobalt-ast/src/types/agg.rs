@@ -37,8 +37,8 @@ impl Tuple {
     #[inline(always)]
     #[allow(clippy::borrowed_box)]
     fn from_ref(types: &Box<[TypeRef]>) -> &Self;
-    pub fn new(types: Box<[TypeRef]>) -> &'static Self {
-        Self::from_ref(TUPLE_INTERN.intern(types))
+    pub fn new(types: impl Into<Box<[TypeRef]>>) -> &'static Self {
+        Self::from_ref(TUPLE_INTERN.intern(types.into()))
     }
     pub fn new_ref(types: &[TypeRef]) -> &'static Self {
         Self::from_ref(TUPLE_INTERN.intern_ref(types))
@@ -67,9 +67,7 @@ impl Type for Tuple {
     }
     fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new(
-            std::iter::from_fn(|| load_type_opt(buf).transpose())
-                .collect::<Result<Vec<_>, _>>()?
-                .into(),
+            std::iter::from_fn(|| load_type_opt(buf).transpose()).collect::<Result<Vec<_>, _>>()?,
         ))
     }
 }
@@ -88,19 +86,7 @@ impl Struct {
             .into_iter()
             .map(|(k, v)| (k.into(), v))
             .collect::<Vec<_>>();
-        use std::cmp::Ordering;
-        vec.sort_by(|(ln, lt), (rn, rt)| match lt.align().cmp(&rt.align()) {
-            Ordering::Less => Ordering::Greater,
-            Ordering::Greater => Ordering::Less,
-            Ordering::Equal => match (lt.size(), rt.size()) {
-                (SizeType::Meta, _)
-                | (_, SizeType::Meta)
-                | (SizeType::Dynamic, SizeType::Dynamic) => ln.cmp(rn),
-                (SizeType::Static(ls), SizeType::Static(rs)) => ls.cmp(&rs),
-                (SizeType::Static(_), SizeType::Dynamic) => Ordering::Less,
-                (SizeType::Dynamic, SizeType::Static(_)) => Ordering::Greater,
-            },
-        });
+        vec.sort_by(|(ln, lt), (rn, rt)| Self::sort_fields((&**ln, *lt), (&**rn, *rt)));
         let (types, fields): (Vec<_>, _) = vec
             .into_iter()
             .enumerate()
@@ -108,7 +94,10 @@ impl Struct {
             .unzip();
         Self::from_ref(STRUCT_INTERN.intern((types.into(), fields)))
     }
-    fn new_arranged(
+    /// Create a struct assuming the fields are already in the correct order
+    /// # Safety
+    /// the fields must be in the correct order
+    pub unsafe fn new_arranged(
         types: impl Into<Box<[TypeRef]>>,
         fields: BTreeMap<Box<str>, usize>,
     ) -> &'static Self {
@@ -121,6 +110,21 @@ impl Struct {
     #[inline(always)]
     pub fn fields(&self) -> &BTreeMap<Box<str>, usize> {
         &self.0 .1
+    }
+    pub fn sort_fields((ln, lt): (&str, TypeRef), (rn, rt): (&str, TypeRef)) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        match lt.align().cmp(&rt.align()) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Greater => Ordering::Less,
+            Ordering::Equal => match (lt.size(), rt.size()) {
+                (SizeType::Meta, _)
+                | (_, SizeType::Meta)
+                | (SizeType::Dynamic, SizeType::Dynamic) => ln.cmp(rn),
+                (SizeType::Static(ls), SizeType::Static(rs)) => ls.cmp(&rs),
+                (SizeType::Static(_), SizeType::Dynamic) => Ordering::Less,
+                (SizeType::Dynamic, SizeType::Static(_)) => Ordering::Greater,
+            },
+        }
     }
 }
 impl Display for Struct {
@@ -180,6 +184,82 @@ impl Type for Struct {
         for n in 0..len {
             fields.insert(serial_utils::load_str(buf)?.into(), n as _);
         }
-        Ok(Self::new_arranged(types, fields))
+        unsafe { Ok(Self::new_arranged(types, fields)) }
+    }
+}
+
+#[derive(Debug, Display, RefCastCustom)]
+#[repr(transparent)]
+#[display(fmt = "{_0}[]")]
+pub struct UnsizedArray(TypeRef);
+impl UnsizedArray {
+    pub const KIND: NonZeroU64 = make_id(b"uarr");
+    #[ref_cast_custom]
+    #[inline(always)]
+    fn from_ref(inner: &TypeRef) -> &Self;
+    pub fn new(elem: TypeRef) -> &'static Self {
+        static INTERN: Interner<TypeRef> = Interner::new();
+        Self::from_ref(INTERN.intern(elem))
+    }
+    pub fn elem(&self) -> TypeRef {
+        self.0
+    }
+}
+impl Type for UnsizedArray {
+    fn kind() -> NonZeroU64 {
+        Self::KIND
+    }
+    fn size(&self) -> SizeType {
+        SizeType::Dynamic
+    }
+    fn align(&self) -> u16 {
+        self.0.align()
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.0)
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+        Ok(Self::new(load_type(buf)?))
+    }
+}
+#[derive(Debug, Display, RefCastCustom)]
+#[repr(transparent)]
+#[display(fmt = "{}[{}]", "_0.0", "_0.1")]
+pub struct SizedArray((TypeRef, u32));
+impl SizedArray {
+    pub const KIND: NonZeroU64 = make_id(b"sarr");
+    #[ref_cast_custom]
+    #[inline(always)]
+    fn from_ref(inner: &(TypeRef, u32)) -> &Self;
+    pub fn new(elem: TypeRef, len: u32) -> &'static Self {
+        static INTERN: Interner<(TypeRef, u32)> = Interner::new();
+        Self::from_ref(INTERN.intern((elem, len)))
+    }
+    pub fn elem(&self) -> TypeRef {
+        self.0 .0
+    }
+    pub fn len(&self) -> u32 {
+        self.0 .1
+    }
+}
+impl Type for SizedArray {
+    fn kind() -> NonZeroU64 {
+        Self::KIND
+    }
+    fn size(&self) -> SizeType {
+        self.elem().size().map_static(|l| l * self.len())
+    }
+    fn align(&self) -> u16 {
+        self.elem().align()
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.elem())?;
+        out.write_all(&self.len().to_be_bytes())
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+        let elem = load_type(buf)?;
+        let mut arr = [0u8; 4];
+        buf.read_exact(&mut arr)?;
+        Ok(Self::new(elem, u32::from_be_bytes(arr)))
     }
 }

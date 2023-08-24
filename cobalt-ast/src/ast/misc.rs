@@ -19,31 +19,31 @@ impl<'src> AST<'src> for CastAST<'src> {
     fn nodes(&self) -> usize {
         self.val.nodes() + self.target.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (val, mut errs) = self.val.codegen(ctx);
-        if val.data_type == Type::Error {
+        if val.data_type == types::Error::new() {
             return (Value::error(), errs);
         }
         let oic = ctx.is_const.replace(true);
         let t = ops::impl_convert(
             self.target.loc(),
             (self.target.codegen_errs(ctx, &mut errs), None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .map_or_else(
             |e| {
                 errs.push(e);
-                Type::Error
+                types::Error::new()
             },
             |v| {
                 if let Some(InterData::Type(t)) = v.inter_val {
                     *t
                 } else {
-                    Type::Error
+                    types::Error::new()
                 }
             },
         );
@@ -91,31 +91,31 @@ impl<'src> AST<'src> for BitCastAST<'src> {
     fn nodes(&self) -> usize {
         self.val.nodes() + self.target.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (mut val, mut errs) = self.val.codegen(ctx);
-        if val.data_type == Type::Error {
+        if val.data_type == types::Error::new() {
             return (Value::error(), errs);
         }
         let oic = ctx.is_const.replace(true);
         let t = ops::impl_convert(
             self.target.loc(),
             (self.target.codegen_errs(ctx, &mut errs), None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .map_or_else(
             |e| {
                 errs.push(e);
-                Type::Error
+                types::Error::new()
             },
             |v| {
                 if let Some(InterData::Type(t)) = v.inter_val {
                     *t
                 } else {
-                    Type::Error
+                    types::Error::new()
                 }
             },
         );
@@ -142,7 +142,7 @@ impl<'src> AST<'src> for BitCastAST<'src> {
                 }
             }
             _ => {
-                if t == Type::Error || val.data_type == Type::Error {
+                if t == types::Error::new() || val.data_type == types::Error::new() {
                     errs.push(CobaltError::UnsizedBitCast {
                         loc: self.loc,
                         from_ty: val.data_type.to_string(),
@@ -204,7 +204,7 @@ impl<'src> AST<'src> for NullAST {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -232,7 +232,7 @@ impl<'src> AST<'src> for ErrorAST {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -260,11 +260,11 @@ impl<'src> AST<'src> for ErrorTypeAST {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        (Value::make_type(Type::Error), vec![])
+        (Value::make_type(types::Error::new()), vec![])
     }
     fn print_impl(
         &self,
@@ -288,11 +288,11 @@ impl<'src> AST<'src> for TypeLiteralAST {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        (Value::make_type(Type::TypeData), vec![])
+        (Value::make_type(types::TypeData::new()), vec![])
     }
     fn print_impl(
         &self,
@@ -323,7 +323,7 @@ impl<'src> AST<'src> for ParenAST<'src> {
     fn is_const(&self) -> bool {
         self.base.is_const()
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

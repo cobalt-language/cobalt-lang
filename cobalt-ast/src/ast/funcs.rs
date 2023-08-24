@@ -69,12 +69,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let mut ret = ops::impl_convert(
             unreachable_span(),
             (self.ret.codegen(ctx).0, None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .ok()
-        .and_then(Value::into_type)
-        .unwrap_or(Type::Error);
+        .and_then(Value::as_type)
+        .unwrap_or(types::Error::new());
         while let Type::Mut(b) = ret {
             ret = *b
         }
@@ -87,12 +87,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         let mut val = ops::impl_convert(
                             unreachable_span(),
                             (ty.codegen(ctx).0, None),
-                            (Type::TypeData, None),
+                            (types::TypeData::new(), None),
                             ctx,
                         )
                         .ok()
-                        .and_then(Value::into_type)
-                        .unwrap_or(Type::Error);
+                        .and_then(Value::as_type)
+                        .unwrap_or(types::Error::new());
                         while let Type::Mut(b) = val {
                             val = *b
                         }
@@ -513,7 +513,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             unreachable!()
         };
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -522,15 +522,15 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let mut ret = ops::impl_convert(
             self.ret.loc(),
             (self.ret.codegen_errs(ctx, &mut errs), None),
-            (Type::TypeData, None),
+            (types::TypeData::new(), None),
             ctx,
         )
         .map_or_else(
             |e| {
                 errs.push(e);
-                Type::Error
+                types::Error::new()
             },
-            |v| v.into_type().unwrap_or(Type::Error),
+            |v| v.as_type().unwrap_or(types::Error::new()),
         );
         if let Type::Mut(b) = ret {
             errs.push(CobaltError::ReturnCantBeMut {
@@ -550,15 +550,15 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         let mut val = ops::impl_convert(
                             ty.loc(),
                             (ty.codegen_errs(ctx, &mut errs), None),
-                            (Type::TypeData, None),
+                            (types::TypeData::new(), None),
                             ctx,
                         )
                         .map_or_else(
                             |e| {
                                 errs.push(e);
-                                Type::Error
+                                types::Error::new()
                             },
-                            |v| v.into_type().unwrap_or(Type::Error),
+                            |v| v.as_type().unwrap_or(types::Error::new()),
                         );
                         if let Type::Mut(b) = val {
                             errs.push(CobaltError::ReturnCantBeMut { loc: ty.loc() });
@@ -886,7 +886,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     self_t: self_t.to_string(),
                                     param: None,
                                 });
-                                params.push((Type::Null, false));
+                                params.push((types::Null::new(), false));
                             } else {
                                 let s = self_t.to_string();
                                 if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
@@ -945,7 +945,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     self_t: self_t.to_string(),
                                     param: None,
                                 });
-                                params.push((Type::Null, false));
+                                params.push((types::Null::new(), false));
                             } else {
                                 let s = self_t.to_string();
                                 if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
@@ -1530,7 +1530,7 @@ impl<'src> AST<'src> for CallAST<'src> {
     fn nodes(&self) -> usize {
         self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -1586,7 +1586,7 @@ impl<'src> AST<'src> for IntrinsicAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

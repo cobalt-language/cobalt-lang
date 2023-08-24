@@ -23,23 +23,19 @@ impl<'src> AST<'src> for BinOpAST<'src> {
     fn nodes(&self) -> usize {
         self.lhs.nodes() + self.rhs.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         match self.op {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond = ops::expl_convert(
-                    self.lhs.loc(),
-                    (lhs, None),
-                    (Type::Int(1, false), None),
-                    ctx,
-                )
-                .unwrap_or_else(|e| {
-                    errs.push(e);
-                    Value::error()
-                });
+                let cond =
+                    ops::expl_convert(self.lhs.loc(), (lhs, None), (types::Int::bool(), None), ctx)
+                        .unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error()
+                        });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
                     let f = bb.get_parent().unwrap();
@@ -50,13 +46,13 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
-                    if rhs.data_type == Type::IntLiteral {
-                        rhs.data_type = Type::Int(64, false);
+                    if rhs.data_type.self_kind() == types::IntLiteral::KIND {
+                        rhs.data_type = types::Int::unsigned(64);
                     }
                     let rdt = rhs.data_type.clone();
                     let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(
                         self.rhs.loc(),
-                        (Value::metaval(InterData::Int(0), Type::Int(1, false)), None),
+                        (Value::metaval(InterData::Int(0), types::Int::bool()), None),
                         (rhs.data_type.clone(), None),
                         ctx,
                     ) {
@@ -83,7 +79,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                         match ops::expl_convert(
                             self.rhs.loc(),
                             (rhs, None),
-                            (Type::Int(1, false), None),
+                            (types::Int::bool(), None),
                             ctx,
                         ) {
                             Ok(rhv) => (
@@ -118,16 +114,12 @@ impl<'src> AST<'src> for BinOpAST<'src> {
             }
             "|?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond = ops::expl_convert(
-                    self.lhs.loc(),
-                    (lhs, None),
-                    (Type::Int(1, false), None),
-                    ctx,
-                )
-                .unwrap_or_else(|e| {
-                    errs.push(e);
-                    Value::error()
-                });
+                let cond =
+                    ops::expl_convert(self.lhs.loc(), (lhs, None), (types::Int::bool(), None), ctx)
+                        .unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error()
+                        });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
                     let f = bb.get_parent().unwrap();
@@ -138,13 +130,13 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
-                    if rhs.data_type == Type::IntLiteral {
-                        rhs.data_type = Type::Int(64, false);
+                    if rhs.data_type.self_kind() == types::IntLiteral::KIND {
+                        rhs.data_type = types::Int::signed(64);
                     }
                     let rdt = rhs.data_type.clone();
                     let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(
                         self.rhs.loc(),
-                        (Value::metaval(InterData::Int(1), Type::Int(1, false)), None),
+                        (Value::metaval(InterData::Int(1), types::Int::bool()), None),
                         (rhs.data_type.clone(), None),
                         ctx,
                     ) {
@@ -171,7 +163,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                         match ops::expl_convert(
                             self.rhs.loc(),
                             (rhs, None),
-                            (Type::Int(1, false), None),
+                            (types::Int::bool(), None),
                             ctx,
                         ) {
                             Ok(rhv) => (
@@ -207,7 +199,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
             x => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
                 let rhs = self.rhs.codegen_errs(ctx, &mut errs);
-                if lhs.data_type == Type::Error || rhs.data_type == Type::Error {
+                if lhs.data_type == types::Error::new() || rhs.data_type == types::Error::new() {
                     return (Value::error(), errs);
                 }
                 (
@@ -258,12 +250,12 @@ impl<'src> AST<'src> for PostfixAST<'src> {
     fn nodes(&self) -> usize {
         self.val.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (v, mut errs) = self.val.codegen(ctx);
-        if v.data_type == Type::Error {
+        if v.data_type == types::Error::new() {
             return (Value::error(), errs);
         }
         (
@@ -302,12 +294,12 @@ impl<'src> AST<'src> for PrefixAST<'src> {
     fn nodes(&self) -> usize {
         self.val.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (v, mut errs) = self.val.codegen(ctx);
-        if v.data_type == Type::Error {
+        if v.data_type == types::Error::new() {
             return (Value::error(), errs);
         }
         (
@@ -346,13 +338,13 @@ impl<'src> AST<'src> for SubAST<'src> {
     fn nodes(&self) -> usize {
         self.target.nodes() + self.index.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (target, mut errs) = self.target.codegen(ctx);
         let index = self.index.codegen_errs(ctx, &mut errs);
-        if target.data_type == Type::Error || index.data_type == Type::Error {
+        if target.data_type == types::Error::new() || index.data_type == types::Error::new() {
             return (Value::error(), errs);
         }
         (
@@ -392,7 +384,7 @@ impl<'src> AST<'src> for DotAST<'src> {
     fn nodes(&self) -> usize {
         self.obj.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -436,7 +428,7 @@ impl<'src> AST<'src> for DotAST<'src> {
                 v
             }
             Value {
-                data_type: Type::TypeData,
+                data_type: types::TypeData::new(),
                 inter_val: Some(InterData::Type(t)),
                 ..
             } => {

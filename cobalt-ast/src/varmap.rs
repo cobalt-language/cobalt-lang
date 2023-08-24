@@ -198,9 +198,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         while idx + 1 < name.ids.len() {
             if let Some((x, _, _)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| {
-                    Value::empty_mod(unreachable_span(), name.start(idx + 1).to_string()).into()
-                })
+                .or_insert_with(|| Value::empty_mod(name.start(idx + 1).to_string()).into())
                 .0
                 .as_mod_mut()
             {
@@ -253,9 +251,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         while idx + 1 < name.ids.len() {
             if let Some((x, _, n)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| {
-                    Value::empty_mod(unreachable_span(), old + "." + &name.ids[idx].0).into()
-                })
+                .or_insert_with(|| Value::empty_mod(old + "." + &name.ids[idx].0).into())
                 .0
                 .as_mod_mut()
             {
@@ -264,7 +260,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             } else {
                 return Err(RedefVariable::NotAModule(
                     idx,
-                    Value::make_mod(unreachable_span(), sym.0, sym.1, mod_name).into(),
+                    Value::make_mod(sym.0, sym.1, mod_name).into(),
                 ));
             }
             idx += 1;
@@ -279,12 +275,12 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
                     Err(RedefVariable::AlreadyExists(
                         idx,
                         x.get_mut().1.loc,
-                        Value::make_mod(unreachable_span(), sym.0, sym.1, mod_name).into(),
+                        Value::make_mod(sym.0, sym.1, mod_name).into(),
                     ))
                 }
             }
             Entry::Vacant(x) => Ok(x
-                .insert(Value::make_mod(unreachable_span(), sym.0, sym.1, mod_name).into())
+                .insert(Value::make_mod(sym.0, sym.1, mod_name).into())
                 .as_mod()
                 .unwrap()),
         }
@@ -313,9 +309,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         while idx + 1 < name.ids.len() {
             if let Some((x, _, n)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| {
-                    Value::empty_mod(unreachable_span(), old + "." + &name.ids[idx].0).into()
-                })
+                .or_insert_with(|| Value::empty_mod(old + "." + &name.ids[idx].0).into())
                 .as_mod_mut()
             {
                 this = x;

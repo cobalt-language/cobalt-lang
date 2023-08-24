@@ -219,9 +219,9 @@ pub struct Value<'src, 'ctx> {
     pub frozen: Option<SourceSpan>,
 }
 impl<'src, 'ctx> Value<'src, 'ctx> {
-    pub fn error(loc: SourceSpan) -> Self {
+    pub fn error() -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: None,
             data_type: types::Error::new(),
@@ -230,9 +230,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn null(loc: SourceSpan) -> Self {
+    pub fn null() -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: None,
             data_type: types::TypeData::new(),
@@ -242,13 +242,12 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn new(
-        loc: SourceSpan,
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
         data_type: TypeRef,
     ) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val,
             inter_val,
             data_type,
@@ -258,14 +257,13 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn with_addr(
-        loc: SourceSpan,
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
         data_type: TypeRef,
         addr: PointerValue<'ctx>,
     ) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val,
             inter_val,
             data_type,
@@ -274,9 +272,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn compiled(loc: SourceSpan, comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: Some(comp_val),
             inter_val: None,
             data_type,
@@ -286,13 +284,12 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn interpreted(
-        loc: SourceSpan,
         comp_val: BasicValueEnum<'ctx>,
         inter_val: InterData<'src, 'ctx>,
         data_type: TypeRef,
     ) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: Some(comp_val),
             inter_val: Some(inter_val),
             data_type,
@@ -301,9 +298,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn metaval(loc: SourceSpan, inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
+    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(inter_val),
             data_type,
@@ -312,9 +309,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn make_type(loc: SourceSpan, type_: TypeRef) -> Self {
+    pub fn make_type(type_: TypeRef) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(InterData::Type(type_)),
             data_type: types::TypeData::new(),
@@ -323,9 +320,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn empty_mod(loc: SourceSpan, name: String) -> Self {
+    pub fn empty_mod(name: String) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(InterData::Module(HashMap::new(), vec![], name)),
             data_type: types::Module::new(),
@@ -335,13 +332,12 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn make_mod(
-        loc: SourceSpan,
         syms: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         imps: Vec<(CompoundDottedName<'src>, bool)>,
         name: String,
     ) -> Self {
         Value {
-            loc,
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(InterData::Module(syms, imps, name)),
             data_type: types::Module::new(),
@@ -463,7 +459,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         types::save_type(out, self.data_type) // Type
     }
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
-        let mut var = Value::error(unreachable_span());
+        let mut var = Value::error();
         let mut name = vec![];
         buf.read_until(0, &mut name)?;
         if name.last() == Some(&0) {
