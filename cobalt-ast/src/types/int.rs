@@ -4,6 +4,7 @@ use super::*;
 #[repr(transparent)]
 pub struct Int((u16, bool));
 impl Int {
+    pub const KIND: NonZeroU64 = make_id(b"int");
     #[ref_cast_custom]
     fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
@@ -28,7 +29,7 @@ impl Int {
 }
 impl Type for Int {
     fn kind() -> NonZeroU64 {
-        make_id("int")
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Static(((self.0 .0 + 7) / 8) as _)
@@ -40,14 +41,11 @@ impl Type for Int {
         out.write_all(&self.0 .0.to_be_bytes())?;
         out.write_all(std::slice::from_ref(&u8::from(self.0 .1)))
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         let mut arr = [0u8; 2];
-        buf.read_exact(&mut arr);
+        buf.read_exact(&mut arr)?;
         let bits = u16::from_be_bytes(arr);
-        buf.read_exact(&mut arr[..1]);
+        buf.read_exact(&mut arr[..1])?;
         Ok(Self::new(bits, arr[0] != 0))
     }
 }
@@ -55,6 +53,7 @@ impl Type for Int {
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
 impl IntLiteral {
+    pub const KIND: NonZeroU64 = make_id(b"intlit");
     pub fn new() -> &'static Self {
         static SELF: IntLiteral = Self(());
         &SELF
@@ -62,7 +61,7 @@ impl IntLiteral {
 }
 impl Type for IntLiteral {
     fn kind() -> NonZeroU64 {
-        make_id("intlit")
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -70,13 +69,10 @@ impl Type for IntLiteral {
     fn align(&self) -> u16 {
         0
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new())
     }
 }

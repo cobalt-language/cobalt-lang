@@ -4,6 +4,7 @@ use super::*;
 #[repr(transparent)]
 pub struct Reference(TypeRef);
 impl Reference {
+    pub const KIND: NonZeroU64 = make_id(b"ref");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
@@ -15,11 +16,8 @@ impl Reference {
     }
 }
 impl Type for Reference {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("ref")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Static(8)
@@ -30,10 +28,7 @@ impl Type for Reference {
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }
@@ -42,6 +37,7 @@ impl Type for Reference {
 #[repr(transparent)]
 pub struct Pointer(TypeRef);
 impl Pointer {
+    pub const KIND: NonZeroU64 = make_id(b"ptr");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
@@ -53,11 +49,8 @@ impl Pointer {
     }
 }
 impl Type for Pointer {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("ptr")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Static(8)
@@ -68,10 +61,7 @@ impl Type for Pointer {
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }
@@ -80,6 +70,7 @@ impl Type for Pointer {
 #[repr(transparent)]
 pub struct Mut(TypeRef);
 impl Mut {
+    pub const KIND: NonZeroU64 = make_id(b"mut");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
@@ -91,11 +82,8 @@ impl Mut {
     }
 }
 impl Type for Mut {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("mut")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         self.0.size()
@@ -106,10 +94,7 @@ impl Type for Mut {
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }

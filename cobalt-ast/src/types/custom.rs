@@ -1,14 +1,16 @@
 use super::*;
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
 static CUSTOM_INTERN: Interner<Box<str>> = Interner::new();
-static CUSTOM_DATA: dashmap::DashMap<
-    Box<str>,
-    (TypeRef, bool, dashmap::DashMap<Box<str>, usize>, usize),
-> = Default::default();
+static CUSTOM_DATA: Lazy<DashMap<Box<str>, (TypeRef, bool, DashMap<Box<str>, usize>, usize)>> =
+    Lazy::new(DashMap::new);
 #[derive(Debug, Display, RefCastCustom)]
 #[repr(transparent)]
 pub struct Custom(Box<str>);
 impl Custom {
+    pub const KIND: NonZeroU64 = make_id(b"custom");
     #[ref_cast_custom]
+    #[allow(clippy::borrowed_box)]
     fn from_ref(types: &Box<str>) -> &Self;
     pub fn new(types: Box<str>) -> &'static Self {
         Self::from_ref(CUSTOM_INTERN.intern(types))
@@ -18,11 +20,8 @@ impl Custom {
     }
 }
 impl Type for Custom {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("custom")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         CUSTOM_DATA.get(&*self.0).unwrap().0.size()
@@ -36,17 +35,14 @@ impl Type for Custom {
         let info = &borrow[keys.3];
         info.dtor.is_some() || (!info.is_linear_type && keys.0.has_dtor(ctx))
     }
-    fn save_header(out: &mut dyn Write) -> io::Result<()>
-    where
-        Self: Sized,
-    {
-        for vals in &CUSTOM_DATA {
+    fn save_header(out: &mut dyn Write) -> io::Result<()> {
+        for vals in CUSTOM_DATA.iter() {
             let (ty, _export, methods, info) = &*vals;
             out.write_all(vals.key().as_bytes())?;
             out.write_all(&[0])?;
             save_type(out, *ty)?;
             for kv in methods {
-                serial_utils::save_str(out, &kv.key())?;
+                serial_utils::save_str(out, kv.key())?;
                 out.write_all(&info.to_be_bytes())?;
             }
             out.write_all(&[0])?;
@@ -55,20 +51,17 @@ impl Type for Custom {
         out.write_all(&[0])?;
         Ok(())
     }
-    fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
-    where
-        Self: Sized,
-    {
+    fn load_header(buf: &mut dyn BufRead) -> io::Result<()> {
         loop {
-            let mut key = serial_utils::load_str(buf)?;
+            let key = serial_utils::load_str(buf)?;
             if key.is_empty() {
                 break;
             }
             let ty = load_type(buf)?;
-            let mut methods = dashmap::DashMap::new();
+            let methods = DashMap::new();
             let mut arr = [0; std::mem::size_of::<usize>()];
             loop {
-                let mut metd = serial_utils::load_str(buf)?;
+                let metd = serial_utils::load_str(buf)?;
                 if metd.is_empty() {
                     break;
                 }
@@ -84,10 +77,7 @@ impl Type for Custom {
         out.write_all(self.0.as_bytes())?;
         out.write_all(&[0])
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         let mut vec = vec![];
         buf.read_until(0, &mut vec)?;
         if vec.last() == Some(&0) {

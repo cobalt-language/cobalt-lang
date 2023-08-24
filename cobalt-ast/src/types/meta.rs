@@ -3,17 +3,15 @@ use super::*;
 #[display(fmt = "type")]
 pub struct TypeData(());
 impl TypeData {
+    pub const KIND: NonZeroU64 = make_id(b"type");
     pub fn new() -> &'static Self {
         static SELF: TypeData = Self(());
         &SELF
     }
 }
 impl Type for TypeData {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("type")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -21,13 +19,10 @@ impl Type for TypeData {
     fn align(&self) -> u16 {
         0
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new())
     }
 }
@@ -35,17 +30,15 @@ impl Type for TypeData {
 #[display(fmt = "module")]
 pub struct Module(());
 impl Module {
+    pub const KIND: NonZeroU64 = make_id(b"module");
     pub fn new() -> &'static Self {
         static SELF: Module = Self(());
         &SELF
     }
 }
 impl Type for Module {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("module")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -53,13 +46,10 @@ impl Type for Module {
     fn align(&self) -> u16 {
         0
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new())
     }
 }
@@ -67,17 +57,15 @@ impl Type for Module {
 #[display(fmt = "<error>")]
 pub struct Error(());
 impl Error {
+    pub const KIND: NonZeroU64 = make_id(b"error");
     pub fn new() -> &'static Self {
         static SELF: Error = Self(());
         &SELF
     }
 }
 impl Type for Error {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("error")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -85,13 +73,10 @@ impl Type for Error {
     fn align(&self) -> u16 {
         0
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new())
     }
 }
@@ -99,17 +84,15 @@ impl Type for Error {
 #[display(fmt = "null")]
 pub struct Null(());
 impl Null {
+    pub const KIND: NonZeroU64 = make_id(b"null");
     pub fn new() -> &'static Self {
         static SELF: Null = Self(());
         &SELF
     }
 }
 impl Type for Null {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("null")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Static(0)
@@ -117,13 +100,10 @@ impl Type for Null {
     fn align(&self) -> u16 {
         0
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         Ok(Self::new())
     }
 }

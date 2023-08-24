@@ -1,4 +1,5 @@
 use hashbrown::raw::*;
+use once_cell::sync::Lazy;
 use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
 #[inline]
@@ -8,14 +9,14 @@ fn hash(val: &impl Hash) -> u64 {
     state.finish()
 }
 pub struct Interner<'a, T: PartialEq + Eq + Hash> {
-    vec: aovec::Aovec<T>,
+    vec: Lazy<aovec::Aovec<T>>,
     map: RwLock<RawTable<(&'a T, usize)>>,
 }
 impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            vec: aovec::Aovec::new(16),
-            map: RwLock::default(),
+            vec: Lazy::new(|| aovec::Aovec::new(16)),
+            map: RwLock::new(RawTable::new()),
         }
     }
     pub fn intern(&'a self, key: K) -> &K {

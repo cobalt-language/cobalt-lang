@@ -17,6 +17,7 @@ static F128: Float = Float(FPType::F128);
 #[derive(Debug, Display)]
 pub struct Float(FPType);
 impl Float {
+    pub const KIND: NonZeroU64 = make_id(b"float");
     pub fn new(val: FPType) -> &'static Self {
         match val {
             FPType::F16 => &F16,
@@ -40,7 +41,7 @@ impl Float {
 }
 impl Type for Float {
     fn kind() -> NonZeroU64 {
-        make_id("float")
+        Self::KIND
     }
     fn size(&self) -> SizeType {
         SizeType::Static(match self.0 {
@@ -65,10 +66,7 @@ impl Type for Float {
             FPType::F128 => 3,
         }))
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         let mut c = 0u8;
         buf.read_exact(std::slice::from_mut(&mut c))?;
         Ok(Self::new(match c {

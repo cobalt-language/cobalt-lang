@@ -32,8 +32,10 @@ static TUPLE_INTERN: Interner<Box<[TypeRef]>> = Interner::new();
 #[repr(transparent)]
 pub struct Tuple(Box<[TypeRef]>);
 impl Tuple {
+    pub const KIND: NonZeroU64 = make_id(b"tuple");
     #[ref_cast_custom]
     #[inline(always)]
+    #[allow(clippy::borrowed_box)]
     fn from_ref(types: &Box<[TypeRef]>) -> &Self;
     pub fn new(types: Box<[TypeRef]>) -> &'static Self {
         Self::from_ref(TUPLE_INTERN.intern(types))
@@ -47,11 +49,8 @@ impl Tuple {
     }
 }
 impl Type for Tuple {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("tuple")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn align(&self) -> u16 {
         self.0.iter().map(|v| v.align()).max().unwrap_or(1)
@@ -63,24 +62,15 @@ impl Type for Tuple {
         self.0.iter().any(|v| v.has_dtor(ctx))
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(&self.0.len().to_be_bytes())?;
-        for &ty in &*self.0 {
-            save_type(out, ty)?;
-        }
-        Ok(())
+        self.0.iter().try_for_each(|&ty| save_type(out, ty))?;
+        out.write_all(&[0])
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
-        let mut arr = [0u8; 8];
-        buf.read_exact(&mut arr)?;
-        let len = u64::from_be_bytes(arr);
-        let mut types = Vec::with_capacity(len as _);
-        for _ in 0..len {
-            types.push(load_type(buf)?);
-        }
-        Ok(Self::new(types.into()))
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+        Ok(Self::new(
+            std::iter::from_fn(|| load_type_opt(buf).transpose())
+                .collect::<Result<Vec<_>, _>>()?
+                .into(),
+        ))
     }
 }
 static STRUCT_INTERN: Interner<(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)> = Interner::new();
@@ -89,6 +79,7 @@ static STRUCT_INTERN: Interner<(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)> = In
 #[repr(transparent)]
 pub struct Struct((Box<[TypeRef]>, BTreeMap<Box<str>, usize>));
 impl Struct {
+    pub const KIND: NonZeroU64 = make_id(b"struct");
     #[ref_cast_custom]
     #[inline(always)]
     fn from_ref(inner: &(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)) -> &Self;
@@ -136,7 +127,7 @@ impl Display for Struct {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut rev_lookup = ["<error>"].repeat(self.0 .0.len());
         for (name, &idx) in self.fields() {
-            rev_lookup[idx] = &name;
+            rev_lookup[idx] = name;
         }
         f.write_str("{")?;
         let mut rem = self.fields().len();
@@ -151,11 +142,8 @@ impl Display for Struct {
     }
 }
 impl Type for Struct {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized,
-    {
-        make_id("struct")
+    fn kind() -> NonZeroU64 {
+        Self::KIND
     }
     fn align(&self) -> u16 {
         self.0 .0.iter().map(|v| v.align()).max().unwrap_or(1)
@@ -172,18 +160,15 @@ impl Type for Struct {
             save_type(out, ty)?;
         }
         let mut rev_lookup = ["<error>"].repeat(self.types().len());
-        for (name, idx) in self.0 .1 {
-            rev_lookup[idx] = &name;
+        for (name, idx) in &self.0 .1 {
+            rev_lookup[*idx] = name;
         }
         for key in rev_lookup {
             serial_utils::save_str(out, key)?;
         }
         Ok(())
     }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: Sized,
-    {
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
         let mut arr = [0u8; 8];
         buf.read_exact(&mut arr)?;
         let len = u64::from_be_bytes(arr);

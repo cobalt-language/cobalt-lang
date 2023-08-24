@@ -56,68 +56,7 @@ pub struct CompCtx<'src, 'ctx> {
 }
 impl<'src, 'ctx> CompCtx<'src, 'ctx> {
     pub fn new(ctx: &'ctx Context, name: &str) -> Self {
-        CompCtx {
-            flags: Flags::default(),
-            context: ctx,
-            module: ctx.create_module(name),
-            builder: ctx.create_builder(),
-            is_const: Cell::new(false),
-            global: Cell::new(false),
-            export: Cell::new(false),
-            prepass: Cell::new(false),
-            null_type: ctx.opaque_struct_type("null").into(),
-            priority: i32::MAX.into(),
-            var_scope: 0.into(),
-            lex_scope: 0.into(),
-            values: RefCell::default(),
-            moves: RefCell::default(),
-            nom_info: RefCell::default(),
-            nom_stack: RefCell::default(),
-            to_drop: RefCell::default(),
-            int_types: Cell::new(MaybeUninit::new(HashMap::new())),
-            vars: Cell::new(Some(Box::pin(VarMap::new(Some(
-                [
-                    (
-                        "true",
-                        Value::interpreted(
-                            ctx.bool_type().const_int(1, false).into(),
-                            InterData::Int(1),
-                            types::Int::bool(),
-                        ),
-                    ),
-                    (
-                        "false",
-                        Value::interpreted(
-                            ctx.bool_type().const_int(0, false).into(),
-                            InterData::Int(0),
-                            types::Int::bool(),
-                        ),
-                    ),
-                    ("bool", Value::make_type(types::Int::bool())),
-                    ("f16", Value::make_type(types::Float::f16())),
-                    ("f32", Value::make_type(types::Float::f32())),
-                    ("f64", Value::make_type(types::Float::f64())),
-                    ("f128", Value::make_type(types::Float::f128())),
-                    (
-                        "isize",
-                        Value::make_type(types::Int::signed(
-                            std::mem::size_of::<isize>() as u16 * 8,
-                        )),
-                    ),
-                    (
-                        "usize",
-                        Value::make_type(types::Int::unsigned(
-                            std::mem::size_of::<isize>() as u16 * 8,
-                        )),
-                    ),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect::<HashMap<_, _>>()
-                .into(),
-            ))))),
-            name: Cell::new(MaybeUninit::new(".".to_string())),
-        }
+        Self::with_flags(ctx, name, Flags::default())
     }
     pub fn with_flags(ctx: &'ctx Context, name: &str, flags: Flags) -> Self {
         CompCtx {
@@ -143,6 +82,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                     (
                         "true",
                         Value::interpreted(
+                            unreachable_span(),
                             ctx.bool_type().const_int(1, false).into(),
                             InterData::Int(1),
                             types::Int::bool(),
@@ -151,23 +91,45 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                     (
                         "false",
                         Value::interpreted(
+                            unreachable_span(),
                             ctx.bool_type().const_int(0, false).into(),
                             InterData::Int(0),
                             types::Int::bool(),
                         ),
                     ),
-                    ("bool", Value::make_type(types::Int::bool())),
-                    ("f16", Value::make_type(types::Float::f16())),
-                    ("f32", Value::make_type(types::Float::f32())),
-                    ("f64", Value::make_type(types::Float::f64())),
-                    ("f128", Value::make_type(types::Float::f128())),
+                    (
+                        "bool",
+                        Value::make_type(unreachable_span(), types::Int::bool()),
+                    ),
+                    (
+                        "f16",
+                        Value::make_type(unreachable_span(), types::Float::f16()),
+                    ),
+                    (
+                        "f32",
+                        Value::make_type(unreachable_span(), types::Float::f32()),
+                    ),
+                    (
+                        "f64",
+                        Value::make_type(unreachable_span(), types::Float::f64()),
+                    ),
+                    (
+                        "f128",
+                        Value::make_type(unreachable_span(), types::Float::f128()),
+                    ),
                     (
                         "isize",
-                        Value::make_type(types::Int::signed(flags.word_size * 8)),
+                        Value::make_type(
+                            unreachable_span(),
+                            types::Int::signed(flags.word_size * 8),
+                        ),
                     ),
                     (
                         "usize",
-                        Value::make_type(types::Int::unsigned(flags.word_size * 8)),
+                        Value::make_type(
+                            unreachable_span(),
+                            types::Int::unsigned(flags.word_size * 8),
+                        ),
                     ),
                 ]
                 .into_iter()
@@ -280,9 +242,9 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             let mut val = self.int_types.replace(MaybeUninit::uninit()).assume_init();
             let out = std::mem::transmute::<&mut _, &'ctx _>(match val.entry((size, unsigned)) {
                 Entry::Occupied(x) => x.into_mut(),
-                Entry::Vacant(x) => {
-                    x.insert(Value::make_type(types::Int::new(size, unsigned)).into())
-                }
+                Entry::Vacant(x) => x.insert(
+                    Value::make_type(unreachable_span(), types::Int::new(size, unsigned)).into(),
+                ),
             });
             self.int_types.set(MaybeUninit::new(val));
             out
@@ -306,111 +268,41 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                 _ => None,
             })
     }
-    pub fn lookup_full(&self, name: &DottedName) -> Option<Value<'src, 'ctx>> {
+    pub fn lookup_full(&self, name: &DottedName<'src>) -> Option<Value<'src, 'ctx>> {
         let v = self.lookup(&name.ids.first()?.0, name.global)?;
         if !v.1.init {
             return None;
         }
         let mut v = v.0.clone();
         for name in name.ids[1..].iter() {
-            v = match v {
-                Value {
-                    data_type: Type::Module,
-                    inter_val: Some(InterData::Module(s, i, _)),
-                    ..
-                } => self
-                    .with_vars(|v| VarMap::lookup_in_mod((&s, &i), &name.0, v))
-                    .and_then(|Symbol(v, d)| if d.init { Some(v) } else { None })?
-                    .clone(),
-                Value {
-                    data_type: Type::TypeData,
-                    inter_val: Some(InterData::Type(t)),
-                    ..
-                } => {
-                    if let Type::Nominal(n) = *t {
-                        self.nominals.borrow()[&n].2.get(&name.0)?.clone()
+            v = match v.data_type.self_kind() {
+                types::Module::KIND => {
+                    if let Some(InterData::Module(s, i, _)) = v.inter_val {
+                        self.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &name.0, v))
+                            .and_then(|Symbol(v, d)| if d.init { Some(v) } else { None })?
+                            .clone()
                     } else {
-                        return None;
+                        None?
                     }
                 }
-                x => {
-                    ops::attr((x, unreachable_span()), (&name.0, unreachable_span()), self).ok()?
+                types::TypeData::KIND => {
+                    if let Some(InterData::Type(t)) = v.inter_val {
+                        t.static_attr(&name.0, self)?
+                    } else {
+                        None?
+                    }
                 }
+                _ => v.attr(name.clone(), self).ok()?,
             };
         }
         Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        self.with_vars(|v| {
-            v.symbols.values().for_each(|s| {
-                if s.1.export {
-                    s.0.data_type.export(self)
-                }
-            })
-        });
-        for (n, (t, e, m, i)) in self.nominals.borrow().iter() {
-            if *e {
-                out.write_all(n.as_bytes())?;
-                out.write_all(&[0])?;
-                t.save(out)?;
-                i.save(out)?;
-                for (n, v) in m.iter() {
-                    out.write_all(n.as_bytes())?;
-                    out.write_all(&[0])?;
-                    v.save(out)?;
-                }
-                out.write_all(&[0])?;
-            }
-        }
-        out.write_all(&[0])?;
         self.with_vars(|v| v.save(out))
     }
     pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<Cow<'src, str>>> {
         let mut out = vec![];
         while !buf.fill_buf()?.is_empty() {
-            // stable implementation of BufRead::has_data_left
-            loop {
-                let mut vec = vec![];
-                buf.read_until(0, &mut vec)?;
-                if vec.last() == Some(&0) {
-                    vec.pop();
-                }
-                if vec.is_empty() {
-                    break;
-                }
-                let name = String::from_utf8(std::mem::take(&mut vec))
-                    .expect("Nominal types should be valid UTF-8");
-                let t = Type::load(buf)?;
-                let i = NominalInfo::load(buf, self)?;
-                if self
-                    .nominals
-                    .borrow()
-                    .get(&name)
-                    .map_or(false, |x| x.0.unwrapped(self) == t.unwrapped(self))
-                {
-                    out.push(name.clone().into())
-                }
-                self.nominals
-                    .borrow_mut()
-                    .insert(name.clone(), (t, false, Default::default(), i));
-                let mut ms = HashMap::new();
-                loop {
-                    buf.read_until(0, &mut vec)?;
-                    if vec.last() == Some(&0) {
-                        vec.pop();
-                    }
-                    if vec.is_empty() {
-                        break;
-                    }
-                    ms.insert(
-                        String::from_utf8(std::mem::take(&mut vec))
-                            .expect("Nominal types should be valid UTF-8")
-                            .into(),
-                        Value::load(buf, self)?,
-                    );
-                }
-                self.nominals.borrow_mut().get_mut(&name).unwrap().2 = ms;
-            }
             out.append(&mut self.with_vars(|v| v.load(buf, self))?);
         }
         Ok(out)

@@ -210,6 +210,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
 }
 #[derive(Debug, Clone)]
 pub struct Value<'src, 'ctx> {
+    pub loc: SourceSpan,
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'src, 'ctx>>,
     pub data_type: TypeRef,
@@ -218,8 +219,9 @@ pub struct Value<'src, 'ctx> {
     pub frozen: Option<SourceSpan>,
 }
 impl<'src, 'ctx> Value<'src, 'ctx> {
-    pub fn error() -> Self {
+    pub fn error(loc: SourceSpan) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: None,
             data_type: types::Error::new(),
@@ -228,8 +230,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn null() -> Self {
+    pub fn null(loc: SourceSpan) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: None,
             data_type: types::TypeData::new(),
@@ -239,11 +242,13 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn new(
+        loc: SourceSpan,
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
         data_type: TypeRef,
     ) -> Self {
         Value {
+            loc,
             comp_val,
             inter_val,
             data_type,
@@ -253,12 +258,14 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn with_addr(
+        loc: SourceSpan,
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
         data_type: TypeRef,
         addr: PointerValue<'ctx>,
     ) -> Self {
         Value {
+            loc,
             comp_val,
             inter_val,
             data_type,
@@ -267,8 +274,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
+    pub fn compiled(loc: SourceSpan, comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
         Value {
+            loc,
             comp_val: Some(comp_val),
             inter_val: None,
             data_type,
@@ -278,11 +286,13 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn interpreted(
+        loc: SourceSpan,
         comp_val: BasicValueEnum<'ctx>,
         inter_val: InterData<'src, 'ctx>,
         data_type: TypeRef,
     ) -> Self {
         Value {
+            loc,
             comp_val: Some(comp_val),
             inter_val: Some(inter_val),
             data_type,
@@ -291,8 +301,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
+    pub fn metaval(loc: SourceSpan, inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: Some(inter_val),
             data_type,
@@ -301,8 +312,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn make_type(type_: TypeRef) -> Self {
+    pub fn make_type(loc: SourceSpan, type_: TypeRef) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: Some(InterData::Type(type_)),
             data_type: types::TypeData::new(),
@@ -311,8 +323,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn empty_mod(name: String) -> Self {
+    pub fn empty_mod(loc: SourceSpan, name: String) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: Some(InterData::Module(HashMap::new(), vec![], name)),
             data_type: types::Module::new(),
@@ -322,11 +335,13 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn make_mod(
+        loc: SourceSpan,
         syms: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         imps: Vec<(CompoundDottedName<'src>, bool)>,
         name: String,
     ) -> Self {
         Value {
+            loc,
             comp_val: None,
             inter_val: Some(InterData::Module(syms, imps, name)),
             data_type: types::Module::new(),
@@ -360,121 +375,19 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         self.comp_val.or_else(|| {
             self.inter_val
                 .as_ref()
-                .and_then(|v| self.data_type.into_compiled(v, ctx))
-        })
-    }
-    pub fn into_value(self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
-        self.comp_val.or_else(|| {
-            self.inter_val
-                .as_ref()
-                .and_then(|v| self.data_type.into_compiled(v, ctx))
+                .and_then(|v| self.data_type.compiled(v, ctx))
         })
     }
 
     pub fn ins_dtor(&self, ctx: &CompCtx<'src, 'ctx>) {
-        match &self.data_type {
-            Type::Nominal(n) => {
-                if let Some(addr) = self.addr(ctx) {
-                    let b = ctx.nominals.borrow();
-                    let info = &b[n];
-                    if let Some(fv) = info.3.dtor {
-                        ctx.builder.build_call(fv, &[addr.into()], "");
-                    } else if !info.3.no_auto_drop {
-                        let mut this = self.clone();
-                        this.data_type = info.0.clone();
-                        this.ins_dtor(ctx)
-                    }
-                }
-            }
-            Type::Tuple(v) => {
-                if let Some(BasicValueEnum::StructValue(comp_val)) = self.comp_val {
-                    v.iter().enumerate().for_each(|(n, t)| {
-                        if t.has_dtor(ctx) {
-                            let val = ctx
-                                .builder
-                                .build_extract_value(comp_val, n as _, "")
-                                .unwrap();
-                            let mut val = Value::compiled(val, t.clone());
-                            if let Some(pv) = self.address.get() {
-                                val.address = Rc::new(Cell::new(Some(
-                                    ctx.builder
-                                        .build_struct_gep(
-                                            self.data_type.llvm_type(ctx).unwrap(),
-                                            pv,
-                                            n as _,
-                                            "",
-                                        )
-                                        .unwrap(),
-                                )));
-                            }
-                            val.ins_dtor(ctx);
-                        }
-                    })
-                }
-            }
-            Type::Array(b, Some(s)) => {
-                if let Some(BasicValueEnum::ArrayValue(comp_val)) = self.comp_val {
-                    if b.has_dtor() {
-                        let llt = self.data_type.llvm_type(ctx).unwrap();
-                        for n in 0..*s {
-                            let val = ctx.builder.build_extract_value(comp_val, n, "").unwrap();
-                            let mut val = Value::compiled(val, b.as_ref().clone());
-                            if let Some(pv) = self.address.get() {
-                                val.address = Rc::new(Cell::new(Some(
-                                    ctx.builder.build_struct_gep(llt, pv, n, "").unwrap(),
-                                )));
-                            }
-                            val.ins_dtor(ctx);
-                        }
-                    }
-                }
-            }
-            Type::Mut(b) => {
-                if let Some(BasicValueEnum::PointerValue(comp_val)) = self.comp_val {
-                    if b.has_dtor() {
-                        if let Some(llt) = b.llvm_type(ctx) {
-                            let val = ctx.builder.build_load(llt, comp_val, "");
-                            let mut val = Value::compiled(val, b.as_ref().clone());
-                            val.address = Rc::new(Cell::new(Some(comp_val)));
-                            val.ins_dtor(ctx);
-                        }
-                    }
-                }
-            }
-            Type::BoundMethod(_, a) => {
-                if let (Some(BasicValueEnum::StructValue(sv)), Some(ty)) = (self.comp_val, a.get(0))
-                {
-                    Value::compiled(
-                        ctx.builder.build_extract_value(sv, 0, "").unwrap(),
-                        ty.0.clone(),
-                    )
-                    .ins_dtor(ctx)
-                }
-            }
-            _ => {}
-        }
+        self.data_type.ins_dtor(self.comp_val, ctx)
     }
 
-    pub fn into_type(self) -> Option<TypeRef> {
-        if let Value {
-            data_type: Type::TypeData,
-            inter_val: Some(InterData::Type(t)),
-            ..
-        } = self
+    pub fn as_type(&self) -> Option<TypeRef> {
+        if let (types::TypeData::KIND, Some(InterData::Type(t))) =
+            (self.data_type.self_kind(), &self.inter_val)
         {
-            Some(t)
-        } else {
-            None
-        }
-    }
-    pub fn as_type(&self) -> Option<&TypeRef> {
-        if let Value {
-            data_type: Type::TypeData,
-            inter_val: Some(InterData::Type(t)),
-            ..
-        } = self
-        {
-            Some(t)
+            Some(*t)
         } else {
             None
         }
@@ -486,11 +399,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Vec<(CompoundDottedName<'src>, bool)>,
         String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.self_kind(), self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -504,11 +414,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &Vec<(CompoundDottedName<'src>, bool)>,
         &String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.self_kind(), &self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -522,16 +429,21 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &mut Vec<(CompoundDottedName<'src>, bool)>,
         &mut String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.self_kind(), &mut self.inter_val)
         {
             Some((s, m, n))
         } else {
             None
         }
+    }
+
+    pub fn attr(
+        &self,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.attr(self, attr, ctx)
     }
 
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -548,38 +460,39 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         } else {
             out.write_all(&[0])?
         } // Interpreted value, self-punctuating
-        self.data_type.save(out) // Type
+        types::save_type(out, self.data_type) // Type
     }
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
-        let mut var = Value::error();
+        let mut var = Value::error(unreachable_span());
         let mut name = vec![];
         buf.read_until(0, &mut name)?;
         if name.last() == Some(&0) {
             name.pop();
         }
         var.inter_val = InterData::load(buf, ctx)?;
-        var.data_type = Type::load(buf)?;
+        var.data_type = types::load_type(buf)?;
         if !name.is_empty() {
             use inkwell::module::Linkage::DLLImport;
-            if let Type::Function(ret, params) = &var.data_type {
-                if let Some(llt) = ret.llvm_type(ctx) {
-                    let mut good = true;
-                    let ps = params
-                        .iter()
-                        .filter_map(|(x, c)| {
-                            if *c {
-                                None
-                            } else {
-                                Some(BasicMetadataTypeEnum::from(
-                                    x.llvm_type(ctx).unwrap_or_else(|| {
-                                        good = false;
-                                        IntType(ctx.context.i8_type())
-                                    }),
-                                ))
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    if good {
+            if let Some(ty) = var.data_type.downcast::<types::Function>() {
+                let mut good = true;
+                let ps = ty
+                    .params()
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                if good {
+                    if let Some(llt) = ty.ret().llvm_type(ctx) {
                         let ft = llt.fn_type(&ps, false);
                         let fv = ctx.module.add_function(
                             std::str::from_utf8(&name)
@@ -592,26 +505,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
                         }
                         let gv = fv.as_global_value();
                         gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
-                    }
-                } else if ret.size() == SizeType::Static(0) {
-                    let mut good = true;
-                    let ps = params
-                        .iter()
-                        .filter_map(|(x, c)| {
-                            if *c {
-                                None
-                            } else {
-                                Some(BasicMetadataTypeEnum::from(
-                                    x.llvm_type(ctx).unwrap_or_else(|| {
-                                        good = false;
-                                        IntType(ctx.context.i8_type())
-                                    }),
-                                ))
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    if good {
+                        var.comp_val = Some(gv.as_pointer_value().into());
+                    } else if ty.ret().size() == SizeType::Static(0) {
                         let ft = ctx.context.void_type().fn_type(&ps, false);
                         let fv = ctx.module.add_function(
                             std::str::from_utf8(&name)
@@ -624,21 +519,21 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
                         }
                         let gv = fv.as_global_value();
                         gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                        var.comp_val = Some(gv.as_pointer_value().into());
                     }
                 }
-            } else if let Some(t) = if let Type::Reference(ref b) = var.data_type {
-                b.llvm_type(ctx)
-            } else {
-                None
-            } {
+            } else if let Some(t) = var
+                .data_type
+                .downcast::<types::Reference>()
+                .and_then(|t| t.llvm_type(ctx))
+            {
                 let gv = ctx.module.add_global(
                     t,
                     None,
                     std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8"),
                 ); // maybe do something with linkage/call convention?
                 gv.set_linkage(DLLImport);
-                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                var.comp_val = Some(gv.as_pointer_value().into());
             }
         }
         Ok(var)
