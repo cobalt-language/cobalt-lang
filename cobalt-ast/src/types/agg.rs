@@ -58,6 +58,13 @@ impl Type for Tuple {
     fn size(&self) -> SizeType {
         tuple_size(&self.0)
     }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.types()
+            .iter()
+            .map(|t| t.llvm_type(ctx))
+            .collect::<Option<Box<_>>>()
+            .map(|f| ctx.context.struct_type(&f, false).into())
+    }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         self.0.iter().any(|v| v.has_dtor(ctx))
     }
@@ -155,6 +162,13 @@ impl Type for Struct {
     fn size(&self) -> SizeType {
         tuple_size(&self.0 .0)
     }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.types()
+            .iter()
+            .map(|t| t.llvm_type(ctx))
+            .collect::<Option<Box<_>>>()
+            .map(|f| ctx.context.struct_type(&f, false).into())
+    }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         self.types().iter().any(|v| v.has_dtor(ctx))
     }
@@ -215,6 +229,16 @@ impl Type for UnsizedArray {
     fn align(&self) -> u16 {
         self.0.align()
     }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        Some(
+            ctx.context
+                .struct_type(
+                    &[self.elem().ptr_type(ctx)?, ctx.context.i64_type().into()],
+                    false,
+                )
+                .into(),
+        )
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
@@ -251,6 +275,9 @@ impl Type for SizedArray {
     }
     fn align(&self) -> u16 {
         self.elem().align()
+    }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        Some(self.elem().llvm_type(ctx)?.array_type(self.len()).into())
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.elem())?;

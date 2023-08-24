@@ -26,6 +26,15 @@ impl Int {
     pub fn bool() -> &'static Self {
         Self::new(1, true)
     }
+    pub fn bits(&self) -> u16 {
+        self.0 .0
+    }
+    pub fn is_signed(&self) -> bool {
+        !self.0 .1
+    }
+    pub fn is_unsigned(&self) -> bool {
+        self.0 .1
+    }
 }
 impl Type for Int {
     fn kind() -> NonZeroU64 {
@@ -36,6 +45,9 @@ impl Type for Int {
     }
     fn align(&self) -> u16 {
         1 << std::cmp::min(16 - self.0 .0.leading_zeros(), 6)
+    }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        Some(ctx.context.custom_width_int_type(self.bits() as _).into())
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(&self.0 .0.to_be_bytes())?;

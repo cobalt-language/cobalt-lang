@@ -46,6 +46,31 @@ impl Type for Function {
     fn align(&self) -> u16 {
         0
     }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        let params = || {
+            self.params()
+                .iter()
+                .filter_map(|&(t, c)| c.then(|| t.llvm_type(ctx).map(From::from)).flatten())
+                .collect::<Vec<_>>()
+        };
+        if self.ret().size() == SizeType::Static(0) {
+            Some(
+                ctx.context
+                    .void_type()
+                    .fn_type(&params(), false)
+                    .ptr_type(Default::default())
+                    .into(),
+            )
+        } else {
+            Some(
+                self.ret()
+                    .llvm_type(ctx)?
+                    .fn_type(&params(), false)
+                    .ptr_type(Default::default())
+                    .into(),
+            )
+        }
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.ret())?;
         self.params().iter().try_for_each(|&(ty, c)| {

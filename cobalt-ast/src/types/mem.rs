@@ -25,6 +25,9 @@ impl Type for Reference {
     fn align(&self) -> u16 {
         8
     }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().ptr_type(ctx)
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
@@ -58,6 +61,9 @@ impl Type for Pointer {
     fn align(&self) -> u16 {
         8
     }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().ptr_type(ctx)
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
@@ -90,6 +96,12 @@ impl Type for Mut {
     }
     fn align(&self) -> u16 {
         self.0.align()
+    }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().ptr_type(ctx)
+    }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().ptr_type(ctx)
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)

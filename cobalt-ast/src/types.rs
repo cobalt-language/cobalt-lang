@@ -1,4 +1,5 @@
 use crate::*;
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
@@ -65,15 +66,16 @@ pub trait Type: Debug + Display + Send + Sync {
     }
     fn size(&self) -> SizeType;
     fn align(&self) -> u16;
-    fn llvm_type<'ctx>(
-        &self,
-        ctx: &CompCtx<'_, 'ctx>,
-    ) -> Option<inkwell::types::BasicTypeEnum<'ctx>> {
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         #![allow(unused_variables)]
         None
     }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        (self.size() != SizeType::Meta).then(|| ctx.null_type.ptr_type(Default::default()).into())
+    }
 
-    fn nom_info(&self) -> Option<NominalInfo> {
+    fn nom_info<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
+        #![allow(unused_variables)]
         None
     }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
@@ -216,7 +218,6 @@ impl<'ctx> NominalInfo<'ctx> {
         } else {
             let name = String::from_utf8(vec).expect("value should be valid UTF-8!");
             let fv = ctx.module.get_function(&name);
-            use inkwell::types::BasicType;
             Some(fv.unwrap_or_else(|| {
                 ctx.module.add_function(
                     &name,

@@ -18,16 +18,28 @@ impl Custom {
     pub fn new_ref(types: &str) -> &'static Self {
         Self::from_ref(CUSTOM_INTERN.intern_ref(types))
     }
+    pub fn base(&self) -> TypeRef {
+        CUSTOM_DATA.get(&*self.0).unwrap().0
+    }
 }
 impl Type for Custom {
     fn kind() -> NonZeroU64 {
         Self::KIND
     }
     fn size(&self) -> SizeType {
-        CUSTOM_DATA.get(&*self.0).unwrap().0.size()
+        self.base().size()
     }
     fn align(&self) -> u16 {
-        CUSTOM_DATA.get(&*self.0).unwrap().0.align()
+        self.base().align()
+    }
+    fn nom_info<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
+        Some(ctx.nom_info.borrow()[CUSTOM_DATA.get(&self.0).unwrap().3].clone())
+    }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().llvm_type(ctx)
+    }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        self.base().ptr_type(ctx)
     }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         let keys = CUSTOM_DATA.get(&*self.0).unwrap();

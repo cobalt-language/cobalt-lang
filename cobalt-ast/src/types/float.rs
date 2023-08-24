@@ -38,6 +38,9 @@ impl Float {
     pub fn f128() -> &'static Self {
         &F128
     }
+    pub fn kind(&self) -> FPType {
+        self.0
+    }
 }
 impl Type for Float {
     fn kind() -> NonZeroU64 {
@@ -57,6 +60,17 @@ impl Type for Float {
             FPType::F32 => 4,
             _ => 8,
         }
+    }
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        Some(
+            match self.kind() {
+                FPType::F16 => ctx.context.f16_type(),
+                FPType::F32 => ctx.context.f32_type(),
+                FPType::F64 => ctx.context.f64_type(),
+                FPType::F128 => ctx.context.f128_type(),
+            }
+            .into(),
+        )
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(std::slice::from_ref(&match self.0 {
