@@ -1,6 +1,9 @@
 use std::{iter::Peekable, rc::Rc, str::Chars};
 
-use super::tokens::{BinOpToken, Delimiter, Keyword, Token, TokenKind, UnOpToken};
+use super::{
+    tokens::{BinOpToken, Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken},
+    SourceReader,
+};
 
 use cobalt_errors::SourceSpan;
 use unicode_ident::{is_xid_continue, is_xid_start};
@@ -46,378 +49,350 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
     }
 }
 
-fn eat_ident(
-    input: &mut Peekable<Chars>,
-    source_span_start: usize,
-) -> Result<Token, TokenizeError> {
-    let mut ident = String::new();
+pub struct TokenStream<'src>(pub Rc<Vec<Token<'src>>>);
 
-    if let Some(c) = input.peek() {
-        if !is_xid_start(*c) {
+impl<'src> SourceReader<'src> {
+    pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<TokenizeError>) {
+        let mut tokens = Vec::new();
+        let mut errors = Vec::new();
+
+        while let Some(c) = self.peek() {
+            match c {
+                ' ' | '\n' | '\t' => {
+                    self.next();
+                }
+
+                // An identifier is an xid_start followed by zero or more xid_continue.
+                // Match an identifier.
+                c if is_xid_start(*c) => {
+                    let ident_parse_res = self.eat_ident();
+
+                    if let Err(ident_parse_err) = ident_parse_res {
+                        errors.push(ident_parse_err);
+                        continue;
+                    }
+
+                    let ident_token = ident_parse_res.unwrap();
+
+                    // Check if the identifier is reserved.
+                    if let Some(keyword) = Keyword::from_token(&ident_token) {
+                        tokens.push(Token {
+                            kind: TokenKind::Keyword(keyword),
+                            span: ident_token.span,
+                        });
+                    } else {
+                        tokens.push(ident_token);
+                    }
+                }
+
+                // Delimiters.
+                '(' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::OpenDelimiter(Delimiter::Paren),
+                        span: self.source_span_backward(1),
+                    });
+                }
+                ')' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                        span: self.source_span_backward(1),
+                    });
+                }
+                '{' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::OpenDelimiter(Delimiter::Brace),
+                        span: self.source_span_backward(1),
+                    });
+                }
+                '}' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::CloseDelimiter(Delimiter::Brace),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                // BINARY OPERATORS
+                '=' => {
+                    self.next();
+                    match self.peek() {
+                        Some('=') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::EqEq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Eq),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '!' => {
+                    self.next();
+                    match self.peek() {
+                        Some('=') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Neq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::UnOp(UnOpToken::Not),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '<' => {
+                    self.next();
+                    match self.peek() {
+                        Some('=') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Leq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        Some('<') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Shl),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Lt),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '>' => {
+                    self.next();
+                    match self.peek() {
+                        Some('=') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Geq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        Some('>') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Shr),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Gt),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '&' => {
+                    self.next();
+                    match self.peek() {
+                        Some('?') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Andq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::UnOrBinOp(UnOrBinOpToken::And),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '|' => {
+                    self.next();
+                    match self.peek() {
+                        Some('?') => {
+                            self.next();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Orq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Or),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
+                }
+
+                '^' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::BinOp(BinOpToken::Xor),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                '+' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::BinOp(BinOpToken::Add),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                '-' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::BinOp(BinOpToken::Sub),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                '*' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                '/' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::BinOp(BinOpToken::Div),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                '%' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::BinOp(BinOpToken::Mod),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                // MISC.
+                ';' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::Semicolon,
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                ':' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::Colon,
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                ',' => {
+                    self.next();
+                    tokens.push(Token {
+                        kind: TokenKind::Comma,
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                _ => panic!("Unexpected character: {}", c),
+            }
+        }
+
+        (TokenStream(Rc::new(tokens)), errors)
+    }
+
+    /// Parse an identifier.
+    ///
+    /// When calling this function, the reader should be pointing to what is
+    /// expected to be the charactera immediately preceding the identifier, so
+    /// that calling `self.next()` will return the first character of the
+    /// identifier.
+    ///
+    /// After calling this function:
+    /// - Success: the reader will be pointing at the last character of the
+    /// identifier.
+    /// - Failure (wrong first character): the reader will be pointing at the
+    /// character after the one it was pointing at when this function was
+    /// called.
+    fn eat_ident(&mut self) -> Result<Token<'src>, TokenizeError> {
+        let mut ident_len: usize = 0;
+
+        if let Some(c) = self.peek() {
+            if !is_xid_start(*c) {
+                let err = TokenizeError {
+                    kind: TokenizeErrorKind::BadFirstChar,
+                    span: self.source_span_backward(1),
+                };
+
+                return Err(err);
+            }
+        } else {
             let err = TokenizeError {
-                kind: TokenizeErrorKind::BadFirstChar,
-                span: SourceSpan::from((source_span_start, source_span_start + 1)),
+                kind: TokenizeErrorKind::EmptyInput,
+                span: self.source_span_backward(0),
             };
 
             return Err(err);
         }
 
-        ident.push(*c);
-        input.next();
-    } else {
-        let err = TokenizeError {
-            kind: TokenizeErrorKind::EmptyInput,
-            span: SourceSpan::from((source_span_start, source_span_start)),
+        self.next();
+        ident_len += 1;
+
+        // The reader is now pointing at the first character of the identifier.
+
+        while let Some(c) = self.peek() {
+            if !is_xid_continue(*c) {
+                // TODO: should also verify c is whitespace, to catch the error
+                // of invalid characters in the identifier.
+
+                break;
+            }
+
+            println!("c: {}, len: {}", c, ident_len);
+            self.next();
+            ident_len += 1;
+        }
+
+        // The reader is now pointing at the last character of the identifier.
+
+        let to_return = Token {
+            kind: TokenKind::Ident(self.slice_backward(ident_len)),
+            span: self.source_span_backward(ident_len),
         };
 
-        return Err(err);
+        dbg!(&to_return);
+
+        Ok(to_return)
     }
-
-    while let Some(c) = input.peek() {
-        if !is_xid_continue(*c) {
-            break;
-        }
-
-        ident.push(*c);
-        input.next();
-    }
-
-    let source_span_end = source_span_start + ident.len();
-    let to_return = Token {
-        kind: TokenKind::Ident(ident),
-        span: SourceSpan::from((source_span_start, source_span_end)),
-    };
-
-    Ok(to_return)
-}
-
-pub struct TokenStream(Rc<Vec<Token>>);
-
-pub fn tokenize(input: Chars, source_span_start: usize) -> (TokenStream, Vec<TokenizeError>) {
-    let mut tokens = Vec::new();
-    let mut errors = Vec::new();
-
-    let mut input = input.peekable();
-    let mut current_source_loc = source_span_start;
-
-    while let Some(c) = input.peek() {
-        match c {
-            ' ' | '\n' | '\t' => {
-                input.next();
-            }
-
-            // An identifier is an xid_start followed by zero or more xid_continue.
-            // Match an identifier.
-            c if is_xid_start(*c) => {
-                let ident_parse_res = eat_ident(&mut input, current_source_loc);
-                if let Err(ident_parse_err) = ident_parse_res {
-                    current_source_loc += &ident_parse_err.span.len();
-                    errors.push(ident_parse_err);
-                    continue;
-                }
-
-                let ident_token = ident_parse_res.unwrap();
-                current_source_loc += ident_token.span.len();
-
-                // Check if the identifier is reserved.
-                if let Some(keyword) = Keyword::from_token(&ident_token) {
-                    tokens.push(Token {
-                        kind: TokenKind::Keyword(keyword),
-                        span: ident_token.span,
-                    });
-                } else {
-                    tokens.push(ident_token);
-                }
-            }
-
-            // Delimiters.
-            '(' => {
-                tokens.push(Token {
-                    kind: TokenKind::OpenDelimiter(Delimiter::Paren),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-            ')' => {
-                tokens.push(Token {
-                    kind: TokenKind::CloseDelimiter(Delimiter::Paren),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-            '{' => {
-                tokens.push(Token {
-                    kind: TokenKind::OpenDelimiter(Delimiter::Brace),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-            '}' => {
-                tokens.push(Token {
-                    kind: TokenKind::CloseDelimiter(Delimiter::Brace),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            // BINARY OPERATORS
-            '=' => {
-                input.next();
-                match input.peek() {
-                    Some('=') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::EqEq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Eq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '!' => {
-                input.next();
-                match input.peek() {
-                    Some('=') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Neq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::UnOp(UnOpToken::Not),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '<' => {
-                input.next();
-                match input.peek() {
-                    Some('=') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Leq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    Some('<') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Shl),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Lt),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '>' => {
-                input.next();
-                match input.peek() {
-                    Some('=') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Geq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    Some('>') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Shr),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Gt),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '&' => {
-                input.next();
-                match input.peek() {
-                    Some('&') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::AndAnd),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    Some('?') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Andq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::And),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '|' => {
-                input.next();
-                match input.peek() {
-                    Some('|') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::OrOr),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    Some('?') => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Orq),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 2)),
-                        });
-                        input.next();
-                        current_source_loc += 2;
-                    }
-
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Or),
-                            span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                        });
-                        current_source_loc += 1;
-                    }
-                }
-            }
-
-            '^' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Xor),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            '+' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Add),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            '-' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Sub),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            '*' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Mul),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            '/' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Div),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            '%' => {
-                tokens.push(Token {
-                    kind: TokenKind::BinOp(BinOpToken::Mod),
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            // MISC.
-            ';' => {
-                tokens.push(Token {
-                    kind: TokenKind::Semicolon,
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            ':' => {
-                tokens.push(Token {
-                    kind: TokenKind::Colon,
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            ',' => {
-                tokens.push(Token {
-                    kind: TokenKind::Comma,
-                    span: SourceSpan::from((current_source_loc, current_source_loc + 1)),
-                });
-                input.next();
-                current_source_loc += 1;
-            }
-
-            _ => panic!("Unexpected character: {}", c),
-        }
-    }
-
-    (TokenStream(Rc::new(tokens)), errors)
 }
 
 #[cfg(test)]
@@ -427,7 +402,11 @@ mod tests {
     #[test]
     fn test_fn_decls() {
         let two_p_rt = "fn foo6(a: i32, b: i32): i32;";
-        let (tokens, errors) = tokenize(two_p_rt.chars(), 0);
+
+        let mut string_reader = SourceReader::new(two_p_rt);
+
+        let (tokens, _errors) = string_reader.tokenize();
+        dbg!(tokens.0.as_ref());
 
         assert_eq!(
             tokens.0.as_ref(),
@@ -437,7 +416,7 @@ mod tests {
                     span: SourceSpan::from((0, 2)),
                 },
                 Token {
-                    kind: TokenKind::Ident("foo6".to_string()),
+                    kind: TokenKind::Ident("foo6"),
                     span: SourceSpan::from((3, 7)),
                 },
                 Token {
@@ -445,7 +424,7 @@ mod tests {
                     span: SourceSpan::from((7, 8)),
                 },
                 Token {
-                    kind: TokenKind::Ident("a".to_string()),
+                    kind: TokenKind::Ident("a"),
                     span: SourceSpan::from((8, 9)),
                 },
                 Token {
@@ -453,7 +432,7 @@ mod tests {
                     span: SourceSpan::from((9, 10)),
                 },
                 Token {
-                    kind: TokenKind::Ident("i32".to_string()),
+                    kind: TokenKind::Ident("i32"),
                     span: SourceSpan::from((11, 14)),
                 },
                 Token {
@@ -461,7 +440,7 @@ mod tests {
                     span: SourceSpan::from((14, 15)),
                 },
                 Token {
-                    kind: TokenKind::Ident("b".to_string()),
+                    kind: TokenKind::Ident("b"),
                     span: SourceSpan::from((16, 17)),
                 },
                 Token {
@@ -469,7 +448,7 @@ mod tests {
                     span: SourceSpan::from((17, 18)),
                 },
                 Token {
-                    kind: TokenKind::Ident("i32".to_string()),
+                    kind: TokenKind::Ident("i32"),
                     span: SourceSpan::from((19, 22)),
                 },
                 Token {
@@ -481,7 +460,7 @@ mod tests {
                     span: SourceSpan::from((23, 24)),
                 },
                 Token {
-                    kind: TokenKind::Ident("i32".to_string()),
+                    kind: TokenKind::Ident("i32"),
                     span: SourceSpan::from((25, 28)),
                 },
                 Token {

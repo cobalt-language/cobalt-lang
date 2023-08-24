@@ -22,54 +22,56 @@ impl Keyword {
     pub(crate) fn from_token(token: &Token) -> Option<Keyword> {
         match &token.kind {
             TokenKind::Keyword(keyword) => Some(keyword.clone()),
-            TokenKind::Ident(ident) => Keyword::from_str(ident.as_str()),
+            TokenKind::Ident(ident) => Keyword::from_str(ident),
             _ => None,
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Delimiter {
     Paren,
     Brace,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinOpToken {
     Eq,   // =
     EqEq, // ==
     Neq,  // !=
 
-    Lt,     // <
-    Leq,    // <=
-    Gt,     // >
-    Geq,    // >=
-    And,    // &
-    AndAnd, // &&
-    Andq,   // &?
-    Or,     // |
-    OrOr,   // ||
-    Orq,    // |?
-    Xor,    // ^
+    Lt,   // <
+    Leq,  // <=
+    Gt,   // >
+    Geq,  // >=
+    Andq, // &?
+    Or,   // |
+    Orq,  // |?
+    Xor,  // ^
 
     Add, // +
     Sub, // -
-    Mul, // *
     Div, // /
     Mod, // %
     Shl, // <<
     Shr, // >>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnOpToken {
     Not, // !
 }
 
-#[derive(Debug, PartialEq)]
-pub enum TokenKind {
+#[derive(Debug, PartialEq, Clone)]
+pub enum UnOrBinOpToken {
+    Star, // *
+    And,  // &
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenKind<'src> {
     Keyword(Keyword),
-    Ident(String),
+    Ident(&'src str),
     OpenDelimiter(Delimiter),
     CloseDelimiter(Delimiter),
     Semicolon,
@@ -77,15 +79,17 @@ pub enum TokenKind {
     Comma,
     UnOp(UnOpToken),
     BinOp(BinOpToken),
+    UnOrBinOp(UnOrBinOpToken),
 }
 
-#[derive(Debug)]
-pub struct Token {
-    pub kind: TokenKind,
+/// `'src` is the lifetime of the source code, for example.
+#[derive(Debug, Clone)]
+pub struct Token<'src> {
+    pub kind: TokenKind<'src>,
     pub span: SourceSpan,
 }
 
-impl PartialEq for Token {
+impl PartialEq for Token<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
     }
