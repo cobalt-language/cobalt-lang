@@ -81,6 +81,9 @@ impl Type for IntLiteral {
     fn align(&self) -> u16 {
         0
     }
+    fn decay(&self) -> TypeRef {
+        Int::signed(64)
+    }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }

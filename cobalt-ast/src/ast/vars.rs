@@ -153,7 +153,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
         }) {
             t
         } else {
-            ops::decay(t2)
+            t2.decay()
         };
         let _ = ctx.with_vars(|v| {
             v.insert(
@@ -434,7 +434,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 }) {
                     t
                 } else {
-                    ops::decay(t2)
+                    t2.decay()
                 };
                 match ctx.with_vars(|v| {
                     v.insert(
@@ -527,7 +527,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 }) {
                     t
                 } else {
-                    ops::decay(t2)
+                    t2.decay()
                 };
                 match if let Some(v) = val.value(ctx) {
                     val.inter_val = None;
@@ -625,7 +625,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     }) {
                         t
                     } else {
-                        ops::decay(t2)
+                        t2.decay()
                     };
                     let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx)
                         .unwrap_or_else(|e| {
@@ -677,7 +677,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     }) {
                         t
                     } else {
-                        ops::decay(t2)
+                        t2.decay()
                     };
                     let mut val =
                         ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx)
@@ -810,7 +810,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         }) {
                             t
                         } else {
-                            ops::decay(t2)
+                            t2.decay()
                         };
                         let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx)
                             .unwrap_or_else(|e| {
@@ -890,7 +890,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             }) {
                 t
             } else {
-                ops::decay(t2)
+                t2.decay()
             };
             let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx)
                 .unwrap_or_else(|e| {
@@ -1258,7 +1258,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         }) {
             t
         } else {
-            ops::decay(t2)
+            t2.decay()
         };
         let val =
             ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {

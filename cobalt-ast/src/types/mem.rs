@@ -28,6 +28,9 @@ impl Type for Reference {
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
+    fn decay(&self) -> TypeRef {
+        self.base().decay()
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
@@ -102,6 +105,9 @@ impl Type for Mut {
     }
     fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
+    }
+    fn decay(&self) -> TypeRef {
+        self.base().decay()
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)

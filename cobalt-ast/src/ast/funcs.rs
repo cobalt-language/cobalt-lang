@@ -373,7 +373,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         )
                     });
                 }
-            } else if ret.size(ctx) == SizeType::Static(0) {
+            } else if ret.size() == SizeType::Static(0) {
                 let mut good = true;
                 let ps = params
                     .iter()
@@ -1213,7 +1213,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     ), VariableData::with_vis(self.loc, vs)))).clone()
                 }
             }
-            else if ret.size(ctx) == SizeType::Static(0) {
+            else if ret.size() == SizeType::Static(0) {
                 let mut good = true;
                 let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {

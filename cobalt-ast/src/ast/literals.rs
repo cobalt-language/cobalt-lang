@@ -274,7 +274,7 @@ impl<'src> AST<'src> for CharLiteralAST<'src> {
                                 .custom_width_int_type(size as u32)
                                 .const_int(self.val as u64, false),
                         ),
-                        InterData::Int(self.val),
+                        InterData::Int(self.val as _),
                         types::Int::signed(size),
                     ),
                     vec![],
@@ -413,7 +413,7 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
-            let dt = ops::decay(v.data_type.clone());
+            let dt = v.data_type.decay();
             errs.append(&mut es);
             if first {
                 first = false;
@@ -521,7 +521,7 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
             .iter()
             .map(|x| {
                 let mut v = x.codegen_errs(ctx, &mut errs);
-                let decayed = ops::decay(v.data_type.clone());
+                let decayed = v.data_type.decay();
                 v = ops::impl_convert(unreachable_span(), (v, None), (decayed, None), ctx).unwrap();
                 v
             })

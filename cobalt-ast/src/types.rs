@@ -57,7 +57,15 @@ impl std::ops::Add for SizeType {
         }
     }
 }
-pub trait Type: Debug + Display + Send + Sync {
+pub trait AsTypeRef {
+    fn as_type_ref(&'static self) -> TypeRef;
+}
+impl<T: Type + Sized> AsTypeRef for T {
+    fn as_type_ref(&'static self) -> TypeRef {
+        self
+    }
+}
+pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
     fn kind() -> NonZeroU64
     where
         Self: Sized;
@@ -84,6 +92,9 @@ pub trait Type: Debug + Display + Send + Sync {
     }
     fn ins_dtor<'ctx>(&self, comp_val: Option<BasicValueEnum<'ctx>>, ctx: &CompCtx<'_, 'ctx>) {
         #![allow(unused_variables)]
+    }
+    fn decay(&self) -> TypeRef {
+        self.as_type_ref()
     }
 
     fn static_attr<'src, 'ctx>(
@@ -162,6 +173,11 @@ impl dyn Type {
 }
 impl PartialEq for dyn Type {
     fn eq(&self, other: &Self) -> bool {
+        std::ptr::addr_of!(self) as usize == std::ptr::addr_of!(other) as usize
+    }
+}
+impl<T: Type> PartialEq<T> for dyn Type {
+    fn eq(&self, other: &T) -> bool {
         std::ptr::addr_of!(self) as usize == std::ptr::addr_of!(other) as usize
     }
 }
