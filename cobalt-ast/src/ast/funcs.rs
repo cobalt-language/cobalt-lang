@@ -66,17 +66,14 @@ impl<'src> AST<'src> for FnDefAST<'src> {
     }
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         let oic = ctx.is_const.replace(true);
-        let mut ret = ops::impl_convert(
-            unreachable_span(),
-            (self.ret.codegen(ctx).0, None),
-            (types::TypeData::new(), None),
-            ctx,
-        )
-        .ok()
-        .and_then(Value::as_type)
-        .unwrap_or(types::Error::new());
-        while let Type::Mut(b) = ret {
-            ret = *b
+        let mut ret = self
+            .ret
+            .codegen(ctx)
+            .0
+            .into_type(ctx)
+            .unwrap_or(types::Error::new());
+        while let Some(b) = ret.downcast::<types::Mut>() {
+            ret = b.base()
         }
         let params = self
             .params
@@ -84,17 +81,13 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             .map(|(_, _, pt, ty, _)| {
                 (
                     {
-                        let mut val = ops::impl_convert(
-                            unreachable_span(),
-                            (ty.codegen(ctx).0, None),
-                            (types::TypeData::new(), None),
-                            ctx,
-                        )
-                        .ok()
-                        .and_then(Value::as_type)
-                        .unwrap_or(types::Error::new());
-                        while let Type::Mut(b) = val {
-                            val = *b
+                        let mut val = ty
+                            .codegen(ctx)
+                            .0
+                            .into_type(ctx)
+                            .unwrap_or(types::Error::new());
+                        while let Some(b) = val.downcast::<types::Mut>() {
+                            val = b.base()
                         }
                         val
                     },
@@ -245,22 +238,28 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 }
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(
-                            ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                                .clone(),
-                        ));
-                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {
+                        let self_t = ctx
+                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                            .add_ref(false);
+                        let p = params[0].0;
+                        if !(self_t.impl_convertible(p, ctx)
+                            || self_t.add_ref(false).impl_convertible(p, ctx)
+                            || self_t.add_ref(true).impl_convertible(p, ctx))
+                        {
                             fn_type = Some(MethodType::Normal)
                         };
                     }
                 }
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = Type::Reference(Box::new(
-                            ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                                .clone(),
-                        ));
-                        if ops::impl_convertible(&self_t, &params[0].0, ctx) {
+                        let self_t = ctx
+                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
+                            .add_ref(false);
+                        let p = params[0].0;
+                        if !(self_t.impl_convertible(p, ctx)
+                            || self_t.add_ref(false).impl_convertible(p, ctx)
+                            || self_t.add_ref(true).impl_convertible(p, ctx))
+                        {
                             fn_type = Some(MethodType::Getter)
                         };
                     }
@@ -268,7 +267,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 _ => {}
             }
         }
-        let fty = Type::Function(Box::new(ret), params);
         let vs = vis_spec.unwrap_or(ctx.export.get());
         let cf = ctx.is_cfunc(&self.name);
         let cc = cconv.unwrap_or(if cf { 0 } else { 8 });
@@ -276,200 +274,63 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         if target_match == 0 {
             return;
         }
-        if let Type::Function(ref ret, ref params) = fty {
-            if let Some(llt) = ret.llvm_type(ctx) {
-                let mut good = true;
-                let ps = params
-                    .iter()
-                    .filter_map(|(x, c)| {
-                        if *c {
-                            None
-                        } else {
-                            Some(BasicMetadataTypeEnum::from(
-                                x.llvm_type(ctx).unwrap_or_else(|| {
-                                    good = false;
-                                    IntType(ctx.context.i8_type())
-                                }),
-                            ))
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                if good && !ctx.is_const.get() {
-                    let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(
-                        &linkas.map_or_else(
-                            || {
-                                if cf {
-                                    self.name.ids.last().unwrap().0.clone()
-                                } else {
-                                    ctx.mangle(&self.name).into()
-                                }
-                            },
-                            |v| v.0,
-                        ),
-                        ft,
-                        None,
-                    );
-                    match inline {
-                        Some(true) => f.add_attribute(
-                            Function,
-                            ctx.context.create_enum_attribute(
-                                Attribute::get_named_enum_kind_id("alwaysinline"),
-                                0,
-                            ),
-                        ),
-                        Some(false) => f.add_attribute(
-                            Function,
-                            ctx.context.create_enum_attribute(
-                                Attribute::get_named_enum_kind_id("noinline"),
-                                0,
-                            ),
-                        ),
-                        _ => {}
+        if let Some(llt) = ret.llvm_type(ctx) {
+            let mut good = true;
+            let ps = params
+                .iter()
+                .filter_map(|(x, c)| {
+                    if *c {
+                        None
+                    } else {
+                        Some(BasicMetadataTypeEnum::from(
+                            x.llvm_type(ctx).unwrap_or_else(|| {
+                                good = false;
+                                IntType(ctx.context.i8_type())
+                            }),
+                        ))
                     }
-                    f.set_call_conventions(cc);
-                    let gv = f.as_global_value();
-                    if let Some(link) = link_type {
-                        gv.set_linkage(link)
-                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
-                        gv.set_linkage(Private)
-                    }
-                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self
-                        .params
-                        .iter()
-                        .zip(cloned)
-                        .filter_map(|((_,_, _, _, d), (t, _))| {
-                            d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen(ctx).0;
-                                let val =
-                                    ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                val.ok()
-                                    .and_then(|v| v.inter_val)
-                                    .unwrap_or(InterData::Null)
-                            })
-                        })
-                        .collect();
-                    let _ = ctx.with_vars(|v| {
-                        v.insert(
-                            &self.name,
-                            Symbol(
-                                Value::new(
-                                    Some(PointerValue(gv.as_pointer_value())),
-                                    Some(InterData::Function(FnData {
-                                        defaults,
-                                        cconv: cc,
-                                        mt,
-                                    })),
-                                    Type::Reference(Box::new(fty.clone())),
-                                ),
-                                VariableData {
-                                    fwd: true,
-                                    ..VariableData::with_vis(self.loc, vs)
-                                },
-                            ),
-                        )
-                    });
+                })
+                .collect::<Vec<_>>();
+            if good && !ctx.is_const.get() {
+                let ft = llt.fn_type(ps.as_slice(), false);
+                let f = ctx.module.add_function(
+                    &linkas.map_or_else(
+                        || {
+                            if cf {
+                                self.name.ids.last().unwrap().0.clone()
+                            } else {
+                                ctx.mangle(&self.name).into()
+                            }
+                        },
+                        |v| v.0,
+                    ),
+                    ft,
+                    None,
+                );
+                match inline {
+                    Some(true) => f.add_attribute(
+                        Function,
+                        ctx.context.create_enum_attribute(
+                            Attribute::get_named_enum_kind_id("alwaysinline"),
+                            0,
+                        ),
+                    ),
+                    Some(false) => f.add_attribute(
+                        Function,
+                        ctx.context.create_enum_attribute(
+                            Attribute::get_named_enum_kind_id("noinline"),
+                            0,
+                        ),
+                    ),
+                    _ => {}
                 }
-            } else if ret.size() == SizeType::Static(0) {
-                let mut good = true;
-                let ps = params
-                    .iter()
-                    .filter_map(|(x, c)| {
-                        if *c {
-                            None
-                        } else {
-                            Some(BasicMetadataTypeEnum::from(
-                                x.llvm_type(ctx).unwrap_or_else(|| {
-                                    good = false;
-                                    IntType(ctx.context.i8_type())
-                                }),
-                            ))
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                if good && !ctx.is_const.get() {
-                    let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.module.add_function(
-                        &linkas.map_or_else(
-                            || {
-                                if cf {
-                                    self.name.ids.last().unwrap().0.clone()
-                                } else {
-                                    ctx.mangle(&self.name).into()
-                                }
-                            },
-                            |v| v.0,
-                        ),
-                        ft,
-                        None,
-                    );
-                    match inline {
-                        Some(true) => f.add_attribute(
-                            Function,
-                            ctx.context.create_enum_attribute(
-                                Attribute::get_named_enum_kind_id("alwaysinline"),
-                                0,
-                            ),
-                        ),
-                        Some(false) => f.add_attribute(
-                            Function,
-                            ctx.context.create_enum_attribute(
-                                Attribute::get_named_enum_kind_id("noinline"),
-                                0,
-                            ),
-                        ),
-                        _ => {}
-                    }
-                    f.set_call_conventions(cc);
-                    let gv = f.as_global_value();
-                    if let Some(link) = link_type {
-                        gv.set_linkage(link)
-                    } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
-                        gv.set_linkage(Private)
-                    }
-                    let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self
-                        .params
-                        .iter()
-                        .zip(cloned)
-                        .filter_map(|((_, _, _, _, d), (t, _))| {
-                            d.as_ref().map(|a| {
-                                let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen(ctx).0;
-                                let val =
-                                    ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                                ctx.is_const.set(old_const);
-                                val.ok()
-                                    .and_then(|v| v.inter_val)
-                                    .unwrap_or(InterData::Null)
-                            })
-                        })
-                        .collect();
-                    let _ = ctx.with_vars(|v| {
-                        v.insert(
-                            &self.name,
-                            Symbol(
-                                Value::new(
-                                    Some(PointerValue(gv.as_pointer_value())),
-                                    Some(InterData::Function(FnData {
-                                        defaults,
-                                        cconv: cc,
-                                        mt,
-                                    })),
-                                    Type::Reference(Box::new(fty.clone())),
-                                ),
-                                VariableData {
-                                    fwd: true,
-                                    ..VariableData::with_vis(self.loc, vs)
-                                },
-                            ),
-                        )
-                    });
+                f.set_call_conventions(cc);
+                let gv = f.as_global_value();
+                if let Some(link) = link_type {
+                    gv.set_linkage(link)
+                } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
+                    gv.set_linkage(Private)
                 }
-            } else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
                 let defaults = self
                     .params
@@ -479,8 +340,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
                             let val = a.codegen(ctx).0;
-                            let val =
-                                ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
+                            let val = val.impl_convert((t, None), ctx);
                             ctx.is_const.set(old_const);
                             val.ok()
                                 .and_then(|v| v.inter_val)
@@ -493,13 +353,108 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         &self.name,
                         Symbol(
                             Value::new(
-                                None,
+                                Some(PointerValue(gv.as_pointer_value())),
                                 Some(InterData::Function(FnData {
                                     defaults,
                                     cconv: cc,
                                     mt,
                                 })),
-                                fty,
+                                types::Function::new(ret, params).add_ref(false),
+                            ),
+                            VariableData {
+                                fwd: true,
+                                ..VariableData::with_vis(self.loc, vs)
+                            },
+                        ),
+                    )
+                });
+            }
+        } else if ret.size() == SizeType::Static(0) {
+            let mut good = true;
+            let ps = params
+                .iter()
+                .filter_map(|(x, c)| {
+                    if *c {
+                        None
+                    } else {
+                        Some(BasicMetadataTypeEnum::from(
+                            x.llvm_type(ctx).unwrap_or_else(|| {
+                                good = false;
+                                IntType(ctx.context.i8_type())
+                            }),
+                        ))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if good && !ctx.is_const.get() {
+                let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
+                let f = ctx.module.add_function(
+                    &linkas.map_or_else(
+                        || {
+                            if cf {
+                                self.name.ids.last().unwrap().0.clone()
+                            } else {
+                                ctx.mangle(&self.name).into()
+                            }
+                        },
+                        |v| v.0,
+                    ),
+                    ft,
+                    None,
+                );
+                match inline {
+                    Some(true) => f.add_attribute(
+                        Function,
+                        ctx.context.create_enum_attribute(
+                            Attribute::get_named_enum_kind_id("alwaysinline"),
+                            0,
+                        ),
+                    ),
+                    Some(false) => f.add_attribute(
+                        Function,
+                        ctx.context.create_enum_attribute(
+                            Attribute::get_named_enum_kind_id("noinline"),
+                            0,
+                        ),
+                    ),
+                    _ => {}
+                }
+                f.set_call_conventions(cc);
+                let gv = f.as_global_value();
+                if let Some(link) = link_type {
+                    gv.set_linkage(link)
+                } else if ctx.flags.private_syms && !(vs || is_extern || cf) {
+                    gv.set_linkage(Private)
+                }
+                let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                let defaults = self
+                    .params
+                    .iter()
+                    .zip(cloned)
+                    .filter_map(|((_, _, _, _, d), (t, _))| {
+                        d.as_ref().map(|a| {
+                            let old_const = ctx.is_const.replace(true);
+                            let val = a.codegen(ctx).0;
+                            let val = val.impl_convert((t, None), ctx);
+                            ctx.is_const.set(old_const);
+                            val.ok()
+                                .and_then(|v| v.inter_val)
+                                .unwrap_or(InterData::Null)
+                        })
+                    })
+                    .collect();
+                let _ = ctx.with_vars(|v| {
+                    v.insert(
+                        &self.name,
+                        Symbol(
+                            Value::new(
+                                Some(PointerValue(gv.as_pointer_value())),
+                                Some(InterData::Function(FnData {
+                                    defaults,
+                                    cconv: cc,
+                                    mt,
+                                })),
+                                types::Function::new(ret, params).add_ref(false),
                             ),
                             VariableData {
                                 fwd: true,
@@ -510,8 +465,44 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 });
             }
         } else {
-            unreachable!()
-        };
+            let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+            let defaults = self
+                .params
+                .iter()
+                .zip(cloned)
+                .filter_map(|((_, _, _, _, d), (t, _))| {
+                    d.as_ref().map(|a| {
+                        let old_const = ctx.is_const.replace(true);
+                        let val = a.codegen(ctx).0;
+                        let val = val.impl_convert((t, None), ctx);
+                        ctx.is_const.set(old_const);
+                        val.ok()
+                            .and_then(|v| v.inter_val)
+                            .unwrap_or(InterData::Null)
+                    })
+                })
+                .collect();
+            let _ = ctx.with_vars(|v| {
+                v.insert(
+                    &self.name,
+                    Symbol(
+                        Value::new(
+                            None,
+                            Some(InterData::Function(FnData {
+                                defaults,
+                                cconv: cc,
+                                mt,
+                            })),
+                            types::Function::new(ret, params).add_ref(false),
+                        ),
+                        VariableData {
+                            fwd: true,
+                            ..VariableData::with_vis(self.loc, vs)
+                        },
+                    ),
+                )
+            });
+        }
     }
     fn codegen_impl<'ctx>(
         &self,
@@ -519,27 +510,22 @@ impl<'src> AST<'src> for FnDefAST<'src> {
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
         let oic = ctx.is_const.replace(true);
-        let mut ret = ops::impl_convert(
-            self.ret.loc(),
-            (self.ret.codegen_errs(ctx, &mut errs), None),
-            (types::TypeData::new(), None),
-            ctx,
-        )
-        .map_or_else(
-            |e| {
+        let mut ret = self
+            .ret
+            .codegen_errs(ctx, &mut errs)
+            .into_type(ctx)
+            .unwrap_or_else(|e| {
                 errs.push(e);
                 types::Error::new()
-            },
-            |v| v.as_type().unwrap_or(types::Error::new()),
-        );
-        if let Type::Mut(b) = ret {
+            });
+        if let Some(b) = ret.downcast::<types::Mut>() {
             errs.push(CobaltError::ReturnCantBeMut {
                 loc: self.ret.loc(),
             });
-            ret = *b;
+            ret = b.base();
         }
-        while let Type::Mut(b) = ret {
-            ret = *b
+        while let Some(b) = ret.downcast::<types::Mut>() {
+            ret = b.base()
         }
         let mut params = self
             .params
@@ -547,25 +533,19 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             .map(|(_, _, pt, ty, _)| {
                 (
                     {
-                        let mut val = ops::impl_convert(
-                            ty.loc(),
-                            (ty.codegen_errs(ctx, &mut errs), None),
-                            (types::TypeData::new(), None),
-                            ctx,
-                        )
-                        .map_or_else(
-                            |e| {
+                        let mut val = ty
+                            .codegen_errs(ctx, &mut errs)
+                            .into_type(ctx)
+                            .unwrap_or_else(|e| {
                                 errs.push(e);
                                 types::Error::new()
-                            },
-                            |v| v.as_type().unwrap_or(types::Error::new()),
-                        );
-                        if let Type::Mut(b) = val {
+                            });
+                        if let Some(b) = val.downcast::<types::Mut>() {
                             errs.push(CobaltError::ReturnCantBeMut { loc: ty.loc() });
-                            val = *b;
+                            val = b.base();
                         }
-                        while let Type::Mut(b) = val {
-                            val = *b
+                        while let Some(b) = val.downcast::<types::Mut>() {
+                            val = b.base();
                         }
                         val
                     },
@@ -877,9 +857,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     loc,
                                 });
                             }
-                            let self_t = ctx
-                                .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                                .clone();
+                            let self_t =
+                                ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap());
                             if params.is_empty() {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.loc,
@@ -888,22 +867,14 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 });
                                 params.push((types::Null::new(), false));
                             } else {
-                                let s = self_t.to_string();
-                                if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
-                                    || ops::impl_convertible(
-                                        &Type::Reference(Box::new(self_t.clone())),
-                                        &params[0].0,
-                                        ctx,
-                                    )
-                                    || ops::impl_convertible(
-                                        &Type::Reference(Box::new(Type::Mut(Box::new(self_t)))),
-                                        &params[0].0,
-                                        ctx,
-                                    ))
+                                let p = params[0].0;
+                                if !(self_t.impl_convertible(p, ctx)
+                                    || self_t.add_ref(false).impl_convertible(p, ctx)
+                                    || self_t.add_ref(true).impl_convertible(p, ctx))
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
                                         loc: self.params[0].3.loc(),
-                                        self_t: s,
+                                        self_t: self_t.to_string(),
                                         param: Some(params[0].0.to_string()),
                                     });
                                 } else {
@@ -936,9 +907,8 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     loc,
                                 });
                             }
-                            let self_t = ctx
-                                .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                                .clone();
+                            let self_t =
+                                ctx.with_vars(|v| v.symbols["self_t"].0.as_type().unwrap());
                             if params.is_empty() {
                                 errs.push(CobaltError::InvalidSelfParam {
                                     loc: self.loc,
@@ -947,22 +917,14 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 });
                                 params.push((types::Null::new(), false));
                             } else {
-                                let s = self_t.to_string();
-                                if !(ops::impl_convertible(&self_t, &params[0].0, ctx)
-                                    || ops::impl_convertible(
-                                        &Type::Reference(Box::new(self_t.clone())),
-                                        &params[0].0,
-                                        ctx,
-                                    )
-                                    || ops::impl_convertible(
-                                        &Type::Reference(Box::new(Type::Mut(Box::new(self_t)))),
-                                        &params[0].0,
-                                        ctx,
-                                    ))
+                                let p = params[0].0;
+                                if !(self_t.impl_convertible(p, ctx)
+                                    || self_t.add_ref(false).impl_convertible(p, ctx)
+                                    || self_t.add_ref(true).impl_convertible(p, ctx))
                                 {
                                     errs.push(CobaltError::InvalidSelfParam {
                                         loc: self.params[0].3.loc(),
-                                        self_t: s,
+                                        self_t: self_t.to_string(),
                                         param: Some(params[0].0.to_string()),
                                     });
                                 } else {
@@ -990,15 +952,11 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     });
                                 } else {
                                     if params.len() == 1 {
-                                        let self_t = ctx
-                                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                                            .clone();
-                                        if params[0].0 == Type::Reference(Box::new(self_t.clone()))
-                                            || params[0].0
-                                                == Type::Reference(Box::new(Type::Mut(Box::new(
-                                                    self_t,
-                                                ))))
-                                        {
+                                        let self_t = ctx.with_vars(|v| {
+                                            v.symbols["self_t"].0.as_type().unwrap()
+                                        });
+                                        let p = params[0].0;
+                                        if self_t.add_ref(false) == p || self_t.add_ref(true) == p {
                                             dtor = Some(loc);
                                             continue;
                                         }
@@ -1039,7 +997,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 }),
             }
         }
-        let fty = Type::Function(Box::new(ret), params);
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         let cf = ctx.is_cfunc(&self.name);
         let cc = cconv.map_or(0, |(cc, _)| cc);
@@ -1049,16 +1006,62 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         }
         let old_ip = ctx.builder.get_insert_block();
         ctx.var_scope.incr();
-        let val = if let Type::Function(ref ret, ref params) = fty {
+        let val = {
             match if let Some(llt) = ret.llvm_type(ctx) {
                 let mut good = true;
-                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                let ps = params
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = llt.fn_type(ps.as_slice(), false);
-                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(&linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name).into()}, |v| v.0), ft, None));
+                    let f = ctx
+                        .lookup_full(&self.name)
+                        .and_then(|x| -> Option<FunctionValue> {
+                            Some(unsafe { std::mem::transmute(x.comp_val?.as_value_ref()) })
+                        })
+                        .unwrap_or_else(|| {
+                            ctx.module.add_function(
+                                &linkas.map_or_else(
+                                    || {
+                                        if cf {
+                                            self.name.ids.last().unwrap().0.clone()
+                                        } else {
+                                            ctx.mangle(&self.name).into()
+                                        }
+                                    },
+                                    |v| v.0,
+                                ),
+                                ft,
+                                None,
+                            )
+                        });
                     match inline {
-                        Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
-                        Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        Some((true, _)) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("alwaysinline"),
+                                0,
+                            ),
+                        ),
+                        Some((false, _)) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("noinline"),
+                                0,
+                            ),
+                        ),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
@@ -1069,33 +1072,52 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen_errs(ctx, &mut errs);
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        match val {
-                            Ok(val) =>
-                                if let Some(val) = val.inter_val {val}
-                                else {
-                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                    InterData::Null
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, p, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = val.impl_convert((t, Some(p.loc())), ctx);
+                                ctx.is_const.set(old_const);
+                                match val {
+                                    Ok(val) => {
+                                        if let Some(val) = val.inter_val {
+                                            val
+                                        } else {
+                                            errs.push(CobaltError::NotCompileTime { loc: a.loc() });
+                                            InterData::Null
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errs.push(e);
+                                        InterData::Null
+                                    }
                                 }
-                            Err(e) => {
-                                errs.push(e);
-                                InterData::Null
-                            }
-                        }
-                    })).collect();
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(gv.as_pointer_value())),
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        Type::Reference(Box::new(fty.clone()))
-                    ), VariableData::with_vis(self.loc, vs)))).clone();
+                            })
+                        })
+                        .collect();
+                    let var = ctx
+                        .with_vars(|v| {
+                            v.insert(
+                                &self.name,
+                                Symbol(
+                                    Value::new(
+                                        Some(PointerValue(gv.as_pointer_value())),
+                                        Some(InterData::Function(FnData {
+                                            defaults,
+                                            cconv: cc,
+                                            mt,
+                                        })),
+                                        types::Function::new(ret, params.clone()).add_ref(false),
+                                    ),
+                                    VariableData::with_vis(self.loc, vs),
+                                ),
+                            )
+                        })
+                        .clone();
                     if is_extern.is_none() {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
@@ -1104,7 +1126,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.lex_scope.incr();
                         {
                             let mut n = 0;
-                            for ((loc, name, pt), (ty, is_const)) in self.params.iter().map(|x| (x.0, &x.1, x.2)).zip(params.iter()) {
+                            for ((loc, name, pt), &(ty, is_const)) in self
+                                .params
+                                .iter()
+                                .map(|x| (x.0, &x.1, x.2))
+                                .zip(params.iter())
+                            {
                                 if name.is_empty() {
                                     if !is_const {
                                         n += 1;
@@ -1114,64 +1141,101 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 if !is_const {
                                     let param = f.get_nth_param(n).unwrap();
                                     param.set_name(name);
-                                    let mut val = Value::compiled(param, ty.clone());
+                                    let mut val = Value::compiled(param, ty);
                                     if pt == ParamType::Mutable {
                                         let a = ctx.builder.build_alloca(param.get_type(), name);
                                         ctx.builder.build_store(a, val.comp_val.unwrap());
                                         val.comp_val = Some(a.into());
-                                        val.data_type = Type::Mut(Box::new(val.data_type));
+                                        val.data_type = types::Mut::new(val.data_type);
                                     }
                                     val.name = Some((name.clone(), ctx.lex_scope.get()));
-                                    let _ = ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData {loc: Some(loc), ..VariableData::default()})));
+                                    let _ = ctx.with_vars(|v| {
+                                        v.insert(
+                                            &DottedName::local((name.clone(), unreachable_span())),
+                                            Symbol(
+                                                val,
+                                                VariableData {
+                                                    loc: Some(loc),
+                                                    ..VariableData::default()
+                                                },
+                                            ),
+                                        )
+                                    });
                                     n += 1;
-                                }
-                                else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
-                                        None,
-                                        None,
-                                        ty.clone()
-                                    ), VariableData::default()))).map_or((), |_| ());
+                                } else {
+                                    ctx.with_vars(|v| {
+                                        v.insert(
+                                            &DottedName::local((name.clone(), unreachable_span())),
+                                            Symbol(
+                                                Value::new(None, None, ty),
+                                                VariableData::default(),
+                                            ),
+                                        )
+                                    })
+                                    .map_or((), |_| ());
                                 }
                             }
                         }
                         ctx.to_drop.borrow_mut().push(Vec::new());
                         let body = self.body.codegen_errs(ctx, &mut errs);
-                        ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
-                        let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
+                        ctx.to_drop
+                            .borrow_mut()
+                            .pop()
+                            .unwrap()
+                            .into_iter()
+                            .for_each(|v| v.ins_dtor(ctx));
+                        let graph = cfg::Cfg::new(
+                            cfg::Location::Block(entry),
+                            cfg::Location::current(ctx).unwrap(),
+                            ctx,
+                        );
                         graph.insert_dtors(ctx, true);
                         unsafe {
-                            let seen = errs.iter()
-                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(&**name as *const str)))} else {None})
+                            let seen = errs
+                                .iter()
+                                .filter_map(|err| {
+                                    if let CobaltError::DoubleMove { loc, name, .. } = err {
+                                        Some((*loc, &*(&**name as *const str)))
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .collect::<std::collections::HashSet<_>>();
-                            errs.extend(graph.validate(ctx)
-                                .into_iter()
-                                .filter(|ce| match ce {
-                                    CobaltError::DoubleMove{name, loc, ..} => {
-                                        !seen.contains(&(*loc, &**name))
-                                    } 
-                                    
-                                    CobaltError::LinearTypeNotUsed { .. } => true,
+                            errs.extend(graph.validate(ctx).into_iter().filter(|ce| match ce {
+                                CobaltError::DoubleMove { name, loc, .. } => {
+                                    !seen.contains(&(*loc, &**name))
+                                }
 
-                                    _ => false
-                                }));
+                                CobaltError::LinearTypeNotUsed { .. } => true,
+
+                                _ => false,
+                            }));
                         }
                         std::mem::drop(graph);
-                        if let Some((Type::Reference(b), _)) = params.get(0) {
-                            if let Type::Mut(b) = &**b {
-                                if let Type::Nominal(name) = &**b {
-                                    let b = ctx.nominals.borrow();
-                                    let base = &b[name].0;
-                                    if !ctx.nom_info.borrow().last().unwrap().no_auto_drop {
-                                        Value::new(
-                                            base.llvm_type(ctx).and_then(|_| f.get_first_param()),
-                                            None,
-                                            base.clone()
-                                        ).ins_dtor(ctx)
-                                    }
+                        if dtor.is_some() {
+                            if let Some(base) = params
+                                .get(0)
+                                .and_then(|ty| ty.0.downcast::<types::Reference>())
+                            {
+                                let ty = base.base();
+                                if !ty.nom_info(ctx).unwrap().no_auto_drop {
+                                    Value::new(
+                                        ty.llvm_type(ctx).and_then(|_| f.get_first_param()),
+                                        None,
+                                        ty,
+                                    )
+                                    .ins_dtor(ctx)
                                 }
                             }
                         }
-                        ctx.builder.build_return(Some(&ops::impl_convert(self.body.loc(), (body, None), ((**ret).clone(), None), ctx).map_err(|e| errs.push(e)).ok().and_then(|v| v.value(ctx)).unwrap_or(llt.const_zero())));
+                        ctx.builder.build_return(Some(
+                            &body
+                                .impl_convert((ret, Some(self.ret.loc())), ctx)
+                                .map_err(|e| errs.push(e))
+                                .ok()
+                                .and_then(|v| v.value(ctx))
+                                .unwrap_or(llt.const_zero()),
+                        ));
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
@@ -1181,47 +1245,109 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.restore_scope(old_scope);
                     }
                     var
-                }
-                else {
+                } else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen_errs(ctx, &mut errs);
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        match val {
-                            Ok(val) =>
-                                if let Some(val) = val.inter_val {val}
-                                else {
-                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                    InterData::Null
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, p, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = val.impl_convert((t, Some(p.loc())), ctx);
+                                ctx.is_const.set(old_const);
+                                match val {
+                                    Ok(val) => {
+                                        if let Some(val) = val.inter_val {
+                                            val
+                                        } else {
+                                            errs.push(CobaltError::NotCompileTime { loc: a.loc() });
+                                            InterData::Null
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errs.push(e);
+                                        InterData::Null
+                                    }
                                 }
-                            Err(e) => {
-                                errs.push(e);
-                                InterData::Null
-                            }
-                        }
-                    })).collect();
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        None,
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        fty
-                    ), VariableData::with_vis(self.loc, vs)))).clone()
+                            })
+                        })
+                        .collect();
+                    ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    None,
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    types::Function::new(ret, params).add_ref(false),
+                                ),
+                                VariableData::with_vis(self.loc, vs),
+                            ),
+                        )
+                    })
+                    .clone()
                 }
-            }
-            else if ret.size() == SizeType::Static(0) {
+            } else if ret.size() == SizeType::Static(0) {
                 let mut good = true;
-                let ps = params.iter().filter_map(|(x, c)| if *c {None} else {Some(BasicMetadataTypeEnum::from(x.llvm_type(ctx).unwrap_or_else(|| {good = false; IntType(ctx.context.i8_type())})))}).collect::<Vec<_>>();
+                let ps = params
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 if good && !ctx.is_const.get() {
                     let ft = ctx.context.void_type().fn_type(ps.as_slice(), false);
-                    let f = ctx.lookup_full(&self.name).and_then(|x| -> Option<FunctionValue> {Some(unsafe {std::mem::transmute(x.comp_val?.as_value_ref())})}).unwrap_or_else(|| ctx.module.add_function(&linkas.map_or_else(|| if cf {self.name.ids.last().unwrap().0.clone()} else {ctx.mangle(&self.name).into()}, |v| v.0), ft, None));
+                    let f = ctx
+                        .lookup_full(&self.name)
+                        .and_then(|x| -> Option<FunctionValue> {
+                            Some(unsafe { std::mem::transmute(x.comp_val?.as_value_ref()) })
+                        })
+                        .unwrap_or_else(|| {
+                            ctx.module.add_function(
+                                &linkas.map_or_else(
+                                    || {
+                                        if cf {
+                                            self.name.ids.last().unwrap().0.clone()
+                                        } else {
+                                            ctx.mangle(&self.name).into()
+                                        }
+                                    },
+                                    |v| v.0,
+                                ),
+                                ft,
+                                None,
+                            )
+                        });
                     match inline {
-                        Some((true, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("alwaysinline"), 0)),
-                        Some((false, _)) => f.add_attribute(Function, ctx.context.create_enum_attribute(Attribute::get_named_enum_kind_id("noinline"), 0)),
+                        Some((true, _)) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("alwaysinline"),
+                                0,
+                            ),
+                        ),
+                        Some((false, _)) => f.add_attribute(
+                            Function,
+                            ctx.context.create_enum_attribute(
+                                Attribute::get_named_enum_kind_id("noinline"),
+                                0,
+                            ),
+                        ),
                         _ => {}
                     }
                     f.set_call_conventions(cc);
@@ -1232,33 +1358,52 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         gv.set_linkage(Private)
                     }
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_,_, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen_errs(ctx, &mut errs);
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        match val {
-                            Ok(val) =>
-                                if let Some(val) = val.inter_val {val}
-                                else {
-                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                    InterData::Null
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, p, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = val.impl_convert((t, Some(p.loc())), ctx);
+                                ctx.is_const.set(old_const);
+                                match val {
+                                    Ok(val) => {
+                                        if let Some(val) = val.inter_val {
+                                            val
+                                        } else {
+                                            errs.push(CobaltError::NotCompileTime { loc: a.loc() });
+                                            InterData::Null
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errs.push(e);
+                                        InterData::Null
+                                    }
                                 }
-                            Err(e) => {
-                                errs.push(e);
-                                InterData::Null
-                            }
-                        }
-                    })).collect();
-                    let var = ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        Some(PointerValue(gv.as_pointer_value())),
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        Type::Reference(Box::new(fty.clone()))
-                    ), VariableData::with_vis(self.loc, vs)))).clone();
+                            })
+                        })
+                        .collect();
+                    let var = ctx
+                        .with_vars(|v| {
+                            v.insert(
+                                &self.name,
+                                Symbol(
+                                    Value::new(
+                                        Some(PointerValue(gv.as_pointer_value())),
+                                        Some(InterData::Function(FnData {
+                                            defaults,
+                                            cconv: cc,
+                                            mt,
+                                        })),
+                                        types::Function::new(ret, params.clone()).add_ref(false),
+                                    ),
+                                    VariableData::with_vis(self.loc, vs),
+                                ),
+                            )
+                        })
+                        .clone();
                     if is_extern.is_none() {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
@@ -1267,7 +1412,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.lex_scope.incr();
                         {
                             let mut n = 0;
-                            for ((loc, name, pt), (ty, is_const)) in self.params.iter().map(|x| (x.0, &x.1, x.2)).zip(params.iter()) {
+                            for ((loc, name, pt), &(ty, is_const)) in self
+                                .params
+                                .iter()
+                                .map(|x| (x.0, &x.1, x.2))
+                                .zip(params.iter())
+                            {
                                 if name.is_empty() {
                                     if !is_const {
                                         n += 1;
@@ -1277,60 +1427,90 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 if !is_const {
                                     let param = f.get_nth_param(n).unwrap();
                                     param.set_name(name);
-                                    let mut val = Value::compiled(param, ty.clone());
+                                    let mut val = Value::compiled(param, ty);
                                     if pt == ParamType::Mutable {
                                         let a = ctx.builder.build_alloca(param.get_type(), name);
                                         ctx.builder.build_store(a, val.comp_val.unwrap());
                                         val.comp_val = Some(a.into());
-                                        val.data_type = Type::Mut(Box::new(val.data_type));
+                                        val.data_type = types::Mut::new(val.data_type);
                                     }
                                     val.name = Some((name.clone(), ctx.lex_scope.get()));
-                                    let _ = ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(val, VariableData {loc: Some(loc), ..VariableData::default()})));
+                                    let _ = ctx.with_vars(|v| {
+                                        v.insert(
+                                            &DottedName::local((name.clone(), unreachable_span())),
+                                            Symbol(
+                                                val,
+                                                VariableData {
+                                                    loc: Some(loc),
+                                                    ..VariableData::default()
+                                                },
+                                            ),
+                                        )
+                                    });
                                     n += 1;
-                                }
-                                else {
-                                    ctx.with_vars(|v| v.insert(&DottedName::local((name.clone(), unreachable_span())), Symbol(Value::new(
-                                        None,
-                                        None,
-                                        ty.clone()
-                                    ), VariableData::default()))).map_or((), |_| ());
+                                } else {
+                                    ctx.with_vars(|v| {
+                                        v.insert(
+                                            &DottedName::local((name.clone(), unreachable_span())),
+                                            Symbol(
+                                                Value::new(None, None, ty),
+                                                VariableData::default(),
+                                            ),
+                                        )
+                                    })
+                                    .map_or((), |_| ());
                                 }
                             }
                         }
                         ctx.to_drop.borrow_mut().push(Vec::new());
                         self.body.codegen_errs(ctx, &mut errs);
-                        ctx.to_drop.borrow_mut().pop().unwrap().into_iter().for_each(|v| v.ins_dtor(ctx));
-                        let graph = cfg::Cfg::new(cfg::Location::Block(entry), cfg::Location::current(ctx).unwrap(), ctx);
+                        ctx.to_drop
+                            .borrow_mut()
+                            .pop()
+                            .unwrap()
+                            .into_iter()
+                            .for_each(|v| v.ins_dtor(ctx));
+                        let graph = cfg::Cfg::new(
+                            cfg::Location::Block(entry),
+                            cfg::Location::current(ctx).unwrap(),
+                            ctx,
+                        );
                         graph.insert_dtors(ctx, true);
                         unsafe {
-                            let seen = errs.iter()
-                                .filter_map(|err| if let CobaltError::DoubleMove {loc, name, ..} = err {Some((*loc, &*(&**name as *const str)))} else {None})
+                            let seen = errs
+                                .iter()
+                                .filter_map(|err| {
+                                    if let CobaltError::DoubleMove { loc, name, .. } = err {
+                                        Some((*loc, &*(&**name as *const str)))
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .collect::<std::collections::HashSet<_>>();
-                            errs.extend(graph.validate(ctx)
-                                .into_iter()
-                                .filter(|ce| match ce {
-                                    CobaltError::DoubleMove{name, loc, ..} => {
-                                        !seen.contains(&(*loc, &**name))
-                                    } 
-                                    
-                                    CobaltError::LinearTypeNotUsed { .. } => true,
+                            errs.extend(graph.validate(ctx).into_iter().filter(|ce| match ce {
+                                CobaltError::DoubleMove { name, loc, .. } => {
+                                    !seen.contains(&(*loc, &**name))
+                                }
 
-                                    _ => false
-                                }));
+                                CobaltError::LinearTypeNotUsed { .. } => true,
+
+                                _ => false,
+                            }));
                         }
                         std::mem::drop(graph);
-                        if let Some((Type::Reference(b), _)) = params.get(0) {
-                            if let Type::Mut(b) = &**b {
-                                if let Type::Nominal(name) = &**b {
-                                    let b = ctx.nominals.borrow();
-                                    let base = &b[name].0;
-                                    if !ctx.nom_info.borrow().last().unwrap().no_auto_drop {
-                                        Value::new(
-                                            base.llvm_type(ctx).and_then(|_| f.get_first_param()),
-                                            None,
-                                            base.clone()
-                                        ).ins_dtor(ctx)
-                                    }
+                        if dtor.is_some() {
+                            if let Some(base) = params
+                                .get(0)
+                                .and_then(|ty| ty.0.downcast::<types::Reference>())
+                            {
+                                let ty = base.base();
+                                if !ty.nom_info(ctx).unwrap().no_auto_drop {
+                                    Value::new(
+                                        ty.llvm_type(ctx).and_then(|_| f.get_first_param()),
+                                        None,
+                                        ty,
+                                    )
+                                    .ins_dtor(ctx)
                                 }
                             }
                         }
@@ -1344,86 +1524,120 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ctx.restore_scope(old_scope);
                     }
                     var
-                }
-                else {
+                } else {
                     let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                    let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
-                        let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen_errs(ctx, &mut errs);
-                        let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                        ctx.is_const.set(old_const);
-                        match val {
-                            Ok(val) =>
-                                if let Some(val) = val.inter_val {val}
-                                else {
-                                    errs.push(CobaltError::NotCompileTime {loc: a.loc()});
+                    let defaults = self
+                        .params
+                        .iter()
+                        .zip(cloned)
+                        .filter_map(|((_, _, _, p, d), (t, _))| {
+                            d.as_ref().map(|a| {
+                                let old_const = ctx.is_const.replace(true);
+                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = val.impl_convert((t, Some(p.loc())), ctx);
+                                ctx.is_const.set(old_const);
+                                match val {
+                                    Ok(val) => {
+                                        if let Some(val) = val.inter_val {
+                                            val
+                                        } else {
+                                            errs.push(CobaltError::NotCompileTime { loc: a.loc() });
+                                            InterData::Null
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errs.push(e);
+                                        InterData::Null
+                                    }
+                                }
+                            })
+                        })
+                        .collect();
+                    ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    None,
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    types::Function::new(ret, params).add_ref(false),
+                                ),
+                                VariableData::with_vis(self.loc, vs),
+                            ),
+                        )
+                    })
+                    .clone()
+                }
+            } else {
+                let cloned = params.clone(); // Rust doesn't like me using params in the following closure
+                let defaults = self
+                    .params
+                    .iter()
+                    .zip(cloned)
+                    .filter_map(|((_, _, _, p, d), (t, _))| {
+                        d.as_ref().map(|a| {
+                            let old_const = ctx.is_const.replace(true);
+                            let val = a.codegen_errs(ctx, &mut errs);
+                            let val = val.impl_convert((t, Some(p.loc())), ctx);
+                            ctx.is_const.set(old_const);
+                            match val {
+                                Ok(val) => {
+                                    if let Some(val) = val.inter_val {
+                                        val
+                                    } else {
+                                        errs.push(CobaltError::NotCompileTime { loc: a.loc() });
+                                        InterData::Null
+                                    }
+                                }
+                                Err(e) => {
+                                    errs.push(e);
                                     InterData::Null
                                 }
-                            Err(e) => {
-                                errs.push(e);
-                                InterData::Null
                             }
-                        }
-                    })).collect();
-                    ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                        None,
-                        Some(InterData::Function(FnData {
-                            defaults,
-                            cconv: cc,
-                            mt
-                        })),
-                        fty
-                    ), VariableData::with_vis(self.loc, vs)))).clone()
-                }
-            }
-            else {
-                let cloned = params.clone(); // Rust doesn't like me using params in the following closure
-                let defaults = self.params.iter().zip(cloned).filter_map(|((_, _, _, _, d), (t, _))| d.as_ref().map(|a| {
-                    let old_const = ctx.is_const.replace(true);
-                    let val = a.codegen_errs(ctx, &mut errs);
-                    let val = ops::impl_convert(a.loc(), (val, None), (t.clone(), None), ctx);
-                    ctx.is_const.set(old_const);
-                    match val {
-                        Ok(val) =>
-                            if let Some(val) = val.inter_val {val}
-                            else {
-                                errs.push(CobaltError::NotCompileTime {loc: a.loc()});
-                                InterData::Null
-                            }
-                        Err(e) => {
-                            errs.push(e);
-                            InterData::Null
-                        }
-                    }
-                })).collect();
-                ctx.with_vars(|v| v.insert(&self.name, Symbol(Value::new(
-                    None,
-                    Some(InterData::Function(FnData {
-                        defaults,
-                        cconv: cc,
-                        mt
-                    })),
-                    fty
-                ), VariableData::with_vis(self.loc, vs)))).clone()
+                        })
+                    })
+                    .collect();
+                ctx.with_vars(|v| {
+                    v.insert(
+                        &self.name,
+                        Symbol(
+                            Value::new(
+                                None,
+                                Some(InterData::Function(FnData {
+                                    defaults,
+                                    cconv: cc,
+                                    mt,
+                                })),
+                                types::Function::new(ret, params).add_ref(false),
+                            ),
+                            VariableData::with_vis(self.loc, vs),
+                        ),
+                    )
+                })
+                .clone()
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(CobaltError::NotAModule {
                         loc: self.name.ids[x].1,
-                        name: self.name.start(x).to_string()
+                        name: self.name.start(x).to_string(),
                     });
                     (Value::error(), errs)
-                },
+                }
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
                     errs.push(CobaltError::RedefVariable {
                         loc: self.name.ids[x].1,
                         name: self.name.start(x).to_string(),
-                        prev: d
+                        prev: d,
                     });
                     (Value::error(), errs)
                 }
             }
-        } else {unreachable!("In order for this to be reachable, fty would have to somehow be mutated, which is impossible")}.clone();
+        };
         ctx.var_scope.decr();
         if is_extern.is_none() {
             if let Some(bb) = old_ip {
@@ -1433,7 +1647,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             }
         }
         if dtor.is_some() && !ctx.prepass.get() {
-            let mut borrow = ctx.nom_info.borrow_mut();
+            let mut borrow = ctx.nom_stack.borrow_mut();
             let dval = &mut borrow.last_mut().unwrap().dtor;
             *dval = dval.or(val
                 .0
@@ -1536,16 +1750,11 @@ impl<'src> AST<'src> for CallAST<'src> {
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let (val, mut errs) = self.target.codegen(ctx);
         (
-            ops::call(
-                val,
-                self.target.loc(),
+            val.call(
                 Some(self.cparen),
                 self.args
                     .iter()
-                    .map(|a| {
-                        let arg = a.codegen_errs(ctx, &mut errs);
-                        (arg, a.loc())
-                    })
+                    .map(|a| a.codegen_errs(ctx, &mut errs))
                     .collect(),
                 ctx,
             )
@@ -1595,7 +1804,7 @@ impl<'src> AST<'src> for IntrinsicAST<'src> {
             "alloca" | "asm" | "sizeof" | "typeof" | "typename"
         ) {
             (
-                Value::new(None, None, Type::Intrinsic(self.name.to_string())),
+                Value::new(None, None, types::Intrinsic::new_ref(&self.name)),
                 vec![],
             )
         } else {

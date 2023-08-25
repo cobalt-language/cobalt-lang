@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 use crate::*;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
@@ -72,46 +73,47 @@ pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
     fn self_kind(&self) -> NonZeroU64 {
         todo!()
     }
-    fn size(&self) -> SizeType;
-    fn align(&self) -> u16;
-    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
-        #![allow(unused_variables)]
+    fn size(&'static self) -> SizeType;
+    fn align(&'static self) -> u16;
+    fn llvm_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         None
     }
-    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    fn ptr_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         (self.size() != SizeType::Meta).then(|| ctx.null_type.ptr_type(Default::default()).into())
     }
 
-    fn nom_info<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
-        #![allow(unused_variables)]
+    fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
         None
     }
-    fn has_dtor(&self, ctx: &CompCtx) -> bool {
-        #![allow(unused_variables)]
+    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
         false
     }
-    fn ins_dtor<'ctx>(&self, comp_val: Option<BasicValueEnum<'ctx>>, ctx: &CompCtx<'_, 'ctx>) {
-        #![allow(unused_variables)]
+    fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
+        false
     }
-    fn decay(&self) -> TypeRef {
+    fn ins_dtor<'ctx>(
+        &'static self,
+        comp_val: Option<BasicValueEnum<'ctx>>,
+        ctx: &CompCtx<'_, 'ctx>,
+    ) {
+    }
+    fn decay(&'static self) -> TypeRef {
         self.as_type_ref()
     }
 
     fn static_attr<'src, 'ctx>(
-        &self,
+        &'static self,
         name: &str,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Option<Value<'src, 'ctx>> {
-        #![allow(unused_variables)]
         None
     }
     fn attr<'src, 'ctx>(
-        &self,
+        &'static self,
         val: &Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        #![allow(unused_variables)]
         Err(CobaltError::AttrNotDefined {
             val: self.to_string(),
             attr: attr.0,
@@ -119,30 +121,157 @@ pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
             aloc: attr.1,
         })
     }
+    fn impl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        self._can_iconv_to(other, ctx) || other._can_iconv_from(self.as_type_ref(), ctx)
+    }
+    fn expl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        self._can_econv_to(other, ctx)
+            || other._can_econv_from(self.as_type_ref(), ctx)
+            || self.impl_convertible(other, ctx)
+    }
+    fn common(&'static self, other: TypeRef, ctx: &CompCtx) -> Option<TypeRef> {
+        let this = self.as_type_ref();
+        if this.impl_convertible(other, ctx) {
+            Some(other)
+        } else if other.impl_convertible(this, ctx) {
+            Some(this)
+        } else {
+            let ty = types::TypeData::new();
+            (this.impl_convertible(ty, ctx) && other.impl_convertible(ty, ctx)).then_some(ty)
+        }
+    }
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_preop(&val, op, oloc))
+    }
+    fn post_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_postop(&val, op, oloc))
+    }
+    fn call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        idx.data_type
+            .is::<types::Error>()
+            .then(Value::error)
+            .ok_or_else(|| invalid_sub(&val, &idx))
+    }
+
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    fn _iconv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, self.as_type_ref(), target))
+    }
+    fn _econv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
+    }
+    fn _econv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, self.as_type_ref(), target))
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_econv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_bin_lhs(rhs.data_type.as_type_ref(), op.0, ctx));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    fn _bin_rhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_bin_rhs(lhs.data_type.as_type_ref(), op.0, ctx));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    fn _has_bin_lhs(&self, other: TypeRef, op: &'static str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_bin_rhs(&self, other: TypeRef, op: &'static str, ctx: &CompCtx) -> bool {
+        false
+    }
 
     fn compiled<'src, 'ctx>(
-        &self,
+        &'static self,
         inter_val: &InterData<'src, 'ctx>,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        #![allow(unused_variables)]
         None
     }
     fn save_header(out: &mut dyn Write) -> io::Result<()>
     where
         Self: Sized,
     {
-        #![allow(unused_variables)]
         Ok(())
     }
     fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
     where
         Self: Sized,
     {
-        #![allow(unused_variables)]
         Ok(())
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()>;
+    fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
     fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
     where
         Self: Sized;
@@ -155,10 +284,21 @@ pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
     {
         std::mem::transmute::<&&dyn Type, &&Self>(&val)
     }
+
+    fn add_ref(&'static self, is_mut: bool) -> TypeRef {
+        types::Reference::new(if is_mut {
+            types::Mut::new(self.as_type_ref())
+        } else {
+            self.as_type_ref()
+        })
+    }
 }
 impl dyn Type {
+    pub fn is<T: Type>(&self) -> bool {
+        self.self_kind() == T::kind()
+    }
     pub fn downcast<T: Type>(&self) -> Option<&T> {
-        if self.self_kind() == T::kind() {
+        if self.is::<T>() {
             Some(unsafe { T::downcast_impl(self) })
         } else {
             None

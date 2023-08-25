@@ -67,8 +67,6 @@ pub enum CobaltError<'src> {
         vloc: Option<SourceSpan>,
         #[label("target type is `{ty}`")]
         tloc: Option<SourceSpan>,
-        #[label]
-        oloc: SourceSpan,
     },
     #[error("cannot call value of type `{val}` with arguments ({})", .args.join(", "))]
     CannotCallWithArgs {

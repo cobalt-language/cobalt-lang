@@ -388,6 +388,10 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             None
         }
     }
+    pub fn into_type(self, ctx: &CompCtx<'src, 'ctx>) -> Result<TypeRef, CobaltError<'src>> {
+        self.impl_convert((types::TypeData::new(), None), ctx)
+            .map(|v| v.as_type().unwrap_or(types::Error::new()))
+    }
     pub fn into_mod(
         self,
     ) -> Option<(
@@ -440,6 +444,76 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         self.data_type.attr(self, attr, ctx)
+    }
+    pub fn impl_convert(
+        self,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.data_type._can_iconv_to(target.0, ctx) {
+            self.data_type._iconv_to(self, target, ctx)
+        } else if target.0._can_iconv_from(self.data_type, ctx) {
+            target.0._iconv_from(self, target.1, ctx)
+        } else {
+            Err(cant_iconv(&self, target.0, target.1))
+        }
+    }
+    pub fn expl_convert(
+        self,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.data_type._can_econv_to(target.0, ctx) {
+            self.data_type._econv_to(self, target, ctx)
+        } else if target.0._can_econv_from(self.data_type, ctx) {
+            target.0._econv_from(self, target.1, ctx)
+        } else {
+            let err = cant_econv(&self, target.0, target.1);
+            self.impl_convert(target, ctx).map_err(|_| err)
+        }
+    }
+    pub fn pre_op(
+        self,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.pre_op(self, op.0, op.1, ctx, true)
+    }
+    pub fn post_op(
+        self,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.post_op(self, op.0, op.1, ctx, true)
+    }
+    pub fn bin_op(
+        self,
+        op: (&'static str, SourceSpan),
+        other: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.data_type._has_bin_lhs(other.data_type, op.0, ctx) {
+            self.data_type._bin_lhs(self, other, op, ctx)
+        } else if other.data_type._has_bin_rhs(self.data_type, op.0, ctx) {
+            other.data_type._bin_rhs(self, other, op, ctx)
+        } else {
+            Err(invalid_binop(&self, &other, op.0, op.1))
+        }
+    }
+    pub fn call(
+        self,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.call(self, cparen, args, ctx)
+    }
+    pub fn subscript(
+        self,
+        other: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.subscript(self, other, ctx)
     }
 
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {

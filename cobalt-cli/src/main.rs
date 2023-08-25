@@ -13,11 +13,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use cobalt_ast::{CompCtx, AST};
+use cobalt_ast::{CompCtx, Flags, AST};
 use cobalt_build::*;
 use cobalt_errors::*;
 use cobalt_parser::prelude::*;
-use cobalt_utils::Flags;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputType {

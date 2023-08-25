@@ -262,6 +262,7 @@ impl SizedArray {
     pub fn elem(&self) -> TypeRef {
         self.0 .0
     }
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u32 {
         self.0 .1
     }

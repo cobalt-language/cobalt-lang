@@ -3,13 +3,14 @@ use cobalt_llvm::inkwell::values::BasicValue;
 use crate::*;
 #[derive(Debug, Clone)]
 pub struct CastAST<'src> {
-    loc: SourceSpan,
     pub val: BoxedAST<'src>,
     pub target: BoxedAST<'src>,
 }
 impl<'src> CastAST<'src> {
-    pub fn new(loc: SourceSpan, val: BoxedAST<'src>, target: BoxedAST<'src>) -> Self {
-        CastAST { loc, val, target }
+    // TODO: remove unused parameter
+    // _loc is kept for API stability
+    pub fn new(_loc: SourceSpan, val: BoxedAST<'src>, target: BoxedAST<'src>) -> Self {
+        CastAST { val, target }
     }
 }
 impl<'src> AST<'src> for CastAST<'src> {
@@ -28,37 +29,21 @@ impl<'src> AST<'src> for CastAST<'src> {
             return (Value::error(), errs);
         }
         let oic = ctx.is_const.replace(true);
-        let t = ops::impl_convert(
-            self.target.loc(),
-            (self.target.codegen_errs(ctx, &mut errs), None),
-            (types::TypeData::new(), None),
-            ctx,
-        )
-        .map_or_else(
-            |e| {
-                errs.push(e);
-                types::Error::new()
-            },
-            |v| {
-                if let Some(InterData::Type(t)) = v.inter_val {
-                    *t
-                } else {
-                    types::Error::new()
-                }
-            },
-        );
-        ctx.is_const.set(oic);
-        (
-            ops::expl_convert(
-                self.loc,
-                (val, Some(self.val.loc())),
-                (t, Some(self.target.loc())),
-                ctx,
-            )
+        let t = self
+            .target
+            .const_codegen_errs(ctx, &mut errs)
+            .into_type(ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
-                Value::error()
-            }),
+                types::Error::new()
+            });
+        ctx.is_const.set(oic);
+        (
+            val.expl_convert((t, Some(self.target.loc())), ctx)
+                .unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::error()
+                }),
             errs,
         )
     }
@@ -100,32 +85,26 @@ impl<'src> AST<'src> for BitCastAST<'src> {
             return (Value::error(), errs);
         }
         let oic = ctx.is_const.replace(true);
-        let t = ops::impl_convert(
-            self.target.loc(),
-            (self.target.codegen_errs(ctx, &mut errs), None),
-            (types::TypeData::new(), None),
-            ctx,
-        )
-        .map_or_else(
-            |e| {
-                errs.push(e);
-                types::Error::new()
-            },
-            |v| {
-                if let Some(InterData::Type(t)) = v.inter_val {
-                    *t
-                } else {
-                    types::Error::new()
-                }
-            },
-        );
-        ctx.is_const.set(oic);
-        let decayed = val.data_type.decay();
-        val = ops::impl_convert(unreachable_span(), (val, None), (decayed, None), ctx)
+        let t = self
+            .target
+            .const_codegen_errs(ctx, &mut errs)
+            .into_type(ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
-                Value::error()
+                types::Error::new()
             });
+        ctx.is_const.set(oic);
+        let decayed = if let (types::IntLiteral::KIND, SizeType::Static(s)) =
+            (val.data_type.self_kind(), t.size())
+        {
+            types::Int::signed(u16::try_from(s * 8).unwrap_or(64))
+        } else {
+            val.data_type.decay()
+        };
+        val = val.impl_convert((decayed, None), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        });
         match (t.size(), val.data_type.size()) {
             (SizeType::Static(d), SizeType::Static(s)) => {
                 if d != s {

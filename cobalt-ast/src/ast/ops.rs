@@ -30,12 +30,12 @@ impl<'src> AST<'src> for BinOpAST<'src> {
         match self.op {
             "&?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond =
-                    ops::expl_convert(self.lhs.loc(), (lhs, None), (types::Int::bool(), None), ctx)
-                        .unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
+                let cond = lhs
+                    .expl_convert((types::Int::bool(), None), ctx)
+                    .unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error()
+                    });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
                     let f = bb.get_parent().unwrap();
@@ -49,13 +49,11 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     if rhs.data_type.self_kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::unsigned(64);
                     }
-                    let rdt = rhs.data_type.clone();
-                    let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(
-                        self.rhs.loc(),
-                        (Value::metaval(InterData::Int(0), types::Int::bool()), None),
-                        (rhs.data_type.clone(), None),
-                        ctx,
-                    ) {
+                    let rdt = rhs.data_type;
+                    let (comp_val, inter_val) = if let Ok(rhv) =
+                        Value::metaval(InterData::Int(0), types::Int::bool())
+                            .expl_convert((types::Int::bool(), None), ctx)
+                    {
                         (
                             if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                                 let llt = val.get_type();
@@ -76,12 +74,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             },
                         )
                     } else {
-                        match ops::expl_convert(
-                            self.rhs.loc(),
-                            (rhs, None),
-                            (types::Int::bool(), None),
-                            ctx,
-                        ) {
+                        match rhs.expl_convert((types::Int::bool(), None), ctx) {
                             Ok(rhv) => (
                                 if let Some(val) = rhv.value(ctx) {
                                     let llt = ctx.context.bool_type();
@@ -114,12 +107,12 @@ impl<'src> AST<'src> for BinOpAST<'src> {
             }
             "|?" => {
                 let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let cond =
-                    ops::expl_convert(self.lhs.loc(), (lhs, None), (types::Int::bool(), None), ctx)
-                        .unwrap_or_else(|e| {
-                            errs.push(e);
-                            Value::error()
-                        });
+                let cond = lhs
+                    .expl_convert((types::Int::bool(), None), ctx)
+                    .unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error()
+                    });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
                     let f = bb.get_parent().unwrap();
@@ -133,13 +126,11 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     if rhs.data_type.self_kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::signed(64);
                     }
-                    let rdt = rhs.data_type.clone();
-                    let (comp_val, inter_val) = if let Ok(rhv) = ops::expl_convert(
-                        self.rhs.loc(),
-                        (Value::metaval(InterData::Int(1), types::Int::bool()), None),
-                        (rhs.data_type.clone(), None),
-                        ctx,
-                    ) {
+                    let rdt = rhs.data_type;
+                    let (comp_val, inter_val) = if let Ok(rhv) =
+                        Value::metaval(InterData::Int(1), types::Int::bool())
+                            .expl_convert((types::Int::bool(), None), ctx)
+                    {
                         (
                             if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                                 let llt = val.get_type();
@@ -160,12 +151,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             },
                         )
                     } else {
-                        match ops::expl_convert(
-                            self.rhs.loc(),
-                            (rhs, None),
-                            (types::Int::bool(), None),
-                            ctx,
-                        ) {
+                        match rhs.expl_convert((types::Int::bool(), None), ctx) {
                             Ok(rhv) => (
                                 if let Some(val) = rhv.value(ctx) {
                                     let llt = ctx.context.bool_type();
@@ -203,16 +189,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     return (Value::error(), errs);
                 }
                 (
-                    ops::bin_op(
-                        self.loc,
-                        (lhs, self.lhs.loc()),
-                        (rhs, self.rhs.loc()),
-                        x,
-                        ctx,
-                        true,
-                        true,
-                    )
-                    .unwrap_or_else(|e| {
+                    lhs.bin_op((x, self.loc), rhs, ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error()
                     }),
@@ -259,7 +236,7 @@ impl<'src> AST<'src> for PostfixAST<'src> {
             return (Value::error(), errs);
         }
         (
-            ops::post_op(self.loc, (v, self.val.loc()), self.op, ctx, true).unwrap_or_else(|e| {
+            v.post_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             }),
@@ -303,7 +280,7 @@ impl<'src> AST<'src> for PrefixAST<'src> {
             return (Value::error(), errs);
         }
         (
-            ops::pre_op(self.loc, (v, self.val.loc()), self.op, ctx, true).unwrap_or_else(|e| {
+            v.pre_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             }),
@@ -348,11 +325,10 @@ impl<'src> AST<'src> for SubAST<'src> {
             return (Value::error(), errs);
         }
         (
-            ops::subscript((target, self.target.loc()), (index, self.index.loc()), ctx)
-                .unwrap_or_else(|e| {
-                    errs.push(e);
-                    Value::error()
-                }),
+            target.subscript(index, ctx).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            }),
             errs,
         )
     }
@@ -389,78 +365,14 @@ impl<'src> AST<'src> for DotAST<'src> {
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut errs = vec![];
-        let r = self.obj.codegen_errs(ctx, &mut errs);
-        let v = match r {
-            Value {
-                data_type: Type::Module,
-                inter_val: Some(InterData::Module(s, i, n)),
-                ..
-            } => {
-                let (e, v) = ctx
-                    .with_vars(|v| VarMap::lookup_in_mod((&s, &i), &self.name.0, v))
-                    .map_or_else(
-                        || {
-                            (
-                                Some(CobaltError::VariableDoesNotExist {
-                                    name: self.name.0.clone(),
-                                    module: n,
-                                    container: "module",
-                                    loc: self.name.1,
-                                }),
-                                Value::error(),
-                            )
-                        },
-                        |Symbol(x, d)| {
-                            (
-                                if !d.init {
-                                    Some(CobaltError::UninitializedGlobal {
-                                        name: self.name.0.clone(),
-                                        loc: self.name.1,
-                                    })
-                                } else {
-                                    None
-                                },
-                                x.clone(),
-                            )
-                        },
-                    );
-                errs.extend(e);
-                v
-            }
-            Value {
-                data_type: types::TypeData::new(),
-                inter_val: Some(InterData::Type(t)),
-                ..
-            } => {
-                if let Type::Nominal(n) = &*t {
-                    if let Some(v) = ctx.nominals.borrow()[n].2.get(&*self.name.0) {
-                        v.clone()
-                    } else {
-                        errs.push(CobaltError::VariableDoesNotExist {
-                            name: self.name.0.clone(),
-                            module: n.clone(),
-                            container: "type",
-                            loc: self.name.1,
-                        });
-                        Value::error()
-                    }
-                } else {
-                    errs.push(CobaltError::VariableDoesNotExist {
-                        name: self.name.0.clone(),
-                        module: t.to_string(),
-                        container: "type",
-                        loc: self.name.1,
-                    });
-                    Value::error()
-                }
-            }
-            x => ops::attr((x, self.obj.loc()), (&self.name.0, self.name.1), ctx).unwrap_or_else(
-                |e| {
-                    errs.push(e);
-                    Value::error()
-                },
-            ),
-        };
+        let v = self
+            .obj
+            .codegen_errs(ctx, &mut errs)
+            .attr(self.name.clone(), ctx)
+            .unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            });
         (v, errs)
     }
     fn print_impl(

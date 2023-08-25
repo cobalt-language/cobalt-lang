@@ -352,10 +352,11 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
                                 .map(|&c| InterData::Int(c as i128))
                                 .collect(),
                         ),
-                        types::Reference::new(types::SizedArray::new(
+                        types::SizedArray::new(
                             types::Int::unsigned(8),
                             self.val.len() as u32 + self.suffix.is_some() as u32,
-                        )),
+                        )
+                        .add_ref(false),
                     ),
                     vec![],
                 )
@@ -407,7 +408,7 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut elems = vec![];
-        let mut ty = types::Null::new();
+        let mut ty = types::Null::new() as _;
         let mut first = true;
         let mut elem_loc = unreachable_span();
         let mut errs = vec![];
@@ -420,7 +421,7 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
                 elem_loc = val.loc();
                 ty = dt;
             } else if ty != dt {
-                if let Some(t) = ops::common(&ty, &dt, ctx) {
+                if let Some(t) = ty.common(dt, ctx) {
                     ty = t;
                     elem_loc = val.loc();
                 } else {
@@ -443,9 +444,8 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
         }
         let elems = elems
             .into_iter()
-            .enumerate()
-            .filter_map(|(n, v)| {
-                ops::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx)
+            .filter_map(|v| {
+                v.impl_convert((ty, None), ctx)
                     .map_err(|e| errs.push(e))
                     .ok()
             })
@@ -520,10 +520,9 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
             .vals
             .iter()
             .map(|x| {
-                let mut v = x.codegen_errs(ctx, &mut errs);
+                let v = x.codegen_errs(ctx, &mut errs);
                 let decayed = v.data_type.decay();
-                v = ops::impl_convert(unreachable_span(), (v, None), (decayed, None), ctx).unwrap();
-                v
+                v.impl_convert((decayed, None), ctx).unwrap()
             })
             .map(
                 |Value {
@@ -612,7 +611,7 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
         // Determine the data type of this literal just by looking at the fields it has defined.
         let mut lookup = std::collections::BTreeMap::new();
         for (n, (name, _)) in vec.iter().enumerate() {
-            lookup.insert(Box::from(**name), n);
+            lookup.insert(Box::from(&***name), n);
         }
 
         // Compute the value, if possible, of the fields.
