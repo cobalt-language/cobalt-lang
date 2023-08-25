@@ -2,6 +2,7 @@
 use crate::*;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
+use once_cell::sync::Lazy;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io::{self, BufRead, Read, Write};
@@ -328,6 +329,52 @@ impl Hash for dyn Type {
     }
 }
 pub type TypeRef = &'static dyn Type;
+
+pub struct TypeLoader {
+    pub kind: NonZeroU64,
+    pub save_header: fn(&mut dyn Write) -> io::Result<()>,
+    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
+    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+}
+impl TypeLoader {
+    pub fn new<T: Type>() -> Self {
+        Self {
+            kind: T::kind(),
+            save_header: T::save_header,
+            load_header: T::load_header,
+            load_type: T::load,
+        }
+    }
+}
+inventory::collect!(TypeLoader);
+pub struct LoadInfo {
+    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
+    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+}
+impl LoadInfo {
+    pub fn new(
+        &TypeLoader {
+            kind,
+            load_header,
+            load_type,
+            ..
+        }: &'static TypeLoader,
+    ) -> (NonZeroU64, Self) {
+        (
+            kind,
+            Self {
+                load_header,
+                load_type,
+            },
+        )
+    }
+}
+pub static TYPE_SERIAL_REGISTRY: Lazy<dashmap::DashMap<NonZeroU64, LoadInfo>> = Lazy::new(|| {
+    inventory::iter::<TypeLoader>
+        .into_iter()
+        .map(LoadInfo::new)
+        .collect()
+});
 /// save a type to the output buffer
 pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
     buf.write_all(&ty.self_kind().get().to_be_bytes())?;
@@ -344,8 +391,19 @@ pub fn load_type(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
 }
 /// type ids are NonZeroU64, so if it reads a 0 it returns None
 pub fn load_type_opt(buf: &mut dyn BufRead) -> io::Result<Option<TypeRef>> {
-    #![allow(unused_variables)]
-    todo!()
+    let mut bytes = [0u8; 8];
+    buf.read_exact(&mut bytes)?;
+    if let Some(kind) = NonZeroU64::new(u64::from_be_bytes(bytes)) {
+        let info = TYPE_SERIAL_REGISTRY.get(&kind).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unknown type ID {kind:8>0X}"),
+            )
+        })?;
+        (info.load_type)(buf).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 #[derive(Debug, Clone, Default)]
 pub struct NominalInfo<'ctx> {

@@ -275,11 +275,28 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for info in inventory::iter::<types::TypeLoader> {
+            out.write_all(&info.kind.get().to_be_bytes())?;
+            (info.save_header)(out)?;
+        }
+        out.write_all(&[0])?;
         self.with_vars(|v| v.save(out))
     }
     pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<Cow<'src, str>>> {
         let mut out = vec![];
         while !buf.fill_buf()?.is_empty() {
+            let mut bytes = [0u8; 8];
+            loop {
+                buf.read_exact(&mut bytes)?;
+                let Some(kind) = std::num::NonZeroU64::new(u64::from_be_bytes(bytes)) else {break};
+                let info = types::TYPE_SERIAL_REGISTRY.get(&kind).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unknown type ID {kind:8>0X}"),
+                    )
+                })?;
+                (info.load_header)(buf)?;
+            }
             out.append(&mut self.with_vars(|v| v.load(buf, self))?);
         }
         Ok(out)
