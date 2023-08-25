@@ -450,7 +450,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         target: (TypeRef, Option<SourceSpan>),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        if self.data_type._can_iconv_to(target.0, ctx) {
+        if self.data_type == target.0 {
+            Ok(self)
+        } else if self.data_type._can_iconv_to(target.0, ctx) {
             self.data_type._iconv_to(self, target, ctx)
         } else if target.0._can_iconv_from(self.data_type, ctx) {
             target.0._iconv_from(self, target.1, ctx)
@@ -463,7 +465,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         target: (TypeRef, Option<SourceSpan>),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        if self.data_type._can_econv_to(target.0, ctx) {
+        if self.data_type == target.0 {
+            Ok(self)
+        } else if self.data_type._can_econv_to(target.0, ctx) {
             self.data_type._econv_to(self, target, ctx)
         } else if target.0._can_econv_from(self.data_type, ctx) {
             target.0._econv_from(self, target.1, ctx)

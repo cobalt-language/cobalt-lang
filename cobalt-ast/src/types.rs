@@ -129,7 +129,9 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         })
     }
     fn impl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
-        self._can_iconv_to(other, ctx) || other._can_iconv_from(self.as_type_ref(), ctx)
+        self.as_type_ref() == other
+            || self._can_iconv_to(other, ctx)
+            || other._can_iconv_from(self.as_type_ref(), ctx)
     }
     fn expl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         self._can_econv_to(other, ctx)
@@ -289,7 +291,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     where
         Self: ConcreteType,
     {
-        std::mem::transmute::<&&dyn Type, &&Self>(&val)
+        std::mem::transmute::<&dyn Type, (&Self, *const u8)>(val).0
     }
 
     fn add_ref(&'static self, is_mut: bool) -> TypeRef {
@@ -320,12 +322,19 @@ impl dyn Type {
 }
 impl PartialEq for dyn Type {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::addr_of!(self) as usize == std::ptr::addr_of!(other) as usize
+        unsafe {
+            // extract thin pointers
+            std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(self).0
+                == std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(other).0
+        }
     }
 }
-impl<T: Type> PartialEq<T> for dyn Type {
+impl<T: Type + Sized> PartialEq<T> for dyn Type {
     fn eq(&self, other: &T) -> bool {
-        std::ptr::addr_of!(self) as usize == std::ptr::addr_of!(other) as usize
+        std::ptr::eq(
+            unsafe { std::mem::transmute::<&dyn Type, (*const T, *const u8)>(self).0 },
+            other,
+        )
     }
 }
 impl Eq for dyn Type {}
