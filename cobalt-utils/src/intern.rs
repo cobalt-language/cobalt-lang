@@ -21,15 +21,11 @@ impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
     }
     pub fn intern(&'a self, key: K) -> &K {
         let hashed = hash(&key);
-        if let Some(k) = self
-            .map
-            .read()
-            .unwrap()
-            .get(hashed, |v| v.0 == &key)
-            .map(|x| x.1)
-        {
+        let lock = self.map.read().unwrap();
+        if let Some(k) = lock.get(hashed, |v| v.0 == &key).map(|x| x.1) {
             &self.vec[k]
         } else {
+            std::mem::drop(lock);
             let mut lock = self.map.write().unwrap();
             let idx = self.vec.push(key);
             let val = &self.vec[idx];
@@ -46,15 +42,14 @@ impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
         for<'b> &'b Q: Into<K>,
     {
         let hashed = hash(&key);
-        if let Some(k) = self
-            .map
-            .read()
-            .unwrap()
+        let lock = self.map.read().unwrap();
+        if let Some(k) = lock
             .get(hashed, |v| key.as_ref() == v.0.as_ref())
             .map(|x| x.1)
         {
             &self.vec[k]
         } else {
+            std::mem::drop(lock);
             let mut lock = self.map.write().unwrap();
             let idx = self.vec.push(key.into());
             let val = &self.vec[idx];
