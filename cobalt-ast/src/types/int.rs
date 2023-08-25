@@ -4,7 +4,6 @@ use super::*;
 #[repr(transparent)]
 pub struct Int((u16, bool));
 impl Int {
-    pub const KIND: NonZeroU64 = make_id(b"int");
     #[ref_cast_custom]
     fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
@@ -36,10 +35,10 @@ impl Int {
         self.0 .1
     }
 }
+impl ConcreteType for Int {
+    const KIND: NonZeroU64 = make_id(b"int");
+}
 impl Type for Int {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Static(((self.0 .0 + 7) / 8) as _)
     }
@@ -65,16 +64,15 @@ impl Type for Int {
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
 impl IntLiteral {
-    pub const KIND: NonZeroU64 = make_id(b"intlit");
     pub fn new() -> &'static Self {
         static SELF: IntLiteral = Self(());
         &SELF
     }
 }
+impl ConcreteType for IntLiteral {
+    const KIND: NonZeroU64 = make_id(b"intlit");
+}
 impl Type for IntLiteral {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -91,3 +89,4 @@ impl Type for IntLiteral {
         Ok(Self::new())
     }
 }
+submit_types!(Int, IntLiteral);

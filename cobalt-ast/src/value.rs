@@ -381,7 +381,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
 
     pub fn as_type(&self) -> Option<TypeRef> {
         if let (types::TypeData::KIND, Some(InterData::Type(t))) =
-            (self.data_type.self_kind(), &self.inter_val)
+            (self.data_type.kind(), &self.inter_val)
         {
             Some(*t)
         } else {
@@ -400,7 +400,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         String,
     )> {
         if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
-            (self.data_type.self_kind(), self.inter_val)
+            (self.data_type.kind(), self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -415,7 +415,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &String,
     )> {
         if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
-            (self.data_type.self_kind(), &self.inter_val)
+            (self.data_type.kind(), &self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -430,7 +430,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &mut String,
     )> {
         if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
-            (self.data_type.self_kind(), &mut self.inter_val)
+            (self.data_type.kind(), &mut self.inter_val)
         {
             Some((s, m, n))
         } else {

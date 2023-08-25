@@ -46,7 +46,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
-                    if rhs.data_type.self_kind() == types::IntLiteral::KIND {
+                    if rhs.data_type.kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::unsigned(64);
                     }
                     let rdt = rhs.data_type;
@@ -123,7 +123,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
-                    if rhs.data_type.self_kind() == types::IntLiteral::KIND {
+                    if rhs.data_type.kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::signed(64);
                     }
                     let rdt = rhs.data_type;

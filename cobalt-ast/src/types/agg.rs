@@ -32,7 +32,6 @@ static TUPLE_INTERN: Interner<Box<[TypeRef]>> = Interner::new();
 #[repr(transparent)]
 pub struct Tuple(Box<[TypeRef]>);
 impl Tuple {
-    pub const KIND: NonZeroU64 = make_id(b"tuple");
     #[ref_cast_custom]
     #[inline(always)]
     #[allow(clippy::borrowed_box)]
@@ -48,10 +47,10 @@ impl Tuple {
         &self.0
     }
 }
+impl ConcreteType for Tuple {
+    const KIND: NonZeroU64 = make_id(b"tuple");
+}
 impl Type for Tuple {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn align(&self) -> u16 {
         self.0.iter().map(|v| v.align()).max().unwrap_or(1)
     }
@@ -84,7 +83,6 @@ static STRUCT_INTERN: Interner<(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)> = In
 #[repr(transparent)]
 pub struct Struct((Box<[TypeRef]>, BTreeMap<Box<str>, usize>));
 impl Struct {
-    pub const KIND: NonZeroU64 = make_id(b"struct");
     #[ref_cast_custom]
     #[inline(always)]
     fn from_ref(inner: &(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)) -> &Self;
@@ -152,10 +150,10 @@ impl Display for Struct {
         f.write_str("}")
     }
 }
+impl ConcreteType for Struct {
+    const KIND: NonZeroU64 = make_id(b"struct");
+}
 impl Type for Struct {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn align(&self) -> u16 {
         self.0 .0.iter().map(|v| v.align()).max().unwrap_or(1)
     }
@@ -207,7 +205,6 @@ impl Type for Struct {
 #[display(fmt = "{_0}[]")]
 pub struct UnsizedArray(TypeRef);
 impl UnsizedArray {
-    pub const KIND: NonZeroU64 = make_id(b"uarr");
     #[ref_cast_custom]
     #[inline(always)]
     fn from_ref(inner: &TypeRef) -> &Self;
@@ -219,10 +216,10 @@ impl UnsizedArray {
         self.0
     }
 }
+impl ConcreteType for UnsizedArray {
+    const KIND: NonZeroU64 = make_id(b"uarr");
+}
 impl Type for UnsizedArray {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Dynamic
     }
@@ -251,7 +248,6 @@ impl Type for UnsizedArray {
 #[display(fmt = "{}[{}]", "_0.0", "_0.1")]
 pub struct SizedArray((TypeRef, u32));
 impl SizedArray {
-    pub const KIND: NonZeroU64 = make_id(b"sarr");
     #[ref_cast_custom]
     #[inline(always)]
     fn from_ref(inner: &(TypeRef, u32)) -> &Self;
@@ -267,10 +263,10 @@ impl SizedArray {
         self.0 .1
     }
 }
+impl ConcreteType for SizedArray {
+    const KIND: NonZeroU64 = make_id(b"iarr");
+}
 impl Type for SizedArray {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         self.elem().size().map_static(|l| l * self.len())
     }
@@ -291,3 +287,4 @@ impl Type for SizedArray {
         Ok(Self::new(elem, u32::from_be_bytes(arr)))
     }
 }
+submit_types!(Tuple, Struct);

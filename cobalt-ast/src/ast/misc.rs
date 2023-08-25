@@ -95,7 +95,7 @@ impl<'src> AST<'src> for BitCastAST<'src> {
             });
         ctx.is_const.set(oic);
         let decayed = if let (types::IntLiteral::KIND, SizeType::Static(s)) =
-            (val.data_type.self_kind(), t.size())
+            (val.data_type.kind(), t.size())
         {
             types::Int::signed(u16::try_from(s * 8).unwrap_or(64))
         } else {

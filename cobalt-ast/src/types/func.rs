@@ -36,10 +36,10 @@ impl Display for Function {
         write!(f, "): {}", self.ret())
     }
 }
+impl ConcreteType for Function {
+    const KIND: NonZeroU64 = make_id(b"function");
+}
 impl Type for Function {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -95,3 +95,4 @@ impl Type for Function {
         Ok(Self::new(ret, params))
     }
 }
+submit_types!(Function);

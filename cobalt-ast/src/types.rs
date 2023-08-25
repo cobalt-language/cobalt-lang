@@ -67,13 +67,19 @@ impl<T: Type + Sized> AsTypeRef for T {
         self
     }
 }
-pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
-    fn kind() -> NonZeroU64
-    where
-        Self: Sized;
-    fn self_kind(&self) -> NonZeroU64 {
-        todo!()
+pub trait TypeKind {
+    fn kind(&self) -> NonZeroU64;
+}
+pub trait ConcreteType: Sized {
+    const KIND: NonZeroU64;
+}
+impl<T: ConcreteType> TypeKind for T {
+    fn kind(&self) -> NonZeroU64 {
+        Self::KIND
     }
+}
+
+pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn size(&'static self) -> SizeType;
     fn align(&'static self) -> u16;
     fn llvm_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
@@ -262,26 +268,26 @@ pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
     }
     fn save_header(out: &mut dyn Write) -> io::Result<()>
     where
-        Self: Sized,
+        Self: ConcreteType,
     {
         Ok(())
     }
     fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
     where
-        Self: Sized,
+        Self: ConcreteType,
     {
         Ok(())
     }
     fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
     fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
     where
-        Self: Sized;
+        Self: ConcreteType;
     /// Downcast from a type
     /// # Safety
     /// The casted from type must be the same as Self
     unsafe fn downcast_impl(val: &dyn Type) -> &Self
     where
-        Self: Sized,
+        Self: ConcreteType,
     {
         std::mem::transmute::<&&dyn Type, &&Self>(&val)
     }
@@ -295,10 +301,10 @@ pub trait Type: AsTypeRef + Debug + Display + Send + Sync {
     }
 }
 impl dyn Type {
-    pub fn is<T: Type>(&self) -> bool {
-        self.self_kind() == T::kind()
+    pub fn is<T: ConcreteType>(&self) -> bool {
+        self.kind() == T::KIND
     }
-    pub fn downcast<T: Type>(&self) -> Option<&T> {
+    pub fn downcast<T: Type + ConcreteType>(&self) -> Option<&T> {
         if self.is::<T>() {
             Some(unsafe { T::downcast_impl(self) })
         } else {
@@ -308,7 +314,7 @@ impl dyn Type {
     /// Downcast to a concrete type
     /// # Safety
     /// The target type must be correct
-    pub unsafe fn downcast_unchecked<T: Type>(&self) -> &T {
+    pub unsafe fn downcast_unchecked<T: Type + ConcreteType>(&self) -> &T {
         T::downcast_impl(self)
     }
 }
@@ -336,14 +342,24 @@ pub struct TypeLoader {
     pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
     pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
 }
-impl TypeLoader {
-    pub fn new<T: Type>() -> Self {
-        Self {
-            kind: T::kind(),
-            save_header: T::save_header,
-            load_header: T::load_header,
-            load_type: T::load,
+#[macro_export]
+macro_rules! type_loader {
+    ($T:ty) => {
+        $crate::types::TypeLoader {
+            kind: <$T as $crate::types::ConcreteType>::KIND,
+            save_header: <$T as $crate::types::Type>::save_header,
+            load_header: <$T as $crate::types::Type>::load_header,
+            load_type: <$T as $crate::types::Type>::load,
         }
+    };
+}
+macro_rules! submit_types {
+    ($T:ty) => (
+        inventory::submit! {type_loader!($T)}
+    );
+    ($T:ty, $($Ts:ty),+) => {
+        submit_types!($T);
+        submit_types!($($Ts),+);
     }
 }
 inventory::collect!(TypeLoader);
@@ -377,7 +393,7 @@ pub static TYPE_SERIAL_REGISTRY: Lazy<dashmap::DashMap<NonZeroU64, LoadInfo>> = 
 });
 /// save a type to the output buffer
 pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
-    buf.write_all(&ty.self_kind().get().to_be_bytes())?;
+    buf.write_all(&ty.kind().get().to_be_bytes())?;
     ty.save(buf)
 }
 /// load a type from the buffer

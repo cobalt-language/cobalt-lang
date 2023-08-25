@@ -4,7 +4,6 @@ use super::*;
 #[repr(transparent)]
 pub struct Reference(TypeRef);
 impl Reference {
-    pub const KIND: NonZeroU64 = make_id(b"ref");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
@@ -15,10 +14,10 @@ impl Reference {
         self.0
     }
 }
+impl ConcreteType for Reference {
+    const KIND: NonZeroU64 = make_id(b"ref");
+}
 impl Type for Reference {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Static(8)
     }
@@ -43,7 +42,6 @@ impl Type for Reference {
 #[repr(transparent)]
 pub struct Pointer(TypeRef);
 impl Pointer {
-    pub const KIND: NonZeroU64 = make_id(b"ptr");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
@@ -54,10 +52,10 @@ impl Pointer {
         self.0
     }
 }
+impl ConcreteType for Pointer {
+    const KIND: NonZeroU64 = make_id(b"ptr");
+}
 impl Type for Pointer {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Static(8)
     }
@@ -90,10 +88,10 @@ impl Mut {
         self.0
     }
 }
+impl ConcreteType for Mut {
+    const KIND: NonZeroU64 = make_id(b"mut");
+}
 impl Type for Mut {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         self.0.size()
     }
@@ -116,3 +114,4 @@ impl Type for Mut {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }
+submit_types!(Reference, Pointer, Mut);

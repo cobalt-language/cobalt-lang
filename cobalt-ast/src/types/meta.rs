@@ -9,10 +9,10 @@ impl TypeData {
         &SELF
     }
 }
+impl ConcreteType for TypeData {
+    const KIND: NonZeroU64 = make_id(b"type");
+}
 impl Type for TypeData {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -53,16 +53,15 @@ impl Type for TypeData {
 #[display(fmt = "module")]
 pub struct Module(());
 impl Module {
-    pub const KIND: NonZeroU64 = make_id(b"module");
     pub fn new() -> &'static Self {
         static SELF: Module = Self(());
         &SELF
     }
 }
+impl ConcreteType for Module {
+    const KIND: NonZeroU64 = make_id(b"module");
+}
 impl Type for Module {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -117,16 +116,15 @@ impl Type for Module {
 #[display(fmt = "<error>")]
 pub struct Error(());
 impl Error {
-    pub const KIND: NonZeroU64 = make_id(b"error");
     pub fn new() -> &'static Self {
         static SELF: Error = Self(());
         &SELF
     }
 }
+impl ConcreteType for Error {
+    const KIND: NonZeroU64 = make_id(b"error");
+}
 impl Type for Error {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -144,16 +142,15 @@ impl Type for Error {
 #[display(fmt = "null")]
 pub struct Null(());
 impl Null {
-    pub const KIND: NonZeroU64 = make_id(b"null");
     pub fn new() -> &'static Self {
         static SELF: Null = Self(());
         &SELF
     }
 }
+impl ConcreteType for Null {
+    const KIND: NonZeroU64 = make_id(b"null");
+}
 impl Type for Null {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Static(0)
     }
@@ -189,10 +186,10 @@ impl Intrinsic {
         &self.0
     }
 }
+impl ConcreteType for Intrinsic {
+    const KIND: NonZeroU64 = make_id(b"intrin");
+}
 impl Type for Intrinsic {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Meta
     }
@@ -206,3 +203,4 @@ impl Type for Intrinsic {
         serial_utils::load_str(buf).map(|s| Self::new(s) as _)
     }
 }
+submit_types!(TypeData, Module, Error, Null, Intrinsic);

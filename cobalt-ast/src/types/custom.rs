@@ -101,10 +101,10 @@ impl Custom {
             .for_each(|(k, v)| assert!(this_data.2.insert(k, mb.insert(v)).is_none()));
     }
 }
+impl ConcreteType for Custom {
+    const KIND: NonZeroU64 = make_id(b"custom");
+}
 impl Type for Custom {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         self.base().size()
     }
@@ -184,3 +184,4 @@ impl Type for Custom {
         ))
     }
 }
+submit_types!(Custom);

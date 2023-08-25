@@ -42,10 +42,10 @@ impl Float {
         self.0
     }
 }
+impl ConcreteType for Float {
+    const KIND: NonZeroU64 = make_id(b"float");
+}
 impl Type for Float {
-    fn kind() -> NonZeroU64 {
-        Self::KIND
-    }
     fn size(&self) -> SizeType {
         SizeType::Static(match self.0 {
             FPType::F16 => 2,
@@ -97,3 +97,4 @@ impl Type for Float {
         }))
     }
 }
+submit_types!(Float);

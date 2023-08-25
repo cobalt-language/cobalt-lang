@@ -20,6 +20,6 @@ use derive_more::*;
 pub use dottedname::*;
 use error::*;
 use std::borrow::Cow;
-pub use types::{NominalInfo, SizeType, Type, TypeRef};
+pub use types::{ConcreteType as _, NominalInfo, SizeType, Type, TypeRef};
 pub use value::*;
 pub use varmap::*;

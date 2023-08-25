@@ -127,7 +127,7 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
     }
     pub fn dump(&self, depth: usize) {
         if let (types::Module::KIND, Some(InterData::Module(s, i, n))) =
-            (self.0.data_type.self_kind(), &self.0.inter_val)
+            (self.0.data_type.kind(), &self.0.inter_val)
         {
             let pre = " ".repeat(depth);
             eprintln!("module {n:?}");
@@ -321,7 +321,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         }
         match this.entry(name.ids[idx].0.clone()) {
             Entry::Occupied(x) => {
-                if x.get().0.data_type.self_kind() == types::Module::KIND {
+                if x.get().0.data_type.kind() == types::Module::KIND {
                     if let Some(InterData::Module(s, i, n)) = x.remove().0.inter_val {
                         Ok((s, i, n))
                     } else {
@@ -379,8 +379,8 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
                         Some(InterData::Module(bs, bi, _)),
                         Some(InterData::Module(ns, mut ni, _)),
                     ) = (
-                        l.0.data_type.self_kind(),
-                        r.0.data_type.self_kind(),
+                        l.0.data_type.kind(),
+                        r.0.data_type.kind(),
                         &mut l.0.inter_val,
                         r.0.inter_val,
                     ) {
@@ -664,8 +664,8 @@ fn merge<'src, 'ctx>(
                     Some(InterData::Module(bs, bi, _)),
                     Some(InterData::Module(ns, mut ni, _)),
                 ) = (
-                    l.0.data_type.self_kind(),
-                    r.0.data_type.self_kind(),
+                    l.0.data_type.kind(),
+                    r.0.data_type.kind(),
                     &mut l.0.inter_val,
                     r.0.inter_val,
                 ) {
