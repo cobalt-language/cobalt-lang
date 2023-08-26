@@ -213,7 +213,7 @@ impl Type for Function {
                     .try_as_basic_value()
                     .right_or_else(|v| v.as_instruction_value().unwrap());
                 for (n, val) in args.iter().enumerate() {
-                    ops::mark_move(val, cfg::Location::Inst(inst, n), ctx, val.loc)
+                    cfg::mark_move(val, cfg::Location::Inst(inst, n), ctx, val.loc)
                 }
                 call.try_as_basic_value().left()
             }),

@@ -827,7 +827,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     errs.push(e);
                     Value::error()
                 });
-            ops::mark_move(
+            cfg::mark_move(
                 &val,
                 cfg::Location::current(ctx).unwrap(),
                 ctx,

@@ -146,7 +146,7 @@ impl<'src> AST<'src> for BitCastAST<'src> {
             } else {
                 ctx.builder.build_bitcast(ctval, llt, "")
             };
-            ops::mark_move(
+            cfg::mark_move(
                 &val,
                 bc.as_instruction_value()
                     .map(From::from)

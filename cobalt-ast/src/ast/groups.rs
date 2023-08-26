@@ -41,7 +41,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
         let end = cfg::Location::current(ctx);
         if let (Some(start), Some(end)) = (start, end) {
             if let Some(loc) = self.vals.last().map(|a| a.loc()) {
-                ops::mark_move(&out, end, ctx, loc);
+                cfg::mark_move(&out, end, ctx, loc);
             }
             let graph = cfg::Cfg::new(start, end, ctx);
             graph.insert_dtors(ctx, true);
@@ -120,7 +120,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
             self.vals.last().map(|a| a.loc()),
             cfg::Location::current(ctx),
         ) {
-            ops::mark_move(&out, end, ctx, loc);
+            cfg::mark_move(&out, end, ctx, loc);
         }
         (out, errs)
     }
