@@ -59,6 +59,7 @@ impl std::ops::Add for SizeType {
         }
     }
 }
+/// AsTypeRef was moved to a separate trait so concrete and trait objects can be used interchangeably
 pub trait AsTypeRef {
     fn as_type_ref(&'static self) -> TypeRef;
 }
@@ -67,10 +68,13 @@ impl<T: Type + Sized> AsTypeRef for T {
         self
     }
 }
+/// TypeKind contains `self.kind()`, but it's moved to a separate trait so it can be auto-implemented
 pub trait TypeKind {
+    /// get the kind ID of this type
     fn kind(&self) -> NonZeroU64;
 }
-pub trait ConcreteType: Sized {
+/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
+pub trait ConcreteType: Type + Sized {
     const KIND: NonZeroU64;
 }
 impl<T: ConcreteType> TypeKind for T {
@@ -79,30 +83,43 @@ impl<T: ConcreteType> TypeKind for T {
     }
 }
 
+/// All values have types, and each kind of type implements `Type`.
+/// Methods with a leading underscore are customization points, and are not meant to be called directly.
 pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
+    /// Get the size of the current type.
     fn size(&'static self) -> SizeType;
+    /// Get the alignment of the current type. An alignment of 0 is used for non-runtime data.
     fn align(&'static self) -> u16;
+    /// Get the LLVM type that this type lowers to.
     fn llvm_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         None
     }
+    /// Get the LLVM type of `*<self>`. This is useful for fat pointer types.
     fn ptr_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         (self.size() != SizeType::Meta).then(|| ctx.null_type.ptr_type(Default::default()).into())
     }
 
+    /// Get associated nominal info for this type.
     fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
         None
     }
+    /// Set associate nominal info for this type.
+    /// Returns whether or not anything was changed.
     fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
         false
     }
+    /// Check whether or not this type has a destructor.
     fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
         false
     }
+    /// Insert a destructor for a value at the current insertion position.
     fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {}
+    /// Get the "decayed" type - essentially what the type of a variable would be with this assigned to it.
     fn decay(&'static self) -> TypeRef {
         self.as_type_ref()
     }
 
+    /// Find a field on the type. Currently only used for custom types, but could be expanded
     fn static_attr<'src, 'ctx>(
         &'static self,
         name: &str,
@@ -110,6 +127,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Option<Value<'src, 'ctx>> {
         None
     }
+    /// Get an attribute on the value
     fn attr<'src, 'ctx>(
         &'static self,
         val: &Value<'src, 'ctx>,
@@ -123,16 +141,19 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
             aloc: attr.1,
         })
     }
+    /// Check if this type is implicitly convertible to another type.
     fn impl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         self.as_type_ref() == other
             || self._can_iconv_to(other, ctx)
             || other._can_iconv_from(self.as_type_ref(), ctx)
     }
+    /// Check if this type is explicitly convertible to another type.
     fn expl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         self._can_econv_to(other, ctx)
             || other._can_econv_from(self.as_type_ref(), ctx)
             || self.impl_convertible(other, ctx)
     }
+    /// Find a common type between two types.
     fn common(&'static self, other: TypeRef, ctx: &CompCtx) -> Option<TypeRef> {
         let this = self.as_type_ref();
         if this.impl_convertible(other, ctx) {
@@ -144,6 +165,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
             (this.impl_convertible(ty, ctx) && other.impl_convertible(ty, ctx)).then_some(ty)
         }
     }
+    /// Apply a prefix operator to a value of the current type.
     fn pre_op<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -154,6 +176,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(invalid_preop(&val, op, oloc))
     }
+    /// Apply a postfix operator to a value of the current type.
     fn post_op<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -164,6 +187,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(invalid_postop(&val, op, oloc))
     }
+    /// Call a value of the current type.
     fn call<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -173,6 +197,8 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(invalid_call(&val, cparen, args.iter()))
     }
+    /// Subscript a value of the current type.
+    /// If the index type is the error type, `Ok(Value::error())` should be returned.
     fn subscript<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -185,6 +211,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
             .ok_or_else(|| invalid_sub(&val, &idx))
     }
 
+    /// Implicitly convert a value of the current type to another
     fn _iconv_to<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -193,6 +220,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_iconv(&val, target.0, target.1))
     }
+    /// Implicitly convert a value to the current type
     fn _iconv_from<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -201,6 +229,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_iconv(&val, self.as_type_ref(), target))
     }
+    /// Explicitly convert a value of the current type to another
     fn _econv_to<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -209,6 +238,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_econv(&val, target.0, target.1))
     }
+    /// Explicitly convert a value to the current type
     fn _econv_from<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -217,18 +247,25 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_econv(&val, self.as_type_ref(), target))
     }
+    /// Return true iff `_iconv_to` returns an `Ok` value
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
+    /// Return true iff `_iconv_from` returns an `Ok` value
     fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
+    /// Return true iff `_econv_to` returns an `Ok` value
     fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
+    /// Return true iff `_econv_from` returns an `Ok` value
     fn _can_econv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
+
+    /// Override this for binary operators where this type appears on the left side.
+    /// `move_left` and `move_right` track whether or not moving from the left and right operands is permitted.
     fn _bin_lhs<'src, 'ctx>(
         &'static self,
         lhs: Value<'src, 'ctx>,
@@ -247,6 +284,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         ));
         Err(invalid_binop(&lhs, &rhs, op.0, op.1))
     }
+    /// See [`_bin_lhs`].
     fn _bin_rhs<'src, 'ctx>(
         &'static self,
         lhs: Value<'src, 'ctx>,
@@ -265,6 +303,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         ));
         Err(invalid_binop(&lhs, &rhs, op.0, op.1))
     }
+    /// Returns true iff `_bin_lhs` returns an `Ok` value
     fn _has_bin_lhs(
         &'static self,
         other: TypeRef,
@@ -275,6 +314,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> bool {
         false
     }
+    /// Returns true iff `_bin_rhs` returns an `Ok` value
     fn _has_bin_rhs(
         &'static self,
         other: TypeRef,
@@ -285,16 +325,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> bool {
         false
     }
-    fn _ref_pre_op<'src, 'ctx>(
-        &'static self,
-        val: Value<'src, 'ctx>,
-        op: &'static str,
-        oloc: SourceSpan,
-        ctx: &CompCtx<'src, 'ctx>,
-        can_move: bool,
-    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        Err(invalid_preop(&val, op, oloc))
-    }
+    /// Override this to implement mutating prefix operators
     fn _mut_pre_op<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -305,9 +336,11 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(invalid_preop(&val, op, oloc))
     }
+    /// Returns true iff `_mut_pre_op` returns an `Ok` value
     fn _has_mut_pre_op(&'static self, op: &'static str, ctx: &CompCtx) -> bool {
         false
     }
+    /// Override this for types that have special behavior when their reference is called
     fn _ref_call<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -317,6 +350,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(invalid_call(&val, cparen, args.iter()))
     }
+    /// Override this for types that have special behavior when their mutable reference is called
     fn _refmut_call<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -360,6 +394,8 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn _has_refmut_subscript(&'static self, idx: TypeRef) -> bool {
         false
     }
+    /// Override this for types that have in-place operators or similar.
+    /// This does **not** need to be overridden for assignment.
     fn _mut_bin_lhs<'src, 'ctx>(
         &'static self,
         lhs: Value<'src, 'ctx>,
@@ -400,6 +436,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn _can_refmut_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
+    /// Override implicit conversion from a reference to the current type
     fn _ref_iconv<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -408,6 +445,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_iconv(&val, target.0, target.1))
     }
+    /// Override explicit conversion from a reference to the current type
     fn _ref_econv<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -416,6 +454,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_econv(&val, target.0, target.1))
     }
+    /// Override implicit conversion from a mutable reference to the current type
     fn _refmut_iconv<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -424,6 +463,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Err(cant_iconv(&val, target.0, target.1))
     }
+    /// Override explicit conversion from a nutable reference to the current type
     fn _refmut_econv<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -433,6 +473,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         Err(cant_econv(&val, target.0, target.1))
     }
 
+    /// Get the compiled form of an interpreted value, if possible.
     fn compiled<'src, 'ctx>(
         &'static self,
         inter_val: &InterData<'src, 'ctx>,
@@ -440,19 +481,25 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Option<BasicValueEnum<'ctx>> {
         None
     }
+    /// Save global state at the start of a serialization record.
     fn save_header(out: &mut dyn Write) -> io::Result<()>
     where
         Self: ConcreteType,
     {
         Ok(())
     }
+    /// Load global state saved by [`save_header`].
     fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
     where
         Self: ConcreteType,
     {
         Ok(())
     }
+    /// Save the current type to the output.
+    /// Should not be called directly, use `save_type` instead.
     fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
+    /// Load the current type from the input.
+    /// Should not be called directly, use `load_type` instead.
     fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
     where
         Self: ConcreteType;
@@ -478,13 +525,10 @@ impl dyn Type {
     pub fn is<T: ConcreteType>(&self) -> bool {
         self.kind() == T::KIND
     }
-    pub fn is_and<'a, T: Type + ConcreteType + 'a>(
-        &'a self,
-        f: impl FnOnce(&'a T) -> bool,
-    ) -> bool {
+    pub fn is_and<'a, T: ConcreteType + 'a>(&'a self, f: impl FnOnce(&'a T) -> bool) -> bool {
         self.downcast::<T>().map_or(false, f)
     }
-    pub fn downcast<T: Type + ConcreteType>(&self) -> Option<&T> {
+    pub fn downcast<T: ConcreteType>(&self) -> Option<&T> {
         if self.is::<T>() {
             Some(unsafe { T::downcast_impl(self) })
         } else {
@@ -494,10 +538,11 @@ impl dyn Type {
     /// Downcast to a concrete type
     /// # Safety
     /// The target type must be correct
-    pub unsafe fn downcast_unchecked<T: Type + ConcreteType>(&self) -> &T {
+    pub unsafe fn downcast_unchecked<T: ConcreteType>(&self) -> &T {
         T::downcast_impl(self)
     }
 }
+/// Since all Type implementors intern their variables, &dyn Type can be checked for pointer equality
 impl PartialEq for dyn Type {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
