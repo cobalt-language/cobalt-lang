@@ -66,6 +66,8 @@ impl<'src> SourceReader<'src> {
 
                 // An identifier is an xid_start followed by zero or more xid_continue.
                 // Match an identifier.
+                // TODO: include check for underscore, but then there must be at least
+                // one xid_continue after the underscore.
                 c if is_xid_start(*c) => {
                     let ident_parse_res = self.eat_ident();
 

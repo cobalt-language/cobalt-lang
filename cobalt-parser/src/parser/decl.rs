@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{NullAST, VarDefAST},
+    ast::{NullAST, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
 use cobalt_errors::{CobaltError, ParserFound};
 
-use crate::tokenizer::tokens::{BinOpToken, Keyword, TokenKind};
+use crate::tokenizer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind};
 
 use super::Parser;
 
@@ -18,7 +18,8 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// decl
-    ///    := 'let' ['mut'] IDENT [':' IDENT] '=' expr ';'
+    ///    := let_decl
+    ///    := type_decl
     /// ```
     fn parse_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let first_token = self.current_token;
@@ -211,6 +212,259 @@ impl<'src> Parser<'src> {
 
         (ast, errors)
     }
+
+    /// Parses a type declaration.
+    ///
+    /// ```
+    /// type_decl
+    ///  := 'type' IDENT '=' expr ';'
+    ///  := 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
+    /// ```
+    pub fn parse_type_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Type));
+
+        let mut errors = vec![];
+        let first_token_loc = self.current_token.unwrap().span;
+
+        // Next has to be an identifier, the name of the type.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        let name: DottedName<'src> = match self.current_token.unwrap().kind {
+            TokenKind::Ident(s) => DottedName::new(
+                vec![(Cow::from(s), self.current_token.unwrap().span)],
+                false,
+            ),
+
+            _ => {
+                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let loc = self.current_token.unwrap().span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found,
+                    loc,
+                });
+                return (Box::new(NullAST::new(first_token_loc)), errors);
+            }
+        };
+
+        // Next has to be an equals sign.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'='",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'='",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Next has to be an expression.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "expression",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        let (expr, expr_errors) = self.parse_expr();
+        errors.extend(expr_errors);
+
+        // Next has to be a semicolon or a double colon.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            return (
+                Box::new(NullAST::new(first_token_loc)),
+                vec![CobaltError::ExpectedFound {
+                    ex: "';' or '::'",
+                    found: ParserFound::Eof,
+                    loc: first_token_loc,
+                }],
+            );
+        }
+
+        // If it's a semicolon, we're done.
+
+        if self.current_token.unwrap().kind == TokenKind::Semicolon {
+            self.next();
+
+            let ast = Box::new(TypeDefAST::new(
+                first_token_loc,
+                name,
+                expr,
+                vec![], // TODO: parse annotations
+                vec![],
+            ));
+
+            return (ast, errors);
+        }
+
+        // Next has to be a double colon.
+
+        if self.current_token.unwrap().kind != TokenKind::Colon {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';' or '::'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "expression",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Colon {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "expression",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Next has to be a left brace.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'{'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'{'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Next is 0 or more function definitions.
+
+        self.next();
+
+        let mut methods = vec![];
+        while self.current_token.is_some()
+            && self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace)
+        {
+            let (func, func_errors) = self.parse_func_def();
+            errors.extend(func_errors);
+            methods.push(func);
+
+            self.next();
+        }
+
+        // Next has to be a right brace.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'}'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'}'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Next has to be a semicolon.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Semicolon {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Done.
+
+        let ast = Box::new(TypeDefAST::new(
+            first_token_loc,
+            name,
+            expr,
+            vec![], // TODO: parse annotations
+            methods,
+        ));
+
+        (ast, errors)
+    }
+
+    pub fn parse_func_def(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +481,19 @@ mod tests {
         parser.next();
         let (ast, errors) = parser.parse_let_decl();
         dbg!(ast);
-        dbg!(errors);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_type_decl() {
+        let src1 = "type Foo = i32;";
+        let token_stream1 = SourceReader::new(src1).tokenize().0;
+        let mut parser1 = Parser::new(token_stream1);
+        parser1.next();
+        let (ast1, errors1) = parser1.parse_type_decl();
+        dbg!(ast1);
+        dbg!(&errors1);
+        assert!(errors1.is_empty());
     }
 }
