@@ -1,7 +1,13 @@
+use std::fmt::Display;
+
 use cobalt_errors::SourceSpan;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Keyword {
+    Let,
+    Mut,
+    Const,
+    Type,
     Fn,
 }
 
@@ -10,6 +16,10 @@ impl Keyword {
     /// the keyword.
     pub(crate) fn from_str(ident: &str) -> Option<Keyword> {
         match ident {
+            "let" => Some(Keyword::Let),
+            "mut" => Some(Keyword::Mut),
+            "const" => Some(Keyword::Const),
+            "type" => Some(Keyword::Type),
             "fn" => Some(Keyword::Fn),
             _ => None,
         }
@@ -28,13 +38,13 @@ impl Keyword {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Delimiter {
     Paren,
     Brace,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BinOpToken {
     Eq,   // =
     EqEq, // ==
@@ -57,18 +67,25 @@ pub enum BinOpToken {
     Shr, // >>
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOpToken {
     Not, // !
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOrBinOpToken {
     Star, // *
     And,  // &
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum LiteralToken<'src> {
+    Int(&'src str),
+    Float(&'src str),
+    Str(&'src str),
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind<'src> {
     Keyword(Keyword),
     Ident(&'src str),
@@ -80,10 +97,17 @@ pub enum TokenKind<'src> {
     UnOp(UnOpToken),
     BinOp(BinOpToken),
     UnOrBinOp(UnOrBinOpToken),
+    Literal(LiteralToken<'src>),
+}
+
+impl<'src> Display for TokenKind<'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// `'src` is the lifetime of the source code, for example.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
     pub span: SourceSpan,

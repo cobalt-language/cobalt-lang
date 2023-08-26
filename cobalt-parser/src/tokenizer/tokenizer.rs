@@ -1,7 +1,9 @@
 use std::{iter::Peekable, rc::Rc, str::Chars};
 
 use super::{
-    tokens::{BinOpToken, Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken},
+    tokens::{
+        BinOpToken, Delimiter, Keyword, LiteralToken, Token, TokenKind, UnOpToken, UnOrBinOpToken,
+    },
     SourceReader,
 };
 
@@ -298,6 +300,57 @@ impl<'src> SourceReader<'src> {
                     });
                 }
 
+                // LITERALS.
+                n if n.is_digit(10) => {
+                    let mut num_len = 1;
+                    self.next();
+
+                    // Now pointing to the first digit.
+
+                    while let Some(c) = self.peek() {
+                        if c.is_digit(10) {
+                            self.next();
+                            num_len += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Now pointing to the last digit before the non-digit.
+
+                    if self.peek() == Some(&'.') {
+                        self.next();
+                        num_len += 1;
+                    } else {
+                        // Not a float.
+                        tokens.push(Token {
+                            kind: TokenKind::Literal(LiteralToken::Int(
+                                self.slice_backward(num_len),
+                            )),
+                            span: self.source_span_backward(num_len),
+                        });
+                        continue;
+                    }
+
+                    // Now pointing to the decimal point.
+
+                    while let Some(c) = self.peek() {
+                        if c.is_digit(10) {
+                            self.next();
+                            num_len += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Now pointing to the last digit of the float.
+
+                    tokens.push(Token {
+                        kind: TokenKind::Literal(LiteralToken::Float(self.slice_backward(num_len))),
+                        span: self.source_span_backward(num_len),
+                    });
+                }
+
                 // MISC.
                 ';' => {
                     self.next();
@@ -377,7 +430,6 @@ impl<'src> SourceReader<'src> {
                 break;
             }
 
-            println!("c: {}, len: {}", c, ident_len);
             self.next();
             ident_len += 1;
         }
@@ -388,8 +440,6 @@ impl<'src> SourceReader<'src> {
             kind: TokenKind::Ident(self.slice_backward(ident_len)),
             span: self.source_span_backward(ident_len),
         };
-
-        dbg!(&to_return);
 
         Ok(to_return)
     }
@@ -406,7 +456,6 @@ mod tests {
         let mut string_reader = SourceReader::new(two_p_rt);
 
         let (tokens, _errors) = string_reader.tokenize();
-        dbg!(tokens.0.as_ref());
 
         assert_eq!(
             tokens.0.as_ref(),
@@ -469,5 +518,39 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_literals() {
+        let int_lit = "let a = 123;";
+        let mut string_reader = SourceReader::new(int_lit);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert_eq!(
+            tokens.0.as_ref(),
+            &vec![
+                Token {
+                    kind: TokenKind::Keyword(Keyword::Let),
+                    span: SourceSpan::from((0, 3)),
+                },
+                Token {
+                    kind: TokenKind::Ident("a"),
+                    span: SourceSpan::from((4, 1)),
+                },
+                Token {
+                    kind: TokenKind::BinOp(BinOpToken::Eq),
+                    span: SourceSpan::from((6, 1)),
+                },
+                Token {
+                    kind: TokenKind::Literal(LiteralToken::Int("123")),
+                    span: SourceSpan::from((8, 3)),
+                },
+                Token {
+                    kind: TokenKind::Semicolon,
+                    span: SourceSpan::from((11, 1)),
+                },
+            ]
+        )
     }
 }

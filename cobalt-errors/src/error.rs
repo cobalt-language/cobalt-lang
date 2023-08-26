@@ -3,11 +3,36 @@ use miette::{Diagnostic, SourceSpan};
 use std::borrow::Cow;
 use thiserror::Error;
 
+/// Zero-copy type to capture an error of what the parser found
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParserFound {
+    Eof,
+    Char(char),
+    Str(String),
+}
+impl std::fmt::Display for ParserFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Eof => f.write_str("EOF"),
+            Self::Char(c) => write!(f, r#""{c}""#),
+            Self::Str(s) => write!(f, r#""{s}""#),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum CobaltError<'src> {
     #[error(transparent)]
     #[diagnostic(transparent)]
     OtherFile(Box<SourcedCobaltError<'src>>),
+
+    #[error("expected {ex}, found {found}")]
+    ExpectedFound {
+        ex: &'static str,
+        found: ParserFound,
+        #[label]
+        loc: SourceSpan,
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
