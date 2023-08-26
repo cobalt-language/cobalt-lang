@@ -235,7 +235,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             loc: unreachable_span(),
             comp_val: None,
             inter_val: None,
-            data_type: types::TypeData::new(),
+            data_type: types::Null::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -376,7 +376,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
 
     pub fn ins_dtor(&self, ctx: &CompCtx<'src, 'ctx>) {
-        self.data_type.ins_dtor(self.comp_val, ctx)
+        if let Some(comp_val) = self.comp_val {
+            self.data_type.ins_dtor(comp_val, ctx)
+        }
     }
 
     pub fn as_type(&self) -> Option<TypeRef> {
@@ -389,7 +391,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
     pub fn into_type(self, ctx: &CompCtx<'src, 'ctx>) -> Result<TypeRef, CobaltError<'src>> {
-        self.impl_convert((types::TypeData::new(), None), ctx)
+        let loc = self.loc;
+        self.impl_convert((types::TypeData::new(), Some(loc)), ctx)
             .map(|v| v.as_type().unwrap_or(types::Error::new()))
     }
     pub fn into_mod(
@@ -496,10 +499,16 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         other: Value<'src, 'ctx>,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        if self.data_type._has_bin_lhs(other.data_type, op.0, ctx) {
-            self.data_type._bin_lhs(self, other, op, ctx)
-        } else if other.data_type._has_bin_rhs(self.data_type, op.0, ctx) {
-            other.data_type._bin_rhs(self, other, op, ctx)
+        if self
+            .data_type
+            ._has_bin_lhs(other.data_type, op.0, ctx, true, true)
+        {
+            self.data_type._bin_lhs(self, other, op, ctx, true, true)
+        } else if other
+            .data_type
+            ._has_bin_rhs(self.data_type, op.0, ctx, true, true)
+        {
+            other.data_type._bin_rhs(self, other, op, ctx, true, true)
         } else {
             Err(invalid_binop(&self, &other, op.0, op.1))
         }

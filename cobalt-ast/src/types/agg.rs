@@ -65,7 +65,43 @@ impl Type for Tuple {
             .map(|f| ctx.context.struct_type(&f, false).into())
     }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
-        self.0.iter().any(|v| v.has_dtor(ctx))
+        self.types().iter().any(|v| v.has_dtor(ctx))
+    }
+    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {
+        if let BasicValueEnum::StructValue(sv) = comp_val {
+            for n in 0..self.types().len() {
+                let v = ctx.builder.build_extract_value(sv, n as _, "").unwrap();
+                self.types()[n].ins_dtor(v, ctx);
+            }
+        }
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is::<types::TypeData>()
+            && self
+                .types()
+                .iter()
+                .all(|t| t.impl_convertible(types::TypeData::new(), ctx))
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target.0.is::<types::TypeData>() {
+            if let Some(InterData::Array(v)) = val.inter_val {
+                let types = v
+                    .into_iter()
+                    .zip(self.types())
+                    .map(|(v, &t)| Value::metaval(v, t).into_type(ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Value::make_type(Self::new(types)))
+            } else {
+                Ok(Value::error())
+            }
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         self.0.iter().try_for_each(|&ty| save_type(out, ty))?;
@@ -169,6 +205,101 @@ impl Type for Struct {
     }
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         self.types().iter().any(|v| v.has_dtor(ctx))
+    }
+    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {
+        if let BasicValueEnum::StructValue(sv) = comp_val {
+            for n in 0..self.types().len() {
+                let v = ctx.builder.build_extract_value(sv, n as _, "").unwrap();
+                self.types()[n].ins_dtor(v, ctx);
+            }
+        }
+    }
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let vt = val.data_type;
+        let vl = val.loc;
+        let ty = val.into_type(ctx)?;
+        match op {
+            "&" => Ok(Value::make_type(types::Reference::new(ty))),
+            "*" => Ok(Value::make_type(types::Pointer::new(ty))),
+            "mut" => Ok(Value::make_type(types::Mut::new(ty))),
+            _ => Err(invalid_preop(
+                &Value {
+                    data_type: vt,
+                    loc: vl,
+                    ..Value::null()
+                },
+                op,
+                oloc,
+            )),
+        }
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let vt = val.data_type;
+        let vl = val.loc;
+        let ty = val.into_type(ctx)?;
+        match vt.kind() {
+            types::Int::KIND | types::IntLiteral::KIND => {
+                if let Some(InterData::Int(v)) = idx.inter_val {
+                    Ok(Value::make_type(types::SizedArray::new(ty, v as _)))
+                } else {
+                    Err(CobaltError::NotCompileTime { loc: idx.loc })
+                }
+            }
+            types::Null::KIND => Ok(Value::make_type(types::UnsizedArray::new(ty))),
+            _ => Err(invalid_sub(
+                &Value {
+                    data_type: vt,
+                    loc: vl,
+                    ..Value::null()
+                },
+                &idx,
+            )),
+        }
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is::<types::TypeData>()
+            && self
+                .types()
+                .iter()
+                .all(|t| t.impl_convertible(types::TypeData::new(), ctx))
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target.0.is::<types::TypeData>() {
+            if let Some(InterData::Array(v)) = val.inter_val {
+                let types = v
+                    .into_iter()
+                    .zip(self.types())
+                    .map(|(v, &t)| Value::metaval(v, t).into_type(ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                unsafe {
+                    Ok(Value::make_type(Self::new_arranged(
+                        types,
+                        self.fields().clone(),
+                    )))
+                }
+            } else {
+                Ok(Value::error())
+            }
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(&self.types().len().to_be_bytes())?;
@@ -275,6 +406,49 @@ impl Type for SizedArray {
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(self.elem().llvm_type(ctx)?.array_type(self.len()).into())
+    }
+    fn _ref_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target
+            .0
+            .is_and::<types::Pointer>(|r| r.base() == self.elem())
+        {
+            Ok(Value {
+                data_type: target.0,
+                ..val
+            })
+        } else {
+            Err(cant_econv(&val, target.0, target.1))
+        }
+    }
+    fn _refmut_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target.0.is_and::<types::Pointer>(|r| {
+            r.base() == self.elem() || r.base().is_and::<types::Mut>(|m| m.base() == self.elem())
+        }) {
+            Ok(Value {
+                data_type: target.0,
+                ..val
+            })
+        } else {
+            Err(cant_econv(&val, target.0, target.1))
+        }
+    }
+    fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        target.is_and::<types::Pointer>(|r| r.base() == self.elem())
+    }
+    fn _can_refmut_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        target.is_and::<types::Pointer>(|r| {
+            r.base() == self.elem() || r.base().is_and::<types::Mut>(|m| m.base() == self.elem())
+        })
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.elem())?;

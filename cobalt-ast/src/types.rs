@@ -98,12 +98,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
         false
     }
-    fn ins_dtor<'ctx>(
-        &'static self,
-        comp_val: Option<BasicValueEnum<'ctx>>,
-        ctx: &CompCtx<'_, 'ctx>,
-    ) {
-    }
+    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {}
     fn decay(&'static self) -> TypeRef {
         self.as_type_ref()
     }
@@ -204,7 +199,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         target: Option<SourceSpan>,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        Err(cant_econv(&val, self.as_type_ref(), target))
+        Err(cant_iconv(&val, self.as_type_ref(), target))
     }
     fn _econv_to<'src, 'ctx>(
         &'static self,
@@ -240,8 +235,16 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         rhs: Value<'src, 'ctx>,
         op: (&'static str, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        assert!(!self._has_bin_lhs(rhs.data_type.as_type_ref(), op.0, ctx));
+        assert!(!self._has_bin_lhs(
+            rhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
         Err(invalid_binop(&lhs, &rhs, op.0, op.1))
     }
     fn _bin_rhs<'src, 'ctx>(
@@ -250,15 +253,184 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         rhs: Value<'src, 'ctx>,
         op: (&'static str, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        assert!(!self._has_bin_rhs(lhs.data_type.as_type_ref(), op.0, ctx));
+        assert!(!self._has_bin_rhs(
+            lhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
         Err(invalid_binop(&lhs, &rhs, op.0, op.1))
     }
-    fn _has_bin_lhs(&self, other: TypeRef, op: &'static str, ctx: &CompCtx) -> bool {
+    fn _has_bin_lhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
         false
     }
-    fn _has_bin_rhs(&self, other: TypeRef, op: &'static str, ctx: &CompCtx) -> bool {
+    fn _has_bin_rhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
         false
+    }
+    fn _ref_pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_preop(&val, op, oloc))
+    }
+    fn _mut_pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_preop(&val, op, oloc))
+    }
+    fn _has_mut_pre_op(&'static self, op: &'static str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _ref_call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    fn _refmut_call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    fn _has_ref_call(&'static self, args: &[TypeRef], ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_refmut_call(&'static self, args: &[TypeRef], ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _ref_subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        idx.data_type
+            .is::<types::Error>()
+            .then(Value::error)
+            .ok_or_else(|| invalid_sub(&val, &idx))
+    }
+    fn _refmut_subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        idx.data_type
+            .is::<types::Error>()
+            .then(Value::error)
+            .ok_or_else(|| invalid_sub(&val, &idx))
+    }
+    fn _has_ref_subscript(&'static self, idx: TypeRef) -> bool {
+        false
+    }
+    fn _has_refmut_subscript(&'static self, idx: TypeRef) -> bool {
+        false
+    }
+    fn _mut_bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_mut_bin_lhs(
+            rhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    fn _has_mut_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        false
+    }
+    fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_ref_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_refmut_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_refmut_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _ref_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    fn _ref_econv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
+    }
+    fn _refmut_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    fn _refmut_econv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
     }
 
     fn compiled<'src, 'ctx>(
@@ -305,6 +477,12 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
 impl dyn Type {
     pub fn is<T: ConcreteType>(&self) -> bool {
         self.kind() == T::KIND
+    }
+    pub fn is_and<'a, T: Type + ConcreteType + 'a>(
+        &'a self,
+        f: impl FnOnce(&'a T) -> bool,
+    ) -> bool {
+        self.downcast::<T>().map_or(false, f)
     }
     pub fn downcast<T: Type + ConcreteType>(&self) -> Option<&T> {
         if self.is::<T>() {

@@ -48,6 +48,22 @@ impl Type for Int {
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(ctx.context.custom_width_int_type(self.bits() as _).into())
     }
+    fn compiled<'src, 'ctx>(
+        &'static self,
+        inter_val: &InterData<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let InterData::Int(v) = inter_val {
+            Some(
+                ctx.context
+                    .custom_width_int_type(self.bits() as _)
+                    .const_int(*v as _, self.is_signed())
+                    .into(),
+            )
+        } else {
+            None
+        }
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(&self.0 .0.to_be_bytes())?;
         out.write_all(std::slice::from_ref(&u8::from(self.0 .1)))
@@ -81,6 +97,60 @@ impl Type for IntLiteral {
     }
     fn decay(&self) -> TypeRef {
         Int::signed(64)
+    }
+    fn compiled<'src, 'ctx>(
+        &'static self,
+        inter_val: &InterData<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let InterData::Int(v) = inter_val {
+            Some(
+                ctx.context
+                    .custom_width_int_type(64)
+                    .const_int(*v as _, true)
+                    .into(),
+            )
+        } else {
+            None
+        }
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is::<types::Int>() || other.is::<types::Float>()
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match target.0.kind() {
+            types::Int::KIND => Ok(Value {
+                data_type: target.0,
+                ..val
+            }),
+            types::Float::KIND => Ok(Value::new(
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(
+                        target
+                            .0
+                            .llvm_type(ctx)
+                            .unwrap()
+                            .into_float_type()
+                            .const_float(v as _)
+                            .into(),
+                    )
+                } else {
+                    None
+                },
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Float(v as _))
+                } else {
+                    None
+                },
+                target.0,
+            )),
+            _ => Err(cant_iconv(&val, target.0, target.1)),
+        }
     }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())

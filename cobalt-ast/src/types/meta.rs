@@ -42,6 +42,59 @@ impl Type for TypeData {
             })
         }
     }
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match op {
+            "&" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
+                Value::make_type(types::Reference::new(t))
+            } else {
+                Value::error()
+            }),
+            "*" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
+                Value::make_type(types::Pointer::new(t))
+            } else {
+                Value::error()
+            }),
+            "mut" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
+                Value::make_type(types::Mut::new(t))
+            } else {
+                Value::error()
+            }),
+            _ => Err(invalid_preop(&val, op, oloc)),
+        }
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match val.data_type.kind() {
+            types::Int::KIND | types::IntLiteral::KIND => {
+                if let Some(InterData::Int(v)) = idx.inter_val {
+                    Ok(if let Some(InterData::Type(t)) = val.inter_val {
+                        Value::make_type(types::SizedArray::new(t, v as _))
+                    } else {
+                        Value::error()
+                    })
+                } else {
+                    Err(CobaltError::NotCompileTime { loc: idx.loc })
+                }
+            }
+            types::Null::KIND => Ok(if let Some(InterData::Type(t)) = val.inter_val {
+                Value::make_type(types::UnsizedArray::new(t))
+            } else {
+                Value::error()
+            }),
+            _ => Err(invalid_sub(&val, &idx)),
+        }
+    }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
@@ -131,6 +184,106 @@ impl Type for Error {
     fn align(&self) -> u16 {
         0
     }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: &Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn post_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn _bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn _bin_rhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn _has_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        true
+    }
+    fn _has_bin_rhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        true
+    }
+    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        true
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        true
+    }
+    fn _iconv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
@@ -156,6 +309,59 @@ impl Type for Null {
     }
     fn align(&self) -> u16 {
         0
+    }
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match op {
+            "&" => Ok(Value::make_type(types::Reference::new(types::Null::new()))),
+            "*" => Ok(Value::make_type(types::Pointer::new(types::Null::new()))),
+            "mut" => Ok(Value::make_type(types::Mut::new(types::Null::new()))),
+            _ => Err(invalid_preop(&val, op, oloc)),
+        }
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match val.data_type.kind() {
+            types::Int::KIND | types::IntLiteral::KIND => {
+                if let Some(InterData::Int(v)) = idx.inter_val {
+                    Ok(Value::make_type(types::SizedArray::new(
+                        types::Null::new(),
+                        v as _,
+                    )))
+                } else {
+                    Err(CobaltError::NotCompileTime { loc: idx.loc })
+                }
+            }
+            types::Null::KIND => Ok(Value::make_type(types::UnsizedArray::new(
+                types::Null::new(),
+            ))),
+            _ => Err(invalid_sub(&val, &idx)),
+        }
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is::<TypeData>()
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target.0.is::<TypeData>() {
+            Ok(Value::make_type(types::Null::new()))
+        } else {
+            Err(cant_econv(&val, target.0, target.1))
+        }
     }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
