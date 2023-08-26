@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{NullAST, TypeDefAST, VarDefAST},
+    ast::{FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
-use cobalt_errors::{CobaltError, ParserFound};
+use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
-use crate::tokenizer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind};
+use crate::tokenizer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind, UnOrBinOpToken};
 
 use super::Parser;
 
@@ -396,7 +396,7 @@ impl<'src> Parser<'src> {
         while self.current_token.is_some()
             && self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace)
         {
-            let (func, func_errors) = self.parse_func_def();
+            let (func, func_errors) = self.parse_fn_def(true);
             errors.extend(func_errors);
             methods.push(func);
 
@@ -462,8 +462,342 @@ impl<'src> Parser<'src> {
         (ast, errors)
     }
 
-    pub fn parse_func_def(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        unimplemented!()
+    /// Parses a function definition.
+    ///
+    /// ```
+    /// fn_def
+    ///   := 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] [';' | expr]
+    pub fn parse_fn_def(&mut self, in_struct: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert_eq!(
+            self.current_token.unwrap().kind,
+            TokenKind::Keyword(Keyword::Fn)
+        );
+
+        let mut errors = vec![];
+        let first_token_loc = self.current_token.unwrap().span;
+
+        // Next has to be an identifier.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        let name: DottedName<'src> = match self.current_token.unwrap().kind {
+            TokenKind::Ident(s) => DottedName::new(
+                vec![(Cow::from(s), self.current_token.unwrap().span)],
+                false,
+            ),
+
+            _ => {
+                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let loc = self.current_token.unwrap().span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found,
+                    loc,
+                });
+                return (Box::new(NullAST::new(first_token_loc)), errors);
+            }
+        };
+
+        // Next has to be an open paren.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'('",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'('",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        // Next is 0 or more function parameters. After the first, each one has to be preceded by a
+        // comma.
+
+        self.next();
+
+        let mut params = vec![];
+        loop {
+            let (param, param_errors) = self.parse_fn_param();
+            errors.extend(param_errors);
+            params.push(param);
+
+            self.next();
+
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "')'",
+                    found: ParserFound::Eof,
+                    loc: first_token_loc,
+                });
+                return (Box::new(NullAST::new(first_token_loc)), errors);
+            }
+
+            if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
+                break;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::Comma {
+                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let loc = self.current_token.unwrap().span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "','",
+                    found,
+                    loc,
+                });
+                return (Box::new(NullAST::new(first_token_loc)), errors);
+            }
+
+            self.next();
+        }
+
+        // Next is an optional return type.
+
+        self.next();
+
+        // TODO: no return type
+        let mut ret: BoxedAST = Box::new(NullAST::new(first_token_loc));
+        if self.current_token.is_some() && self.current_token.unwrap().kind == TokenKind::Colon {
+            self.next();
+            let (ret_type, ret_errors) = self.parse_expr();
+            errors.extend(ret_errors);
+            ret = ret_type;
+        }
+
+        // Next is an optional semicolon or expression.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';' or expression",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        let mut body: BoxedAST = Box::new(NullAST::new(first_token_loc));
+        if self.current_token.unwrap().kind == TokenKind::Semicolon {
+            self.next();
+        } else {
+            let (expr, expr_errors) = self.parse_expr();
+            errors.extend(expr_errors);
+            body = expr;
+        }
+
+        // Done.
+
+        let ast = Box::new(FnDefAST::new(
+            first_token_loc,
+            name,
+            ret,
+            params,
+            body,
+            vec![], // TODO: annotations
+            in_struct,
+        ));
+
+        (ast, errors)
+    }
+
+    /// Parses a function parameter.
+    ///
+    /// ```
+    /// fn_param
+    ///  := ['mut' | 'const'] IDENT ':' ['&' | '*'] ['mut'] expr ['=' expr]
+    /// ```
+    pub fn parse_fn_param(&mut self) -> (Parameter<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut errors = vec![];
+
+        let first_token_loc = self.current_token.unwrap().span;
+
+        // First is an optional mut or const.
+
+        let mut param_type = ParamType::Normal;
+        if self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Mut) {
+            param_type = ParamType::Mutable;
+            self.next();
+        } else if self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Const) {
+            param_type = ParamType::Constant;
+            self.next();
+        }
+
+        // Next has to be an identifier.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (
+                (
+                    first_token_loc,
+                    Cow::from(""),
+                    ParamType::Normal,
+                    Box::new(NullAST::new(first_token_loc)),
+                    None,
+                ),
+                errors,
+            );
+        }
+
+        let name: &'src str = match self.current_token.unwrap().kind {
+            TokenKind::Ident(s) => s,
+
+            _ => {
+                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let loc = self.current_token.unwrap().span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found,
+                    loc,
+                });
+                return (
+                    (
+                        first_token_loc,
+                        Cow::from(""),
+                        ParamType::Normal,
+                        Box::new(NullAST::new(first_token_loc)),
+                        None,
+                    ),
+                    errors,
+                );
+            }
+        };
+
+        // Next has to be a colon.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "':'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (
+                (
+                    first_token_loc,
+                    Cow::from(""),
+                    ParamType::Normal,
+                    Box::new(NullAST::new(first_token_loc)),
+                    None,
+                ),
+                errors,
+            );
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Colon {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "':'",
+                found,
+                loc,
+            });
+            return (
+                (
+                    first_token_loc,
+                    Cow::from(""),
+                    ParamType::Normal,
+                    Box::new(NullAST::new(first_token_loc)),
+                    None,
+                ),
+                errors,
+            );
+        }
+
+        // Next is an expression.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "expression",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (
+                (
+                    first_token_loc,
+                    Cow::from(""),
+                    ParamType::Normal,
+                    Box::new(NullAST::new(first_token_loc)),
+                    None,
+                ),
+                errors,
+            );
+        }
+
+        let (expr, expr_errors) = self.parse_expr();
+        dbg!(&expr_errors);
+        errors.extend(expr_errors);
+
+        // Next is an optional '=' and expression.
+
+        self.next();
+
+        let mut default = None;
+        if self.current_token.is_some()
+            && self.current_token.unwrap().kind == TokenKind::BinOp(BinOpToken::Eq)
+        {
+            self.next();
+
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "expression",
+                    found: ParserFound::Eof,
+                    loc: first_token_loc,
+                });
+                return (
+                    (
+                        first_token_loc,
+                        Cow::from(""),
+                        ParamType::Normal,
+                        Box::new(NullAST::new(first_token_loc)),
+                        None,
+                    ),
+                    errors,
+                );
+            }
+
+            let (default_expr, default_expr_errors) = self.parse_expr();
+            errors.extend(default_expr_errors);
+
+            default = Some(default_expr);
+        }
+
+        // Done.
+
+        (
+            (first_token_loc, Cow::from(name), param_type, expr, default),
+            errors,
+        )
     }
 }
 
@@ -483,6 +817,36 @@ mod tests {
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_fn_param() {
+        let src1 = "x: i32";
+        let token_stream1 = SourceReader::new(src1).tokenize().0;
+        let mut parser1 = Parser::new(token_stream1);
+        parser1.next();
+        let (ast1, errors1) = parser1.parse_fn_param();
+        dbg!(ast1);
+        dbg!(&errors1);
+        assert!(errors1.is_empty());
+
+        let src2 = "mut x: i32";
+        let token_stream2 = SourceReader::new(src2).tokenize().0;
+        let mut parser2 = Parser::new(token_stream2);
+        parser2.next();
+        let (ast2, errors2) = parser2.parse_fn_param();
+        dbg!(ast2);
+        dbg!(&errors2);
+        assert!(errors2.is_empty());
+
+        let src3 = "const x: i32 = 5i32";
+        let token_stream3 = SourceReader::new(src3).tokenize().0;
+        let mut parser3 = Parser::new(token_stream3);
+        parser3.next();
+        let (ast3, errors3) = parser3.parse_fn_param();
+        dbg!(ast3);
+        dbg!(&errors3);
+        assert!(errors3.is_empty());
     }
 
     #[test]

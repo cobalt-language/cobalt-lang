@@ -26,7 +26,11 @@ impl<'src> Parser<'src> {
 
         (
             Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-            vec![],
+            vec![CobaltError::ExpectedFound {
+                ex: "expression",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: self.current_token.unwrap().span,
+            }],
         )
     }
 
