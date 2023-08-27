@@ -38,7 +38,7 @@ impl Type for Reference {
         ctx: &CompCtx<'src, 'ctx>,
         can_move: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        if !ctx.is_const.get() {
+        if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
             val.comp_val = val.comp_val.and_then(|v| {
                 Some(ctx.builder.build_load(
                     self.base().llvm_type(ctx)?,
@@ -260,7 +260,7 @@ impl Type for Pointer {
         self.base()
             .ptr_type(ctx)
             .map_or(false, BasicTypeEnum::is_pointer_type)
-            && matches!(op, "++" | "--")
+            && (op == "++" || op == "--")
     }
     fn _mut_pre_op<'src, 'ctx>(
         &'static self,
@@ -289,7 +289,7 @@ impl Type for Pointer {
                                 ctx.builder.build_gep(
                                     pt,
                                     v1.into_pointer_value(),
-                                    &[ctx.context.i8_type().const_int(1, false)],
+                                    &[ctx.context.i64_type().const_int(1, false)],
                                     "",
                                 )
                             };
@@ -306,18 +306,26 @@ impl Type for Pointer {
                 )),
                 "--" => Ok(Value::new(
                     if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                        let pt = ctx.null_type.ptr_type(Default::default());
-                        let v1 = ctx.builder.build_load(pt, pv, "");
-                        let v2 = unsafe {
-                            ctx.builder.build_gep(
-                                pt,
-                                v1.into_pointer_value(),
-                                &[ctx.context.i8_type().const_int(1, false)],
-                                "",
-                            )
-                        };
-                        ctx.builder.build_store(pv, v2);
-                        val.comp_val
+                        if self
+                            .base()
+                            .ptr_type(ctx)
+                            .map_or(false, BasicTypeEnum::is_pointer_type)
+                        {
+                            let pt = ctx.null_type.ptr_type(Default::default());
+                            let v1 = ctx.builder.build_load(pt, pv, "");
+                            let v2 = unsafe {
+                                ctx.builder.build_gep(
+                                    pt,
+                                    v1.into_pointer_value(),
+                                    &[ctx.context.i64_type().const_all_ones()],
+                                    "",
+                                )
+                            };
+                            ctx.builder.build_store(pv, v2);
+                            val.comp_val
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     },
