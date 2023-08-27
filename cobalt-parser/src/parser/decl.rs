@@ -13,7 +13,7 @@ use super::Parser;
 impl<'src> Parser<'src> {
     /// Parses a declaration.
     ///
-    /// Going into this function, calling the current token should be the first
+    /// Going into this function, the current token should be the first
     /// token of this grammar.
     ///
     /// ```
@@ -22,12 +22,9 @@ impl<'src> Parser<'src> {
     ///    := type_decl
     /// ```
     fn parse_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let first_token = self.current_token;
-        if first_token.is_none() {
-            return (Box::new(NullAST::new(first_token.unwrap().span)), vec![]);
-        }
-        let first_token = first_token.unwrap();
+        assert!(self.current_token.is_some());
 
+        let first_token = self.current_token.unwrap();
         let mut errors = vec![];
 
         let ast = match first_token.kind {

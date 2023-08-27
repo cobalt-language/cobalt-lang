@@ -56,15 +56,11 @@ impl<'src> Parser<'src> {
                 // Check if the next token is a type hint.
 
                 if self.current_token.is_some() {
-                    match self.current_token.unwrap().kind {
-                        TokenKind::Ident(ident) => {
-                            if ident.chars().next().unwrap() == 'i' {
-                                suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
-                                self.next();
-                            }
+                    if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+                        if ident.starts_with('i') {
+                            suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                            self.next();
                         }
-
-                        _ => {}
                     }
                 }
 
@@ -87,6 +83,42 @@ impl<'src> Parser<'src> {
                 );
             }
 
+            TokenKind::Literal(LiteralToken::Float(s)) => {
+                self.next();
+
+                // Check if the next token is a type hint.
+
+                if self.current_token.is_some() {
+                    if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+                        if ident.starts_with('f') {
+                            suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                            self.next();
+                        }
+                    }
+                }
+
+                // Now we want to parse the string `s` to an `f64`.
+
+                let parsed_float = s.parse::<f64>();
+                if parsed_float.is_err() {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "float literal",
+                        found: ParserFound::Str(s.to_string()),
+                        loc: span,
+                    });
+                }
+                let parsed_float = parsed_float.unwrap();
+
+                return (
+                    Box::new(cobalt_ast::ast::FloatLiteralAST::new(
+                        span,
+                        parsed_float,
+                        suffix,
+                    )),
+                    errors,
+                );
+            }
+
             _ => {}
         }
 
@@ -95,10 +127,10 @@ impl<'src> Parser<'src> {
             found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
             loc: span,
         });
-        return (
+        (
             Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
             errors,
-        );
+        )
     }
 
     fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
@@ -123,5 +155,47 @@ impl<'src> Parser<'src> {
         let is_global = false;
 
         return (Box::new(VarGetAST::new(span, name, is_global)), errors);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::tokenizer::SourceReader;
+
+    #[test]
+    fn test_parse_literal() {
+        let src = "1";
+        let token_strem = SourceReader::new(src).tokenize().0;
+        let mut parser = Parser::new(token_strem);
+        parser.next();
+        let (ast, errors) = parser.parse_literal();
+        assert!(errors.is_empty());
+        dbg!(ast);
+
+        let src = "1i32";
+        let token_strem = SourceReader::new(src).tokenize().0;
+        let mut parser = Parser::new(token_strem);
+        parser.next();
+        let (ast, errors) = parser.parse_literal();
+        assert!(errors.is_empty());
+        dbg!(ast);
+
+        let src = "1.0";
+        let token_strem = SourceReader::new(src).tokenize().0;
+        let mut parser = Parser::new(token_strem);
+        parser.next();
+        let (ast, errors) = parser.parse_literal();
+        assert!(errors.is_empty());
+        dbg!(ast);
+
+        let src = "1.0f32";
+        let token_strem = SourceReader::new(src).tokenize().0;
+        let mut parser = Parser::new(token_strem);
+        parser.next();
+        let (ast, errors) = parser.parse_literal();
+        assert!(errors.is_empty());
+        dbg!(ast);
     }
 }
