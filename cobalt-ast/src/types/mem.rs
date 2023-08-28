@@ -324,18 +324,20 @@ impl Type for Pointer {
         {
             match op {
                 "++" => Ok(Value::new(
-                    if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                        if self.base().size().is_static()
-                            && self
-                                .base()
-                                .ptr_type(ctx)
-                                .map_or(false, BasicTypeEnum::is_pointer_type)
+                    if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
+                        (val.data_type.llvm_type(ctx), val.comp_val)
+                    {
+                        if self
+                            .base()
+                            .ptr_type(ctx)
+                            .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
-                            let pt = ctx.null_type.ptr_type(Default::default());
-                            let v1 = ctx.builder.build_load(pt, pv, "");
+                            let v1 =
+                                ctx.builder
+                                    .build_load(llt.ptr_type(Default::default()), pv, "");
                             let v2 = unsafe {
                                 ctx.builder.build_gep(
-                                    pt,
+                                    llt,
                                     v1.into_pointer_value(),
                                     &[ctx.context.i64_type().const_int(1, false)],
                                     "",
@@ -353,18 +355,20 @@ impl Type for Pointer {
                     self.add_ref(false),
                 )),
                 "--" => Ok(Value::new(
-                    if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                        if self.base().size().is_static()
-                            && self
-                                .base()
-                                .ptr_type(ctx)
-                                .map_or(false, BasicTypeEnum::is_pointer_type)
+                    if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
+                        (val.data_type.llvm_type(ctx), val.comp_val)
+                    {
+                        if self
+                            .base()
+                            .ptr_type(ctx)
+                            .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
-                            let pt = ctx.null_type.ptr_type(Default::default());
-                            let v1 = ctx.builder.build_load(pt, pv, "");
+                            let v1 =
+                                ctx.builder
+                                    .build_load(llt.ptr_type(Default::default()), pv, "");
                             let v2 = unsafe {
                                 ctx.builder.build_gep(
-                                    pt,
+                                    llt,
                                     v1.into_pointer_value(),
                                     &[ctx.context.i64_type().const_all_ones()],
                                     "",
@@ -385,6 +389,154 @@ impl Type for Pointer {
             }
         } else {
             Err(invalid_preop(&val, op, oloc))
+        }
+    }
+    fn _has_bin_lhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        matches!(
+            (other.kind(), op),
+            (types::Int::KIND | types::IntLiteral::KIND, "+" | "-")
+        ) || (other == self && op == "-")
+    }
+    fn _has_bin_rhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        matches!(other.kind(), types::Int::KIND | types::IntLiteral::KIND) && op == "+"
+    }
+    fn _bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match rhs.data_type.kind() {
+            types::Int::KIND | types::IntLiteral::KIND
+                if self.base().size().as_static().map_or(false, |x| x != 0) =>
+            {
+                match op.0 {
+                    "+" => Ok(Value::new(
+                        if let (
+                            Some(llt),
+                            Some(BasicValueEnum::PointerValue(pv)),
+                            Some(BasicValueEnum::IntValue(mut v)),
+                        ) = (self.base().llvm_type(ctx), lhs.value(ctx), rhs.value(ctx))
+                        {
+                            let i64ty = ctx.context.i64_type();
+                            v = if rhs
+                                .data_type
+                                .downcast::<types::Int>()
+                                .map_or(false, types::Int::is_signed)
+                            {
+                                ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
+                            } else {
+                                ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
+                            };
+                            Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                        } else {
+                            None
+                        },
+                        None,
+                        self,
+                    )),
+                    "-" => Ok(Value::new(
+                        if let (
+                            Some(llt),
+                            Some(BasicValueEnum::PointerValue(pv)),
+                            Some(BasicValueEnum::IntValue(mut v)),
+                        ) = (self.base().llvm_type(ctx), lhs.value(ctx), rhs.value(ctx))
+                        {
+                            let i64ty = ctx.context.i64_type();
+                            v = if rhs
+                                .data_type
+                                .downcast::<types::Int>()
+                                .map_or(false, types::Int::is_signed)
+                            {
+                                ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
+                            } else {
+                                ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
+                            };
+                            v = ctx.builder.build_int_neg(v, "");
+                            Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                        } else {
+                            None
+                        },
+                        None,
+                        self,
+                    )),
+                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                }
+            }
+            types::Pointer::KIND if rhs.data_type == self && op.0 == "-" => Ok(Value::new(
+                if let (
+                    Some(llt),
+                    Some(BasicValueEnum::PointerValue(l)),
+                    Some(BasicValueEnum::PointerValue(r)),
+                ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                {
+                    Some(ctx.builder.build_ptr_diff(llt, l, r, "").into())
+                } else {
+                    None
+                },
+                None,
+                self,
+            )),
+            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+        }
+    }
+    fn _bin_rhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if matches!(
+            lhs.data_type.kind(),
+            types::Int::KIND | types::IntLiteral::KIND
+        ) && op.0 == "+"
+        {
+            Ok(Value::new(
+                if let (
+                    Some(llt),
+                    Some(BasicValueEnum::PointerValue(pv)),
+                    Some(BasicValueEnum::IntValue(mut v)),
+                ) = (self.base().llvm_type(ctx), rhs.value(ctx), lhs.value(ctx))
+                {
+                    let i64ty = ctx.context.i64_type();
+                    v = if lhs
+                        .data_type
+                        .downcast::<types::Int>()
+                        .map_or(false, types::Int::is_signed)
+                    {
+                        ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
+                    } else {
+                        ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
+                    };
+                    Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                } else {
+                    None
+                },
+                None,
+                self,
+            ))
+        } else {
+            Err(invalid_binop(&lhs, &rhs, op.0, op.1))
         }
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
