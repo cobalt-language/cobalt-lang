@@ -51,15 +51,37 @@ impl Type for Reference {
             .pre_op(val, op, oloc, ctx, can_move && !self.base().has_dtor(ctx))
     }
     fn _has_bin_lhs(
-        &self,
+        &'static self,
         other: TypeRef,
         op: &'static str,
         ctx: &CompCtx,
         move_left: bool,
         move_right: bool,
     ) -> bool {
-        self.base()
-            ._has_bin_lhs(other, op, ctx, move_left, move_right)
+        (op == "=" && self.base().is::<types::Mut>() && other.impl_convertible(self, ctx))
+            || self.base()._has_bin_lhs(
+                other,
+                op,
+                ctx,
+                move_left && !self.base().has_dtor(ctx),
+                move_right,
+            )
+    }
+    fn _has_bin_rhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        self.base()._has_bin_lhs(
+            other,
+            op,
+            ctx,
+            move_left,
+            move_right && !self.base().has_dtor(ctx),
+        )
     }
     fn _bin_lhs<'src, 'ctx>(
         &'static self,
@@ -92,8 +114,14 @@ impl Type for Reference {
                 ))
             })
         }
-        self.base()
-            ._bin_lhs(lhs, rhs, op, ctx, move_left, move_right)
+        self.base()._bin_lhs(
+            lhs,
+            rhs,
+            op,
+            ctx,
+            move_left && !self.base().has_dtor(ctx),
+            move_right,
+        )
     }
     fn _bin_rhs<'src, 'ctx>(
         &'static self,
@@ -113,8 +141,14 @@ impl Type for Reference {
                 ))
             })
         }
-        self.base()
-            ._bin_rhs(lhs, rhs, op, ctx, move_left, move_right)
+        self.base()._bin_rhs(
+            lhs,
+            rhs,
+            op,
+            ctx,
+            move_left,
+            move_right && move_left && !self.base().has_dtor(ctx),
+        )
     }
     fn call<'src, 'ctx>(
         &'static self,
@@ -291,10 +325,11 @@ impl Type for Pointer {
             match op {
                 "++" => Ok(Value::new(
                     if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                        if self
-                            .base()
-                            .ptr_type(ctx)
-                            .map_or(false, BasicTypeEnum::is_pointer_type)
+                        if self.base().size().is_static()
+                            && self
+                                .base()
+                                .ptr_type(ctx)
+                                .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
                             let pt = ctx.null_type.ptr_type(Default::default());
                             let v1 = ctx.builder.build_load(pt, pv, "");
@@ -319,10 +354,11 @@ impl Type for Pointer {
                 )),
                 "--" => Ok(Value::new(
                     if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
-                        if self
-                            .base()
-                            .ptr_type(ctx)
-                            .map_or(false, BasicTypeEnum::is_pointer_type)
+                        if self.base().size().is_static()
+                            && self
+                                .base()
+                                .ptr_type(ctx)
+                                .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
                             let pt = ctx.null_type.ptr_type(Default::default());
                             let v1 = ctx.builder.build_load(pt, pv, "");
