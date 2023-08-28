@@ -109,7 +109,7 @@ impl Type for Int {
         match rhs.data_type.kind() {
             types::Int::KIND => {
                 let ty = rhs.data_type.downcast::<types::Int>().unwrap();
-                match self.bits().cmp(&ty.bits()) {
+                let res = match self.bits().cmp(&ty.bits()) {
                     Ordering::Less => {
                         lhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) = lhs.comp_val {
                             Some(
@@ -131,6 +131,7 @@ impl Type for Int {
                         } else {
                             None
                         };
+                        ty
                     }
                     Ordering::Greater => {
                         rhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) = rhs.comp_val {
@@ -146,13 +147,12 @@ impl Type for Int {
                         } else {
                             None
                         };
+                        self
                     }
-                    Ordering::Equal => {}
-                }
-                let res = Self::new(
-                    std::cmp::max(self.bits(), ty.bits()),
-                    self.is_unsigned() && ty.is_unsigned(),
-                );
+                    Ordering::Equal => {
+                        Self::new(self.bits(), self.is_unsigned() || ty.is_unsigned())
+                    }
+                };
                 match op.0 {
                     "+" => Ok(Value::new(
                         if let (
