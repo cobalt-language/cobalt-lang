@@ -6,7 +6,7 @@ use cobalt_ast::{
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
-use crate::tokenizer::tokens::{LiteralToken, TokenKind};
+use crate::lexer::tokens::{LiteralToken, TokenKind};
 
 use super::Parser;
 
@@ -154,6 +154,8 @@ impl<'src> Parser<'src> {
         };
         let is_global = false;
 
+        self.next();
+
         return (Box::new(VarGetAST::new(span, name, is_global)), errors);
     }
 }
@@ -162,7 +164,7 @@ impl<'src> Parser<'src> {
 mod tests {
     use super::*;
 
-    use crate::tokenizer::SourceReader;
+    use crate::lexer::SourceReader;
 
     #[test]
     fn test_parse_literal() {

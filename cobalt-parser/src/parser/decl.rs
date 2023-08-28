@@ -4,9 +4,9 @@ use cobalt_ast::{
     ast::{FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_errors::{CobaltError, ParserFound};
 
-use crate::tokenizer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind, UnOrBinOpToken};
+use crate::lexer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind};
 
 use super::Parser;
 
@@ -463,7 +463,7 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// fn_def
-    ///   := 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] [';' | expr]
+    ///   := 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] ['=' expr] ';'
     pub fn parse_fn_def(&mut self, in_struct: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert_eq!(
@@ -530,18 +530,12 @@ impl<'src> Parser<'src> {
         }
 
         // Next is 0 or more function parameters. After the first, each one has to be preceded by a
-        // comma.
+        // comma. After this section, the current token should be the close paren.
 
         self.next();
 
         let mut params = vec![];
         loop {
-            let (param, param_errors) = self.parse_fn_param();
-            errors.extend(param_errors);
-            params.push(param);
-
-            self.next();
-
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "')'",
@@ -555,19 +549,35 @@ impl<'src> Parser<'src> {
                 break;
             }
 
-            if self.current_token.unwrap().kind != TokenKind::Comma {
-                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
-                let loc = self.current_token.unwrap().span;
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "','",
-                    found,
-                    loc,
-                });
-                return (Box::new(NullAST::new(first_token_loc)), errors);
+            if !params.is_empty() {
+                if self.current_token.unwrap().kind == TokenKind::Comma {
+                    self.next();
+                } else {
+                    let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                    let loc = self.current_token.unwrap().span;
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "','",
+                        found,
+                        loc,
+                    });
+                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                }
             }
 
-            self.next();
+            println!(
+                "current token before parse_fn_param: {:?}",
+                self.current_token
+            );
+            let (param, param_errors) = self.parse_fn_param();
+            println!(
+                "current token after parse_fn_param: {:?}",
+                self.current_token
+            );
+            errors.extend(param_errors);
+            params.push(param);
         }
+
+        assert!(self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren));
 
         // Next is an optional return type.
 
@@ -582,9 +592,8 @@ impl<'src> Parser<'src> {
             ret = ret_type;
         }
 
-        // Next is an optional semicolon or expression.
-
-        self.next();
+        // If next is a semicolon, we're done. Otherwise, next is an equals sign, and we have to
+        // parse subsequent expression.
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -596,12 +605,34 @@ impl<'src> Parser<'src> {
         }
 
         let mut body: BoxedAST = Box::new(NullAST::new(first_token_loc));
-        if self.current_token.unwrap().kind == TokenKind::Semicolon {
+
+        if self.current_token.unwrap().kind == TokenKind::BinOp(BinOpToken::Eq) {
             self.next();
-        } else {
             let (expr, expr_errors) = self.parse_expr();
             errors.extend(expr_errors);
             body = expr;
+        }
+
+        // Next is a semicolon.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Semicolon {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
         }
 
         // Done.
@@ -752,12 +783,9 @@ impl<'src> Parser<'src> {
         }
 
         let (expr, expr_errors) = self.parse_expr();
-        dbg!(&expr_errors);
         errors.extend(expr_errors);
 
         // Next is an optional '=' and expression.
-
-        self.next();
 
         let mut default = None;
         if self.current_token.is_some()
@@ -800,7 +828,7 @@ impl<'src> Parser<'src> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizer::SourceReader;
+    use crate::lexer::SourceReader;
 
     use super::*;
 
@@ -856,5 +884,26 @@ mod tests {
         dbg!(ast1);
         dbg!(&errors1);
         assert!(errors1.is_empty());
+    }
+
+    #[test]
+    fn test_fn_def() {
+        let src1 = "fn foo(x: i32): i32 = 5i32;";
+        let token_stream1 = SourceReader::new(src1).tokenize().0;
+        let mut parser1 = Parser::new(token_stream1);
+        parser1.next();
+        let (ast1, errors1) = parser1.parse_fn_def(false);
+        dbg!(ast1);
+        dbg!(&errors1);
+        assert!(errors1.is_empty());
+
+        let src2 = "fn foo();";
+        let token_stream2 = SourceReader::new(src2).tokenize().0;
+        let mut parser2 = Parser::new(token_stream2);
+        parser2.next();
+        let (ast2, errors2) = parser2.parse_fn_def(false);
+        dbg!(ast2);
+        dbg!(&errors2);
+        assert!(errors2.is_empty());
     }
 }

@@ -31,7 +31,7 @@ impl Keyword {
     /// This is useful for checking if an identifier is a keyword.
     pub(crate) fn from_token(token: &Token) -> Option<Keyword> {
         match &token.kind {
-            TokenKind::Keyword(keyword) => Some(keyword.clone()),
+            TokenKind::Keyword(keyword) => Some(*keyword),
             TokenKind::Ident(ident) => Keyword::from_str(ident),
             _ => None,
         }

@@ -1,6 +1,12 @@
-use cobalt_errors::CobaltError;
+//! The parser is responsible for turning the tokens into an AST.
+//!
+//! ## Conventions
+//! - Upon entering a parsing function, `current_token` is assumed to be the first
+//! token of the grammar.
+//! - Upon exiting a parsing function, `current_token` is assumed to be the first
+//! token after the grammar.
 
-use crate::tokenizer::{tokenizer::TokenStream, tokens::Token};
+use crate::lexer::{tokenizer::TokenStream, tokens::Token};
 
 mod decl;
 mod expr;
@@ -32,7 +38,7 @@ pub struct Parser<'src> {
 
 impl<'src> Parser<'src> {
     pub fn new(stream: TokenStream<'src>) -> Parser<'src> {
-        let mut cursor = TokenStreamCursor::new(stream);
+        let cursor = TokenStreamCursor::new(stream);
         Parser {
             cursor,
             current_token: None,
