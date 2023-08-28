@@ -70,6 +70,19 @@ impl Type for Reference {
         move_left: bool,
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if op.0 == "="
+            && self.base().is::<types::Mut>()
+            && rhs.data_type.impl_convertible(self.as_type_ref(), ctx)
+        {
+            let rhs = rhs.impl_convert((self, Some(lhs.loc)), ctx)?;
+            if let (Some(BasicValueEnum::PointerValue(pv)), Some(val)) =
+                (lhs.comp_val, rhs.comp_val)
+            {
+                let inst = ctx.builder.build_store(pv, val);
+                cfg::mark_move(&rhs, cfg::Location::Inst(inst, 0), ctx, rhs.loc);
+            }
+            return Ok(lhs);
+        }
         if !(self.base().is::<types::Mut>() || ctx.is_const.get()) {
             lhs.comp_val = lhs.comp_val.and_then(|v| {
                 Some(ctx.builder.build_load(
@@ -447,7 +460,9 @@ impl Type for Mut {
             if let (Some(BasicValueEnum::PointerValue(pv)), Some(val)) =
                 (lhs.comp_val, rhs.comp_val)
             {
-                ctx.builder.build_store(pv, val);
+                let inst = ctx.builder.build_store(pv, val);
+                cfg::mark_move(&rhs, cfg::Location::Inst(inst, 0), ctx, rhs.loc);
+                cfg::mark_store(&lhs, cfg::Location::Inst(inst, 1), ctx);
             }
             lhs.data_type = types::Reference::new(lhs.data_type);
             return Ok(lhs);
