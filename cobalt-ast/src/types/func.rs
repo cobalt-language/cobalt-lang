@@ -3,7 +3,6 @@ use super::*;
 #[repr(transparent)]
 pub struct Function((TypeRef, Box<[(TypeRef, bool)]>));
 impl Function {
-    pub const KIND: NonZeroU64 = make_id(b"function");
     #[ref_cast_custom]
     #[inline(always)]
     fn from_ref(base: &(TypeRef, Box<[(TypeRef, bool)]>)) -> &Self;
@@ -245,4 +244,153 @@ impl Type for Function {
         Ok(Self::new(ret, params))
     }
 }
-submit_types!(Function);
+#[derive(Debug, RefCastCustom)]
+#[repr(transparent)]
+pub struct BoundMethod((TypeRef, Box<[(TypeRef, bool)]>));
+impl BoundMethod {
+    #[ref_cast_custom]
+    #[inline(always)]
+    fn from_ref(base: &(TypeRef, Box<[(TypeRef, bool)]>)) -> &Self;
+    pub fn new(ret: TypeRef, params: impl Into<Box<[(TypeRef, bool)]>>) -> &'static Self {
+        let params = params.into();
+        assert!(!params.is_empty());
+        static INTERN: Interner<(TypeRef, Box<[(TypeRef, bool)]>)> = Interner::new();
+        Self::from_ref(INTERN.intern((ret, params)))
+    }
+
+    pub fn ret(&self) -> TypeRef {
+        self.0 .0
+    }
+    pub fn full_params(&self) -> &[(TypeRef, bool)] {
+        &self.0 .1
+    }
+    pub fn self_ty(&self) -> TypeRef {
+        self.0 .1[0].0
+    }
+    pub fn is_const(&self) -> bool {
+        self.0 .1[0].1
+    }
+    pub fn params(&self) -> &[(TypeRef, bool)] {
+        &self.full_params()[1..]
+    }
+    pub fn as_function(&self) -> &'static Function {
+        Function::new(self.ret(), self.full_params())
+    }
+}
+impl Display for BoundMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "fn {}{}.(",
+            if self.is_const() { "const " } else { "" },
+            self.self_ty()
+        )?;
+        let mut rem = self.params().len();
+        for &(ty, c) in self.params() {
+            if c {
+                f.write_str("const ")?;
+            }
+            Display::fmt(ty, f)?;
+            rem -= 1;
+            if rem > 0 {
+                f.write_str(", ")?;
+            }
+        }
+        write!(f, "): {}", self.ret())
+    }
+}
+impl ConcreteType for BoundMethod {
+    const KIND: NonZeroU64 = make_id(b"method");
+}
+impl Type for BoundMethod {
+    fn size(&self) -> SizeType {
+        SizeType::Meta
+    }
+    fn align(&self) -> u16 {
+        0
+    }
+    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        let params = || {
+            self.full_params()
+                .iter()
+                .filter_map(|&(t, c)| c.then(|| t.llvm_type(ctx).map(From::from)).flatten())
+                .collect::<Vec<_>>()
+        };
+        let fty = if self.ret().size() == SizeType::Static(0) {
+            ctx.context
+                .void_type()
+                .fn_type(&params(), false)
+                .ptr_type(Default::default())
+                .into()
+        } else {
+            self.ret()
+                .llvm_type(ctx)?
+                .fn_type(&params(), false)
+                .ptr_type(Default::default())
+                .into()
+        };
+        if let Some(llt) = self.self_ty().llvm_type(ctx) {
+            Some(ctx.context.struct_type(&[llt, fty], false).into())
+        } else {
+            Some(fty)
+        }
+    }
+    fn call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        mut args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let (comp_val, fv) = match val.comp_val {
+            Some(BasicValueEnum::StructValue(sv)) => (
+                ctx.builder.build_extract_value(sv, 0, ""),
+                ctx.builder.build_extract_value(sv, 1, ""),
+            ),
+            Some(BasicValueEnum::PointerValue(pv)) => (None, Some(pv.into())),
+            _ => (None, None),
+        };
+        let (iv, fd) = if let Some(InterData::Array(mut v)) = val.inter_val {
+            if v.len() == 2 {
+                let fd = v.pop().unwrap();
+                let iv = v.pop().unwrap();
+                matches!(fd, InterData::Function(_)).then_some((Some(iv), Some(fd)))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+        .unwrap_or_default();
+        let mut a = Vec::with_capacity(args.len() + 1);
+        a.push(Value::new(comp_val, iv, self.self_ty()));
+        a.append(&mut args);
+        Value::new(fv, fd, self.as_function())
+            .with_loc(val.loc)
+            .call(cparen, a, ctx)
+    }
+    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
+        save_type(out, self.ret())?;
+        self.full_params().iter().try_for_each(|&(ty, c)| {
+            save_type(out, ty)?;
+            out.write_all(&[u8::from(c)])
+        })
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+        let ret = load_type(buf)?;
+        let params = std::iter::from_fn(|| match load_type_opt(buf) {
+            Ok(None) => None,
+            Ok(Some(t)) => {
+                let mut c = 0u8;
+                if let Err(err) = buf.read_exact(std::slice::from_mut(&mut c)) {
+                    return Some(Err(err));
+                }
+                Some(Ok((t, c != 0)))
+            }
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::new(ret, params))
+    }
+}
+submit_types!(Function, BoundMethod);

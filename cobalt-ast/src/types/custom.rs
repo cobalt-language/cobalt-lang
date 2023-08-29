@@ -114,6 +114,10 @@ impl Type for Custom {
     fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
         Some(ctx.nom_info.borrow()[CUSTOM_DATA.get(&*self.0).unwrap().3].clone())
     }
+    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
+        ctx.nom_info.borrow_mut()[CUSTOM_DATA.get(&*self.0).unwrap().3] = info;
+        true
+    }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().llvm_type(ctx)
     }
@@ -125,6 +129,22 @@ impl Type for Custom {
         let borrow = ctx.nom_info.borrow();
         let info = &borrow[keys.3];
         info.dtor.is_some() || (!info.no_auto_drop && keys.0.has_dtor(ctx))
+    }
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        let keys = CUSTOM_DATA.get(&*self.0).unwrap();
+        let borrow = ctx.nom_info.borrow();
+        let info = &borrow[keys.3];
+        if let Some(pv) = val.addr(ctx) {
+            if let Some(fv) = info.dtor {
+                ctx.builder.build_call(fv, &[pv.into()], "");
+            } else if !info.no_auto_drop {
+                Value {
+                    data_type: self.base(),
+                    ..val.clone()
+                }
+                .ins_dtor(ctx)
+            }
+        }
     }
     fn save_header(out: &mut dyn Write) -> io::Result<()> {
         for vals in CUSTOM_DATA.iter() {

@@ -67,11 +67,19 @@ impl Type for Tuple {
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         self.types().iter().any(|v| v.has_dtor(ctx))
     }
-    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {
-        if let BasicValueEnum::StructValue(sv) = comp_val {
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        if let Some(BasicValueEnum::StructValue(sv)) = val.comp_val {
             for n in 0..self.types().len() {
                 let v = ctx.builder.build_extract_value(sv, n as _, "").unwrap();
-                self.types()[n].ins_dtor(v, ctx);
+                Value::with_addr(
+                    Some(v),
+                    None,
+                    self.types()[n],
+                    ctx.builder
+                        .build_struct_gep(sv.get_type(), val.addr(ctx).unwrap(), n as _, "")
+                        .unwrap(),
+                )
+                .ins_dtor(ctx);
             }
         }
     }
@@ -206,11 +214,19 @@ impl Type for Struct {
     fn has_dtor(&self, ctx: &CompCtx) -> bool {
         self.types().iter().any(|v| v.has_dtor(ctx))
     }
-    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {
-        if let BasicValueEnum::StructValue(sv) = comp_val {
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        if let Some(BasicValueEnum::StructValue(sv)) = val.comp_val {
             for n in 0..self.types().len() {
                 let v = ctx.builder.build_extract_value(sv, n as _, "").unwrap();
-                self.types()[n].ins_dtor(v, ctx);
+                Value::with_addr(
+                    Some(v),
+                    None,
+                    self.types()[n],
+                    ctx.builder
+                        .build_struct_gep(sv.get_type(), val.addr(ctx).unwrap(), n as _, "")
+                        .unwrap(),
+                )
+                .ins_dtor(ctx);
             }
         }
     }

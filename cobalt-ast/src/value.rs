@@ -379,9 +379,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
 
     pub fn ins_dtor(&self, ctx: &CompCtx<'src, 'ctx>) {
-        if let Some(comp_val) = self.comp_val {
-            self.data_type.ins_dtor(comp_val, ctx)
-        }
+        self.data_type.ins_dtor(self, ctx)
     }
 
     pub fn as_type(&self) -> Option<TypeRef> {

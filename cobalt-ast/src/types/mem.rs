@@ -665,6 +665,12 @@ impl Type for Mut {
     fn align(&self) -> u16 {
         self.0.align()
     }
+    fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
+        self.base().nom_info(ctx)
+    }
+    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
+        self.base().set_nom_info(ctx, info)
+    }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
@@ -673,6 +679,12 @@ impl Type for Mut {
     }
     fn decay(&self) -> TypeRef {
         self.base().decay()
+    }
+    fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
+        self.base().has_dtor(ctx)
+    }
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        self.base().ins_dtor(val, ctx)
     }
     fn pre_op<'src, 'ctx>(
         &'static self,

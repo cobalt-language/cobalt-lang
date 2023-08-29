@@ -117,7 +117,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         false
     }
     /// Insert a destructor for a value at the current insertion position.
-    fn ins_dtor<'ctx>(&'static self, comp_val: BasicValueEnum<'ctx>, ctx: &CompCtx<'_, 'ctx>) {}
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {}
     /// Get the "decayed" type - essentially what the type of a variable would be with this assigned to it.
     fn decay(&'static self) -> TypeRef {
         self.as_type_ref()
