@@ -539,6 +539,96 @@ impl Type for Pointer {
             Err(invalid_binop(&lhs, &rhs, op.0, op.1))
         }
     }
+    fn _has_mut_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        matches!(
+            (other.kind(), op),
+            (types::Int::KIND | types::IntLiteral::KIND, "+=" | "-=")
+        )
+    }
+    fn _mut_bin_lhs<'src, 'ctx>(
+        &'static self,
+        mut lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if !(self
+            .base()
+            .ptr_type(ctx)
+            .map_or(false, BasicTypeEnum::is_pointer_type)
+            && self.base().size().is_static())
+        {
+            Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+        } else if rhs.data_type.is::<types::IntLiteral>() {
+            let lty = ctx.context.i64_type();
+            let pt = ctx.null_type.ptr_type(Default::default());
+            if let (Some(llt), Some(BasicValueEnum::PointerValue(lv)), Some(InterData::Int(rv))) =
+                (self.base().llvm_type(ctx), lhs.value(ctx), &rhs.inter_val)
+            {
+                let rv = lty.const_int(*rv as _, true);
+                match op.0 {
+                    "+=" => {
+                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
+                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") };
+                        ctx.builder.build_store(lv, v2);
+                    }
+                    "-=" => {
+                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
+                        let v2 = ctx.builder.build_int_neg(v1, "");
+                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") };
+                        ctx.builder.build_store(lv, v3);
+                    }
+                    _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                }
+            }
+            lhs.data_type = types::Reference::new(lhs.data_type);
+            Ok(lhs)
+        } else if let Some(rty) = rhs.data_type.downcast::<types::Int>() {
+            let lty = ctx.context.i64_type();
+            let pt = ctx.null_type.ptr_type(Default::default());
+            if let (
+                Some(llt),
+                Some(BasicValueEnum::PointerValue(lv)),
+                Some(BasicValueEnum::IntValue(mut rv)),
+            ) = (self.base().llvm_type(ctx), lhs.value(ctx), rhs.value(ctx))
+            {
+                if rty.bits() < 64 {
+                    rv = if rty.is_signed() {
+                        ctx.builder.build_int_s_extend(rv, lty, "")
+                    } else {
+                        ctx.builder.build_int_z_extend(rv, lty, "")
+                    };
+                }
+                match op.0 {
+                    "+=" => {
+                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
+                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") };
+                        ctx.builder.build_store(lv, v2);
+                    }
+                    "-=" => {
+                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
+                        let v2 = ctx.builder.build_int_neg(v1, "");
+                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") };
+                        ctx.builder.build_store(lv, v3);
+                    }
+                    _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                }
+            }
+            lhs.data_type = types::Reference::new(lhs.data_type);
+            Ok(lhs)
+        } else {
+            Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+        }
+    }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
