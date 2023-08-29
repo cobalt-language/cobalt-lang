@@ -1062,22 +1062,12 @@ pub fn mark_move<'src, 'ctx>(
     if !ctx.is_const.get() {
         if let (Some(name), true) = (
             &val.name,
-            ctx.flags.all_move_metadata
-                || val.data_type.has_dtor(ctx)
-                || val
-                    .data_type
-                    .nom_info(ctx)
-                    .map_or(false, |v| v.is_linear_type),
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
         ) {
             ctx.moves.borrow_mut().0.insert(cfg::Use {
                 is_move: true,
                 name: name.clone(),
-                real: !ctx.flags.all_move_metadata
-                    || val.data_type.has_dtor(ctx)
-                    || val
-                        .data_type
-                        .nom_info(ctx)
-                        .map_or(false, |v| v.is_linear_type),
+                real: !val.data_type.copyable(ctx),
                 inst,
                 loc,
             });
@@ -1093,22 +1083,12 @@ pub fn mark_use<'src, 'ctx>(
     if !ctx.is_const.get() {
         if let (Some(name), true) = (
             &val.name,
-            ctx.flags.all_move_metadata
-                || val.data_type.has_dtor(ctx)
-                || val
-                    .data_type
-                    .nom_info(ctx)
-                    .map_or(false, |v| v.is_linear_type),
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
         ) {
             ctx.moves.borrow_mut().0.insert(cfg::Use {
                 is_move: false,
                 name: name.clone(),
-                real: !ctx.flags.all_move_metadata
-                    || val.data_type.has_dtor(ctx)
-                    || val
-                        .data_type
-                        .nom_info(ctx)
-                        .map_or(false, |v| v.is_linear_type),
+                real: !val.data_type.copyable(ctx),
                 inst,
                 loc,
             });
@@ -1123,21 +1103,11 @@ pub fn mark_store<'src, 'ctx>(
     if !ctx.is_const.get() {
         if let (Some(name), true) = (
             &val.name,
-            ctx.flags.all_move_metadata
-                || val.data_type.has_dtor(ctx)
-                || val
-                    .data_type
-                    .nom_info(ctx)
-                    .map_or(false, |v| v.is_linear_type),
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
         ) {
             ctx.moves.borrow_mut().1.insert(cfg::Store {
                 name: name.clone(),
-                real: !ctx.flags.all_move_metadata
-                    || val.data_type.has_dtor(ctx)
-                    || val
-                        .data_type
-                        .nom_info(ctx)
-                        .map_or(false, |v| v.is_linear_type),
+                real: !val.data_type.copyable(ctx),
                 inst,
             });
         }

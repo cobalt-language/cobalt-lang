@@ -108,6 +108,10 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
         false
     }
+    /// Check if a type can be copied without tracking
+    fn copyable(&'static self, ctx: &CompCtx) -> bool {
+        !(self.has_dtor(ctx) || self.nom_info(ctx).map_or(false, |i| i.is_linear_type))
+    }
     /// Check whether or not this type has a destructor.
     fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
         false

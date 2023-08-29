@@ -48,7 +48,7 @@ impl Type for Reference {
             });
         }
         self.base()
-            .pre_op(val, op, oloc, ctx, can_move && !self.base().has_dtor(ctx))
+            .pre_op(val, op, oloc, ctx, can_move && self.base().copyable(ctx))
     }
     fn _has_bin_lhs(
         &'static self,
@@ -63,7 +63,7 @@ impl Type for Reference {
                 other,
                 op,
                 ctx,
-                move_left && !self.base().has_dtor(ctx),
+                move_left && self.base().copyable(ctx),
                 move_right,
             )
     }
@@ -80,7 +80,7 @@ impl Type for Reference {
             op,
             ctx,
             move_left,
-            move_right && !self.base().has_dtor(ctx),
+            move_right && !self.base().copyable(ctx),
         )
     }
     fn _bin_lhs<'src, 'ctx>(
@@ -119,7 +119,7 @@ impl Type for Reference {
             rhs,
             op,
             ctx,
-            move_left && !self.base().has_dtor(ctx),
+            move_left && self.base().copyable(ctx),
             move_right,
         )
     }
@@ -147,7 +147,7 @@ impl Type for Reference {
             op,
             ctx,
             move_left,
-            move_right && move_left && !self.base().has_dtor(ctx),
+            move_right && move_left && !self.base().copyable(ctx),
         )
     }
     fn call<'src, 'ctx>(
@@ -180,7 +180,7 @@ impl Type for Reference {
         } else {
             false
         }) || self.base()._can_ref_iconv(other, ctx)
-            || (!self.base().has_dtor(ctx) && self.base()._can_iconv_to(other, ctx))
+            || (self.base().copyable(ctx) && self.base()._can_iconv_to(other, ctx))
     }
     fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         (if let Some(base) = self.base().downcast::<types::Mut>() {
@@ -188,7 +188,7 @@ impl Type for Reference {
         } else {
             false
         }) || self.base()._can_ref_econv(other, ctx)
-            || (!self.base().has_dtor(ctx) && self.base()._can_econv_to(other, ctx))
+            || (self.base().copyable(ctx) && self.base()._can_econv_to(other, ctx))
     }
     fn _iconv_to<'src, 'ctx>(
         &'static self,
@@ -203,7 +203,7 @@ impl Type for Reference {
         }
         if self.base()._can_ref_iconv(target.0, ctx) {
             self.base()._ref_iconv(val, target, ctx)
-        } else if !self.base().has_dtor(ctx) {
+        } else if self.base().copyable(ctx) {
             if !ctx.is_const.get() {
                 val.comp_val = val.comp_val.and_then(|v| {
                     Some(ctx.builder.build_load(
@@ -235,7 +235,7 @@ impl Type for Reference {
         }
         if self.base()._can_ref_econv(target.0, ctx) {
             self.base()._ref_econv(val, target, ctx)
-        } else if !self.base().has_dtor(ctx) {
+        } else if self.base().copyable(ctx) {
             if !ctx.is_const.get() {
                 val.comp_val = val.comp_val.and_then(|v| {
                     Some(ctx.builder.build_load(

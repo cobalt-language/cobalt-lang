@@ -124,7 +124,7 @@ impl Type for Custom {
         let keys = CUSTOM_DATA.get(&*self.0).unwrap();
         let borrow = ctx.nom_info.borrow();
         let info = &borrow[keys.3];
-        info.dtor.is_some() || (!info.is_linear_type && keys.0.has_dtor(ctx))
+        info.dtor.is_some() || (!info.no_auto_drop && keys.0.has_dtor(ctx))
     }
     fn save_header(out: &mut dyn Write) -> io::Result<()> {
         for vals in CUSTOM_DATA.iter() {
