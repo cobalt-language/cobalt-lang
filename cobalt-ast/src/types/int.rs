@@ -957,7 +957,7 @@ impl Type for Int {
                     None
                 },
                 None,
-                self.add_ref(false),
+                self.add_ref(true),
             )),
             "--" => Ok(Value::new(
                 if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
@@ -970,7 +970,7 @@ impl Type for Int {
                     None
                 },
                 None,
-                self.add_ref(false),
+                self.add_ref(true),
             )),
             _ => Err(invalid_preop(&val, op, oloc)),
         }
@@ -1065,7 +1065,7 @@ impl Type for Int {
                     }
                 }
             }
-            lhs.data_type = types::Reference::new(lhs.data_type);
+            lhs.data_type = self.add_ref(true);
             Ok(lhs)
         } else if let Some(rt) = rhs.data_type.downcast::<types::Int>() {
             if !ctx.is_const.get() {
@@ -1157,7 +1157,7 @@ impl Type for Int {
                     }
                 }
             }
-            lhs.data_type = types::Reference::new(lhs.data_type);
+            lhs.data_type = self.add_ref(true);
             Ok(lhs)
         } else {
             Err(invalid_binop(&lhs, &rhs, op.0, op.1))

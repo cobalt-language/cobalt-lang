@@ -352,7 +352,7 @@ impl Type for Pointer {
                         None
                     },
                     None,
-                    self.add_ref(false),
+                    self.add_ref(true),
                 )),
                 "--" => Ok(Value::new(
                     if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
@@ -383,7 +383,7 @@ impl Type for Pointer {
                         None
                     },
                     None,
-                    self.add_ref(false),
+                    self.add_ref(true),
                 )),
                 _ => Err(invalid_preop(&val, op, oloc)),
             }
@@ -590,7 +590,7 @@ impl Type for Pointer {
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
             }
-            lhs.data_type = types::Reference::new(lhs.data_type);
+            lhs.data_type = self.add_ref(true);
             Ok(lhs)
         } else if let Some(rty) = rhs.data_type.downcast::<types::Int>() {
             let lty = ctx.context.i64_type();
@@ -623,7 +623,7 @@ impl Type for Pointer {
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
             }
-            lhs.data_type = types::Reference::new(lhs.data_type);
+            lhs.data_type = self.add_ref(true);
             Ok(lhs)
         } else {
             Err(invalid_binop(&lhs, &rhs, op.0, op.1))
@@ -742,7 +742,7 @@ impl Type for Mut {
                 cfg::mark_move(&rhs, cfg::Location::Inst(inst, 0), ctx, rhs.loc);
                 cfg::mark_store(&lhs, cfg::Location::Inst(inst, 1), ctx);
             }
-            lhs.data_type = types::Reference::new(lhs.data_type);
+            lhs.data_type = self.add_ref(true);
             return Ok(lhs);
         }
         if self

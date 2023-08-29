@@ -42,7 +42,7 @@ impl<'src> AST<'src> for CastAST<'src> {
             val.expl_convert((t, Some(self.target.loc())), ctx)
                 .unwrap_or_else(|e| {
                     errs.push(e);
-                    Value::error()
+                    Value::error().with_loc(self.val.loc())
                 }),
             errs,
         )
@@ -103,7 +103,7 @@ impl<'src> AST<'src> for BitCastAST<'src> {
         };
         val = val.impl_convert((decayed, None), ctx).unwrap_or_else(|e| {
             errs.push(e);
-            Value::error()
+            Value::error().with_loc(self.val.loc())
         });
         match (t.size(), val.data_type.size()) {
             (SizeType::Static(d), SizeType::Static(s)) => {

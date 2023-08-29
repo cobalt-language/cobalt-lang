@@ -1760,7 +1760,7 @@ impl<'src> AST<'src> for CallAST<'src> {
             )
             .unwrap_or_else(|err| {
                 errs.push(err);
-                Value::error()
+                Value::error().with_loc(self.target.loc())
             }),
             errs,
         )

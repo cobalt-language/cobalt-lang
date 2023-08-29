@@ -641,7 +641,7 @@ impl Type for Float {
     }
     fn _mut_bin_lhs<'src, 'ctx>(
         &'static self,
-        lhs: Value<'src, 'ctx>,
+        mut lhs: Value<'src, 'ctx>,
         rhs: Value<'src, 'ctx>,
         op: (&'static str, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
@@ -681,7 +681,7 @@ impl Type for Float {
                         }
                     }
                 }
-                types::Reference::new(lhs.data_type);
+                lhs.data_type = self.add_ref(true);
                 Ok(lhs)
             }
             types::Int::KIND => {
@@ -723,7 +723,7 @@ impl Type for Float {
                         }
                     }
                 }
-                types::Reference::new(lhs.data_type);
+                lhs.data_type = self.add_ref(true);
                 Ok(lhs)
             }
             types::Float::KIND => {
@@ -760,7 +760,7 @@ impl Type for Float {
                         }
                     }
                 }
-                types::Reference::new(lhs.data_type);
+                lhs.data_type = self.add_ref(true);
                 Ok(lhs)
             }
             _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),

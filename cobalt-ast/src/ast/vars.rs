@@ -594,7 +594,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                         .unwrap_or_else(|e| {
                             errs.push(e);
-                            Value::error()
+                            Value::error().with_loc(self.val.loc())
                         });
                     val.inter_val = None;
                     ctx.with_vars(|v| {
@@ -634,7 +634,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                         .unwrap_or_else(|e| {
                             errs.push(e);
-                            Value::error()
+                            Value::error().with_loc(self.val.loc())
                         });
                     if let Some(t) = dt.llvm_type(ctx) {
                         let mangled =
@@ -757,7 +757,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                             .unwrap_or_else(|e| {
                                 errs.push(e);
-                                Value::error()
+                                Value::error().with_loc(self.val.loc())
                             });
                         ctx.restore_scope(old_scope);
                         ctx.with_vars(|v| {
@@ -825,7 +825,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                 .unwrap_or_else(|e| {
                     errs.push(e);
-                    Value::error()
+                    Value::error().with_loc(self.val.loc())
                 });
             cfg::mark_move(
                 &val,
@@ -1179,7 +1179,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
             .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
-                Value::error()
+                Value::error().with_loc(self.val.loc())
             });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);

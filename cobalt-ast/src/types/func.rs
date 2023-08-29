@@ -171,7 +171,7 @@ impl Type for Function {
                                 ty: t.to_string().into(),
                                 loc,
                             });
-                            Value::error()
+                            Value::error().with_loc(v.loc)
                         }
                     },
                     c,

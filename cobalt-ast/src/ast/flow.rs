@@ -68,14 +68,14 @@ impl<'src> AST<'src> for IfAST<'src> {
                             let if_true =
                                 if_true.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
                                     errs.push(e);
-                                    Value::error()
+                                    Value::error().with_loc(self.if_true.loc())
                                 });
                             ctx.builder.build_unconditional_branch(mb);
                             ctx.builder.position_at_end(ifb);
                             let if_false =
                                 if_false.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
                                     errs.push(e);
-                                    Value::error()
+                                    Value::error().with_loc(self.if_false.loc())
                                 });
                             ctx.builder.build_unconditional_branch(mb);
                             ctx.builder.position_at_end(mb);

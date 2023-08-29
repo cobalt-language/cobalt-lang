@@ -34,7 +34,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     .expl_convert((types::Int::bool(), None), ctx)
                     .unwrap_or_else(|e| {
                         errs.push(e);
-                        Value::error()
+                        Value::error().with_loc(self.lhs.loc())
                     });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -111,7 +111,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     .expl_convert((types::Int::bool(), None), ctx)
                     .unwrap_or_else(|e| {
                         errs.push(e);
-                        Value::error()
+                        Value::error().with_loc(self.lhs.loc())
                     });
                 if let Some(inkwell::values::BasicValueEnum::IntValue(val)) = cond.value(ctx) {
                     let bb = ctx.builder.get_insert_block().unwrap();
@@ -191,7 +191,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                 (
                     lhs.bin_op((x, self.loc), rhs, ctx).unwrap_or_else(|e| {
                         errs.push(e);
-                        Value::error()
+                        Value::error().with_loc(merge_spans(self.lhs.loc(), self.rhs.loc()))
                     }),
                     errs,
                 )

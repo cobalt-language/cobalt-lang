@@ -366,6 +366,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             ..self
         }
     }
+    pub fn with_loc(self, loc: SourceSpan) -> Value<'src, 'ctx> {
+        Value { loc, ..self }
+    }
 
     pub fn value(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
         self.comp_val.or_else(|| {
