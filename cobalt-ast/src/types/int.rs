@@ -975,6 +975,194 @@ impl Type for Int {
             _ => Err(invalid_preop(&val, op, oloc)),
         }
     }
+    fn _has_mut_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        matches!(other.kind(), types::Int::KIND | types::IntLiteral::KIND)
+            && ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="].contains(&op)
+    }
+    fn _mut_bin_lhs<'src, 'ctx>(
+        &'static self,
+        mut lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if rhs.data_type.is::<types::IntLiteral>() {
+            if ctx.is_const.get() {
+                if let (Some(BasicValueEnum::PointerValue(lv)), Some(InterData::Int(v))) =
+                    (lhs.value(ctx), &rhs.inter_val)
+                {
+                    let lty = ctx.context.custom_width_int_type(self.bits() as _);
+                    let rv = lty.const_int(*v as _, self.is_signed());
+                    match op.0 {
+                        "+=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_add(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "-=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_sub(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "*=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_mul(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "/=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = if self.is_signed() {
+                                ctx.builder.build_int_signed_div(v1, rv, "")
+                            } else {
+                                ctx.builder.build_int_unsigned_div(v1, rv, "")
+                            };
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "%=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = if self.is_signed() {
+                                ctx.builder.build_int_signed_rem(v1, rv, "")
+                            } else {
+                                ctx.builder.build_int_unsigned_rem(v1, rv, "")
+                            };
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "&=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_and(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "|=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_or(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "^=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_xor(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "<<=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_left_shift(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        ">>=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_right_shift(v1, rv, self.is_signed(), "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                    }
+                }
+            }
+            lhs.data_type = types::Reference::new(lhs.data_type);
+            Ok(lhs)
+        } else if let Some(rt) = rhs.data_type.downcast::<types::Int>() {
+            if !ctx.is_const.get() {
+                if let (
+                    Some(BasicValueEnum::PointerValue(lv)),
+                    Some(BasicValueEnum::IntValue(mut rv)),
+                ) = (lhs.value(ctx), rhs.value(ctx))
+                {
+                    use std::cmp::Ordering;
+                    let lty = ctx.context.custom_width_int_type(self.bits() as _);
+                    match self.bits().cmp(&rt.bits()) {
+                        Ordering::Less => {
+                            return Err(CobaltError::NarrowingIntConversion {
+                                sbits: self.bits(),
+                                dbits: rt.bits(),
+                                sloc: lhs.loc,
+                                dloc: rhs.loc,
+                            })
+                        }
+                        Ordering::Greater => {
+                            rv = if rt.is_signed() {
+                                ctx.builder.build_int_s_extend(rv, lty, "")
+                            } else {
+                                ctx.builder.build_int_z_extend(rv, lty, "")
+                            }
+                        }
+                        Ordering::Equal => {}
+                    }
+                    match op.0 {
+                        "+=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_add(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "-=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_sub(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "*=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_int_mul(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "/=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = if self.is_signed() {
+                                ctx.builder.build_int_signed_div(v1, rv, "")
+                            } else {
+                                ctx.builder.build_int_unsigned_div(v1, rv, "")
+                            };
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "%=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = if self.is_signed() {
+                                ctx.builder.build_int_signed_rem(v1, rv, "")
+                            } else {
+                                ctx.builder.build_int_unsigned_rem(v1, rv, "")
+                            };
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "&=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_and(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "|=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_or(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "^=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_xor(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        "<<=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_left_shift(v1, rv, "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        ">>=" => {
+                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v2 = ctx.builder.build_right_shift(v1, rv, self.is_signed(), "");
+                            ctx.builder.build_store(lv, v2);
+                        }
+                        _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                    }
+                }
+            }
+            lhs.data_type = types::Reference::new(lhs.data_type);
+            Ok(lhs)
+        } else {
+            Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+        }
+    }
     fn compiled<'src, 'ctx>(
         &'static self,
         inter_val: &InterData<'src, 'ctx>,

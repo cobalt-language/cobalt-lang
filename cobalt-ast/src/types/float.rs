@@ -626,6 +626,146 @@ impl Type for Float {
             _ => Err(invalid_preop(&val, op, oloc)),
         }
     }
+    fn _has_mut_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        matches!(
+            other.kind(),
+            types::Float::KIND | types::Int::KIND | types::IntLiteral::KIND
+        ) && ["+=", "-=", "*=", "/="].contains(&op)
+    }
+    fn _mut_bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match rhs.data_type.kind() {
+            types::IntLiteral::KIND => {
+                if !ctx.is_const.get() {
+                    let lty = self.llvm_type(ctx).unwrap().into_float_type();
+                    if let (Some(BasicValueEnum::PointerValue(lv)), Some(InterData::Int(rv))) =
+                        (lhs.value(ctx), &rhs.inter_val)
+                    {
+                        let rv = lty.const_float(*rv as _);
+                        match op.0 {
+                            "+=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "-=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "*=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "/=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                types::Reference::new(lhs.data_type);
+                Ok(lhs)
+            }
+            types::Int::KIND => {
+                let rty = rhs.data_type.downcast::<types::Int>().unwrap();
+                if !ctx.is_const.get() {
+                    let lty = self.llvm_type(ctx).unwrap().into_float_type();
+                    if let (
+                        Some(BasicValueEnum::PointerValue(lv)),
+                        Some(BasicValueEnum::IntValue(rv)),
+                    ) = (lhs.value(ctx), rhs.value(ctx))
+                    {
+                        let rv = if rty.is_signed() {
+                            ctx.builder.build_signed_int_to_float(rv, lty, "")
+                        } else {
+                            ctx.builder.build_unsigned_int_to_float(rv, lty, "")
+                        };
+                        match op.0 {
+                            "+=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "-=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "*=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "/=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                types::Reference::new(lhs.data_type);
+                Ok(lhs)
+            }
+            types::Float::KIND => {
+                if !ctx.is_const.get() {
+                    let lty = self.llvm_type(ctx).unwrap().into_float_type();
+                    if let (
+                        Some(BasicValueEnum::PointerValue(lv)),
+                        Some(BasicValueEnum::FloatValue(rv)),
+                    ) = (lhs.value(ctx), rhs.value(ctx))
+                    {
+                        let rv = ctx.builder.build_float_cast(rv, lty, "");
+                        match op.0 {
+                            "+=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "-=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "*=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            "/=" => {
+                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "");
+                                ctx.builder.build_store(lv, v2);
+                            }
+                            _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                types::Reference::new(lhs.data_type);
+                Ok(lhs)
+            }
+            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+        }
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(std::slice::from_ref(&match self.0 {
             FPType::F16 => 0,

@@ -993,11 +993,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .filter(|s| unsafe { (***s).name.1 } == ctx.lex_scope.get())
             .for_each(|m| unsafe {
                 let m = &**m;
-                let i = if let Location::Inst(i, 0) = m.inst {
-                    i
-                } else {
-                    unreachable!("store locations should only be Location::Inst(_, 0)")
-                };
+                let Location::Inst(i, _) = m.inst else {unreachable!("store locations should only be Location::Inst(_, 0)")};
                 assert_eq!(
                     i.get_next_instruction()
                         .map(|i| (i.get_opcode(), i.get_num_operands())),

@@ -68,6 +68,17 @@ pub enum CobaltError<'src> {
         #[label("target type is `{ty}`")]
         tloc: Option<SourceSpan>,
     },
+    #[error("cannot implicitly narrow an integer")]
+    NarrowingIntConversion {
+        /// bits of source value
+        sbits: u16,
+        /// destination bit width
+        dbits: u16,
+        #[label("casting from a {sbits}-bit integer")]
+        sloc: SourceSpan,
+        #[label("casting to a {dbits}-bit integer")]
+        dloc: SourceSpan,
+    },
     #[error("cannot call value of type `{val}` with arguments ({})", .args.join(", "))]
     CannotCallWithArgs {
         val: String,
