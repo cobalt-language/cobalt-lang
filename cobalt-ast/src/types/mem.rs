@@ -176,9 +176,9 @@ impl Type for Reference {
     }
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         (if let Some(base) = self.base().downcast::<types::Mut>() {
-            base.base()._can_refmut_iconv(other, ctx)
+            base.base() == other || base.base()._can_refmut_iconv(other, ctx)
         } else {
-            false
+            self.base() == other
         }) || self.base()._can_ref_iconv(other, ctx)
             || (self.base().copyable(ctx) && self.base()._can_iconv_to(other, ctx))
     }
@@ -200,6 +200,47 @@ impl Type for Reference {
             if base.base()._can_refmut_iconv(target.0, ctx) {
                 return base.base()._refmut_iconv(val, target, ctx);
             }
+            if base.base() == target.0 {
+                return if base.base().copyable(ctx) {
+                    val.comp_val =
+                        if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                            ctx.is_const.get(),
+                            base.base().llvm_type(ctx),
+                            val.value(ctx),
+                        ) {
+                            Some(ctx.builder.build_load(llt, pv, ""))
+                        } else {
+                            None
+                        };
+                    val.data_type = base.base();
+                    Ok(val)
+                } else {
+                    Err(CobaltError::CantMoveFromReference {
+                        loc: val.loc,
+                        ty: base.base().to_string(),
+                    })
+                };
+            }
+        }
+        if self.base() == target.0 {
+            return if self.base().copyable(ctx) {
+                val.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                    ctx.is_const.get(),
+                    self.base().llvm_type(ctx),
+                    val.value(ctx),
+                ) {
+                    Some(ctx.builder.build_load(llt, pv, ""))
+                } else {
+                    None
+                };
+                val.data_type = self.base();
+                Ok(val)
+            } else {
+                Err(CobaltError::CantMoveFromReference {
+                    loc: val.loc,
+                    ty: self.base().to_string(),
+                })
+            };
         }
         if self.base()._can_ref_iconv(target.0, ctx) {
             self.base()._ref_iconv(val, target, ctx)
@@ -801,46 +842,38 @@ impl Type for Mut {
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         self.base()._can_iconv_to(other, ctx)
     }
-    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
-        self.base()._can_iconv_from(other, ctx)
-    }
     fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         self.base()._can_econv_to(other, ctx)
     }
-    fn _can_econv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
-        self.base()._can_econv_from(other, ctx)
-    }
     fn _iconv_to<'src, 'ctx>(
         &'static self,
-        val: Value<'src, 'ctx>,
+        mut val: Value<'src, 'ctx>,
         target: (TypeRef, Option<SourceSpan>),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if !ctx.is_const.get() {
+            if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
+                (self.base().llvm_type(ctx), val.value(ctx))
+            {
+                val.comp_val = Some(ctx.builder.build_load(llt, pv, ""));
+            }
+        }
         self.base()._iconv_to(val, target, ctx)
-    }
-    fn _iconv_from<'src, 'ctx>(
-        &'static self,
-        val: Value<'src, 'ctx>,
-        target: Option<SourceSpan>,
-        ctx: &CompCtx<'src, 'ctx>,
-    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        self.base()._iconv_from(val, target, ctx)
     }
     fn _econv_to<'src, 'ctx>(
         &'static self,
-        val: Value<'src, 'ctx>,
+        mut val: Value<'src, 'ctx>,
         target: (TypeRef, Option<SourceSpan>),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if !ctx.is_const.get() {
+            if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
+                (self.base().llvm_type(ctx), val.value(ctx))
+            {
+                val.comp_val = Some(ctx.builder.build_load(llt, pv, ""));
+            }
+        }
         self.base()._econv_to(val, target, ctx)
-    }
-    fn _econv_from<'src, 'ctx>(
-        &'static self,
-        val: Value<'src, 'ctx>,
-        target: Option<SourceSpan>,
-        ctx: &CompCtx<'src, 'ctx>,
-    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        self.base()._econv_from(val, target, ctx)
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)

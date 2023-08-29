@@ -679,7 +679,15 @@ impl Type for Float {
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
+                    } else {
+                        self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                            .then_some(())
+                            .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                     }
+                } else {
+                    self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                        .then_some(())
+                        .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                 }
                 lhs.data_type = self.add_ref(true);
                 Ok(lhs)
@@ -721,7 +729,15 @@ impl Type for Float {
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
+                    } else {
+                        self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                            .then_some(())
+                            .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                     }
+                } else {
+                    self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                        .then_some(())
+                        .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                 }
                 lhs.data_type = self.add_ref(true);
                 Ok(lhs)
@@ -758,7 +774,15 @@ impl Type for Float {
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
+                    } else {
+                        self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                            .then_some(())
+                            .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                     }
+                } else {
+                    self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                        .then_some(())
+                        .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                 }
                 lhs.data_type = self.add_ref(true);
                 Ok(lhs)

@@ -1,4 +1,5 @@
 use super::*;
+use inkwell::IntPredicate::*;
 #[derive(Debug, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
@@ -59,7 +60,7 @@ impl Type for Int {
         match op {
             "+" => Ok(val),
             "-" => Ok(Value {
-                comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
+                comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
                     Some(ctx.builder.build_int_neg(v, "").into())
                 } else {
                     None
@@ -71,6 +72,36 @@ impl Type for Int {
                 },
                 ..val
             }),
+            "~" => Ok(Value {
+                comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
+                    Some(ctx.builder.build_not(v, "").into())
+                } else {
+                    None
+                },
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Int(!v))
+                } else {
+                    None
+                },
+                ..val
+            }),
+            "!" => Ok(Value::new(
+                if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
+                    Some(
+                        ctx.builder
+                            .build_int_compare(EQ, v, v.get_type().const_zero(), "")
+                            .into(),
+                    )
+                } else {
+                    None
+                },
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Int((v == 0) as _))
+                } else {
+                    None
+                },
+                types::Int::bool(),
+            )),
             _ => Err(invalid_preop(&val, op, oloc)),
         }
     }
@@ -996,7 +1027,7 @@ impl Type for Int {
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if rhs.data_type.is::<types::IntLiteral>() {
-            if ctx.is_const.get() {
+            if !ctx.is_const.get() {
                 if let (Some(BasicValueEnum::PointerValue(lv)), Some(InterData::Int(v))) =
                     (lhs.value(ctx), &rhs.inter_val)
                 {
@@ -1063,7 +1094,15 @@ impl Type for Int {
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
+                } else {
+                    self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                        .then_some(())
+                        .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                 }
+            } else {
+                self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                    .then_some(())
+                    .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
             }
             lhs.data_type = self.add_ref(true);
             Ok(lhs)
@@ -1155,7 +1194,15 @@ impl Type for Int {
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
+                } else {
+                    self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                        .then_some(())
+                        .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
                 }
+            } else {
+                self._has_mut_bin_lhs(rhs.data_type, op.0, ctx, move_left, move_right)
+                    .then_some(())
+                    .ok_or_else(|| invalid_binop(&lhs, &rhs, op.0, op.1))?
             }
             lhs.data_type = self.add_ref(true);
             Ok(lhs)
@@ -1236,6 +1283,36 @@ impl Type for IntLiteral {
                 },
                 ..val
             }),
+            "~" => Ok(Value {
+                comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
+                    Some(ctx.builder.build_not(v, "").into())
+                } else {
+                    None
+                },
+                inter_val: if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Int(!v))
+                } else {
+                    None
+                },
+                ..val
+            }),
+            "!" => Ok(Value::new(
+                if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
+                    Some(
+                        ctx.builder
+                            .build_int_compare(EQ, v, v.get_type().const_zero(), "")
+                            .into(),
+                    )
+                } else {
+                    None
+                },
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Int((v == 0) as _))
+                } else {
+                    None
+                },
+                types::Int::bool(),
+            )),
             _ => Err(invalid_preop(&val, op, oloc)),
         }
     }
