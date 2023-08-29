@@ -1,39 +1,14 @@
 use std::borrow::Cow;
 
-use cobalt_ast::{
-    ast::{IntLiteralAST, VarGetAST},
-    BoxedAST,
-};
+use cobalt_ast::{ast::IntLiteralAST, BoxedAST};
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
-use crate::lexer::tokens::{LiteralToken, TokenKind};
-
-use super::Parser;
+use crate::{
+    lexer::tokens::{LiteralToken, TokenKind},
+    parser::Parser,
+};
 
 impl<'src> Parser<'src> {
-    pub fn parse_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
-
-        match self.current_token.unwrap().kind {
-            TokenKind::Literal(_) => {
-                return self.parse_literal();
-            }
-            TokenKind::Ident(_) => {
-                return self.parse_ident_expr();
-            }
-            _ => {}
-        }
-
-        (
-            Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-            vec![CobaltError::ExpectedFound {
-                ex: "expression",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                loc: self.current_token.unwrap().span,
-            }],
-        )
-    }
-
     /// Parses a literal expression, e.g. `1`, `"hello"`, `true`, etc.
     ///
     /// Going into this function, the current token should be the first token
@@ -42,7 +17,7 @@ impl<'src> Parser<'src> {
     /// ```
     /// literal := LITERAL
     /// ```
-    fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let span = self.current_token.unwrap().span;
@@ -131,32 +106,6 @@ impl<'src> Parser<'src> {
             Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
             errors,
         )
-    }
-
-    fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
-
-        let errors = vec![];
-
-        let span = self.current_token.unwrap().span;
-        let name = match self.current_token.unwrap().kind {
-            TokenKind::Ident(name) => Cow::from(name),
-            _ => {
-                return (
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                    vec![CobaltError::ExpectedFound {
-                        ex: "identifier",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                        loc: span,
-                    }],
-                );
-            }
-        };
-        let is_global = false;
-
-        self.next();
-
-        return (Box::new(VarGetAST::new(span, name, is_global)), errors);
     }
 }
 
