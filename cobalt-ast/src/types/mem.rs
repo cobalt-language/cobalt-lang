@@ -1,5 +1,7 @@
 use super::*;
 use inkwell::IntPredicate::*;
+use std::cell::Cell;
+use std::rc::Rc;
 #[derive(Debug, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
@@ -107,13 +109,16 @@ impl Type for Reference {
             return Ok(lhs);
         }
         if !(self.base().is::<types::Mut>() || ctx.is_const.get()) {
-            lhs.comp_val = lhs.comp_val.and_then(|v| {
-                Some(ctx.builder.build_load(
-                    self.base().llvm_type(ctx)?,
-                    v.is_pointer_value().then(|| v.into_pointer_value())?,
-                    "",
-                ))
-            })
+            lhs.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                ctx.is_const.get(),
+                self.base().llvm_type(ctx),
+                lhs.value(ctx),
+            ) {
+                lhs.address = Rc::new(Cell::new(Some(pv)));
+                Some(ctx.builder.build_load(llt, pv, ""))
+            } else {
+                None
+            };
         }
         self.base()._bin_lhs(
             lhs,
@@ -134,13 +139,16 @@ impl Type for Reference {
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if !(self.base().is::<types::Mut>() || ctx.is_const.get()) {
-            rhs.comp_val = rhs.comp_val.and_then(|v| {
-                Some(ctx.builder.build_load(
-                    self.base().llvm_type(ctx)?,
-                    v.is_pointer_value().then(|| v.into_pointer_value())?,
-                    "",
-                ))
-            })
+            rhs.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                ctx.is_const.get(),
+                self.base().llvm_type(ctx),
+                rhs.value(ctx),
+            ) {
+                rhs.address = Rc::new(Cell::new(Some(pv)));
+                Some(ctx.builder.build_load(llt, pv, ""))
+            } else {
+                None
+            };
         }
         self.base()._bin_rhs(
             lhs,
@@ -222,6 +230,14 @@ impl Type for Reference {
                     })
                 };
             }
+            if let Some(r) = target.0.downcast::<types::Reference>() {
+                if r.base() == base.base() {
+                    return Ok(Value {
+                        data_type: target.0,
+                        ..val
+                    });
+                }
+            }
         }
         if self.base() == target.0 {
             return if self.base().copyable(ctx) {
@@ -230,6 +246,7 @@ impl Type for Reference {
                     self.base().llvm_type(ctx),
                     val.value(ctx),
                 ) {
+                    val.address = Rc::new(Cell::new(Some(pv)));
                     Some(ctx.builder.build_load(llt, pv, ""))
                 } else {
                     None
@@ -246,7 +263,7 @@ impl Type for Reference {
         if self.base()._can_ref_iconv(target.0, ctx) {
             self.base()._ref_iconv(val, target, ctx)
         } else if self.base().copyable(ctx) {
-            if !ctx.is_const.get() {
+            if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
                 val.comp_val = val.comp_val.and_then(|v| {
                     Some(ctx.builder.build_load(
                         self.base().llvm_type(ctx)?,
@@ -278,14 +295,17 @@ impl Type for Reference {
         if self.base()._can_ref_econv(target.0, ctx) {
             self.base()._ref_econv(val, target, ctx)
         } else if self.base().copyable(ctx) {
-            if !ctx.is_const.get() {
-                val.comp_val = val.comp_val.and_then(|v| {
-                    Some(ctx.builder.build_load(
-                        self.base().llvm_type(ctx)?,
-                        v.is_pointer_value().then(|| v.into_pointer_value())?,
-                        "",
-                    ))
-                })
+            if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
+                val.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                    ctx.is_const.get(),
+                    self.base().llvm_type(ctx),
+                    val.value(ctx),
+                ) {
+                    val.address = Rc::new(Cell::new(Some(pv)));
+                    Some(ctx.builder.build_load(llt, pv, ""))
+                } else {
+                    None
+                };
             }
             val.data_type = self.base();
             self.base()._econv_to(val, target, ctx)
@@ -295,6 +315,88 @@ impl Type for Reference {
                 ty: self.base().to_string(),
             })
         }
+    }
+    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        (if let Some(b) = self.base().downcast::<types::Mut>() {
+            b.base() == other
+        } else {
+            false
+        }) || self.base() == other
+    }
+    fn _iconv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(b) = self.base().downcast::<types::Mut>() {
+            if b.base() == val.data_type {
+                return Ok(Value {
+                    comp_val: val.addr(ctx).map(From::from),
+                    data_type: self,
+                    ..val
+                });
+            }
+        }
+        if self.base() == val.data_type {
+            Ok(Value {
+                comp_val: val.addr(ctx).map(From::from),
+                data_type: self,
+                ..val
+            })
+        } else {
+            Err(cant_econv(&val, self, target))
+        }
+    }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        mut val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(b) = self.base().downcast::<types::Mut>() {
+            if b.base()._has_refmut_attr(&attr.0, ctx) {
+                return b.base()._refmut_attr(val, attr, ctx);
+            }
+        }
+        if self.base()._has_ref_attr(&attr.0, ctx) {
+            self.base()._ref_attr(val, attr, ctx)
+        } else {
+            if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
+                val.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                    ctx.is_const.get(),
+                    self.base().llvm_type(ctx),
+                    val.value(ctx),
+                ) {
+                    val.address = Rc::new(Cell::new(Some(pv)));
+                    Some(ctx.builder.build_load(llt, pv, ""))
+                } else {
+                    None
+                };
+            }
+            self.base().attr(val, attr, ctx)
+        }
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        mut val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
+            val.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                ctx.is_const.get(),
+                self.base().llvm_type(ctx),
+                val.value(ctx),
+            ) {
+                val.address = Rc::new(Cell::new(Some(pv)));
+                Some(ctx.builder.build_load(llt, pv, ""))
+            } else {
+                None
+            };
+        }
+        val.data_type = self.base();
+        self.base().subscript(val, idx, ctx)
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
@@ -758,6 +860,35 @@ impl Type for Pointer {
             Err(invalid_binop(&lhs, &rhs, op.0, op.1))
         }
     }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        if let (Some(b), Some(r)) = (
+            self.base().downcast::<types::Mut>(),
+            other.downcast::<types::Pointer>(),
+        ) {
+            b.base() == r.base()
+        } else {
+            false
+        }
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let (Some(b), Some(r)) = (
+            self.base().downcast::<types::Mut>(),
+            target.0.downcast::<types::Pointer>(),
+        ) {
+            if b.base() == r.base() {
+                return Ok(Value {
+                    data_type: target.0,
+                    ..val
+                });
+            }
+        }
+        Err(cant_iconv(&val, target.0, target.1))
+    }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
@@ -962,6 +1093,30 @@ impl Type for Mut {
             }
         }
         self.base()._econv_to(val, target, ctx)
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        mut val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.base()._has_mut_subscript(idx.data_type, ctx) {
+            self.base()._mut_subscript(val, idx, ctx)
+        } else {
+            if !ctx.is_const.get() {
+                val.comp_val = if let (false, Some(llt), Some(BasicValueEnum::PointerValue(pv))) = (
+                    ctx.is_const.get(),
+                    self.base().llvm_type(ctx),
+                    val.value(ctx),
+                ) {
+                    val.address = Rc::new(Cell::new(Some(pv)));
+                    Some(ctx.builder.build_load(llt, pv, ""))
+                } else {
+                    None
+                };
+            }
+            self.base().subscript(val, idx, ctx)
+        }
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)

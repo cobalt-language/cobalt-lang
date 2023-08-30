@@ -113,7 +113,7 @@ impl Type for Int {
         move_left: bool,
         move_right: bool,
     ) -> bool {
-        matches!(other.kind(), types::Int::KIND | types::IntLiteral::KIND)
+        matches!(other.decay().kind(), types::Int::KIND)
             && [
                 "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>", "<", ">", "<=", ">=", "==",
                 "!=",
@@ -145,860 +145,878 @@ impl Type for Int {
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         use std::cmp::Ordering;
-        match rhs.data_type.kind() {
-            types::Int::KIND => {
-                let ty = rhs.data_type.downcast::<types::Int>().unwrap();
-                let res = match self.bits().cmp(&ty.bits()) {
-                    Ordering::Less => {
-                        lhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) = lhs.comp_val {
-                            Some(
-                                if self.is_signed() {
-                                    ctx.builder.build_int_s_extend(
-                                        v,
-                                        ctx.context.custom_width_int_type(ty.bits() as _),
-                                        "",
-                                    )
-                                } else {
-                                    ctx.builder.build_int_z_extend(
-                                        v,
-                                        ctx.context.custom_width_int_type(ty.bits() as _),
-                                        "",
-                                    )
-                                }
-                                .into(),
-                            )
-                        } else {
-                            None
-                        };
-                        ty
-                    }
-                    Ordering::Greater => {
-                        rhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) = rhs.comp_val {
-                            Some(
-                                ctx.builder
-                                    .build_int_z_extend(
-                                        v,
-                                        ctx.context.custom_width_int_type(self.bits() as _),
-                                        "",
-                                    )
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        };
-                        self
-                    }
-                    Ordering::Equal => {
-                        Self::new(self.bits(), self.is_unsigned() || ty.is_unsigned())
-                    }
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_int_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l + r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_int_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l - r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_int_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l + r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                if self.is_signed() || ty.is_signed() {
-                                    ctx.builder.build_int_signed_div(l, r, "")
-                                } else {
-                                    ctx.builder.build_int_unsigned_div(l, r, "")
-                                }
-                                .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l + r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "%" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                if self.is_signed() || ty.is_signed() {
-                                    ctx.builder.build_int_signed_div(l, r, "")
-                                } else {
-                                    ctx.builder.build_int_unsigned_div(l, r, "")
-                                }
-                                .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l + r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "&" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_and(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l & r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "|" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_or(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l | r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "^" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_xor(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l ^ r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "<<" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_left_shift(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l << r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    ">>" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                ctx.builder
-                                    .build_right_shift(l, r, res.is_signed(), "")
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(l >> r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "<" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                ctx.builder
-                                    .build_int_compare(
-                                        if res.is_signed() { SLT } else { ULT },
-                                        l,
-                                        r,
-                                        "",
-                                    )
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l < r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                ctx.builder
-                                    .build_int_compare(
-                                        if res.is_signed() { SGT } else { UGT },
-                                        l,
-                                        r,
-                                        "",
-                                    )
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l > r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "<=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                ctx.builder
-                                    .build_int_compare(
-                                        if res.is_signed() { SLE } else { ULE },
-                                        l,
-                                        r,
-                                        "",
-                                    )
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l <= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(
-                                ctx.builder
-                                    .build_int_compare(
-                                        if res.is_signed() { SGE } else { UGE },
-                                        l,
-                                        r,
-                                        "",
-                                    )
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l >= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "==" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_int_compare(EQ, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l == r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "!=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::IntValue(l)),
-                            Some(BasicValueEnum::IntValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_int_compare(NE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l != r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
-                }
+        let mut last = None;
+        loop {
+            if last == Some(rhs.data_type) {
+                return Err(invalid_binop(&lhs, &rhs, op.0, op.1));
             }
-            types::IntLiteral::KIND => match op.0 {
-                "+" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_add(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
-                                )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l + r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "-" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_sub(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
-                                )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l - r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "*" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_mul(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
-                                )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l + r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "/" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        let r = ctx
-                            .context
-                            .custom_width_int_type(self.bits() as _)
-                            .const_int(*r as _, self.is_signed());
-                        Some(
-                            if self.is_signed() {
-                                ctx.builder.build_int_signed_div(l, r, "")
-                            } else {
-                                ctx.builder.build_int_unsigned_div(l, r, "")
+            match rhs.data_type.kind() {
+                types::Reference::KIND | types::Mut::KIND => {
+                    last = Some(rhs.data_type);
+                    rhs = rhs.decay(ctx)
+                }
+                types::Int::KIND => {
+                    return {
+                        let ty = rhs.data_type.downcast::<types::Int>().unwrap();
+                        let res = match self.bits().cmp(&ty.bits()) {
+                            Ordering::Less => {
+                                lhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) =
+                                    lhs.comp_val
+                                {
+                                    Some(
+                                        if self.is_signed() {
+                                            ctx.builder.build_int_s_extend(
+                                                v,
+                                                ctx.context.custom_width_int_type(ty.bits() as _),
+                                                "",
+                                            )
+                                        } else {
+                                            ctx.builder.build_int_z_extend(
+                                                v,
+                                                ctx.context.custom_width_int_type(ty.bits() as _),
+                                                "",
+                                            )
+                                        }
+                                        .into(),
+                                    )
+                                } else {
+                                    None
+                                };
+                                ty
                             }
-                            .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l + r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "%" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        let r = ctx
-                            .context
-                            .custom_width_int_type(self.bits() as _)
-                            .const_int(*r as _, self.is_signed());
-                        Some(
-                            if self.is_signed() {
-                                ctx.builder.build_int_signed_rem(l, r, "")
-                            } else {
-                                ctx.builder.build_int_unsigned_rem(l, r, "")
+                            Ordering::Greater => {
+                                rhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) =
+                                    rhs.comp_val
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_int_z_extend(
+                                                v,
+                                                ctx.context.custom_width_int_type(self.bits() as _),
+                                                "",
+                                            )
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                };
+                                self
                             }
-                            .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l + r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "&" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_and(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            Ordering::Equal => {
+                                Self::new(self.bits(), self.is_unsigned() || ty.is_unsigned())
+                            }
+                        };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_int_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l + r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_int_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l - r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_int_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l + r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        if self.is_signed() || ty.is_signed() {
+                                            ctx.builder.build_int_signed_div(l, r, "")
+                                        } else {
+                                            ctx.builder.build_int_unsigned_div(l, r, "")
+                                        }
+                                        .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l + r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "%" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        if self.is_signed() || ty.is_signed() {
+                                            ctx.builder.build_int_signed_div(l, r, "")
+                                        } else {
+                                            ctx.builder.build_int_unsigned_div(l, r, "")
+                                        }
+                                        .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l + r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "&" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_and(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l & r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "|" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_or(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l | r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "^" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_xor(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l ^ r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "<<" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_left_shift(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l << r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            ">>" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_right_shift(l, r, res.is_signed(), "")
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(l >> r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "<" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_int_compare(
+                                                if res.is_signed() { SLT } else { ULT },
+                                                l,
+                                                r,
+                                                "",
+                                            )
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l < r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_int_compare(
+                                                if res.is_signed() { SGT } else { UGT },
+                                                l,
+                                                r,
+                                                "",
+                                            )
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l > r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "<=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_int_compare(
+                                                if res.is_signed() { SLE } else { ULE },
+                                                l,
+                                                r,
+                                                "",
+                                            )
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l <= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(
+                                        ctx.builder
+                                            .build_int_compare(
+                                                if res.is_signed() { SGE } else { UGE },
+                                                l,
+                                                r,
+                                                "",
+                                            )
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l >= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "==" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_int_compare(EQ, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l == r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "!=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::IntValue(l)),
+                                    Some(BasicValueEnum::IntValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_int_compare(NE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l != r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                types::IntLiteral::KIND => {
+                    return match op.0 {
+                        "+" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_add(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l & r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "|" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_or(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l + r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "-" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_sub(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l | r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "^" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_xor(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l - r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "*" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_mul(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l ^ r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "<<" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_left_shift(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l + r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "/" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                let r = ctx
+                                    .context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*r as _, self.is_signed());
+                                Some(
+                                    if self.is_signed() {
+                                        ctx.builder.build_int_signed_div(l, r, "")
+                                    } else {
+                                        ctx.builder.build_int_unsigned_div(l, r, "")
+                                    }
+                                    .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l << r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                ">>" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_right_shift(
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    self.is_signed(),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l + r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "%" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                let r = ctx
+                                    .context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*r as _, self.is_signed());
+                                Some(
+                                    if self.is_signed() {
+                                        ctx.builder.build_int_signed_rem(l, r, "")
+                                    } else {
+                                        ctx.builder.build_int_unsigned_rem(l, r, "")
+                                    }
+                                    .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int(l >> r))
-                    } else {
-                        None
-                    },
-                    self,
-                )),
-                "<" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SLT } else { ULT },
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l + r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "&" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_and(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l < r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                ">" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SGT } else { UGT },
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l & r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "|" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_or(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l > r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                "<=" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SLE } else { ULE },
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l | r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "^" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_xor(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l <= r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                ">=" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SGE } else { UGE },
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l ^ r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "<<" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_left_shift(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l >= r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                "==" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    EQ,
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l << r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        ">>" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_right_shift(
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            self.is_signed(),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l == r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                "!=" => Ok(Value::new(
-                    if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
-                        (lhs.value(ctx), &rhs.inter_val)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    NE,
-                                    l,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*r as _, self.is_signed()),
-                                    "",
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int(l >> r))
+                            } else {
+                                None
+                            },
+                            self,
+                        )),
+                        "<" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if self.is_signed() { SLT } else { ULT },
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
                                 )
-                                .into(),
-                        )
-                    } else {
-                        None
-                    },
-                    if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
-                        (lhs.inter_val, rhs.inter_val)
-                    {
-                        Some(InterData::Int((l != r) as _))
-                    } else {
-                        None
-                    },
-                    types::Int::bool(),
-                )),
-                _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
-            },
-            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l < r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        ">" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if self.is_signed() { SGT } else { UGT },
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l > r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        "<=" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if self.is_signed() { SLE } else { ULE },
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l <= r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        ">=" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if self.is_signed() { SGE } else { UGE },
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l >= r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        "==" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            EQ,
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l == r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        "!=" => Ok(Value::new(
+                            if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
+                                (lhs.value(ctx), &rhs.inter_val)
+                            {
+                                Some(
+                                    ctx.builder
+                                        .build_int_compare(
+                                            NE,
+                                            l,
+                                            ctx.context
+                                                .custom_width_int_type(self.bits() as _)
+                                                .const_int(*r as _, self.is_signed()),
+                                            "",
+                                        )
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            },
+                            if let (Some(InterData::Int(l)), Some(InterData::Int(r))) =
+                                (lhs.inter_val, rhs.inter_val)
+                            {
+                                Some(InterData::Int((l != r) as _))
+                            } else {
+                                None
+                            },
+                            types::Int::bool(),
+                        )),
+                        _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                    }
+                }
+                _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+            }
         }
     }
     fn _bin_rhs<'src, 'ctx>(

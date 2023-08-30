@@ -383,6 +383,78 @@ impl Type for UnsizedArray {
                 .into(),
         )
     }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        matches!(attr, "ptr" | "len")
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        matches!(attr, "ptr" | "len")
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "ptr" => Ok(Value::new(
+                if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, 0, "")
+                } else {
+                    None
+                },
+                None,
+                types::Pointer::new(self.elem()),
+            )),
+            "len" => Ok(Value::new(
+                if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, 1, "")
+                } else {
+                    None
+                },
+                None,
+                types::Int::unsigned(64),
+            )),
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "ptr" => Ok(Value::new(
+                if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, 0, "")
+                } else {
+                    None
+                },
+                None,
+                types::Pointer::new(types::Mut::new(self.elem())),
+            )),
+            "len" => Ok(Value::new(
+                if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, 1, "")
+                } else {
+                    None
+                },
+                None,
+                types::Int::unsigned(64),
+            )),
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }
@@ -465,6 +537,187 @@ impl Type for SizedArray {
         target.is_and::<types::Pointer>(|r| {
             r.base() == self.elem() || r.base().is_and::<types::Mut>(|m| m.base() == self.elem())
         })
+    }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        matches!(attr, "ptr" | "len")
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        matches!(attr, "ptr" | "len")
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "ptr" => Ok(Value {
+                data_type: types::Pointer::new(self.elem()),
+                ..val
+            }),
+            "len" => Ok(Value::metaval(
+                InterData::Int(self.len() as _),
+                types::IntLiteral::new(),
+            )),
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "ptr" => Ok(Value {
+                data_type: types::Pointer::new(types::Mut::new(self.elem())),
+                ..val
+            }),
+            "len" => Ok(Value::metaval(
+                InterData::Int(self.len() as _),
+                types::IntLiteral::new(),
+            )),
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        mut idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        loop {
+            match idx.data_type.kind() {
+                types::Reference::KIND | types::Mut::KIND => idx = idx.decay(ctx),
+                types::Int::KIND => {
+                    return Ok(Value::new(
+                        val.addr(ctx).and_then(|pv| {
+                            if let (Some(llt), Some(BasicValueEnum::IntValue(iv))) =
+                                (self.elem().llvm_type(ctx), idx.value(ctx))
+                            {
+                                Some(unsafe { ctx.builder.build_gep(llt, pv, &[iv], "").into() })
+                            } else {
+                                None
+                            }
+                        }),
+                        if let (Some(InterData::Array(arr)), Some(InterData::Int(idx))) =
+                            (val.inter_val, idx.inter_val)
+                        {
+                            arr.get(idx as usize).cloned()
+                        } else {
+                            None
+                        },
+                        self.elem().add_ref(false),
+                    ))
+                }
+                types::IntLiteral::KIND => {
+                    return Ok(Value::new(
+                        val.addr(ctx).and_then(|pv| {
+                            if let (Some(llt), Some(InterData::Int(iv))) =
+                                (self.elem().llvm_type(ctx), &idx.inter_val)
+                            {
+                                Some(unsafe {
+                                    ctx.builder
+                                        .build_gep(
+                                            llt,
+                                            pv,
+                                            &[ctx.context.i64_type().const_int(*iv as _, true)],
+                                            "",
+                                        )
+                                        .into()
+                                })
+                            } else {
+                                None
+                            }
+                        }),
+                        if let (Some(InterData::Array(arr)), Some(InterData::Int(idx))) =
+                            (val.inter_val, idx.inter_val)
+                        {
+                            arr.get(idx as usize).cloned()
+                        } else {
+                            None
+                        },
+                        self.elem().add_ref(false),
+                    ))
+                }
+                _ => return Err(invalid_sub(&val, &idx)),
+            }
+        }
+    }
+    fn _mut_subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        mut idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        loop {
+            match idx.data_type.kind() {
+                types::Reference::KIND | types::Mut::KIND => idx = idx.decay(ctx),
+                types::Int::KIND => {
+                    return Ok(Value::new(
+                        val.addr(ctx).and_then(|pv| {
+                            if let (Some(llt), Some(BasicValueEnum::IntValue(iv))) =
+                                (self.elem().llvm_type(ctx), idx.value(ctx))
+                            {
+                                Some(unsafe { ctx.builder.build_gep(llt, pv, &[iv], "").into() })
+                            } else {
+                                None
+                            }
+                        }),
+                        if let (Some(InterData::Array(arr)), Some(InterData::Int(idx))) =
+                            (val.inter_val, idx.inter_val)
+                        {
+                            arr.get(idx as usize).cloned()
+                        } else {
+                            None
+                        },
+                        self.elem().add_ref(false),
+                    ))
+                }
+                types::IntLiteral::KIND => {
+                    return Ok(Value::new(
+                        if let (
+                            Some(llt),
+                            Some(BasicValueEnum::PointerValue(pv)),
+                            Some(InterData::Int(iv)),
+                        ) = (self.elem().llvm_type(ctx), val.value(ctx), &idx.inter_val)
+                        {
+                            Some(unsafe {
+                                ctx.builder
+                                    .build_gep(
+                                        llt,
+                                        pv,
+                                        &[ctx.context.i64_type().const_int(*iv as _, true)],
+                                        "",
+                                    )
+                                    .into()
+                            })
+                        } else {
+                            None
+                        },
+                        if let (Some(InterData::Array(arr)), Some(InterData::Int(idx))) =
+                            (val.inter_val, idx.inter_val)
+                        {
+                            arr.get(idx as usize).cloned()
+                        } else {
+                            None
+                        },
+                        self.elem().add_ref(false),
+                    ))
+                }
+                _ => return Err(invalid_sub(&val, &idx)),
+            }
+        }
     }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.elem())?;

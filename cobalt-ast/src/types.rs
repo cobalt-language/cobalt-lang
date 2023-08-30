@@ -134,10 +134,44 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     /// Get an attribute on the value
     fn attr<'src, 'ctx>(
         &'static self,
-        val: &Value<'src, 'ctx>,
+        val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_ref_attr(&attr.0, ctx));
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_refmut_attr(&attr.0, ctx));
         Err(CobaltError::AttrNotDefined {
             val: self.to_string(),
             attr: attr.0,
@@ -370,7 +404,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn _has_refmut_call(&'static self, args: &[TypeRef], ctx: &CompCtx) -> bool {
         false
     }
-    fn _ref_subscript<'src, 'ctx>(
+    fn _mut_subscript<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
         idx: Value<'src, 'ctx>,
@@ -381,21 +415,7 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
             .then(Value::error)
             .ok_or_else(|| invalid_sub(&val, &idx))
     }
-    fn _refmut_subscript<'src, 'ctx>(
-        &'static self,
-        val: Value<'src, 'ctx>,
-        idx: Value<'src, 'ctx>,
-        ctx: &CompCtx<'src, 'ctx>,
-    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        idx.data_type
-            .is::<types::Error>()
-            .then(Value::error)
-            .ok_or_else(|| invalid_sub(&val, &idx))
-    }
-    fn _has_ref_subscript(&'static self, idx: TypeRef) -> bool {
-        false
-    }
-    fn _has_refmut_subscript(&'static self, idx: TypeRef) -> bool {
+    fn _has_mut_subscript(&'static self, idx: TypeRef, ctx: &CompCtx) -> bool {
         false
     }
     /// Override this for types that have in-place operators or similar.

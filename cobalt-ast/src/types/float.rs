@@ -107,10 +107,8 @@ impl Type for Float {
         move_left: bool,
         move_right: bool,
     ) -> bool {
-        matches!(
-            other.kind(),
-            types::Int::KIND | types::IntLiteral::KIND | types::Float::KIND
-        ) && ["+", "-", "*", "/", "<", ">", "<=", ">=", "==", "!="].contains(&op)
+        matches!(other.decay().kind(), types::Int::KIND | types::Float::KIND)
+            && ["+", "-", "*", "/", "<", ">", "<=", ">=", "==", "!="].contains(&op)
     }
     fn _has_bin_rhs(
         &'static self,
@@ -120,7 +118,7 @@ impl Type for Float {
         move_left: bool,
         move_right: bool,
     ) -> bool {
-        matches!(other.kind(), types::Int::KIND | types::IntLiteral::KIND)
+        matches!(other.decay().kind(), types::Int::KIND)
             && ["+", "-", "*", "/", "<", ">", "<=", ">=", "==", "!="].contains(&op)
     }
     fn _bin_lhs<'src, 'ctx>(
@@ -132,860 +130,926 @@ impl Type for Float {
         move_left: bool,
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        match rhs.data_type.kind() {
-            types::Int::KIND => {
-                let v = if let Some(BasicValueEnum::IntValue(v)) = rhs.value(ctx) {
-                    let ft = self.llvm_type(ctx).unwrap().into_float_type();
-                    Some(
-                        if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
-                            ctx.builder.build_signed_int_to_float(v, ft, "")
-                        } else {
-                            ctx.builder.build_unsigned_int_to_float(v, ft, "")
-                        },
-                    )
-                } else {
-                    None
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l + r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l - r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l * r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_div(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l / r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "<" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l < r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l > r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "<=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l <= r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l >= r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "==" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l == r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "!=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l != r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
-                }
+        let mut last = None;
+        loop {
+            if last == Some(rhs.data_type) {
+                return Err(invalid_binop(&lhs, &rhs, op.0, op.1));
             }
-            types::IntLiteral::KIND => {
-                let v = if let Some(InterData::Int(v)) = &rhs.inter_val {
-                    Some(
-                        self.llvm_type(ctx)
-                            .unwrap()
-                            .into_float_type()
-                            .const_float(*v as _),
-                    )
-                } else {
-                    None
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l + r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l - r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l * r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_div(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l / r as f64))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "<" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l < r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l > r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "<=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l <= r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l >= r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "==" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l == r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "!=" => Ok(Value::new(
-                        if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) = (lhs.value(ctx), v)
-                        {
-                            Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l != r as f64) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+            match rhs.data_type.kind() {
+                types::Reference::KIND | types::Mut::KIND => {
+                    last = Some(rhs.data_type);
+                    rhs = rhs.decay(ctx);
                 }
-            }
-            types::Float::KIND => {
-                use std::cmp::Ordering;
-                let ty = rhs.data_type.downcast::<types::Float>().unwrap();
-                let res = types::Float::new(std::cmp::max(self.kind(), ty.kind()));
-                match self.kind().cmp(&ty.kind()) {
-                    Ordering::Less => {
-                        rhs.comp_val = if let Some(BasicValueEnum::FloatValue(v)) = rhs.comp_val {
+                types::Int::KIND => {
+                    return {
+                        let v = if let Some(BasicValueEnum::IntValue(v)) = rhs.value(ctx) {
+                            let ft = self.llvm_type(ctx).unwrap().into_float_type();
                             Some(
-                                ctx.builder
-                                    .build_float_cast(
-                                        v,
-                                        self.llvm_type(ctx).unwrap().into_float_type(),
-                                        "",
-                                    )
-                                    .into(),
+                                if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
+                                    ctx.builder.build_signed_int_to_float(v, ft, "")
+                                } else {
+                                    ctx.builder.build_unsigned_int_to_float(v, ft, "")
+                                },
                             )
                         } else {
                             None
                         };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l + r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l - r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l * r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l / r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "<" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l < r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l > r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "<=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l <= r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l >= r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "==" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l == r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "!=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l != r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
                     }
-                    Ordering::Greater => {
-                        lhs.comp_val = if let Some(BasicValueEnum::FloatValue(v)) = lhs.comp_val {
+                }
+                types::IntLiteral::KIND => {
+                    return {
+                        let v = if let Some(InterData::Int(v)) = &rhs.inter_val {
                             Some(
-                                ctx.builder
-                                    .build_float_cast(
-                                        v,
-                                        ty.llvm_type(ctx).unwrap().into_float_type(),
-                                        "",
-                                    )
-                                    .into(),
+                                self.llvm_type(ctx)
+                                    .unwrap()
+                                    .into_float_type()
+                                    .const_float(*v as _),
                             )
                         } else {
                             None
                         };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l + r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l - r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l * r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l / r as f64))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "<" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l < r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l > r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "<=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l <= r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l >= r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "==" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l == r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "!=" => Ok(Value::new(
+                                if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
+                                    (lhs.value(ctx), v)
+                                {
+                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Int(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l != r as f64) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
                     }
-                    Ordering::Equal => {}
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l + r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l - r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l * r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_div(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l / r))
-                        } else {
-                            None
-                        },
-                        res,
-                    )),
-                    "<" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l < r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l > r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "<=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l <= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l >= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "==" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l == r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "!=" => Ok(Value::new(
-                        if let (
-                            Some(BasicValueEnum::FloatValue(l)),
-                            Some(BasicValueEnum::FloatValue(r)),
-                        ) = (lhs.value(ctx), rhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int((l != r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
+                types::Float::KIND => {
+                    return {
+                        use std::cmp::Ordering;
+                        let ty = rhs.data_type.downcast::<types::Float>().unwrap();
+                        let res = types::Float::new(std::cmp::max(self.kind(), ty.kind()));
+                        match self.kind().cmp(&ty.kind()) {
+                            Ordering::Less => {
+                                rhs.comp_val =
+                                    if let Some(BasicValueEnum::FloatValue(v)) = rhs.comp_val {
+                                        Some(
+                                            ctx.builder
+                                                .build_float_cast(
+                                                    v,
+                                                    self.llvm_type(ctx).unwrap().into_float_type(),
+                                                    "",
+                                                )
+                                                .into(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+                            }
+                            Ordering::Greater => {
+                                lhs.comp_val =
+                                    if let Some(BasicValueEnum::FloatValue(v)) = lhs.comp_val {
+                                        Some(
+                                            ctx.builder
+                                                .build_float_cast(
+                                                    v,
+                                                    ty.llvm_type(ctx).unwrap().into_float_type(),
+                                                    "",
+                                                )
+                                                .into(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+                            }
+                            Ordering::Equal => {}
+                        };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l + r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l - r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l * r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l / r))
+                                } else {
+                                    None
+                                },
+                                res,
+                            )),
+                            "<" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l < r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l > r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "<=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l <= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l >= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "==" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l == r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "!=" => Ok(Value::new(
+                                if let (
+                                    Some(BasicValueEnum::FloatValue(l)),
+                                    Some(BasicValueEnum::FloatValue(r)),
+                                ) = (lhs.value(ctx), rhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Float(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int((l != r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
             }
-            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
         }
     }
     fn _bin_rhs<'src, 'ctx>(
         &'static self,
-        lhs: Value<'src, 'ctx>,
+        mut lhs: Value<'src, 'ctx>,
         rhs: Value<'src, 'ctx>,
         op: (&'static str, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
         move_left: bool,
         move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        match lhs.data_type.kind() {
-            types::Int::KIND => {
-                let v = if let Some(BasicValueEnum::IntValue(v)) = lhs.value(ctx) {
-                    let ft = self.llvm_type(ctx).unwrap().into_float_type();
-                    Some(
-                        if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
-                            ctx.builder.build_signed_int_to_float(v, ft, "")
-                        } else {
-                            ctx.builder.build_unsigned_int_to_float(v, ft, "")
-                        },
-                    )
-                } else {
-                    None
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 + r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 - r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 * r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_div(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 / r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "<" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) < r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) > r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "<=" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) <= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    ">=" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) >= r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "==" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) == r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    "!=" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Int(((l as f64) != r) as _))
-                        } else {
-                            None
-                        },
-                        types::Int::bool(),
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
-                }
+        let mut last = None;
+        loop {
+            if last == Some(rhs.data_type) {
+                return Err(invalid_binop(&lhs, &rhs, op.0, op.1));
             }
-            types::IntLiteral::KIND => {
-                let v = if let Some(InterData::Int(v)) = &lhs.inter_val {
-                    Some(
-                        self.llvm_type(ctx)
-                            .unwrap()
-                            .into_float_type()
-                            .const_float(*v as _),
-                    )
-                } else {
-                    None
-                };
-                match op.0 {
-                    "+" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_add(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 + r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "-" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_sub(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 - r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "*" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_mul(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 * r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    "/" => Ok(Value::new(
-                        if let (Some(l), Some(BasicValueEnum::FloatValue(r))) = (v, lhs.value(ctx))
-                        {
-                            Some(ctx.builder.build_float_div(l, r, "").into())
-                        } else {
-                            None
-                        },
-                        if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
-                            (lhs.inter_val, rhs.inter_val)
-                        {
-                            Some(InterData::Float(l as f64 / r))
-                        } else {
-                            None
-                        },
-                        self,
-                    )),
-                    _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+            match lhs.data_type.kind() {
+                types::Reference::KIND | types::Mut::KIND => {
+                    last = Some(lhs.data_type);
+                    lhs = lhs.decay(ctx);
                 }
+                types::Int::KIND => {
+                    return {
+                        let v = if let Some(BasicValueEnum::IntValue(v)) = lhs.value(ctx) {
+                            let ft = self.llvm_type(ctx).unwrap().into_float_type();
+                            Some(
+                                if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
+                                    ctx.builder.build_signed_int_to_float(v, ft, "")
+                                } else {
+                                    ctx.builder.build_unsigned_int_to_float(v, ft, "")
+                                },
+                            )
+                        } else {
+                            None
+                        };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 + r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 - r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 * r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 / r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "<" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) < r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) > r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "<=" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) <= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            ">=" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) >= r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "==" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) == r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            "!=" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Int(((l as f64) != r) as _))
+                                } else {
+                                    None
+                                },
+                                types::Int::bool(),
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                types::IntLiteral::KIND => {
+                    return {
+                        let v = if let Some(InterData::Int(v)) = &lhs.inter_val {
+                            Some(
+                                self.llvm_type(ctx)
+                                    .unwrap()
+                                    .into_float_type()
+                                    .const_float(*v as _),
+                            )
+                        } else {
+                            None
+                        };
+                        match op.0 {
+                            "+" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 + r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "-" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 - r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "*" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 * r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            "/" => Ok(Value::new(
+                                if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
+                                    (v, lhs.value(ctx))
+                                {
+                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                } else {
+                                    None
+                                },
+                                if let (Some(InterData::Int(l)), Some(InterData::Float(r))) =
+                                    (lhs.inter_val, rhs.inter_val)
+                                {
+                                    Some(InterData::Float(l as f64 / r))
+                                } else {
+                                    None
+                                },
+                                self,
+                            )),
+                            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+                        }
+                    }
+                }
+                _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
             }
-            _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
         }
     }
     fn _has_mut_pre_op(&'static self, op: &'static str, ctx: &CompCtx) -> bool {

@@ -442,8 +442,18 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         }
     }
 
+    pub fn decay(self, ctx: &CompCtx<'src, 'ctx>) -> Value<'src, 'ctx> {
+        let ty = self.data_type.decay();
+        let name = self.name.clone();
+        let loc = self.loc;
+        Value {
+            name,
+            loc,
+            ..self.impl_convert((ty, None), ctx).unwrap()
+        }
+    }
     pub fn attr(
-        &self,
+        self,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {

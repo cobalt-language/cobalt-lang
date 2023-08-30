@@ -21,7 +21,7 @@ impl Type for TypeData {
     }
     fn attr<'src, 'ctx>(
         &self,
-        val: &Value<'src, 'ctx>,
+        val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
@@ -131,7 +131,7 @@ impl Type for Module {
     }
     fn attr<'src, 'ctx>(
         &self,
-        val: &Value<'src, 'ctx>,
+        val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
@@ -194,7 +194,7 @@ impl Type for Error {
     }
     fn attr<'src, 'ctx>(
         &'static self,
-        val: &Value<'src, 'ctx>,
+        val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
