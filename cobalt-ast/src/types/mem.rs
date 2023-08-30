@@ -1,4 +1,5 @@
 use super::*;
+use inkwell::IntPredicate::*;
 #[derive(Debug, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
@@ -443,7 +444,7 @@ impl Type for Pointer {
         matches!(
             (other.kind(), op),
             (types::Int::KIND | types::IntLiteral::KIND, "+" | "-")
-        ) || (other == self && op == "-")
+        ) || (other == self && ["-", "<", ">", "<=", ">=", "==", "!="].contains(&op))
     }
     fn _has_bin_rhs(
         &'static self,
@@ -521,20 +522,107 @@ impl Type for Pointer {
                     _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
             }
-            types::Pointer::KIND if rhs.data_type == self && op.0 == "-" => Ok(Value::new(
-                if let (
-                    Some(llt),
-                    Some(BasicValueEnum::PointerValue(l)),
-                    Some(BasicValueEnum::PointerValue(r)),
-                ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
-                {
-                    Some(ctx.builder.build_ptr_diff(llt, l, r, "").into())
-                } else {
-                    None
-                },
-                None,
-                self,
-            )),
+            types::Pointer::KIND if rhs.data_type == self => match op.0 {
+                "-" => Ok(Value::new(
+                    if let (
+                        Some(llt),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_ptr_diff(llt, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                "<" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(ULT, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                ">" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(UGT, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                "<=" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(ULE, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                ">=" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(UGE, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                "==" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(EQ, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                "!=" => Ok(Value::new(
+                    if let (
+                        Some(_),
+                        Some(BasicValueEnum::PointerValue(l)),
+                        Some(BasicValueEnum::PointerValue(r)),
+                    ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
+                    {
+                        Some(ctx.builder.build_int_compare(NE, l, r, "").into())
+                    } else {
+                        None
+                    },
+                    None,
+                    self,
+                )),
+                _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
+            },
             _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
         }
     }
