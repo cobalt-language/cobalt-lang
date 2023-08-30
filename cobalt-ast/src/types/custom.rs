@@ -98,7 +98,9 @@ impl Custom {
             .into_iter()
             .map(Into::into)
             .map(|(k, v)| (k.into(), v))
-            .for_each(|(k, v)| assert!(this_data.2.insert(k, mb.insert(v)).is_none()));
+            .for_each(|(k, v)| {
+                this_data.2.insert(k, mb.insert(v));
+            });
     }
 }
 impl ConcreteType for Custom {

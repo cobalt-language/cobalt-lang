@@ -1322,7 +1322,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             )
         });
         let mangled = ctx.format(&self.name);
-        let self_t = types::Custom::new_ref(&mangled);
+        let self_t = types::Custom::create_ref(&mangled, ctx);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
             vm.symbols
@@ -1816,7 +1816,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             v.insert(
                 &self.name,
                 Symbol(
-                    Value::make_type(types::Custom::new_ref(&mangled)).freeze(self.loc),
+                    Value::make_type(types::Custom::create_ref(&mangled, ctx)).freeze(self.loc),
                     VariableData {
                         fwd: ctx.prepass.get(),
                         init: !errs
