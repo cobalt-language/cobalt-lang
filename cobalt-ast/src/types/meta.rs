@@ -52,17 +52,25 @@ impl Type for TypeData {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         match op {
             "&" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
-                Value::make_type(types::Reference::new(t))
+                Value::make_type(types::Reference::new(if t.is::<types::Mut>() {
+                    t
+                } else {
+                    t.decay()
+                }))
             } else {
                 Value::error()
             }),
             "*" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
-                Value::make_type(types::Pointer::new(t))
+                Value::make_type(types::Pointer::new(if t.is::<types::Mut>() {
+                    t
+                } else {
+                    t.decay()
+                }))
             } else {
                 Value::error()
             }),
             "mut" => Ok(if let Some(InterData::Type(t)) = val.inter_val {
-                Value::make_type(types::Mut::new(t))
+                Value::make_type(types::Mut::new(t.decay()))
             } else {
                 Value::error()
             }),
@@ -79,7 +87,7 @@ impl Type for TypeData {
             types::Int::KIND | types::IntLiteral::KIND => {
                 if let Some(InterData::Int(v)) = idx.inter_val {
                     Ok(if let Some(InterData::Type(t)) = val.inter_val {
-                        Value::make_type(types::SizedArray::new(t, v as _))
+                        Value::make_type(types::SizedArray::new(t.decay(), v as _))
                     } else {
                         Value::error()
                     })
@@ -88,7 +96,7 @@ impl Type for TypeData {
                 }
             }
             types::Null::KIND => Ok(if let Some(InterData::Type(t)) = val.inter_val {
-                Value::make_type(types::UnsizedArray::new(t))
+                Value::make_type(types::UnsizedArray::new(t.decay()))
             } else {
                 Value::error()
             }),
