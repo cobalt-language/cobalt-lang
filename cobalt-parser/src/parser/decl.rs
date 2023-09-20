@@ -835,8 +835,9 @@ mod tests {
     #[test]
     fn test_parse_let_decl() {
         let src = "let x: i32 = 5i32;";
-        let token_stream = SourceReader::new(src).tokenize().0;
-        let mut parser = Parser::new(token_stream);
+        let mut src_reader = SourceReader::new(src);
+        let token_stream = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_stream);
         parser.next();
         let (ast, errors) = parser.parse_let_decl();
         dbg!(ast);
@@ -846,27 +847,30 @@ mod tests {
 
     #[test]
     fn test_parse_fn_param() {
-        let src1 = "x: i32";
-        let token_stream1 = SourceReader::new(src1).tokenize().0;
-        let mut parser1 = Parser::new(token_stream1);
+        let src = "x: i32";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream1 = src_reader.tokenize().0;
+        let mut parser1 = Parser::new(&src_reader, token_stream1);
         parser1.next();
         let (ast1, errors1) = parser1.parse_fn_param();
         dbg!(ast1);
         dbg!(&errors1);
         assert!(errors1.is_empty());
 
-        let src2 = "mut x: i32";
-        let token_stream2 = SourceReader::new(src2).tokenize().0;
-        let mut parser2 = Parser::new(token_stream2);
+        let src = "mut x: i32";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream2 = src_reader.tokenize().0;
+        let mut parser2 = Parser::new(&src_reader, token_stream2);
         parser2.next();
         let (ast2, errors2) = parser2.parse_fn_param();
         dbg!(ast2);
         dbg!(&errors2);
         assert!(errors2.is_empty());
 
-        let src3 = "const x: i32 = 5i32";
-        let token_stream3 = SourceReader::new(src3).tokenize().0;
-        let mut parser3 = Parser::new(token_stream3);
+        let src = "const x: i32 = 5i32";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream3 = src_reader.tokenize().0;
+        let mut parser3 = Parser::new(&src_reader, token_stream3);
         parser3.next();
         let (ast3, errors3) = parser3.parse_fn_param();
         dbg!(ast3);
@@ -876,9 +880,10 @@ mod tests {
 
     #[test]
     fn test_parse_type_decl() {
-        let src1 = "type Foo = i32;";
-        let token_stream1 = SourceReader::new(src1).tokenize().0;
-        let mut parser1 = Parser::new(token_stream1);
+        let src = "type Foo = i32;";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream1 = src_reader.tokenize().0;
+        let mut parser1 = Parser::new(&src_reader, token_stream1);
         parser1.next();
         let (ast1, errors1) = parser1.parse_type_decl();
         dbg!(ast1);
@@ -888,18 +893,20 @@ mod tests {
 
     #[test]
     fn test_fn_def() {
-        let src1 = "fn foo(x: i32): i32 = 5i32;";
-        let token_stream1 = SourceReader::new(src1).tokenize().0;
-        let mut parser1 = Parser::new(token_stream1);
+        let src = "fn foo(x: i32): i32 = 5i32;";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream1 = src_reader.tokenize().0;
+        let mut parser1 = Parser::new(&src_reader, token_stream1);
         parser1.next();
         let (ast1, errors1) = parser1.parse_fn_def(false);
         dbg!(ast1);
         dbg!(&errors1);
         assert!(errors1.is_empty());
 
-        let src2 = "fn foo();";
-        let token_stream2 = SourceReader::new(src2).tokenize().0;
-        let mut parser2 = Parser::new(token_stream2);
+        let src = "fn foo();";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream2 = src_reader.tokenize().0;
+        let mut parser2 = Parser::new(&src_reader, token_stream2);
         parser2.next();
         let (ast2, errors2) = parser2.parse_fn_def(false);
         dbg!(ast2);

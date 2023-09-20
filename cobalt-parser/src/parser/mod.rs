@@ -6,7 +6,7 @@
 //! - Upon exiting a parsing function, `current_token` is assumed to be the first
 //! token after the grammar.
 
-use crate::lexer::{tokenizer::TokenStream, tokens::Token};
+use crate::lexer::{tokenizer::TokenStream, tokens::Token, SourceReader};
 
 mod decl;
 mod expr;
@@ -32,14 +32,16 @@ impl<'src> TokenStreamCursor<'src> {
 }
 
 pub struct Parser<'src> {
+    source_reader: &'src SourceReader<'src>,
     cursor: TokenStreamCursor<'src>,
     current_token: Option<Token<'src>>,
 }
 
 impl<'src> Parser<'src> {
-    pub fn new(stream: TokenStream<'src>) -> Parser<'src> {
+    pub fn new(source: &'src SourceReader<'src>, stream: TokenStream<'src>) -> Parser<'src> {
         let cursor = TokenStreamCursor::new(stream);
         Parser {
+            source_reader: source,
             cursor,
             current_token: None,
         }

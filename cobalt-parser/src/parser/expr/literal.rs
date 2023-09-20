@@ -118,32 +118,36 @@ mod tests {
     #[test]
     fn test_parse_literal() {
         let src = "1";
-        let token_strem = SourceReader::new(src).tokenize().0;
-        let mut parser = Parser::new(token_strem);
+        let mut src_reader = SourceReader::new(src);
+        let token_strem = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_strem);
         parser.next();
         let (ast, errors) = parser.parse_literal();
         assert!(errors.is_empty());
         dbg!(ast);
 
         let src = "1i32";
-        let token_strem = SourceReader::new(src).tokenize().0;
-        let mut parser = Parser::new(token_strem);
+        let mut src_reader = SourceReader::new(src);
+        let token_strem = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_strem);
         parser.next();
         let (ast, errors) = parser.parse_literal();
         assert!(errors.is_empty());
         dbg!(ast);
 
         let src = "1.0";
-        let token_strem = SourceReader::new(src).tokenize().0;
-        let mut parser = Parser::new(token_strem);
+        let mut src_reader = SourceReader::new(src);
+        let token_strem = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_strem);
         parser.next();
         let (ast, errors) = parser.parse_literal();
         assert!(errors.is_empty());
         dbg!(ast);
 
         let src = "1.0f32";
-        let token_strem = SourceReader::new(src).tokenize().0;
-        let mut parser = Parser::new(token_strem);
+        let mut src_reader = SourceReader::new(src);
+        let token_strem = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_strem);
         parser.next();
         let (ast, errors) = parser.parse_literal();
         assert!(errors.is_empty());

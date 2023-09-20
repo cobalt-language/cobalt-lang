@@ -67,6 +67,32 @@ pub enum BinOpToken {
     Shr, // >>
 }
 
+impl BinOpToken {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BinOpToken::Eq => "=",
+            BinOpToken::EqEq => "==",
+            BinOpToken::Neq => "!=",
+
+            BinOpToken::Lt => "<",
+            BinOpToken::Leq => "<=",
+            BinOpToken::Gt => ">",
+            BinOpToken::Geq => ">=",
+            BinOpToken::Andq => "&&",
+            BinOpToken::Or => "|",
+            BinOpToken::Orq => "||",
+            BinOpToken::Xor => "^",
+
+            BinOpToken::Add => "+",
+            BinOpToken::Sub => "-",
+            BinOpToken::Div => "/",
+            BinOpToken::Mod => "%",
+            BinOpToken::Shl => "<<",
+            BinOpToken::Shr => ">>",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOpToken {
     Not, // !
@@ -76,6 +102,15 @@ pub enum UnOpToken {
 pub enum UnOrBinOpToken {
     Star, // *
     And,  // &
+}
+
+impl UnOrBinOpToken {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UnOrBinOpToken::Star => "*",
+            UnOrBinOpToken::And => "&",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -98,6 +133,31 @@ pub enum TokenKind<'src> {
     BinOp(BinOpToken),
     UnOrBinOp(UnOrBinOpToken),
     Literal(LiteralToken<'src>),
+}
+
+impl<'src> TokenKind<'src> {
+    pub fn precedence_value(&self) -> u8 {
+        match self {
+            TokenKind::BinOp(bop) => match bop {
+                BinOpToken::Lt => 10,
+                BinOpToken::Leq => 10,
+                BinOpToken::Gt => 10,
+                BinOpToken::Geq => 10,
+
+                BinOpToken::Sub => 20,
+                BinOpToken::Add => 25,
+
+                BinOpToken::Div => 30,
+                BinOpToken::Mod => 30,
+
+                _ => 0,
+            },
+
+            TokenKind::UnOrBinOp(UnOrBinOpToken::Star) => 35,
+
+            _ => 0,
+        }
+    }
 }
 
 impl<'src> Display for TokenKind<'src> {

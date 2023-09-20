@@ -6,7 +6,7 @@ pub mod tokenizer;
 pub mod tokens;
 
 pub struct SourceReader<'src> {
-    source: &'src str,
+    pub source: &'src str,
     iter: Peekable<Chars<'src>>,
     /// The index of the next character to be returned.
     index: usize,
