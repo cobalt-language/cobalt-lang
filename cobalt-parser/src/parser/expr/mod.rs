@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{NullAST, VarGetAST},
+    ast::{BlockAST, NullAST, VarGetAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
-use crate::lexer::tokens::{Delimiter, TokenKind};
+use crate::lexer::tokens::{Delimiter, Keyword, TokenKind};
 
 use super::Parser;
 
@@ -64,6 +64,9 @@ impl<'src> Parser<'src> {
             }
             TokenKind::OpenDelimiter(p) if p == Delimiter::Paren => {
                 return self.parse_paren_expr();
+            }
+            TokenKind::OpenDelimiter(b) if b == Delimiter::Brace => {
+                return self.parse_block_expr();
             }
             _ => {}
         }
@@ -160,6 +163,95 @@ impl<'src> Parser<'src> {
         self.next();
         (expr, errors)
     }
+
+    /// Going into this function, `current_token` is assumed to be a open brace.
+    ///
+    /// ```
+    /// block_expr := '{' [ expr? ';' | decl ]* '}'
+    /// ```
+    fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Brace));
+
+        let span_start = self.current_token.unwrap().span.offset();
+        let mut span_len = self.current_token.unwrap().span.len();
+        let mut vals: Vec<BoxedAST<'src>> = vec![];
+
+        let mut errors: Vec<CobaltError<'src>> = vec![];
+
+        // Eat the opening brace.
+        self.next();
+
+        let start = 0;
+        let last_was_decl = 1;
+        let semicolon_trailing_expr = 2;
+        let last_was_expr = 3;
+        let mut local_state = start;
+
+        loop {
+            if self.current_token.is_none() {
+                return (
+                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    vec![CobaltError::ExpectedFound {
+                        ex: "'}'",
+                        found: ParserFound::Eof,
+                        loc: self.current_token.unwrap().span,
+                    }],
+                );
+            }
+
+            span_len += self.current_token.unwrap().span.len();
+
+            if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Brace) {
+                break;
+            }
+
+            // If it's just a semicolon that's ok.
+            if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                self.next();
+                if local_state == last_was_expr {
+                    local_state = semicolon_trailing_expr;
+                }
+                continue;
+            }
+
+            if let TokenKind::Keyword(kw) = self.current_token.unwrap().kind {
+                if kw == Keyword::Let || kw == Keyword::Type || kw == Keyword::Fn {
+                    let (decl, decl_errors) = self.parse_decl();
+                    errors.extend(decl_errors);
+                    vals.push(decl);
+
+                    local_state = last_was_decl;
+                    continue;
+                }
+            }
+
+            let (expr, expr_errors) = self.parse_expr();
+            errors.extend(expr_errors);
+            vals.push(expr);
+            local_state = last_was_expr;
+        }
+
+        // Eat the closing brace.
+        self.next();
+
+        // If the last val was an expr followed by a semicolon, then making the last val a
+        // null ast will indicate that the block should evaluate to null (and not the value
+        // of the last expr).
+        if local_state == semicolon_trailing_expr || local_state == start {
+            vals.push(Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((
+                0, 1,
+            )))));
+        }
+
+        (
+            Box::new(BlockAST::new(
+                SourceSpan::from((span_start, span_len)),
+                vals,
+            )),
+            errors,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -211,6 +303,18 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_block_expr() {
+        let mut reader = SourceReader::new("{ a + b;; let x = 4; x }");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_block_expr();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());

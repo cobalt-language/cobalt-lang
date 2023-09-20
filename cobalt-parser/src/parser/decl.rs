@@ -21,7 +21,7 @@ impl<'src> Parser<'src> {
     ///    := let_decl
     ///    := type_decl
     /// ```
-    fn parse_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let first_token = self.current_token.unwrap();
@@ -34,10 +34,22 @@ impl<'src> Parser<'src> {
                 let_decl
             }
 
+            TokenKind::Keyword(Keyword::Type) => {
+                let (type_decl, type_decl_errors) = self.parse_type_decl();
+                errors.extend(type_decl_errors);
+                type_decl
+            }
+
+            TokenKind::Keyword(Keyword::Fn) => {
+                let (fn_decl, fn_decl_errors) = self.parse_fn_def(false);
+                errors.extend(fn_decl_errors);
+                fn_decl
+            }
+
             _ => todo!(),
         };
 
-        todo!()
+        (ast, errors)
     }
 
     /// Parses a let declaration.
@@ -895,22 +907,32 @@ mod tests {
     fn test_fn_def() {
         let src = "fn foo(x: i32): i32 = 5i32;";
         let mut src_reader = SourceReader::new(src);
-        let token_stream1 = src_reader.tokenize().0;
-        let mut parser1 = Parser::new(&src_reader, token_stream1);
-        parser1.next();
-        let (ast1, errors1) = parser1.parse_fn_def(false);
-        dbg!(ast1);
-        dbg!(&errors1);
-        assert!(errors1.is_empty());
+        let token_stream = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_stream);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_def(false);
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
 
         let src = "fn foo();";
         let mut src_reader = SourceReader::new(src);
-        let token_stream2 = src_reader.tokenize().0;
-        let mut parser2 = Parser::new(&src_reader, token_stream2);
-        parser2.next();
-        let (ast2, errors2) = parser2.parse_fn_def(false);
-        dbg!(ast2);
-        dbg!(&errors2);
-        assert!(errors2.is_empty());
+        let token_stream = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_stream);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_def(false);
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let src = "fn foo(): i32 = { let x = 3; x};";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_stream);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_def(false);
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
     }
 }
