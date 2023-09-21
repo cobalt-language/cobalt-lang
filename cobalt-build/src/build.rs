@@ -7,12 +7,12 @@ use cobalt_errors::*;
 use cobalt_parser::prelude::*;
 use cobalt_utils::CellExt as Cell;
 use either::Either;
+use hashbrown::HashMap;
 use indexmap::IndexMap;
 use os_str_bytes::OsStrBytes;
 use path_calculate::*;
 use semver::{Version, VersionReq};
 use serde::*;
-use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]

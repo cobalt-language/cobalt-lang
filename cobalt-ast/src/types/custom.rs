@@ -148,6 +148,180 @@ impl Type for Custom {
             }
         }
     }
+    fn static_attr<'src, 'ctx>(
+        &'static self,
+        name: &str,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Option<Value<'src, 'ctx>> {
+        println!(
+            "{name:?} of {:#?}",
+            CUSTOM_DATA.get(&*self.0).map_or_else(Vec::new, |v| v
+                .2
+                .iter()
+                .map(|x| bstr::BString::from(x.key().as_ref()))
+                .collect())
+        ); // debug
+        let res = CUSTOM_DATA
+            .get(&*self.0)
+            .and_then(|v| v.2.get(name).map(|x| ctx.values.borrow()[*x].clone()));
+        res
+    }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let Some(field) = self.static_attr(&attr.0, ctx) else {
+            return if attr.0 == "__base" {
+                Ok(Value {
+                    data_type: self.base(),
+                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    ..val
+                })
+            } else {
+                Err(invalid_attr(&val, attr.0, attr.1))
+            }
+        };
+        let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
+            return Err(invalid_attr(&val, attr.0, attr.1))
+        };
+        assert!(field
+            .data_type
+            .is_and::<types::Reference>(|r| r.base().is::<types::Function>()));
+        let fty = field
+            .data_type
+            .downcast::<types::Reference>()
+            .unwrap()
+            .base()
+            .downcast::<types::Function>()
+            .unwrap();
+        match mt {
+            MethodType::Getter => field.call(None, vec![val], ctx),
+            MethodType::Normal => {
+                let (self_t, sic) = *fty
+                    .params()
+                    .get(0)
+                    .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
+                let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
+                Ok(Value::new(
+                    self_t
+                        .llvm_type(ctx)
+                        .map(|llt| this.value(ctx).unwrap_or_else(|| llt.const_zero())),
+                    Some(InterData::Array(vec![
+                        this.inter_val.unwrap_or(InterData::Null),
+                        field.inter_val.unwrap(),
+                    ])),
+                    types::BoundMethod::new(fty.ret(), fty.params()),
+                ))
+            }
+            MethodType::Static => Err(invalid_attr(&val, attr.0, attr.1)),
+        }
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let Some(field) = self.static_attr(&attr.0, ctx) else {
+            return if attr.0 == "__base" {
+                Ok(Value {
+                    data_type: self.base().add_ref(false),
+                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    ..val
+                })
+            } else {
+                Err(invalid_attr(&val, attr.0, attr.1))
+            }
+        };
+        let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
+            return Err(invalid_attr(&val, attr.0, attr.1))
+        };
+        assert!(field
+            .data_type
+            .is_and::<types::Reference>(|r| r.base().is::<types::Function>()));
+        let fty = field
+            .data_type
+            .downcast::<types::Reference>()
+            .unwrap()
+            .base()
+            .downcast::<types::Function>()
+            .unwrap();
+        match mt {
+            MethodType::Getter => field.call(None, vec![val], ctx),
+            MethodType::Normal => {
+                let (self_t, sic) = *fty
+                    .params()
+                    .get(0)
+                    .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
+                let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
+                Ok(Value::new(
+                    self_t
+                        .llvm_type(ctx)
+                        .map(|llt| this.value(ctx).unwrap_or_else(|| llt.const_zero())),
+                    Some(InterData::Array(vec![
+                        this.inter_val.unwrap_or(InterData::Null),
+                        field.inter_val.unwrap(),
+                    ])),
+                    types::BoundMethod::new(fty.ret(), fty.params()),
+                ))
+            }
+            MethodType::Static => Err(invalid_attr(&val, attr.0, attr.1)),
+        }
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        let Some(field) = self.static_attr(&attr.0, ctx) else {
+            return if attr.0 == "__base" {
+                Ok(Value {
+                    data_type: self.base().add_ref(true),
+                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    ..val
+                })
+            } else {
+                Err(invalid_attr(&val, attr.0, attr.1))
+            }
+        };
+        let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
+            return Err(invalid_attr(&val, attr.0, attr.1))
+        };
+        assert!(field
+            .data_type
+            .is_and::<types::Reference>(|r| r.base().is::<types::Function>()));
+        let fty = field
+            .data_type
+            .downcast::<types::Reference>()
+            .unwrap()
+            .base()
+            .downcast::<types::Function>()
+            .unwrap();
+        match mt {
+            MethodType::Getter => field.call(None, vec![val], ctx),
+            MethodType::Normal => {
+                let (self_t, sic) = *fty
+                    .params()
+                    .get(0)
+                    .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
+                let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
+                Ok(Value::new(
+                    self_t
+                        .llvm_type(ctx)
+                        .map(|llt| this.value(ctx).unwrap_or_else(|| llt.const_zero())),
+                    Some(InterData::Array(vec![
+                        this.inter_val.unwrap_or(InterData::Null),
+                        field.inter_val.unwrap(),
+                    ])),
+                    types::BoundMethod::new(fty.ret(), fty.params()),
+                ))
+            }
+            MethodType::Static => Err(invalid_attr(&val, attr.0, attr.1)),
+        }
+    }
     fn save_header(out: &mut dyn Write) -> io::Result<()> {
         for vals in CUSTOM_DATA.iter() {
             let (ty, _export, methods, info) = &*vals;

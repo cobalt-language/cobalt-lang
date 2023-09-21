@@ -309,7 +309,7 @@ impl Type for BoundMethod {
     fn align(&self) -> u16 {
         0
     }
-    fn ptr_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         let params = || {
             self.full_params()
                 .iter()

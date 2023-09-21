@@ -1,10 +1,10 @@
 use crate::*;
 use either::Either::{self, *};
+use hashbrown::hash_map::{Entry, HashMap};
+use hashbrown::HashSet;
 use inkwell::{builder::Builder, context::Context, module::Module};
 use owned_chars::OwnedCharsExt;
 use std::cell::{Cell, RefCell};
-use std::collections::hash_map::{Entry, HashMap};
-use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;

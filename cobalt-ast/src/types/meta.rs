@@ -292,6 +292,15 @@ impl Type for Error {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Ok(Value::error())
     }
+    fn call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::error())
+    }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }

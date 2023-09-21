@@ -96,3 +96,15 @@ pub fn invalid_call<'src: 'a, 'ctx: 'a, 'a, I: IntoIterator<Item = &'a Value<'sr
         nargs: vec![],
     }
 }
+pub fn invalid_attr<'src>(
+    val: &Value<'src, '_>,
+    attr: Cow<'src, str>,
+    aloc: SourceSpan,
+) -> CobaltError<'src> {
+    CobaltError::AttrNotDefined {
+        val: val.data_type.to_string(),
+        attr,
+        vloc: val.loc,
+        aloc,
+    }
+}

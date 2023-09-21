@@ -29,6 +29,32 @@ impl<'ctx> Location<'ctx> {
                 .unwrap_or(Self::Block(b)),
         )
     }
+    pub fn position_before(self, ctx: &CompCtx<'_, 'ctx>) {
+        match self {
+            Self::Block(bb) => {
+                if let Some(inst) = bb.get_first_instruction() {
+                    ctx.builder.position_before(&inst)
+                } else {
+                    ctx.builder.position_at_end(bb)
+                }
+            }
+            Self::Inst(inst, _) | Self::AfterInst(inst) => ctx.builder.position_before(&inst),
+        }
+    }
+    pub fn position_after(self, ctx: &CompCtx<'_, 'ctx>) {
+        match self {
+            Self::Block(bb) => {
+                if let Some(inst) = bb.get_first_instruction() {
+                    ctx.builder.position_before(&inst)
+                } else {
+                    ctx.builder.position_at_end(bb)
+                }
+            }
+            Self::Inst(inst, _) | Self::AfterInst(inst) => {
+                ctx.builder.position_at(inst.get_parent().unwrap(), &inst)
+            }
+        }
+    }
 }
 impl<'ctx> From<InstructionValue<'ctx>> for Location<'ctx> {
     fn from(value: InstructionValue<'ctx>) -> Self {
@@ -985,7 +1011,6 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .unwrap()
             .get_parent()
             .unwrap();
-        let mut reposition = true;
         self.blocks
             .iter()
             .flat_map(|b| &b.moves)
@@ -1001,7 +1026,6 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 );
                 let next = i.get_next_instruction().unwrap();
                 let next_block = next.get_operand(0).unwrap().unwrap_right();
-                reposition = false;
                 ctx.builder
                     .position_before(&i.get_next_instruction().unwrap());
                 let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
@@ -1026,6 +1050,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 }
             });
         if at_end {
+            self.last.position_after(ctx);
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
                     let scope =

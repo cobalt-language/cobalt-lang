@@ -7,7 +7,6 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io::{self, BufRead, Read, Write};
 use std::num::NonZeroU64;
-use std::ptr::addr_of;
 use SizeType::*;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
@@ -587,7 +586,9 @@ impl<T: Type + Sized> PartialEq<T> for dyn Type {
 impl Eq for dyn Type {}
 impl Hash for dyn Type {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(addr_of!(self) as _)
+        state.write_usize(unsafe {
+            std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(self).0
+        } as _)
     }
 }
 pub type TypeRef = &'static dyn Type;

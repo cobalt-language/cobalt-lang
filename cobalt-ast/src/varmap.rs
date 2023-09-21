@@ -1,8 +1,6 @@
 use crate::*;
-use std::collections::{
-    hash_map::{Entry, HashMap},
-    LinkedList,
-};
+use hashbrown::hash_map::{Entry, HashMap};
+use std::collections::LinkedList;
 use std::io::{self, BufRead, Read, Write};
 use std::num::NonZeroUsize;
 #[derive(Debug, Clone, Copy)]
@@ -143,7 +141,7 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
         }
     }
 }
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct VarMap<'src, 'ctx> {
     pub parent: Option<Box<Self>>,
     pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,

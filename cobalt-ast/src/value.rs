@@ -1,8 +1,8 @@
 use crate::*;
+use hashbrown::HashMap;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum::*};
 use inkwell::values::{BasicValueEnum, PointerValue};
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
 use std::rc::Rc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

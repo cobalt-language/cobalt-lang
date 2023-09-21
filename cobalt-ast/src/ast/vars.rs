@@ -1361,15 +1361,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         });
         self.methods.iter().for_each(|a| a.varfwd_prepass(ctx));
         ctx.restore_scope(old_scope);
-        self_t.set_methods(
-            ctx.map_split_vars(|v| {
-                (
-                    v.parent.unwrap(),
-                    v.symbols.into_iter().map(|(k, v)| (k, v.0)),
-                )
-            }),
-            ctx,
-        );
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
         self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         ctx.prepass.set(pp);
     }
@@ -1464,15 +1457,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             .iter()
             .for_each(|a| a.constinit_prepass(ctx, needs_another));
         ctx.restore_scope(old_scope);
-        self_t.set_methods(
-            ctx.map_split_vars(|v| {
-                (
-                    v.parent.unwrap(),
-                    v.symbols.into_iter().map(|(k, v)| (k, v.0)),
-                )
-            }),
-            ctx,
-        );
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
         self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         ctx.prepass.set(pp);
     }
@@ -1579,15 +1565,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         });
         self.methods.iter().for_each(|a| a.fwddef_prepass(ctx));
         ctx.restore_scope(old_scope);
-        self_t.set_methods(
-            ctx.map_split_vars(|v| {
-                (
-                    v.parent.unwrap(),
-                    v.symbols.into_iter().map(|(k, v)| (k, v.0)),
-                )
-            }),
-            ctx,
-        );
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
         self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         ctx.prepass.set(pp);
     }
@@ -1802,15 +1781,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             });
         }
         ctx.restore_scope(old_scope);
-        self_t.set_methods(
-            ctx.map_split_vars(|v| {
-                (
-                    v.parent.unwrap(),
-                    v.symbols.into_iter().map(|(k, v)| (k, v.0)),
-                )
-            }),
-            ctx,
-        );
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
         self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         match ctx.with_vars(|v| {
             v.insert(
