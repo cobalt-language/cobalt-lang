@@ -5,6 +5,7 @@ use cobalt_errors::SourceSpan;
 pub mod tokenizer;
 pub mod tokens;
 
+#[derive(Debug, Clone)]
 pub struct SourceReader<'src> {
     pub source: &'src str,
     iter: Peekable<CharIndices<'src>>,
@@ -49,6 +50,11 @@ impl<'src> SourceReader<'src> {
 
     pub fn source_span_backward(&self, offset: usize) -> SourceSpan {
         SourceSpan::from((self.index - offset, offset))
+    }
+}
+impl<'src, T: AsRef<str>> From<&'src T> for SourceReader<'src> {
+    fn from(value: &'src T) -> Self {
+        SourceReader::new(value.as_ref())
     }
 }
 

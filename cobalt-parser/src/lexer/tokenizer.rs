@@ -51,6 +51,7 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TokenStream<'src>(pub Rc<Vec<Token<'src>>>);
 
 impl<'src> SourceReader<'src> {

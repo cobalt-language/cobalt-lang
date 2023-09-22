@@ -13,6 +13,7 @@ mod expr;
 
 /// This is what the parser uses to iterate over the tokens. Since the `TokenStream`
 /// is immutable, we need to keep track of the index of the next token to be returned.
+#[derive(Debug, Clone)]
 pub struct TokenStreamCursor<'src> {
     stream: TokenStream<'src>,
     /// The index of the next token to be returned.
@@ -31,6 +32,7 @@ impl<'src> TokenStreamCursor<'src> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Parser<'src> {
     #[allow(dead_code)]
     source_reader: &'src SourceReader<'src>,
