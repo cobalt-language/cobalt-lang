@@ -1118,6 +1118,29 @@ impl Type for Mut {
             self.base().subscript(val, idx, ctx)
         }
     }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.base()._has_mut_attr(&attr.0, ctx) {
+            self.base()._mut_attr(val, attr, ctx)
+        } else {
+            self.base().attr(val, attr, ctx)
+        }
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.base()._refmut_attr(val, attr, ctx)
+    }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        self.base()._has_refmut_attr(attr, ctx)
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         save_type(out, self.0)
     }

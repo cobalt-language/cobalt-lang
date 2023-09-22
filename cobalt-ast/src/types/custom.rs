@@ -10,7 +10,6 @@ pub type ValueRef<'a, 'src, 'ctx> = Ref<'a, Value<'src, 'ctx>>;
 #[repr(transparent)]
 pub struct Custom(Box<str>);
 impl Custom {
-    pub const KIND: NonZeroU64 = make_id(b"custom");
     #[ref_cast_custom]
     #[allow(clippy::borrowed_box)]
     fn from_ref(name: &Box<str>) -> &Self;
@@ -231,6 +230,51 @@ impl Type for Custom {
             MethodType::Static => Err(invalid_attr(&val, attr.0, attr.1)),
         }
     }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        let Some(field) = self.static_attr(attr, ctx) else {
+            return attr == "__base";
+        };
+        let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
+            return false
+        };
+        assert!(field
+            .data_type
+            .is_and::<types::Reference>(|r| r.base().is::<types::Function>()));
+        let fty = field
+            .data_type
+            .downcast::<types::Reference>()
+            .unwrap()
+            .base()
+            .downcast::<types::Function>()
+            .unwrap();
+        mt != MethodType::Static
+            && !fty.params().is_empty()
+            && self.add_ref(false).impl_convertible(fty.params()[0].0, ctx)
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        let Some(field) = self.static_attr(attr, ctx) else {
+            return attr == "__base";
+        };
+        let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
+            return false
+        };
+        assert!(field
+            .data_type
+            .is_and::<types::Reference>(|r| r.base().is::<types::Function>()));
+        let fty = field
+            .data_type
+            .downcast::<types::Reference>()
+            .unwrap()
+            .base()
+            .downcast::<types::Function>()
+            .unwrap();
+        mt != MethodType::Static
+            && !fty.params().is_empty()
+            && self.add_ref(true).impl_convertible(fty.params()[0].0, ctx)
+    }
+    fn _has_mut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        attr == "__base"
+    }
     fn _ref_attr<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -333,6 +377,19 @@ impl Type for Custom {
                 ))
             }
             MethodType::Static => Err(invalid_attr(&val, attr.0, attr.1)),
+        }
+    }
+    fn _mut_attr<'src, 'ctx>(
+        &'static self,
+        mut val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if attr.0 == "__base" {
+            val.data_type = types::Mut::new(self.base());
+            Ok(val)
+        } else {
+            self.attr(val, attr, ctx)
         }
     }
     fn save_header(out: &mut dyn Write) -> io::Result<()> {

@@ -147,10 +147,27 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         false
     }
+    fn _has_mut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
     fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         false
     }
     fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_ref_attr(&attr.0, ctx));
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    fn _mut_attr<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),

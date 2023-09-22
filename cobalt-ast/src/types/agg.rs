@@ -317,6 +317,120 @@ impl Type for Struct {
             Err(cant_iconv(&val, target.0, target.1))
         }
     }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(&idx) = self.fields().get(&*attr.0) {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
+                    ctx.builder.build_extract_value(v, idx as _, "")
+                } else {
+                    None
+                },
+                if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(idx))
+                } else {
+                    None
+                },
+                self.types()[idx],
+            ))
+        } else {
+            Err(invalid_attr(&val, attr.0, attr.1))
+        }
+    }
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        self.fields().contains_key(attr)
+    }
+    fn _has_mut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        self.fields().contains_key(attr)
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        self.fields().contains_key(attr)
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(&idx) = self.fields().get(&*attr.0) {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::PointerValue(v)) = val.value(ctx) {
+                    ctx.builder
+                        .build_struct_gep(self.llvm_type(ctx).unwrap(), v, idx as _, "")
+                        .ok()
+                        .map(From::from)
+                } else {
+                    None
+                },
+                if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(idx))
+                } else {
+                    None
+                },
+                self.types()[idx].add_ref(false),
+            ))
+        } else {
+            Err(invalid_attr(&val, attr.0, attr.1))
+        }
+    }
+    fn _mut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(&idx) = self.fields().get(&*attr.0) {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::PointerValue(v)) = val.value(ctx) {
+                    ctx.builder
+                        .build_struct_gep(self.llvm_type(ctx).unwrap(), v, idx as _, "")
+                        .ok()
+                        .map(From::from)
+                } else {
+                    None
+                },
+                if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(idx))
+                } else {
+                    None
+                },
+                types::Mut::new(self.types()[idx]),
+            ))
+        } else {
+            Err(invalid_attr(&val, attr.0, attr.1))
+        }
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(&idx) = self.fields().get(&*attr.0) {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::PointerValue(v)) = val.value(ctx) {
+                    ctx.builder
+                        .build_struct_gep(self.llvm_type(ctx).unwrap(), v, idx as _, "")
+                        .ok()
+                        .map(From::from)
+                } else {
+                    None
+                },
+                if let Some(InterData::Array(mut v)) = val.inter_val {
+                    Some(v.swap_remove(idx))
+                } else {
+                    None
+                },
+                self.types()[idx].add_ref(true),
+            ))
+        } else {
+            Err(invalid_attr(&val, attr.0, attr.1))
+        }
+    }
     fn save(&self, out: &mut dyn Write) -> io::Result<()> {
         out.write_all(&self.types().len().to_be_bytes())?;
         for &ty in self.types() {

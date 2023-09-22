@@ -92,11 +92,15 @@ impl Type for Function {
             args: args
                 .iter()
                 .map(|v| {
-                    aloc = Some(if let Some(l) = aloc {
-                        merge_spans(l, v.loc)
+                    aloc = if let Some(l) = aloc.and_then(remove_unreachable) {
+                        Some(if v.loc == unreachable_span() {
+                            l
+                        } else {
+                            merge_spans(l, v.loc)
+                        })
                     } else {
-                        v.loc
-                    });
+                        remove_unreachable(v.loc)
+                    };
                     v.data_type.to_string()
                 })
                 .collect(),
