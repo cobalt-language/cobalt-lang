@@ -52,7 +52,7 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
 }
 
 #[derive(Debug, Clone)]
-pub struct TokenStream<'src>(pub Rc<Vec<Token<'src>>>);
+pub struct TokenStream<'src>(pub Rc<[Token<'src>]>);
 
 impl<'src> SourceReader<'src> {
     pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<TokenizeError>) {
@@ -383,7 +383,7 @@ impl<'src> SourceReader<'src> {
             }
         }
 
-        (TokenStream(Rc::new(tokens)), errors)
+        (TokenStream(tokens.into()), errors)
     }
 
     /// Parse an identifier.
