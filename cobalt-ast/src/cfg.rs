@@ -51,7 +51,11 @@ impl<'ctx> Location<'ctx> {
                 }
             }
             Self::Inst(inst, _) | Self::AfterInst(inst) => {
-                ctx.builder.position_at(inst.get_parent().unwrap(), &inst)
+                if let Some(inst) = inst.get_next_instruction() {
+                    ctx.builder.position_before(&inst);
+                } else {
+                    ctx.builder.position_at_end(inst.get_parent().unwrap())
+                }
             }
         }
     }
