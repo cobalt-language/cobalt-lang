@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 
-use cobalt_ast::{
-    ast::{BlockAST, NullAST, VarGetAST},
-    BoxedAST,
-};
+use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
 use crate::lexer::tokens::{Delimiter, Keyword, TokenKind};

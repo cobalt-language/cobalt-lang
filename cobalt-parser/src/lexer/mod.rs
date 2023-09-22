@@ -21,14 +21,14 @@ impl<'src> SourceReader<'src> {
         }
     }
 
-    pub fn next(&mut self) -> Option<char> {
+    pub fn next_char(&mut self) -> Option<char> {
         self.iter.next().map(|(i, c)| {
             self.index = i;
             c
         })
     }
 
-    pub fn peek(&mut self) -> Option<char> {
+    pub fn peek_char(&mut self) -> Option<char> {
         self.iter.peek().map(|&(_, c)| c)
     }
 
@@ -60,9 +60,9 @@ mod tests {
     fn test_slice_backward() {
         let source = "hello world";
         let mut reader = SourceReader::new(source);
-        reader.next();
-        reader.next();
-        reader.next();
+        reader.next_char();
+        reader.next_char();
+        reader.next_char();
         assert_eq!(reader.slice_backward(3), "hel");
     }
 }
