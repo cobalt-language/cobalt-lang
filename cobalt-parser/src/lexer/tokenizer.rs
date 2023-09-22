@@ -1,4 +1,4 @@
-use std::{iter::Peekable, rc::Rc, str::Chars};
+use std::{iter::Peekable, rc::Rc, str::CharIndices};
 
 use super::{
     tokens::{
@@ -29,9 +29,9 @@ pub fn is_ignored_char(c: char) -> bool {
 
 /// Consume ignored characters until we hit a non-ignored character. We
 /// do not eat the first non-ignored character.
-pub fn eat_ignored(input: &mut Peekable<Chars>) {
-    while let Some(c) = input.peek() {
-        if !is_ignored_char(*c) {
+pub fn eat_ignored(input: &mut Peekable<CharIndices>) {
+    while let Some(&(_, c)) = input.peek() {
+        if !is_ignored_char(c) {
             break;
         }
 
@@ -41,9 +41,9 @@ pub fn eat_ignored(input: &mut Peekable<Chars>) {
 
 /// Consume characters until we hit an ignored character. We do not eat
 /// the first ignored character.
-pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
-    while let Some(c) = input.peek() {
-        if is_ignored_char(*c) {
+pub fn eat_until_ignored(input: &mut Peekable<CharIndices>) {
+    while let Some(&(_, c)) = input.peek() {
+        if is_ignored_char(c) {
             break;
         }
 
