@@ -501,7 +501,7 @@ fn build_file_2(
 /// assumes that all dependencies are already built
 fn resolve_deps_internal(
     ctx: &CompCtx,
-    cmd: &mut cc::CompileCommand,
+    cmd: &mut ccomp::CompileCommand,
     t: &Target,
     pkg: &str,
     v: &Version,
@@ -565,7 +565,7 @@ pub fn build_target_single(
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let mut cc = cc::CompileCommand::new();
+    let mut cc = ccomp::CompileCommand::new();
     cc.link_dir("$ORIGIN");
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
     match t.target_type {
@@ -623,7 +623,7 @@ pub fn build_target_single(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.run_command()?()?;
             if code != 0 {
                 anyhow::bail!("C compiler exited with code {code}")
             }
@@ -681,11 +681,11 @@ pub fn build_target_single(
                 })?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
-            let mut cc = cc::CompileCommand::new();
+            let mut cc = ccomp::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.run_command()?()?;
             if code != 0 {
                 anyhow::bail!("C compiler exited with code {code}")
             }
@@ -709,7 +709,7 @@ pub fn build_target_single(
 /// dependency has been rebuilt and a Vec containing the files that need to be linked
 fn resolve_deps(
     ctx: &CompCtx,
-    cmd: &mut cc::CompileCommand,
+    cmd: &mut ccomp::CompileCommand,
     t: &Target,
     targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>,
     opts: &BuildOptions,
@@ -804,7 +804,7 @@ fn build_target(
     let ink_ctx = inkwell::context::Context::create();
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
-    let mut cc = cc::CompileCommand::new();
+    let mut cc = ccomp::CompileCommand::new();
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -879,7 +879,7 @@ fn build_target(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.run_command()?()?;
             if code != 0 {
                 anyhow::bail!("C compiler exited with code {code}")
             }
@@ -958,7 +958,7 @@ fn build_target(
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
+            let code = cc.run_command()?()?;
             if code != 0 {
                 anyhow::bail!("C compiler exited with code {code}")
             }

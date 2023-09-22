@@ -258,7 +258,10 @@ fn main() {
     println!("cargo:rerun-if-env-changed={}", ENV_FORCE_FFI);
 
     println!("cargo:rustc-env=LLVM_VERSION={}", llvm_config("--version"));
-
+    println!(
+        "cargo:rustc-env=LLVM_INCLUDE_DIR={}",
+        llvm_config("--includedir")
+    );
     if cfg!(feature = "no-llvm-linking") {
         // exit early as we don't need to do anything and llvm-config isn't needed at all
         return;

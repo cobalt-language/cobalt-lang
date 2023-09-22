@@ -1,8 +1,10 @@
 #![allow(clippy::type_complexity)]
 pub mod build;
-pub mod cc;
+pub mod ccomp;
 pub mod graph;
 pub mod libs;
+#[cfg(lld_enabled)]
+pub mod lld;
 pub mod opt;
 pub mod pkg;
 

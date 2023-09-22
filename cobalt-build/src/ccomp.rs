@@ -1,13 +1,18 @@
 use crate::*;
-use ::cc::{self, Tool};
-use anyhow_std::*;
-use bstr::ByteSlice;
-use os_str_bytes::OsStrBytes;
-use std::ffi::OsString;
-use std::io;
-use std::path::PathBuf;
-use std::process::Command;
-
+#[cfg(not(lld_enabled))]
+mod prelude {
+    pub use anyhow_std::*;
+    pub use bstr::ByteSlice;
+    pub use cc::{self, Tool};
+    pub use os_str_bytes::OsStrBytes;
+    pub use std::process::Command;
+}
+#[cfg(lld_enabled)]
+mod prelude {}
+#[allow(unused_imports)]
+use prelude::*;
+pub use std::ffi::OsString;
+pub use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct CompileCommand {
     pub libs: Vec<OsString>,
@@ -17,7 +22,9 @@ pub struct CompileCommand {
     pub output_file: PathBuf,
     pub target_: Option<String>,
     pub is_lib: bool,
+    #[cfg(not(lld_enabled))]
     tool: Option<Tool>,
+    #[cfg(not(lld_enabled))]
     modified: bool,
 }
 impl CompileCommand {
@@ -30,75 +37,80 @@ impl CompileCommand {
             output_file: PathBuf::default(),
             target_: None,
             is_lib: false,
+            #[cfg(not(lld_enabled))]
             tool: None,
+            #[cfg(not(lld_enabled))]
             modified: true,
         }
     }
-    pub fn obj<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
-        self.objects.push(path.into());
+
+    #[cfg(lld_enabled)]
+    fn set_modified(&mut self) -> &mut Self {
+        self
+    }
+    #[cfg(not(lld_enabled))]
+    fn set_modified(&mut self) -> &mut Self {
         self.modified = true;
         self
+    }
+    pub fn obj<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
+        self.objects.push(path.into());
+        self.set_modified()
     }
     pub fn objs<P: Into<PathBuf>, I: IntoIterator<Item = P>>(&mut self, paths: I) -> &mut Self {
         self.objects
             .extend(paths.into_iter().map(Into::<PathBuf>::into));
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_dir<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.dirs.push(path.into());
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_dirs<P: Into<PathBuf>, I: IntoIterator<Item = P>>(
         &mut self,
         paths: I,
     ) -> &mut Self {
         self.dirs.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_lib<P: Into<OsString>>(&mut self, path: P) -> &mut Self {
         self.libs.push(path.into());
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_libs<P: Into<OsString>, I: IntoIterator<Item = P>>(
         &mut self,
         paths: I,
     ) -> &mut Self {
         self.libs.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_abs<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.abss.push(path.into());
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn link_abss<P: Into<PathBuf>, I: IntoIterator<Item = P>>(
         &mut self,
         paths: I,
     ) -> &mut Self {
         self.abss.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn output<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.output_file = path.into();
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn lib(&mut self, is_lib: bool) -> &mut Self {
         self.is_lib = is_lib;
-        self.modified = true;
-        self
+        self.set_modified()
     }
     pub fn target<S: Into<String>>(&mut self, target: S) -> &mut Self {
         self.target_ = Some(target.into());
-        self.modified = true;
-        self
+        self.set_modified()
     }
+}
+#[cfg(not(lld_enabled))]
+impl CompileCommand {
+    pub const USING_LLD: bool = false;
     fn init_clang(&self, cmd: &mut Command) {
         self.init_gnu(cmd)
     }
@@ -159,13 +171,13 @@ impl CompileCommand {
         self.modified = false;
         Ok(())
     }
-    pub fn get_tool(&mut self) -> Result<&Tool, cc::Error> {
+    fn get_tool(&mut self) -> Result<&Tool, cc::Error> {
         if self.modified || self.tool.is_none() {
             self.init_tool()?
         }
         Ok(self.tool.as_ref().unwrap())
     }
-    pub fn build_cmd(&mut self) -> Result<Command, cc::Error> {
+    fn build_cmd(&mut self) -> anyhow::Result<Command> {
         let tool = self.get_tool()?;
         let mut cmd = tool.to_command();
         if tool.is_like_clang() {
@@ -179,7 +191,7 @@ impl CompileCommand {
         }
         Ok(cmd)
     }
-    pub fn lib_dirs(&mut self) -> Result<Vec<PathBuf>, cc::Error> {
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
         let tool = self.get_tool()?;
         let mut cmd = tool.to_command();
         cmd.arg("-print-search-dirs");
@@ -310,6 +322,34 @@ impl CompileCommand {
             }
         }
         Ok(remaining)
+    }
+    pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32>> {
+        let mut cmd = self.build_cmd()?;
+        Ok(move || cmd.status().map(|s| s.code().unwrap_or(-1)))
+    }
+}
+#[cfg(lld_enabled)]
+impl CompileCommand {
+    pub const USING_LLD: bool = true;
+    pub fn search_libs<
+        L: AsRef<str>,
+        I: IntoIterator<Item = L>,
+        P: AsRef<Path>,
+        D: IntoIterator<Item = P>,
+    >(
+        &mut self,
+        libs: I,
+        dirs: D,
+        ctx: Option<&CompCtx>,
+        load: bool,
+    ) -> anyhow::Result<Vec<L>> {
+        todo!()
+    }
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
+        todo!()
+    }
+    pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32>> {
+        Ok(|| todo!())
     }
 }
 impl Default for CompileCommand {

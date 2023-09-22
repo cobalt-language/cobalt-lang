@@ -907,7 +907,7 @@ fn driver() -> anyhow::Result<()> {
             }
             let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
             ctx.module.set_triple(&trip);
-            let mut cc = cc::CompileCommand::new();
+            let mut cc = ccomp::CompileCommand::new();
             cc.target(&triple);
             {
                 reporter.nlibs = linked.len();
@@ -1045,10 +1045,9 @@ fn driver() -> anyhow::Result<()> {
                             let tmp = temp_file::with_contents(mb.as_slice());
                             cc.obj(tmp.path());
                             cc.output(output.unwrap());
-                            let mut cmd = cc.build_cmd()?;
-                            let (res, cmd_time) = try_timeit(|| cmd.status_anyhow())?;
+                            let cmd = cc.run_command()?;
+                            let (code, cmd_time) = try_timeit(cmd)?;
                             reporter.cmd_time = Some(cmd_time);
-                            let code = res.code().unwrap_or(-1);
                             if code != 0 {
                                 Err(Exit(code))?
                             }
@@ -1062,10 +1061,9 @@ fn driver() -> anyhow::Result<()> {
                                 cc.lib(true);
                                 cc.objs([tmp1.path(), tmp2.path()]);
                                 cc.output(&output);
-                                let mut cmd = cc.build_cmd()?;
-                                let (res, cmd_time) = try_timeit(|| cmd.status_anyhow())?;
+                                let cmd = cc.run_command()?;
+                                let (code, cmd_time) = try_timeit(cmd)?;
                                 reporter.cmd_time = Some(cmd_time);
-                                let code = res.code().unwrap_or(-1);
                                 if code != 0 {
                                     Err(Exit(code))?
                                 }
@@ -1279,7 +1277,7 @@ fn driver() -> anyhow::Result<()> {
             let mut ctx = CompCtx::new(&ink_ctx, &input);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
-            let mut cc = cc::CompileCommand::new();
+            let mut cc = ccomp::CompileCommand::new();
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
@@ -1552,7 +1550,7 @@ fn driver() -> anyhow::Result<()> {
             }
             let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
             ctx.module.set_triple(&trip);
-            let mut cc = cc::CompileCommand::new();
+            let mut cc = ccomp::CompileCommand::new();
             cc.target(&triple);
             {
                 reporter.nlibs = linked.len();
@@ -1837,7 +1835,7 @@ fn driver() -> anyhow::Result<()> {
                 }
                 let ctx = CompCtx::with_flags(&ink_ctx, "base-module", flags);
                 ctx.module.set_triple(&trip);
-                let mut cc = cc::CompileCommand::new();
+                let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
                 {
                     reporter.nlibs = linked.len();
@@ -2034,10 +2032,9 @@ fn driver() -> anyhow::Result<()> {
                         if is_lib { "lib" } else { "exe" }
                     ))?);
                     cc.lib(is_lib);
-                    let mut cmd = cc.build_cmd()?;
-                    let (res, cmd_time) = try_timeit(|| cmd.status_anyhow())?;
+                    let cmd = cc.run_command()?;
+                    let (code, cmd_time) = try_timeit(cmd)?;
                     reporter.cmd_time = Some(cmd_time);
-                    let code = res.code().unwrap_or(-1);
                     if code != 0 {
                         Err(Exit(code))?
                     }
@@ -2274,7 +2271,7 @@ fn driver() -> anyhow::Result<()> {
                 }
                 let ctx = CompCtx::with_flags(&ink_ctx, "multi-jit", flags);
                 ctx.module.set_triple(&trip);
-                let mut cc = cc::CompileCommand::new();
+                let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
                 {
                     reporter.nlibs = linked.len();
@@ -2591,7 +2588,7 @@ fn driver() -> anyhow::Result<()> {
                 }
                 let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
-                let mut cc = cc::CompileCommand::new();
+                let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
                 {
                     reporter.nlibs = linked.len();
