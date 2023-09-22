@@ -68,7 +68,7 @@ impl<'src> SourceReader<'src> {
                 // Match an identifier.
                 // TODO: include check for underscore, but then there must be at least
                 // one xid_continue after the underscore.
-                c if is_xid_start(*c) => {
+                c if is_xid_start(c) => {
                     let ident_parse_res = self.eat_ident();
 
                     if let Err(ident_parse_err) = ident_parse_res {
@@ -320,7 +320,7 @@ impl<'src> SourceReader<'src> {
 
                     // Now pointing to the last digit before the non-digit.
 
-                    if self.peek() == Some(&'.') {
+                    if self.peek() == Some('.') {
                         self.next();
                         num_len += 1;
                     } else {
@@ -402,7 +402,7 @@ impl<'src> SourceReader<'src> {
         let mut ident_len: usize = 0;
 
         if let Some(c) = self.peek() {
-            if !is_xid_start(*c) {
+            if !is_xid_start(c) {
                 let err = TokenizeError {
                     kind: TokenizeErrorKind::BadFirstChar,
                     span: self.source_span_backward(1),
@@ -425,10 +425,11 @@ impl<'src> SourceReader<'src> {
         // The reader is now pointing at the first character of the identifier.
 
         while let Some(c) = self.peek() {
-            if !is_xid_continue(*c) {
+            if !is_xid_continue(c) {
                 // TODO: should also verify c is whitespace, to catch the error
                 // of invalid characters in the identifier.
 
+                // NOTE: Not exactly. Doing so would break expressions like `a+b`, which is valid but there is no whitespace.
                 break;
             }
 

@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars};
+use std::{iter::Peekable, str::CharIndices};
 
 use cobalt_errors::SourceSpan;
 
@@ -7,8 +7,8 @@ pub mod tokens;
 
 pub struct SourceReader<'src> {
     pub source: &'src str,
-    iter: Peekable<Chars<'src>>,
-    /// The index of the next character to be returned.
+    iter: Peekable<CharIndices<'src>>,
+    /// The index of the current character.
     index: usize,
 }
 
@@ -16,18 +16,20 @@ impl<'src> SourceReader<'src> {
     pub fn new(source: &'src str) -> SourceReader<'src> {
         SourceReader {
             source,
-            iter: source.chars().peekable(),
+            iter: source.char_indices().peekable(),
             index: 0,
         }
     }
 
     pub fn next(&mut self) -> Option<char> {
-        self.index += 1;
-        self.iter.next()
+        self.iter.next().map(|(i, c)| {
+            self.index = i;
+            c
+        })
     }
 
-    pub fn peek(&mut self) -> Option<&char> {
-        self.iter.peek()
+    pub fn peek(&mut self) -> Option<char> {
+        self.iter.peek().map(|&(_, c)| c)
     }
 
     /// Returns the slice `self.source[(index - offset)..index]`.
