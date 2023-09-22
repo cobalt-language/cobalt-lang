@@ -642,7 +642,7 @@ impl LoadInfo {
         )
     }
 }
-pub static TYPE_SERIAL_REGISTRY: Lazy<dashmap::DashMap<NonZeroU64, LoadInfo>> = Lazy::new(|| {
+pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> = Lazy::new(|| {
     inventory::iter::<TypeLoader>
         .into_iter()
         .map(LoadInfo::new)
@@ -667,7 +667,8 @@ pub fn load_type_opt(buf: &mut dyn BufRead) -> io::Result<Option<TypeRef>> {
     let mut bytes = [0u8; 8];
     buf.read_exact(&mut bytes)?;
     if let Some(kind) = NonZeroU64::new(u64::from_be_bytes(bytes)) {
-        let info = TYPE_SERIAL_REGISTRY.get(&kind).ok_or_else(|| {
+        let guard = TYPE_SERIAL_REGISTRY.guard();
+        let info = TYPE_SERIAL_REGISTRY.get(&kind, &guard).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unknown type ID {kind:8>0X}"),

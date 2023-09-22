@@ -1405,7 +1405,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         }
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
-        let (val, errs) = self.codegen(ctx);
+        let (val, errs) = self.val.codegen(ctx);
         for err in errs {
             if let CobaltError::UninitializedGlobal { name, .. } = err {
                 missing.insert(name);

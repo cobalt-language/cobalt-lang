@@ -1,4 +1,5 @@
 use crate::*;
+use cobalt_utils::misc::new_lifetime_mut;
 use either::Either::{self, *};
 use hashbrown::hash_map::{Entry, HashMap};
 use hashbrown::HashSet;
@@ -120,7 +121,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
     }
     pub fn with_vars<'a, R, F: FnOnce(&'a mut VarMap<'src, 'ctx>) -> R>(&'a self, f: F) -> R {
         let mut val = self.vars.take().expect("recursive access to VarMap!");
-        let out = f(unsafe { std::mem::transmute(val.as_mut().get_mut()) }); // reference stuff
+        let out = f(unsafe { new_lifetime_mut(val.as_mut().get_mut()) }); // reference stuff
         self.vars.set(Some(val));
         out
     }
@@ -217,7 +218,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
     pub fn get_int_symbol(&self, size: u16, unsigned: bool) -> &Symbol<'src, 'ctx> {
         unsafe {
             let mut val = self.int_types.replace(MaybeUninit::uninit()).assume_init();
-            let out = std::mem::transmute::<&mut _, &'ctx _>(match val.entry((size, unsigned)) {
+            let out = new_lifetime_mut(match val.entry((size, unsigned)) {
                 Entry::Occupied(x) => x.into_mut(),
                 Entry::Vacant(x) => {
                     x.insert(Value::make_type(types::Int::new(size, unsigned)).into())
@@ -289,12 +290,15 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             loop {
                 buf.read_exact(&mut bytes)?;
                 let Some(kind) = std::num::NonZeroU64::new(u64::from_be_bytes(bytes)) else {break};
-                let info = types::TYPE_SERIAL_REGISTRY.get(&kind).ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("unknown type ID {kind:8>0X}"),
-                    )
-                })?;
+                let guard = types::TYPE_SERIAL_REGISTRY.guard();
+                let info = types::TYPE_SERIAL_REGISTRY
+                    .get(&kind, &guard)
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("unknown type ID {kind:8>0X}"),
+                        )
+                    })?;
                 (info.load_header)(buf)?;
             }
             out.append(&mut self.with_vars(|v| v.load(buf, self))?);

@@ -376,7 +376,8 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             ctx.export.set(old_vis)
         }
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
-        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
+        ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name)))
+            .unwrap();
         (Value::null(), errs)
     }
     fn print_impl(
