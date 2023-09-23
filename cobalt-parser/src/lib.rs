@@ -1,5 +1,5 @@
-mod parser;
-mod lexer;
+pub mod lexer;
+pub mod parser;
 
 use chumsky::{error::RichReason, prelude::*};
 use cobalt_ast::{ast::*, *};

@@ -24,7 +24,7 @@ impl<'src> TokenStreamCursor<'src> {
         TokenStreamCursor { stream, index: 0 }
     }
 
-    pub fn next(&mut self) -> Option<Token<'src>> {
+    pub fn next_token(&mut self) -> Option<Token<'src>> {
         let token = self.stream.0.get(self.index).cloned();
         self.index += 1;
         token
@@ -32,6 +32,7 @@ impl<'src> TokenStreamCursor<'src> {
 }
 
 pub struct Parser<'src> {
+    #[allow(dead_code)]
     source_reader: &'src SourceReader<'src>,
     cursor: TokenStreamCursor<'src>,
     current_token: Option<Token<'src>>,
@@ -48,7 +49,7 @@ impl<'src> Parser<'src> {
     }
 
     pub fn next(&mut self) {
-        self.current_token = self.cursor.next();
+        self.current_token = self.cursor.next_token();
     }
 
     pub fn parse(&mut self) {

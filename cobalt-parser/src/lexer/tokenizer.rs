@@ -61,7 +61,7 @@ impl<'src> SourceReader<'src> {
         while let Some(c) = self.peek() {
             match c {
                 ' ' | '\n' | '\t' => {
-                    self.next();
+                    self.next_char();
                 }
 
                 // An identifier is an xid_start followed by zero or more xid_continue.
@@ -91,28 +91,28 @@ impl<'src> SourceReader<'src> {
 
                 // Delimiters.
                 '(' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::OpenDelimiter(Delimiter::Paren),
                         span: self.source_span_backward(1),
                     });
                 }
                 ')' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::CloseDelimiter(Delimiter::Paren),
                         span: self.source_span_backward(1),
                     });
                 }
                 '{' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::OpenDelimiter(Delimiter::Brace),
                         span: self.source_span_backward(1),
                     });
                 }
                 '}' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::CloseDelimiter(Delimiter::Brace),
                         span: self.source_span_backward(1),
@@ -121,10 +121,10 @@ impl<'src> SourceReader<'src> {
 
                 // BINARY OPERATORS
                 '=' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('=') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::EqEq),
                                 span: self.source_span_backward(2),
@@ -140,10 +140,10 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '!' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('=') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Neq),
                                 span: self.source_span_backward(2),
@@ -159,10 +159,10 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '<' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('=') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Leq),
                                 span: self.source_span_backward(2),
@@ -170,7 +170,7 @@ impl<'src> SourceReader<'src> {
                         }
 
                         Some('<') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Shl),
                                 span: self.source_span_backward(2),
@@ -187,10 +187,10 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '>' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('=') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Geq),
                                 span: self.source_span_backward(2),
@@ -198,7 +198,7 @@ impl<'src> SourceReader<'src> {
                         }
 
                         Some('>') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Shr),
                                 span: self.source_span_backward(2),
@@ -215,10 +215,10 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '&' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('?') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Andq),
                                 span: self.source_span_backward(2),
@@ -235,10 +235,10 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '|' => {
-                    self.next();
+                    self.next_char();
                     match self.peek() {
                         Some('?') => {
-                            self.next();
+                            self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Orq),
                                 span: self.source_span_backward(2),
@@ -255,7 +255,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '^' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::BinOp(BinOpToken::Xor),
                         span: self.source_span_backward(1),
@@ -263,7 +263,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '+' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::BinOp(BinOpToken::Add),
                         span: self.source_span_backward(1),
@@ -271,7 +271,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '-' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::BinOp(BinOpToken::Sub),
                         span: self.source_span_backward(1),
@@ -279,7 +279,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '*' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
                         span: self.source_span_backward(1),
@@ -287,7 +287,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '/' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::BinOp(BinOpToken::Div),
                         span: self.source_span_backward(1),
@@ -295,7 +295,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '%' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::BinOp(BinOpToken::Mod),
                         span: self.source_span_backward(1),
@@ -303,15 +303,15 @@ impl<'src> SourceReader<'src> {
                 }
 
                 // LITERALS.
-                n if n.is_digit(10) => {
+                n if n.is_ascii_digit() => {
                     let mut num_len = 1;
-                    self.next();
+                    self.next_char();
 
                     // Now pointing to the first digit.
 
                     while let Some(c) = self.peek() {
-                        if c.is_digit(10) {
-                            self.next();
+                        if c.is_ascii_digit() {
+                            self.next_char();
                             num_len += 1;
                         } else {
                             break;
@@ -321,7 +321,7 @@ impl<'src> SourceReader<'src> {
                     // Now pointing to the last digit before the non-digit.
 
                     if self.peek() == Some(&'.') {
-                        self.next();
+                        self.next_char();
                         num_len += 1;
                     } else {
                         // Not a float.
@@ -337,8 +337,8 @@ impl<'src> SourceReader<'src> {
                     // Now pointing to the decimal point.
 
                     while let Some(c) = self.peek() {
-                        if c.is_digit(10) {
-                            self.next();
+                        if c.is_ascii_digit() {
+                            self.next_char();
                             num_len += 1;
                         } else {
                             break;
@@ -355,7 +355,7 @@ impl<'src> SourceReader<'src> {
 
                 // MISC.
                 ';' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::Semicolon,
                         span: self.source_span_backward(1),
@@ -363,7 +363,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 ':' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::Colon,
                         span: self.source_span_backward(1),
@@ -371,7 +371,7 @@ impl<'src> SourceReader<'src> {
                 }
 
                 ',' => {
-                    self.next();
+                    self.next_char();
                     tokens.push(Token {
                         kind: TokenKind::Comma,
                         span: self.source_span_backward(1),
@@ -419,7 +419,7 @@ impl<'src> SourceReader<'src> {
             return Err(err);
         }
 
-        self.next();
+        self.next_char();
         ident_len += 1;
 
         // The reader is now pointing at the first character of the identifier.
@@ -432,7 +432,7 @@ impl<'src> SourceReader<'src> {
                 break;
             }
 
-            self.next();
+            self.next_char();
             ident_len += 1;
         }
 

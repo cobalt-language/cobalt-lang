@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 
-use cobalt_ast::{
-    ast::{BlockAST, IfAST, NullAST, PrefixAST, VarGetAST},
-    BoxedAST,
-};
+use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
 use crate::lexer::tokens::{Delimiter, Keyword, TokenKind, UnOpToken, UnOrBinOpToken};
@@ -77,11 +74,16 @@ impl<'src> Parser<'src> {
             TokenKind::UnOrBinOp(_) => {
                 return self.parse_prefix_expr();
             }
+            TokenKind::Keyword(kw) => {
+                if kw == Keyword::If {
+                    return self.parse_if_expr();
+                }
+            }
             _ => {}
         }
 
         (
-            Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+            Box::new(NullAST::new(SourceSpan::from((0, 1)))),
             vec![CobaltError::ExpectedFound {
                 ex: "expression",
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
@@ -100,7 +102,7 @@ impl<'src> Parser<'src> {
             TokenKind::Ident(name) => Cow::from(name),
             _ => {
                 return (
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
                     vec![CobaltError::ExpectedFound {
                         ex: "identifier",
                         found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
@@ -141,10 +143,7 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: self.current_token.unwrap().span,
                 });
-                return (
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                    errors,
-                );
+                return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
             }
         };
 
@@ -156,10 +155,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         let (val, val_errors) = self.parse_primary_expr();
@@ -186,10 +182,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -201,10 +194,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -215,10 +205,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         self.next();
@@ -252,7 +239,7 @@ impl<'src> Parser<'src> {
         loop {
             if self.current_token.is_none() {
                 return (
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
                     vec![CobaltError::ExpectedFound {
                         ex: "'}'",
                         found: ParserFound::Eof,
@@ -300,9 +287,7 @@ impl<'src> Parser<'src> {
         // null ast will indicate that the block should evaluate to null (and not the value
         // of the last expr).
         if local_state == semicolon_trailing_expr || local_state == start {
-            vals.push(Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((
-                0, 1,
-            )))));
+            vals.push(Box::new(NullAST::new(SourceSpan::from((0, 1)))));
         }
 
         (
@@ -334,10 +319,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         let (cond, cond_errors) = self.parse_primary_expr();
@@ -349,10 +331,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
-                errors,
-            );
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
         }
 
         let (if_true, if_true_errors) = self.parse_block_expr();
@@ -366,7 +345,7 @@ impl<'src> Parser<'src> {
                     span,
                     cond,
                     if_true,
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
                 )),
                 errors,
             );
@@ -379,7 +358,7 @@ impl<'src> Parser<'src> {
                         span,
                         cond,
                         if_true,
-                        Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                        Box::new(NullAST::new(SourceSpan::from((0, 1)))),
                     )),
                     errors,
                 );
@@ -401,7 +380,7 @@ impl<'src> Parser<'src> {
                     span,
                     cond,
                     if_true,
-                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
                 )),
                 errors,
             );
