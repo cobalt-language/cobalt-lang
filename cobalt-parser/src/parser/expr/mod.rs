@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{BlockAST, NullAST, VarGetAST},
+    ast::{BlockAST, NullAST, PrefixAST, VarGetAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
-use crate::lexer::tokens::{Delimiter, Keyword, TokenKind};
+use crate::lexer::tokens::{Delimiter, Keyword, TokenKind, UnOpToken, UnOrBinOpToken};
 
 use super::Parser;
 
@@ -51,6 +51,8 @@ impl<'src> Parser<'src> {
     ///    := ident_expr
     ///    := literal
     ///    := paren_expr
+    ///    := block_expr
+    ///    := prefix_expr
     /// ```
     fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -67,6 +69,12 @@ impl<'src> Parser<'src> {
             }
             TokenKind::OpenDelimiter(b) if b == Delimiter::Brace => {
                 return self.parse_block_expr();
+            }
+            TokenKind::UnOp(_) => {
+                return self.parse_prefix_expr();
+            }
+            TokenKind::UnOrBinOp(_) => {
+                return self.parse_prefix_expr();
             }
             _ => {}
         }
@@ -105,6 +113,58 @@ impl<'src> Parser<'src> {
         self.next();
 
         return (Box::new(VarGetAST::new(span, name, is_global)), errors);
+    }
+
+    /// Going into this function, `current_token` is assumed to be a unary operator.
+    ///
+    /// ```
+    /// prefix_expr := [UNOP] primary_expr
+    /// ```
+    fn parse_prefix_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut errors = vec![];
+        let span = self.current_token.unwrap().span;
+
+        let op = match self.current_token.unwrap().kind {
+            TokenKind::UnOrBinOp(op) => match op {
+                UnOrBinOpToken::And => "&",
+                UnOrBinOpToken::Star => "*",
+            },
+            TokenKind::UnOp(op) => match op {
+                UnOpToken::Not => "!",
+            },
+            _ => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "unary operator",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+                return (
+                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    errors,
+                );
+            }
+        };
+
+        // Eat the operator.
+        self.next();
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "primary expression",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (
+                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                errors,
+            );
+        }
+
+        let (val, val_errors) = self.parse_primary_expr();
+        errors.extend(val_errors);
+
+        return (Box::new(PrefixAST::new(span, op, val)), errors);
     }
 
     /// Going into this function, `current_token` is assumed to be an open paren.
@@ -315,6 +375,27 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_block_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_prefix_expr() {
+        let mut reader = SourceReader::new("!a");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_prefix_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("!&*a");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_primary_expr();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
