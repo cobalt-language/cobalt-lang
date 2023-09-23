@@ -9,6 +9,8 @@ pub enum Keyword {
     Const,
     Type,
     Fn,
+    If,
+    Else,
 }
 
 impl Keyword {
@@ -21,6 +23,8 @@ impl Keyword {
             "const" => Some(Keyword::Const),
             "type" => Some(Keyword::Type),
             "fn" => Some(Keyword::Fn),
+            "if" => Some(Keyword::If),
+            "else" => Some(Keyword::Else),
             _ => None,
         }
     }
@@ -149,6 +153,10 @@ impl<'src> TokenKind<'src> {
 
                 BinOpToken::Div => 30,
                 BinOpToken::Mod => 30,
+
+                BinOpToken::Eq => 100,
+                BinOpToken::EqEq => 100,
+                BinOpToken::Neq => 100,
 
                 _ => 0,
             },

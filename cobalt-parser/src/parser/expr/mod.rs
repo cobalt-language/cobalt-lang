@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{BlockAST, NullAST, PrefixAST, VarGetAST},
+    ast::{BlockAST, IfAST, NullAST, PrefixAST, VarGetAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
@@ -53,6 +53,7 @@ impl<'src> Parser<'src> {
     ///    := paren_expr
     ///    := block_expr
     ///    := prefix_expr
+    ///    := if_expr
     /// ```
     fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -312,6 +313,105 @@ impl<'src> Parser<'src> {
             errors,
         )
     }
+
+    /// Going into this function, `current_token` is assumed to be an `if` keyword.
+    ///
+    /// ```
+    /// if_expr :=
+    ///    'if' primary_expr block_expr [ 'else' block_expr ]?
+    /// `
+    fn parse_if_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut errors = vec![];
+        let span = self.current_token.unwrap().span;
+
+        // Eat the `if`.
+        self.next();
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "primary expression",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (
+                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                errors,
+            );
+        }
+
+        let (cond, cond_errors) = self.parse_primary_expr();
+        errors.extend(cond_errors);
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "block expression",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (
+                Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                errors,
+            );
+        }
+
+        let (if_true, if_true_errors) = self.parse_block_expr();
+        errors.extend(if_true_errors);
+
+        // Return if there's no else.
+
+        if self.current_token.is_none() {
+            return (
+                Box::new(IfAST::new(
+                    span,
+                    cond,
+                    if_true,
+                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                )),
+                errors,
+            );
+        }
+
+        if let TokenKind::Keyword(kw) = self.current_token.unwrap().kind {
+            if kw != Keyword::Else {
+                return (
+                    Box::new(IfAST::new(
+                        span,
+                        cond,
+                        if_true,
+                        Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                    )),
+                    errors,
+                );
+            }
+        }
+
+        // Handle the else.
+        // We know the current token is an `else` keyword.
+
+        self.next();
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "block expression",
+                found: ParserFound::Eof,
+                loc: self.current_token.unwrap().span,
+            });
+            return (
+                Box::new(IfAST::new(
+                    span,
+                    cond,
+                    if_true,
+                    Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+                )),
+                errors,
+            );
+        }
+
+        let (if_false, if_false_errors) = self.parse_block_expr();
+        errors.extend(if_false_errors);
+
+        (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +478,15 @@ mod tests {
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("{ x = 4; }");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_block_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -396,6 +505,27 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_primary_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_if_expr() {
+        let mut reader = SourceReader::new("if a { x = 4; }");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_if_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("if (x == 3) { x = 4; } else { y = 5; }");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_if_expr();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
