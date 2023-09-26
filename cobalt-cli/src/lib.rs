@@ -1913,7 +1913,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             fail |= err.severity.map_or(true, |e| e > Severity::Warning);
@@ -1929,6 +1929,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     One(temp_file::TempFile),
                     Two(temp_file::TempFile, temp_file::TempFile),
                 }
+                let mut archive = (emit == OutputType::Archive)
+                    .then(|| OutputStream::new(output.as_deref()).map(ar::Builder::new))
+                    .transpose()?;
                 let _tmps = asts
                     .iter()
                     .map(|ast| {
@@ -1964,7 +1967,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             None => input,
                             Some(p) => p.join(input),
                         };
-                        {
+                        if !matches!(
+                            emit,
+                            OutputType::Executable | OutputType::Library | OutputType::Archive
+                        ) {
                             let parent = out.parent().unwrap().parent().unwrap(); // why
                             if !parent.exists() {
                                 parent.create_dir_all_anyhow()?
@@ -2048,6 +2054,18 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         cc.objs([tmp1.path(), tmp2.path()]);
                                         Two(tmp1, tmp2)
                                     }
+                                    OutputType::Archive => {
+                                        use os_str_bytes::OsStringBytes;
+                                        out.set_extension("o");
+                                        archive.as_mut().unwrap().append(
+                                            &ar::Header::new(
+                                                out.into_raw_vec(),
+                                                mb.as_slice().len() as _,
+                                            ),
+                                            mb.as_slice(),
+                                        )?;
+                                        Zero
+                                    }
                                     OutputType::RawObject => {
                                         out.set_extension("raw.o");
                                         std::fs::write(out, mb.as_slice())?;
@@ -2072,7 +2090,15 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         anyhow::Ok(tmps)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-                if matches!(emit, OutputType::Executable | OutputType::Library) {
+                if emit == OutputType::Archive {
+                    let mut obj = libs::new_object(&trip);
+                    libs::populate_header(&mut obj, &ctx);
+                    let buf = obj.write()?;
+                    archive.as_mut().unwrap().append(
+                        &ar::Header::new(b".colib.o".to_vec(), buf.len() as _),
+                        &buf[..],
+                    )?;
+                } else if matches!(emit, OutputType::Executable | OutputType::Library) {
                     let is_lib = emit == OutputType::Library;
                     cc.output(&output.ok_or(anyhow::anyhow!(
                         "output file must be specified for multi-{}s",
