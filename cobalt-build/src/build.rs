@@ -954,7 +954,7 @@ fn build_target(
                     }
                 })?;
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(name, opts.triple));
+            output.push(libs::format_lib(name, opts.triple, true));
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);

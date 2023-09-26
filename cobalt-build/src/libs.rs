@@ -73,12 +73,12 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 /// - Apple formats to libname.dylib
 /// - Windows formats to name.dll
 /// - Anything else formats to libname.so
-pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String {
+pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple, shared: bool) -> String {
     let triple = triple.as_str().to_str().unwrap();
     let mut components = triple.split('-');
     if matches!(components.next(), Some("wasm" | "wasm32")) {
         format!("{base}.wasm")
-    } else {
+    } else if shared {
         match components.next() {
             Some("apple") => format!("lib{base}.dylib"),
             Some("linux") => format!("lib{base}.so"),
@@ -88,6 +88,10 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
                 _ => format!("lib{base}.so"),
             },
         }
+    } else if components.next().and_then(|_| components.next()) == Some("windows") {
+        format!("{base}.lib")
+    } else {
+        format!("lib{base}.a")
     }
 }
 /// Populate the `.colib` header with the data from the context
