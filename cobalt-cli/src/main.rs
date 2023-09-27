@@ -630,7 +630,7 @@ fn driver() -> anyhow::Result<()> {
             input,
             output,
             linked,
-            mut link_dirs,
+            link_dirs,
             headers,
             triple,
             emit,
@@ -778,39 +778,6 @@ fn driver() -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
-            if !no_default_link {
-                if let Some(pwd) = std::env::current_dir()
-                    .ok()
-                    .and_then(|pwd| pwd.to_str().map(String::from))
-                {
-                    link_dirs.insert(0, pwd);
-                }
-                if let Ok(home) = std::env::var("HOME") {
-                    link_dirs.extend_from_slice(&[
-                        format!("{home}/.cobalt/installed/lib"),
-                        format!("{home}/.local/lib/cobalt"),
-                        "/usr/local/lib/cobalt/installed/lib".to_string(),
-                        "/usr/lib/cobalt/installed/lib".to_string(),
-                        "/lib/cobalt/installed/lib".to_string(),
-                        "/usr/local/lib".to_string(),
-                        "/usr/lib".to_string(),
-                        "/lib".to_string(),
-                    ]);
-                } else {
-                    link_dirs.extend(
-                        [
-                            "/usr/local/lib/cobalt/installed/lib",
-                            "/usr/lib/cobalt/installed/lib",
-                            "/lib/cobalt/installed/lib",
-                            "/usr/local/lib",
-                            "/usr/lib",
-                            "/lib",
-                        ]
-                        .into_iter()
-                        .map(String::from),
-                    );
-                }
-            }
             let code = {
                 let start = Instant::now();
                 let code = if input == "-" {
@@ -909,6 +876,7 @@ fn driver() -> anyhow::Result<()> {
             ctx.module.set_triple(&trip);
             let mut cc = ccomp::CompileCommand::new();
             cc.target(&triple);
+            cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
@@ -1100,7 +1068,7 @@ fn driver() -> anyhow::Result<()> {
         Cli::Jit {
             input,
             linked,
-            mut link_dirs,
+            link_dirs,
             headers,
             profile,
             continue_if_err,
@@ -1218,39 +1186,6 @@ fn driver() -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
-            if !no_default_link {
-                if let Some(pwd) = std::env::current_dir()
-                    .ok()
-                    .and_then(|pwd| pwd.to_str().map(String::from))
-                {
-                    link_dirs.insert(0, pwd);
-                }
-                if let Ok(home) = std::env::var("HOME") {
-                    link_dirs.extend_from_slice(&[
-                        format!("{home}/.cobalt/installed/lib"),
-                        format!("{home}/.local/lib/cobalt"),
-                        "/usr/local/lib/cobalt/installed/lib".to_string(),
-                        "/usr/lib/cobalt/installed/lib".to_string(),
-                        "/lib/cobalt/installed/lib".to_string(),
-                        "/usr/local/lib".to_string(),
-                        "/usr/lib".to_string(),
-                        "/lib".to_string(),
-                    ]);
-                } else {
-                    link_dirs.extend(
-                        [
-                            "/usr/local/lib/cobalt/installed/lib",
-                            "/usr/lib/cobalt/installed/lib",
-                            "/lib/cobalt/installed/lib",
-                            "/usr/local/lib",
-                            "/usr/lib",
-                            "/lib",
-                        ]
-                        .into_iter()
-                        .map(String::from),
-                    );
-                }
-            }
             let code = {
                 let start = Instant::now();
                 let code = if input == "-" {
@@ -1278,6 +1213,7 @@ fn driver() -> anyhow::Result<()> {
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let mut cc = ccomp::CompileCommand::new();
+            cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
@@ -1367,7 +1303,7 @@ fn driver() -> anyhow::Result<()> {
         Cli::Check {
             input,
             linked,
-            mut link_dirs,
+            link_dirs,
             headers,
             no_default_link,
             timings,
@@ -1473,39 +1409,6 @@ fn driver() -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
-            if !no_default_link {
-                if let Some(pwd) = std::env::current_dir()
-                    .ok()
-                    .and_then(|pwd| pwd.to_str().map(String::from))
-                {
-                    link_dirs.insert(0, pwd);
-                }
-                if let Ok(home) = std::env::var("HOME") {
-                    link_dirs.extend_from_slice(&[
-                        format!("{home}/.cobalt/installed/lib"),
-                        format!("{home}/.local/lib/cobalt"),
-                        "/usr/local/lib/cobalt/installed/lib".to_string(),
-                        "/usr/lib/cobalt/installed/lib".to_string(),
-                        "/lib/cobalt/installed/lib".to_string(),
-                        "/usr/local/lib".to_string(),
-                        "/usr/lib".to_string(),
-                        "/lib".to_string(),
-                    ]);
-                } else {
-                    link_dirs.extend(
-                        [
-                            "/usr/local/lib/cobalt/installed/lib",
-                            "/usr/lib/cobalt/installed/lib",
-                            "/lib/cobalt/installed/lib",
-                            "/usr/local/lib",
-                            "/usr/lib",
-                            "/lib",
-                        ]
-                        .into_iter()
-                        .map(String::from),
-                    );
-                }
-            }
             let code = {
                 let start = Instant::now();
                 let code = if input == "-" {
@@ -1552,6 +1455,7 @@ fn driver() -> anyhow::Result<()> {
             ctx.module.set_triple(&trip);
             let mut cc = ccomp::CompileCommand::new();
             cc.target(&triple);
+            cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
@@ -1600,7 +1504,7 @@ fn driver() -> anyhow::Result<()> {
                 inputs,
                 output,
                 linked,
-                mut link_dirs,
+                link_dirs,
                 headers,
                 triple,
                 emit,
@@ -1747,39 +1651,6 @@ fn driver() -> anyhow::Result<()> {
                     }
                 }
                 let mut reporter = Reporter::new(timings);
-                if !no_default_link {
-                    if let Some(pwd) = std::env::current_dir()
-                        .ok()
-                        .and_then(|pwd| pwd.to_str().map(String::from))
-                    {
-                        link_dirs.insert(0, pwd);
-                    }
-                    if let Ok(home) = std::env::var("HOME") {
-                        link_dirs.extend_from_slice(&[
-                            format!("{home}/.cobalt/installed/lib"),
-                            format!("{home}/.local/lib/cobalt"),
-                            "/usr/local/lib/cobalt/installed/lib".to_string(),
-                            "/usr/lib/cobalt/installed/lib".to_string(),
-                            "/lib/cobalt/installed/lib".to_string(),
-                            "/usr/local/lib".to_string(),
-                            "/usr/lib".to_string(),
-                            "/lib".to_string(),
-                        ]);
-                    } else {
-                        link_dirs.extend(
-                            [
-                                "/usr/local/lib/cobalt/installed/lib",
-                                "/usr/lib/cobalt/installed/lib",
-                                "/lib/cobalt/installed/lib",
-                                "/usr/local/lib",
-                                "/usr/lib",
-                                "/lib",
-                            ]
-                            .into_iter()
-                            .map(String::from),
-                        );
-                    }
-                }
                 let codes = inputs
                     .iter()
                     .map(|input| {
@@ -1837,6 +1708,7 @@ fn driver() -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
+                cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
@@ -2044,7 +1916,7 @@ fn driver() -> anyhow::Result<()> {
             MultiSubcommand::Jit {
                 inputs,
                 linked,
-                mut link_dirs,
+                link_dirs,
                 headers,
                 profile,
                 no_default_link,
@@ -2181,39 +2053,6 @@ fn driver() -> anyhow::Result<()> {
                     }
                 }
                 let mut reporter = Reporter::new(timings);
-                if !no_default_link {
-                    if let Some(pwd) = std::env::current_dir()
-                        .ok()
-                        .and_then(|pwd| pwd.to_str().map(String::from))
-                    {
-                        link_dirs.insert(0, pwd);
-                    }
-                    if let Ok(home) = std::env::var("HOME") {
-                        link_dirs.extend_from_slice(&[
-                            format!("{home}/.cobalt/installed/lib"),
-                            format!("{home}/.local/lib/cobalt"),
-                            "/usr/local/lib/cobalt/installed/lib".to_string(),
-                            "/usr/lib/cobalt/installed/lib".to_string(),
-                            "/lib/cobalt/installed/lib".to_string(),
-                            "/usr/local/lib".to_string(),
-                            "/usr/lib".to_string(),
-                            "/lib".to_string(),
-                        ]);
-                    } else {
-                        link_dirs.extend(
-                            [
-                                "/usr/local/lib/cobalt/installed/lib",
-                                "/usr/lib/cobalt/installed/lib",
-                                "/lib/cobalt/installed/lib",
-                                "/usr/local/lib",
-                                "/usr/lib",
-                                "/lib",
-                            ]
-                            .into_iter()
-                            .map(String::from),
-                        );
-                    }
-                }
                 let codes = inputs
                     .iter()
                     .map(|input| {
@@ -2273,6 +2112,7 @@ fn driver() -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
+                cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
@@ -2364,7 +2204,7 @@ fn driver() -> anyhow::Result<()> {
             MultiSubcommand::Check {
                 inputs,
                 linked,
-                mut link_dirs,
+                link_dirs,
                 headers,
                 no_default_link,
                 timings,
@@ -2507,39 +2347,6 @@ fn driver() -> anyhow::Result<()> {
                     }
                 }
                 let mut reporter = Reporter::new(timings);
-                if !no_default_link {
-                    if let Some(pwd) = std::env::current_dir()
-                        .ok()
-                        .and_then(|pwd| pwd.to_str().map(String::from))
-                    {
-                        link_dirs.insert(0, pwd);
-                    }
-                    if let Ok(home) = std::env::var("HOME") {
-                        link_dirs.extend_from_slice(&[
-                            format!("{home}/.cobalt/installed/lib"),
-                            format!("{home}/.local/lib/cobalt"),
-                            "/usr/local/lib/cobalt/installed/lib".to_string(),
-                            "/usr/lib/cobalt/installed/lib".to_string(),
-                            "/lib/cobalt/installed/lib".to_string(),
-                            "/usr/local/lib".to_string(),
-                            "/usr/lib".to_string(),
-                            "/lib".to_string(),
-                        ]);
-                    } else {
-                        link_dirs.extend(
-                            [
-                                "/usr/local/lib/cobalt/installed/lib",
-                                "/usr/lib/cobalt/installed/lib",
-                                "/lib/cobalt/installed/lib",
-                                "/usr/local/lib",
-                                "/usr/lib",
-                                "/lib",
-                            ]
-                            .into_iter()
-                            .map(String::from),
-                        );
-                    }
-                }
                 let codes = inputs
                     .iter()
                     .map(|input| {
@@ -2590,6 +2397,7 @@ fn driver() -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
+                cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
@@ -2738,7 +2546,7 @@ fn driver() -> anyhow::Result<()> {
                 source_dir,
                 build_dir,
                 profile,
-                mut link_dirs,
+                link_dirs,
                 no_default_link,
                 triple,
                 targets,
@@ -2811,30 +2619,6 @@ fn driver() -> anyhow::Result<()> {
                         )
                     }
                 };
-                if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {
-                        link_dirs.extend_from_slice(&[
-                            format!("{home}/.cobalt/installed/lib"),
-                            format!("{home}/.local/lib/cobalt"),
-                            "/usr/local/lib/cobalt/installed/lib".to_string(),
-                            "/usr/lib/cobalt/installed/lib".to_string(),
-                            "/lib/cobalt/installed/lib".to_string(),
-                            "/usr/local/lib".to_string(),
-                            "/usr/lib".to_string(),
-                            "/lib".to_string(),
-                        ]);
-                    } else {
-                        link_dirs.extend(
-                            [
-                                "/usr/local/lib/cobalt/installed/lib",
-                                "/usr/lib/cobalt/installed/lib",
-                                "/lib/cobalt/installed/lib",
-                            ]
-                            .into_iter()
-                            .map(String::from),
-                        );
-                    }
-                }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(
                     || {
@@ -2866,6 +2650,7 @@ fn driver() -> anyhow::Result<()> {
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
+                        no_default_link,
                         link_dirs: link_dirs.iter().map(|x| x.as_str()).collect(),
                     },
                 )?;
@@ -2875,7 +2660,7 @@ fn driver() -> anyhow::Result<()> {
                 source_dir,
                 build_dir,
                 profile,
-                mut link_dirs,
+                link_dirs,
                 no_default_link,
                 target,
                 rebuild,
@@ -2948,33 +2733,6 @@ fn driver() -> anyhow::Result<()> {
                         )
                     }
                 };
-                if !no_default_link {
-                    if let Ok(home) = std::env::var("HOME") {
-                        link_dirs.extend_from_slice(&[
-                            format!("{home}/.cobalt/installed/lib"),
-                            format!("{home}/.local/lib/cobalt"),
-                            "/usr/local/lib/cobalt/installed/lib".to_string(),
-                            "/usr/lib/cobalt/installed/lib".to_string(),
-                            "/lib/cobalt/installed/lib".to_string(),
-                            "/usr/local/lib".to_string(),
-                            "/usr/lib".to_string(),
-                            "/lib".to_string(),
-                        ]);
-                    } else {
-                        link_dirs.extend(
-                            [
-                                "/usr/local/lib/cobalt/installed/lib",
-                                "/usr/lib/cobalt/installed/lib",
-                                "/lib/cobalt/installed/lib",
-                                "/usr/local/lib",
-                                "/usr/lib",
-                                "/lib",
-                            ]
-                            .into_iter()
-                            .map(String::from),
-                        );
-                    }
-                }
                 let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
                 let build_dir: PathBuf = build_dir.map_or_else(
                     || {
@@ -3026,6 +2784,7 @@ fn driver() -> anyhow::Result<()> {
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
+                        no_default_link,
                         link_dirs: link_dirs.iter().map(|x| x.as_str()).collect(),
                     },
                 )?;

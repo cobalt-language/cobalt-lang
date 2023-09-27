@@ -601,6 +601,7 @@ fn install_single(
             continue_comp: false,
             continue_build: false,
             rebuild: true,
+            no_default_link: false,
             profile: "default",
             triple: &inkwell::targets::TargetTriple::create(&opts.target),
             link_dirs: vec![],

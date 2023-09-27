@@ -25,6 +25,7 @@ pub struct CompileCommand {
     pub output_file: PathBuf,
     pub target_: Option<String>,
     pub is_lib: bool,
+    pub no_default_link: bool,
     #[cfg(not(lld_enabled))]
     tool: Option<Tool>,
     #[cfg(not(lld_enabled))]
@@ -40,6 +41,7 @@ impl CompileCommand {
             output_file: PathBuf::default(),
             target_: None,
             is_lib: false,
+            no_default_link: false,
             #[cfg(not(lld_enabled))]
             tool: None,
             #[cfg(not(lld_enabled))]
@@ -219,6 +221,89 @@ impl CompileCommand {
         }
         Ok(remaining)
     }
+    #[cfg(windows)]
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
+        unimplemented!("I don't know how to do this on Windows. Get a better OS maybe?")
+    }
+    #[cfg(not(windows))]
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
+        fn is_x86(s: &str) -> bool {
+            let b = s.as_bytes();
+            matches!(b, [b'i', _, b'8', b'6']) && b[0].is_ascii_digit()
+        }
+        fn is_arm32(s: &str) -> bool {
+            s.starts_with("arm") && !s.contains("64")
+        }
+        fn is_arm64(s: &str) -> bool {
+            s == "arm64" || s == "aarch64"
+        }
+        let native = inkwell::targets::TargetMachine::get_default_triple();
+        let native = native.as_str().to_str()?;
+        let triple = self.target_.as_deref().unwrap_or(native);
+        let compatible = self.target_.is_none()
+            || native == triple
+            || (triple.split_once('-').map_or(false, |(t, _)| {
+                let n = native.split_once('-').unwrap().0;
+                ((is_x86(n) || n == "x86_64") && (t == "x86_64" || is_x86(t)))
+                    || ((is_arm32(n) || is_arm64(n)) && (is_arm32(t) || is_arm64(t)))
+            }) && native
+                .split('-')
+                .zip(triple.split('-'))
+                .skip(1)
+                .all(|(n, t)| n == "unknown" || t == "unknown" || n == t));
+        if triple.contains("wasm") {
+            // WASM doesn't have system link dirs
+            return Ok(vec![]);
+        }
+        let mut out = vec![];
+        fn append_paths<I: IntoIterator<Item = P>, P: Into<PathBuf>>(
+            out: &mut Vec<PathBuf>,
+            paths: I,
+        ) {
+            out.extend(paths.into_iter().map(Into::into).filter(|p| p.exists()))
+        }
+        if compatible {
+            if is_x86(triple) || is_arm32(triple) {
+                append_paths(&mut out, ["/usr/lib32", "/lib32"]);
+            }
+            // all 64-bit targets have 64 somewhere in their name
+            if triple.contains("64") {
+                append_paths(&mut out, ["/usr/lib64", "/lib64"]);
+            }
+        }
+        #[cfg(target_os = "linux")]
+        'specific: {
+            let mut it = triple.split('-');
+            let Some(arch) = it.next() else {break 'specific};
+            let Some(_)    = it.next() else {break 'specific};
+            let Some(os)   = it.next() else {break 'specific};
+            let Some(info) = it.next() else {break 'specific};
+            let trip = format!("{arch}-{os}-{info}");
+            append_paths(
+                &mut out,
+                [format!("/usr/lib/{trip}"), format!("/lib/{trip}")],
+            );
+        }
+        if compatible {
+            append_paths(
+                &mut out,
+                ["/usr/local/lib", "/usr/lib", "/lib", "/opt/homebrew/opt"],
+            );
+        }
+        if let Ok(cobalt) = std::env::var("COBALT_DIR") {
+            append_paths(&mut out, [format!("{cobalt}/installed/lib/{triple}")]);
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            append_paths(
+                &mut out,
+                [
+                    format!("{home}/.cobalt/installed/{triple}"),
+                    format!("{home}/.local/lib/cobalt/installed/{triple}"),
+                ],
+            )
+        }
+        Ok(out)
+    }
 }
 #[cfg(not(lld_enabled))]
 impl CompileCommand {
@@ -303,30 +388,6 @@ impl CompileCommand {
         }
         Ok(cmd)
     }
-    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
-        let tool = self.get_tool()?;
-        let mut cmd = tool.to_command();
-        cmd.arg("-print-search-dirs");
-        let output = cmd.output()?;
-        if !output.status.success() {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("cc -print-search-dirs failed with code {}", output.status),
-            ))?
-        }
-        let stdout = output.stdout.as_bstr();
-        let idx = stdout.find("libraries: =").ok_or(io::Error::new(
-            io::ErrorKind::Other,
-            "couldn't find libraries in output of cc -print-search-dirs",
-        ))? + 12;
-        let mut buf = &stdout[idx..];
-        buf = &buf[..buf.find("\n").unwrap_or(buf.len())];
-        Ok(buf
-            .split_str(":")
-            .map(OsStrBytes::assert_from_raw_bytes)
-            .map(PathBuf::from)
-            .collect())
-    }
     pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32>> {
         let mut cmd = self.build_cmd()?;
         Ok(move || cmd.status().map(|s| s.code().unwrap_or(-1)))
@@ -335,89 +396,6 @@ impl CompileCommand {
 #[cfg(lld_enabled)]
 impl CompileCommand {
     pub const USING_LLD: bool = true;
-    #[cfg(windows)]
-    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
-        unimplemented!("I don't know how to do this on Windows. Get a better OS maybe?")
-    }
-    #[cfg(not(windows))]
-    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
-        fn is_x86(s: &str) -> bool {
-            let b = s.as_bytes();
-            matches!(b, [b'i', _, b'8', b'6']) && b[0].is_ascii_digit()
-        }
-        fn is_arm32(s: &str) -> bool {
-            s.starts_with("arm") && !s.contains("64")
-        }
-        fn is_arm64(s: &str) -> bool {
-            s == "arm64" || s == "aarch64"
-        }
-        let native = inkwell::targets::TargetMachine::get_default_triple();
-        let native = native.as_str().to_str()?;
-        let triple = self.target_.as_deref().unwrap_or(native);
-        let compatible = self.target_.is_none()
-            || native == triple
-            || (triple.split_once('-').map_or(false, |(t, _)| {
-                let n = native.split_once('-').unwrap().0;
-                ((is_x86(n) || n == "x86_64") && (t == "x86_64" || is_x86(t)))
-                    || ((is_arm32(n) || is_arm64(n)) && (is_arm32(t) || is_arm64(t)))
-            }) && native
-                .split('-')
-                .zip(triple.split('-'))
-                .skip(1)
-                .all(|(n, t)| n == "unknown" || t == "unknown" || n == t));
-        if triple.contains("wasm") {
-            // WASM doesn't have system link dirs
-            return Ok(vec![]);
-        }
-        let mut out = vec![];
-        fn append_paths<I: IntoIterator<Item = P>, P: Into<PathBuf>>(
-            out: &mut Vec<PathBuf>,
-            paths: I,
-        ) {
-            out.extend(paths.into_iter().map(Into::into).filter(|p| p.exists()))
-        }
-        if compatible {
-            if is_x86(triple) || is_arm32(triple) {
-                append_paths(&mut out, ["/usr/lib32", "/lib32"]);
-            }
-            // all 64-bit targets have 64 somewhere in their name
-            if triple.contains("64") {
-                append_paths(&mut out, ["/usr/lib64", "/lib64"]);
-            }
-        }
-        #[cfg(target_os = "linux")]
-        'specific: {
-            let mut it = triple.split('-');
-            let Some(arch) = it.next() else {break 'specific};
-            let Some(_)    = it.next() else {break 'specific};
-            let Some(os)   = it.next() else {break 'specific};
-            let Some(info) = it.next() else {break 'specific};
-            let trip = format!("{arch}-{os}-{info}");
-            append_paths(
-                &mut out,
-                [format!("/usr/lib/{trip}"), format!("/lib/{trip}")],
-            );
-        }
-        if compatible {
-            append_paths(
-                &mut out,
-                ["/usr/local/lib", "/usr/lib", "/lib", "/opt/homebrew/opt"],
-            );
-        }
-        if let Ok(cobalt) = std::env::var("COBALT_DIR") {
-            append_paths(&mut out, [format!("{cobalt}/installed/lib/{triple}")]);
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            append_paths(
-                &mut out,
-                [
-                    format!("{home}/.cobalt/installed/{triple}"),
-                    format!("{home}/.local/lib/cobalt/installed/{triple}"),
-                ],
-            )
-        }
-        Ok(out)
-    }
     pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32> + '_> {
         fn make_flag<D: std::ops::Deref<Target = A>, A: OsStrBytes + ?Sized>(
             prefix: &[u8],
@@ -433,10 +411,9 @@ impl CompileCommand {
         let args = std::iter::once::<Cow<[u8]>>(b"lld"[..].into())
             .chain(self.objects.iter().map(|p| p.to_raw_bytes()))
             .chain(
-                self.dirs
-                    .iter()
-                    .map(|p| Cow::Borrowed(&**p))
-                    .chain(libs.into_iter().map(Cow::Owned))
+                libs.into_iter()
+                    .map(Cow::Owned)
+                    .chain(self.dirs.iter().map(|p| Cow::Borrowed(&**p)))
                     .flat_map(|d| {
                         let nonstandard = !(d.starts_with("/lib") || d.starts_with("/usr/lib"));
                         if nonstandard {

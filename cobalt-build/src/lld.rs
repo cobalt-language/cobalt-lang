@@ -28,7 +28,6 @@ pub fn lld_link<I: IntoIterator<Item = T>, T: Into<Vec<u8>>>(
         .map(CString::new)
         .collect::<Result<Vec<_>, NulError>>()
         .expect("Arguments to lld_link cannot contain null!");
-    println!("{args:?}");
     unsafe {
         #[allow(clippy::redundant_closure)] // lifetime error if a closure is not used
         glue::ffi::lld_entry(
