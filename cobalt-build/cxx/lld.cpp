@@ -1,11 +1,19 @@
 #include "cobalt-build/src/lld/glue.rs.h"
 #include <lld/Common/Driver.h>
 namespace llvm {
-void lld_entry(rust::Slice<const *char const> args, llvm::raw_ostream &stdout,
-               llvm::raw_ostream &stderr, LldReturn &ret) {
-  auto res = lld::safeLldMain(args.length(), args.data(), stdout, stderr);
-  set_ret_code(ret, res.ret);
-  set_ret_code(ret, res.canRunAgain);
+int lld_entry(rust::Slice<const char *> rust_args, llvm::raw_ostream &stdout,
+              llvm::raw_ostream &stderr, LldFlavor flavor) {
+  llvm::ArrayRef<const char *> args{rust_args.data(), rust_args.length()};
+  switch (flavor) {
+  case Elf:
+    return lld::elf::link(args, stdout, stderr, false, false);
+  case Coff:
+    return lld::coff::link(args, stdout, stderr, false, false);
+  case MachO:
+    return lld::macho::link(args, stdout, stderr, false, false);
+  case Wasm:
+    return lld::wasm::link(args, stdout, stderr, false, false);
+  }
 }
 std::unique_ptr<llvm::raw_ostream> string_ostream(std::string &buf) {
   return std::make_unique<llvm::raw_string_ostream>(buf);

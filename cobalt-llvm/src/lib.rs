@@ -8,6 +8,7 @@ pub use inkwell;
 
 pub const LLVM_VERSION: &str = env!("LLVM_VERSION");
 pub const LLVM_INCLUDE_DIR: &str = env!("LLVM_INCLUDE_DIR");
+pub const LLVM_LIBS_DIR: &str = env!("LLVM_LIBS_DIR");
 
 #[cfg(feature = "llvm-15")]
 #[macro_export]

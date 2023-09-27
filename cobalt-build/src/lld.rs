@@ -1,6 +1,6 @@
 use cxx::UniquePtr;
+use std::ffi::*;
 use std::pin::Pin;
-use std::sync::Mutex;
 mod glue;
 pub mod llvm_ostream {
     use super::*;
@@ -16,32 +16,26 @@ pub mod llvm_ostream {
     }
 }
 pub use glue::ffi::raw_ostream as OStream;
-pub use glue::LldReturn;
-pub static LLD_CAN_RUN: Mutex<bool> = Mutex::new(true);
-pub fn lld_link<'a, I: IntoIterator<Item = &'a str>>(
+pub use glue::ffi::LldFlavor;
+pub fn lld_link<I: IntoIterator<Item = T>, T: Into<Vec<u8>>>(
     args: I,
     stdout: Option<Pin<&mut OStream>>,
     stderr: Option<Pin<&mut OStream>>,
+    flavor: LldFlavor,
 ) -> i32 {
-    let mut lock = LLD_CAN_RUN.lock().unwrap();
-    if !*lock {
-        std::mem::drop(lock);
-        panic!("LLD is in an invalid state and cannot run!")
-    }
-    let mut ret = LldReturn::default();
+    let args = args
+        .into_iter()
+        .map(CString::new)
+        .collect::<Result<Vec<_>, NulError>>()
+        .expect("Arguments to lld_link cannot contain null!");
+    println!("{args:?}");
     unsafe {
-        use std::ffi::CStr;
-        #[allow(clippy::redundant_closure)]
+        #[allow(clippy::redundant_closure)] // lifetime error if a closure is not used
         glue::ffi::lld_entry(
-            &args
-                .into_iter()
-                .map(|c| CStr::from_bytes_until_nul(c.as_bytes()).unwrap().as_ptr())
-                .collect::<Vec<_>>(),
+            &mut args.iter().map(|c| c.as_ptr()).collect::<Vec<_>>(),
             stdout.unwrap_or_else(|| llvm_ostream::outs()),
             stderr.unwrap_or_else(|| llvm_ostream::errs()),
-            Pin::new(&mut ret),
-        );
+            flavor,
+        )
     }
-    *lock = ret.again;
-    ret.code
 }
