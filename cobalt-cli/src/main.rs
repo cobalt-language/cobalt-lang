@@ -67,22 +67,27 @@ const INIT_NEEDED: InitializationConfig = InitializationConfig {
     machine_code: true,
 };
 static LONG_VERSION: &str = formatcp!(
-    "{}\nLLVM version {}{}{}",
+    "{}\nLLVM version {}\nGit {}\nLLD {}\nDebug {}",
     env!("CARGO_PKG_VERSION"),
     cobalt_llvm::LLVM_VERSION,
     if cfg!(has_git) {
         formatcp!(
-            "\nGit commit {} on branch {}",
+            "commit {} on branch {}",
             str_index!(env!("GIT_COMMIT"), ..6),
             env!("GIT_BRANCH")
         )
     } else {
-        ""
+        "not found"
+    },
+    if ccomp::CompileCommand::USING_LLD {
+        "enabled"
+    } else {
+        "disabled"
     },
     if cfg!(debug_assertions) {
-        "\nDebug Build"
+        "enabled"
     } else {
-        ""
+        "disabled"
     }
 );
 #[derive(Debug, Clone, Parser)]
