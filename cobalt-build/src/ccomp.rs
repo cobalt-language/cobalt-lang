@@ -11,7 +11,6 @@ mod prelude {
     pub use os_str_bytes::{OsStrBytes, OsStringBytes};
     pub use std::borrow::Cow;
 }
-use os_str_bytes::OsStrBytes;
 #[allow(unused_imports)]
 use prelude::*;
 pub use std::ffi::*;

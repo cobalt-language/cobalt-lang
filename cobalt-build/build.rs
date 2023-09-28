@@ -1,4 +1,6 @@
-#[cfg(feature = "lld")]
+#[cfg(all(feature = "disble-lld", feature = "force-lld"))]
+compile_error!("force-lld and disable-lld features are mutually exclusive");
+#[cfg(all(feature = "lld", not(feature = "disable-lld")))]
 fn main() {
     println!("cargo:rerun-if-changed=cxx");
     println!("cargo:rerun-if-changed=src/lld/glue.rs");
@@ -18,10 +20,12 @@ fn main() {
         println!("cargo:rustc-link-lib=lldMachO");
         println!("cargo:rustc-link-lib=lldWasm");
     } else {
+        #[cfg(feature = "force-lld")]
+        panic!("LLD build failed");
         println!("cargo:rustc-env=HOST={}", std::env::var("TARGET").unwrap());
     }
 }
-#[cfg(not(feature = "lld"))]
+#[cfg(any(not(feature = "lld"), feature = "disable-lld"))]
 fn main() {
     println!("cargo:rustc-env=HOST={}", std::env::var("TARGET").unwrap());
 }

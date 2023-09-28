@@ -41,4 +41,6 @@ cobalt-llvm = { path = "../cobalt-llvm", optional = true }
 
 [features]
 lld = ["cxx", "cxx-build", "cobalt-llvm"]
+force-lld = ["lld"]
+disable-lld = [] # easy additive command to disable LLD
 default = ["lld"]
