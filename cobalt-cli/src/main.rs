@@ -7,6 +7,7 @@ use inkwell::execution_engine::FunctionLookupError;
 use inkwell::module::Module;
 use inkwell::targets::*;
 use miette::Severity;
+use std::ffi::OsString;
 use std::fmt;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
@@ -128,6 +129,9 @@ enum Cli {
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
+        /// additional arguments to pass to the linker
+        #[arg(short = 'X', long = "linker")]
+        linker_args: Vec<OsString>,
         /// print timings
         #[arg(long)]
         timings: bool,
@@ -257,6 +261,9 @@ enum MultiSubcommand {
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
+        /// additional arguments to pass to the linker
+        #[arg(short = 'X', long = "linker")]
+        linker_args: Vec<OsString>,
         /// print timings
         #[arg(long)]
         timings: bool,
@@ -638,6 +645,7 @@ fn driver() -> anyhow::Result<()> {
             continue_if_err,
             debug_mangle,
             no_default_link,
+            linker_args,
             timings,
         } => {
             struct Reporter {
@@ -877,6 +885,7 @@ fn driver() -> anyhow::Result<()> {
             let mut cc = ccomp::CompileCommand::new();
             cc.target(&triple);
             cc.no_default_link = no_default_link;
+            cc.extra_args(linker_args);
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
@@ -1511,6 +1520,7 @@ fn driver() -> anyhow::Result<()> {
                 profile,
                 debug_mangle,
                 no_default_link,
+                linker_args,
                 timings,
             } => {
                 struct Reporter {
@@ -1709,6 +1719,7 @@ fn driver() -> anyhow::Result<()> {
                 let mut cc = ccomp::CompileCommand::new();
                 cc.target(&triple);
                 cc.no_default_link = no_default_link;
+                cc.extra_args(linker_args);
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();

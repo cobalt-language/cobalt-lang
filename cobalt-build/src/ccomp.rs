@@ -24,6 +24,7 @@ pub struct CompileCommand {
     pub objects: Vec<PathBuf>,
     pub output_file: PathBuf,
     pub target_: Option<String>,
+    pub extras: Vec<OsString>,
     pub is_lib: bool,
     pub no_default_link: bool,
     #[cfg(not(lld_enabled))]
@@ -40,6 +41,7 @@ impl CompileCommand {
             objects: vec![],
             output_file: PathBuf::default(),
             target_: None,
+            extras: vec![],
             is_lib: false,
             no_default_link: false,
             #[cfg(not(lld_enabled))]
@@ -106,6 +108,17 @@ impl CompileCommand {
     }
     pub fn lib(&mut self, is_lib: bool) -> &mut Self {
         self.is_lib = is_lib;
+        self.set_modified()
+    }
+    pub fn extra_arg<A: Into<OsString>>(&mut self, arg: A) -> &mut Self {
+        self.extras.push(arg.into());
+        self.set_modified()
+    }
+    pub fn extra_args<A: Into<OsString>, I: IntoIterator<Item = A>>(
+        &mut self,
+        args: I,
+    ) -> &mut Self {
+        self.extras.extend(args.into_iter().map(Into::into));
         self.set_modified()
     }
     pub fn target<S: Into<String>>(&mut self, target: S) -> &mut Self {
@@ -227,16 +240,6 @@ impl CompileCommand {
     }
     #[cfg(not(windows))]
     pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
-        fn is_x86(s: &str) -> bool {
-            let b = s.as_bytes();
-            matches!(b, [b'i', _, b'8', b'6']) && b[0].is_ascii_digit()
-        }
-        fn is_arm32(s: &str) -> bool {
-            s.starts_with("arm") && !s.contains("64")
-        }
-        fn is_arm64(s: &str) -> bool {
-            s == "arm64" || s == "aarch64"
-        }
         let native = inkwell::targets::TargetMachine::get_default_triple();
         let native = native.as_str().to_str()?;
         let triple = self.target_.as_deref().unwrap_or(native);
@@ -364,6 +367,9 @@ impl CompileCommand {
         if let Some(target) = self.target_.as_ref() {
             build.target(target);
         }
+        if self.no_default_link {
+            build.flag_if_supported("-nodefaultlibs");
+        }
         self.tool = Some(build.try_get_compiler()?);
         self.modified = false;
         Ok(())
@@ -386,6 +392,7 @@ impl CompileCommand {
         } else {
             panic!("C compiler is not like Clang, GNU, or MSVC!")
         }
+        cmd.args(self.extras.clone());
         Ok(cmd)
     }
     pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32>> {
@@ -396,6 +403,25 @@ impl CompileCommand {
 #[cfg(lld_enabled)]
 impl CompileCommand {
     pub const USING_LLD: bool = true;
+    /// Find the dynamic linker
+    /// Assumes a linux system
+    fn dynamic_linker(triple: &str) -> anyhow::Result<&'static str> {
+        let arch = triple
+            .split_once('-')
+            .ok_or(anyhow::anyhow!("invalid triple \"{triple}\""))?
+            .0;
+        if arch == "x86_64" {
+            Ok("/lib64/ld-linux-x86-64.so.2")
+        } else if is_x86(arch) {
+            Ok("/lib/ld-linux.so.2")
+        } else if is_arm32(arch) {
+            Ok("/lib/ld-linux.so.3")
+        } else if is_arm64(arch) {
+            Ok("/lib/ld-linux-aarch64.so.1")
+        } else {
+            anyhow::bail!("unknown arch \"{triple}\"")
+        }
+    }
     pub fn run_command(&mut self) -> anyhow::Result<impl FnOnce() -> std::io::Result<i32> + '_> {
         fn make_flag<D: std::ops::Deref<Target = A>, A: OsStrBytes + ?Sized>(
             prefix: &[u8],
@@ -434,19 +460,47 @@ impl CompileCommand {
             .chain(self.abss.iter().map(|p| p.to_raw_bytes()))
             .chain(self.libs.iter().map(|l| make_flag(b"-l", l)))
             .chain([b"-o"[..].into(), self.output_file.to_raw_bytes()])
-            .chain(self.is_lib.then_some(b"--shared"[..].into()));
+            .chain(self.extras.iter().map(|a| a.to_raw_bytes()));
         use lld::LldFlavor;
         let native = inkwell::targets::TargetMachine::get_default_triple();
         let native = native.as_str().to_str().unwrap();
         let triple = self.target_.as_deref().unwrap_or(native);
-        let flavor = if triple.contains("wasm") {
-            LldFlavor::Wasm
+        let (flavor, args) = if triple.contains("wasm") {
+            (
+                LldFlavor::Wasm,
+                args.chain([None, None, None].into_iter().flatten()),
+            )
         } else if triple.contains("windows") {
-            LldFlavor::Coff
+            (
+                LldFlavor::Coff,
+                args.chain([None, None, None].into_iter().flatten()),
+            )
         } else if triple.contains("apple") || triple.contains("ios") || triple.contains("darwin") {
-            LldFlavor::MachO
+            (
+                LldFlavor::MachO,
+                args.chain(
+                    [
+                        Some(b"-dynamic"[..].into()),
+                        self.is_lib.then_some(b"-dylib"[..].into()),
+                        None,
+                    ]
+                    .into_iter()
+                    .flatten(),
+                ),
+            )
         } else {
-            LldFlavor::Elf
+            (
+                LldFlavor::Elf,
+                args.chain(
+                    [
+                        Some(b"-dynamic-linker"[..].into()),
+                        Some(Self::dynamic_linker(triple)?.as_bytes().into()),
+                        self.is_lib.then_some(b"--shared"[..].into()),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                ),
+            )
         };
         Ok(move || Ok(lld::lld_link(args, None, None, flavor)))
     }
@@ -456,4 +510,14 @@ impl Default for CompileCommand {
     fn default() -> Self {
         Self::new()
     }
+}
+fn is_x86(s: &str) -> bool {
+    let b = s.as_bytes();
+    matches!(b, [b'i', _, b'8', b'6']) && b[0].is_ascii_digit()
+}
+fn is_arm32(s: &str) -> bool {
+    s.starts_with("arm") && !s.contains("64")
+}
+fn is_arm64(s: &str) -> bool {
+    s == "arm64" || s == "aarch64"
 }

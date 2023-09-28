@@ -1,7 +1,6 @@
 #[cfg(feature = "lld")]
 fn main() {
     println!("cargo:rerun-if-changed=cxx");
-    println!("cargo:rerun-if-changed=src/lld.rs");
     println!("cargo:rerun-if-changed=src/lld/glue.rs");
     if cxx_build::bridge("src/lld/glue.rs")
         .file("cxx/lld.cpp")
