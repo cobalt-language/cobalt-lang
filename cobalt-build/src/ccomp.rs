@@ -366,9 +366,7 @@ impl CompileCommand {
         if let Some(target) = self.target_.as_ref() {
             build.target(target);
         }
-        if self.no_default_link {
-            build.flag_if_supported("-nodefaultlibs");
-        }
+        build.flag_if_supported("-nodefaultlibs");
         self.tool = Some(build.try_get_compiler()?);
         self.modified = false;
         Ok(())
