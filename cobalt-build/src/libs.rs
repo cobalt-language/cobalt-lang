@@ -120,12 +120,27 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
         })?;
         Ok(conflicts)
     } else {
-        let obj = object::File::parse(buf.as_slice())?;
-        if let Some(colib) = obj
-            .section_by_name(".colib")
-            .and_then(|v| v.uncompressed_data().ok())
-        {
-            conflicts.extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+        if buf.len() >= 8 && &buf[..8] == b"!<arch>\n" {
+            let mut ar = ar::Archive::new(std::io::Cursor::new(&buf[..]));
+            while let Some(entry) = ar.next_entry() {
+                if let Ok(obj) = object::File::parse(&object::ReadCache::new(entry?)) {
+                    if let Some(colib) = obj
+                        .section_by_name(".colib")
+                        .and_then(|v| v.uncompressed_data().ok())
+                    {
+                        conflicts
+                            .extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+                    }
+                }
+            }
+        } else {
+            let obj = object::File::parse(&buf[..])?;
+            if let Some(colib) = obj
+                .section_by_name(".colib")
+                .and_then(|v| v.uncompressed_data().ok())
+            {
+                conflicts.extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+            }
         }
         Ok(conflicts)
     }

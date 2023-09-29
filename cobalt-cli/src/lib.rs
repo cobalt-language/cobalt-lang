@@ -105,7 +105,7 @@ impl OutputStream {
         Self::Stdout(std::io::stdout())
     }
     pub fn file(path: impl AsRef<Path>) -> std::io::Result<Self> {
-        std::fs::File::open(path).map(Self::File)
+        std::fs::File::create(path).map(Self::File)
     }
     pub fn new(path: Option<impl AsRef<Path>>) -> std::io::Result<Self> {
         if let Some(p) = path {
