@@ -897,7 +897,7 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// fn_param
-    ///  := ['mut' | 'const'] IDENT ':' ['&' | '*'] ['mut'] expr ['=' expr]
+    ///  := ['mut' | 'const'] IDENT ':' expr ['=' expr]
     /// ```
     pub fn parse_fn_param(&mut self) -> (Parameter<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());

@@ -16,7 +16,7 @@ mod expr;
 pub struct TokenStreamCursor<'src> {
     stream: TokenStream<'src>,
     /// The index of the next token to be returned.
-    index: usize,
+    pub index: usize,
 }
 
 impl<'src> TokenStreamCursor<'src> {
@@ -27,6 +27,11 @@ impl<'src> TokenStreamCursor<'src> {
     pub fn next_token(&mut self) -> Option<Token<'src>> {
         let token = self.stream.0.get(self.index).cloned();
         self.index += 1;
+        token
+    }
+
+    pub fn peek_n_tokens_ahead(&mut self, n: usize) -> Option<Token<'src>> {
+        let token = self.stream.0.get(self.index + n).cloned();
         token
     }
 }
@@ -50,6 +55,10 @@ impl<'src> Parser<'src> {
 
     pub fn next(&mut self) {
         self.current_token = self.cursor.next_token();
+    }
+
+    pub fn peek_n(&mut self, n: usize) -> Option<Token<'src>> {
+        self.cursor.peek_n_tokens_ahead(n)
     }
 
     pub fn parse(&mut self) {

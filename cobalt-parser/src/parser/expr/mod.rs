@@ -215,7 +215,9 @@ impl<'src> Parser<'src> {
     /// Going into this function, `current_token` is assumed to be a open brace.
     ///
     /// ```
-    /// block_expr := '{' [ expr? ';' | decl ]* '}'
+    /// block_expr
+    ///     := '{' [ expr? ';' | decl ]* '}'
+    ///     := '{' [ident ':' expr] [',' ident ':' expr]* [',']? '}' // TODO
     /// ```
     fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
