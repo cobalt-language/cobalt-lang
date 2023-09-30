@@ -1,6 +1,12 @@
+use ambassador::{delegatable_trait_remote, Delegate};
 use anyhow::Context;
 use anyhow_std::*;
 use clap::{Parser, Subcommand, ValueEnum};
+use cobalt_ast::{CompCtx, AST};
+use cobalt_build::*;
+use cobalt_errors::*;
+use cobalt_parser::prelude::*;
+use cobalt_utils::Flags;
 use const_format::{formatcp, str_index};
 use human_repr::*;
 use inkwell::execution_engine::FunctionLookupError;
@@ -13,32 +19,28 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use cobalt_ast::{CompCtx, AST};
-use cobalt_build::*;
-use cobalt_errors::*;
-use cobalt_parser::prelude::*;
-use cobalt_utils::Flags;
-
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputType {
     #[default]
-    #[value(name = "exe")]
+    #[value(name = "exe", alias = "bin")]
     Executable,
-    #[value(name = "lib")]
+    #[value(name = "lib", alias = "shared")]
     Library,
-    #[value(name = "obj")]
+    #[value(name = "archive", alias = "ar", alias = "static")]
+    Archive,
+    #[value(name = "obj", alias = "object")]
     Object,
-    #[value(name = "raw-obj")]
+    #[value(name = "raw-obj", alias = "raw-object")]
     RawObject,
-    #[value(name = "asm")]
+    #[value(name = "asm", alias = "assembly")]
     Assembly,
-    #[value(name = "llvm")]
+    #[value(name = "ir", alias = "llvm-ir")]
     Llvm,
-    #[value(name = "bc")]
+    #[value(name = "bc", alias = "llvm-bc")]
     Bitcode,
-    #[value(name = "header")]
+    #[value(name = "header", alias = "raw-header")]
     Header,
-    #[value(name = "header-obj")]
+    #[value(name = "header-obj", alias = "header-object")]
     HeaderObj,
 }
 impl fmt::Display for OutputType {
@@ -46,10 +48,11 @@ impl fmt::Display for OutputType {
         f.write_str(match self {
             Self::Executable => "exe",
             Self::Library => "lib",
+            Self::Archive => "archive",
             Self::Object => "obj",
             Self::RawObject => "raw-obj",
             Self::Assembly => "asm",
-            Self::Llvm => "llvm",
+            Self::Llvm => "ir",
             Self::Bitcode => "bc",
             Self::Header => "header",
             Self::HeaderObj => "header-obj",
@@ -84,6 +87,34 @@ pub static LONG_VERSION: &str = formatcp!(
         ""
     }
 );
+#[delegatable_trait_remote]
+trait Write {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+    fn flush(&mut self) -> std::io::Result<()>;
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()>;
+}
+#[derive(Debug, Delegate)]
+#[delegate(Write)]
+pub enum OutputStream {
+    Stdout(std::io::Stdout),
+    File(std::fs::File),
+}
+impl OutputStream {
+    pub fn stdout() -> Self {
+        Self::Stdout(std::io::stdout())
+    }
+    pub fn file(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        std::fs::File::create(path).map(Self::File)
+    }
+    pub fn new(path: Option<impl AsRef<Path>>) -> std::io::Result<Self> {
+        if let Some(p) = path {
+            Self::file(p)
+        } else {
+            Ok(Self::stdout())
+        }
+    }
+}
 #[derive(Debug, Clone, Parser)]
 #[command(name = "co", author, long_version = LONG_VERSION)]
 pub enum Cli {
@@ -858,9 +889,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             ""
                         }
                     ),
-                    OutputType::Library => libs::format_lib(
+                    OutputType::Library | OutputType::Archive => libs::format_lib(
                         input.rfind('.').map_or(input.as_str(), |i| &input[..i]),
                         &trip,
+                        emit == OutputType::Library,
                     ),
                     OutputType::RawObject => format!(
                         "{}.raw.o",
@@ -978,12 +1010,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 OutputType::Header => {
                     let mut buf = vec![];
                     reporter.cg_time = Some(try_timeit(|| ctx.save(&mut buf))?.1);
-                    if let Some(out) = output {
-                        let mut file = std::fs::File::create(out)?;
-                        file.write_all(&buf)?;
-                    } else {
-                        std::io::stdout().write_all(&buf)?
-                    }
+                    OutputStream::new(output)?.write_all(&buf)?
                 }
                 OutputType::HeaderObj => {
                     let mut obj = libs::new_object(&trip);
@@ -1001,11 +1028,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 OutputType::Llvm => {
                     let (m, cg_time) = timeit(|| ctx.module.to_string());
                     reporter.cg_time = Some(cg_time);
-                    if let Some(out) = output {
-                        std::fs::write(out, &m)?
-                    } else {
-                        println!("{m}")
-                    }
+                    OutputStream::new(output)?.write_all(m.as_bytes())?
                 }
                 OutputType::Bitcode => {
                     let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
@@ -1076,6 +1099,28 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 error!("cannot output library to stdout!");
                                 Err(Exit(4))?
                             }
+                        }
+                        OutputType::Archive => {
+                            let mut builder = ar::Builder::new(OutputStream::new(output)?);
+                            let slice = mb.as_slice();
+                            builder.append(
+                                &ar::Header::new(
+                                    format!(
+                                        "{}.o",
+                                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
+                                    )
+                                    .into(),
+                                    slice.len() as _,
+                                ),
+                                slice,
+                            )?;
+                            let mut obj = libs::new_object(&trip);
+                            libs::populate_header(&mut obj, &ctx);
+                            let out = obj.write()?;
+                            builder.append(
+                                &ar::Header::new(b".colib.o".to_vec(), out.len() as _),
+                                out.as_slice(),
+                            )?;
                         }
                         OutputType::RawObject => {
                             if let Some(path) = output {
@@ -1881,7 +1926,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
@@ -1901,6 +1946,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     One(temp_file::TempFile),
                     Two(temp_file::TempFile, temp_file::TempFile),
                 }
+                let mut archive = (emit == OutputType::Archive)
+                    .then(|| OutputStream::new(output.as_deref()).map(ar::Builder::new))
+                    .transpose()?;
                 let _tmps = asts
                     .iter()
                     .map(|ast| {
@@ -1933,7 +1981,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             None => input,
                             Some(p) => p.join(input),
                         };
-                        {
+                        if !matches!(
+                            emit,
+                            OutputType::Executable | OutputType::Library | OutputType::Archive
+                        ) {
                             let parent = out.parent().unwrap().parent().unwrap(); // why
                             if !parent.exists() {
                                 parent.create_dir_all_anyhow()?
@@ -2017,6 +2068,18 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         cc.objs([tmp1.path(), tmp2.path()]);
                                         Two(tmp1, tmp2)
                                     }
+                                    OutputType::Archive => {
+                                        use os_str_bytes::OsStringBytes;
+                                        out.set_extension("o");
+                                        archive.as_mut().unwrap().append(
+                                            &ar::Header::new(
+                                                out.into_raw_vec(),
+                                                mb.as_slice().len() as _,
+                                            ),
+                                            mb.as_slice(),
+                                        )?;
+                                        Zero
+                                    }
                                     OutputType::RawObject => {
                                         out.set_extension("raw.o");
                                         std::fs::write(out, mb.as_slice())?;
@@ -2041,7 +2104,15 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         anyhow::Ok(tmps)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-                if matches!(emit, OutputType::Executable | OutputType::Library) {
+                if emit == OutputType::Archive {
+                    let mut obj = libs::new_object(&trip);
+                    libs::populate_header(&mut obj, &ctx);
+                    let buf = obj.write()?;
+                    archive.as_mut().unwrap().append(
+                        &ar::Header::new(b".colib.o".to_vec(), buf.len() as _),
+                        &buf[..],
+                    )?;
+                } else if matches!(emit, OutputType::Executable | OutputType::Library) {
                     let is_lib = emit == OutputType::Library;
                     cc.output(&output.ok_or(anyhow::anyhow!(
                         "output file must be specified for multi-{}s",
