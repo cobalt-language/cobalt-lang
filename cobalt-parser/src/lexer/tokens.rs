@@ -63,6 +63,7 @@ impl Display for Keyword {
 pub enum Delimiter {
     Paren,
     Brace,
+    Bracket,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -119,6 +120,7 @@ impl BinOpToken {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOpToken {
     Not, // !
+    Q,   // ?
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

@@ -118,6 +118,29 @@ impl<'src> SourceReader<'src> {
                         span: self.source_span_backward(1),
                     });
                 }
+                '[' => {
+                    self.next_char();
+                    tokens.push(Token {
+                        kind: TokenKind::OpenDelimiter(Delimiter::Bracket),
+                        span: self.source_span_backward(1),
+                    });
+                }
+                ']' => {
+                    self.next_char();
+                    tokens.push(Token {
+                        kind: TokenKind::CloseDelimiter(Delimiter::Bracket),
+                        span: self.source_span_backward(1),
+                    });
+                }
+
+                // UNARY OPERATORS
+                '?' => {
+                    self.next_char();
+                    tokens.push(Token {
+                        kind: TokenKind::UnOp(UnOpToken::Q),
+                        span: self.source_span_backward(1),
+                    });
+                }
 
                 // BINARY OPERATORS
                 '=' => {

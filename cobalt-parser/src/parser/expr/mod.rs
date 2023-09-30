@@ -46,14 +46,16 @@ impl<'src> Parser<'src> {
     /// ```
     /// primary_expr
     ///    := ident_expr
-    ///    := dotted_ident
     ///    := literal
     ///    := paren_expr
     ///    := block_expr
     ///    := prefix_expr
+    ///    := postfix_expr
     ///    := if_expr
     ///    := intrinsic
     ///    := fn_call
+    ///    := dotted_expr
+    ///    := index_expr
     /// ```
     pub fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -65,6 +67,8 @@ impl<'src> Parser<'src> {
         let start = 0;
         let parsed_something = 1 << 0;
         let can_be_dotted = 1 << 1;
+        let can_be_indexed = 1 << 2;
+        let can_be_postfixed = 1 << 3;
         let mut state = start;
 
         // ---
@@ -87,6 +91,8 @@ impl<'src> Parser<'src> {
 
                     state |= parsed_something;
                     state |= can_be_dotted;
+                    state |= can_be_indexed;
+                    state |= can_be_postfixed;
                 } else {
                     let (parsed_ident, parsed_errors) = self.parse_ident_expr();
                     errors.extend(parsed_errors);
@@ -94,6 +100,8 @@ impl<'src> Parser<'src> {
 
                     state |= parsed_something;
                     state |= can_be_dotted;
+                    state |= can_be_indexed;
+                    state |= can_be_postfixed;
                 }
             }
             TokenKind::OpenDelimiter(p) if p == Delimiter::Paren => {
@@ -103,6 +111,8 @@ impl<'src> Parser<'src> {
 
                 state |= parsed_something;
                 state |= can_be_dotted;
+                state |= can_be_indexed;
+                state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(b) if b == Delimiter::Brace => {
                 let (parsed_expr, parsed_errors) = self.parse_block_expr();
@@ -117,6 +127,8 @@ impl<'src> Parser<'src> {
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
+                state |= can_be_dotted;
+                state |= can_be_indexed;
             }
             TokenKind::UnOrBinOp(_) => {
                 let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
@@ -124,6 +136,8 @@ impl<'src> Parser<'src> {
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
+                state |= can_be_dotted;
+                state |= can_be_indexed;
             }
             TokenKind::Keyword(kw) => {
                 if kw == Keyword::If {
@@ -142,6 +156,8 @@ impl<'src> Parser<'src> {
 
                     state |= parsed_something;
                     state |= can_be_dotted;
+                    state |= can_be_indexed;
+                    state |= can_be_postfixed;
                 } else {
                     let (parsed_expr, parsed_errors) = self.parse_intrinsic();
                     errors.extend(parsed_errors);
@@ -162,6 +178,22 @@ impl<'src> Parser<'src> {
 
             if state & can_be_dotted != 0 && self.current_token.unwrap().kind == TokenKind::Dot {
                 let (parsed_expr, parsed_errors) = self.parse_dotted_expr(working_ast);
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
+                continue;
+            }
+
+            if state & can_be_indexed != 0
+                && self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
+            {
+                let (parsed_expr, parsed_errors) = self.parse_index_expr(working_ast);
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
+                continue;
+            }
+
+            if state & can_be_postfixed != 0 && self.check_postfix_expr() {
+                let (parsed_expr, parsed_errors) = self.parse_postfix_expr(working_ast);
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
                 continue;
@@ -277,6 +309,14 @@ impl<'src> Parser<'src> {
             },
             TokenKind::UnOp(op) => match op {
                 UnOpToken::Not => "!",
+                _ => {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "unary operator",
+                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        loc: self.current_token.unwrap().span,
+                    });
+                    return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+                }
             },
             _ => {
                 errors.push(CobaltError::ExpectedFound {
@@ -742,6 +782,115 @@ impl<'src> Parser<'src> {
 
         (Box::new(CallAST::new(cparen_span, name, args)), errors)
     }
+
+    /// Going into this function, `current_token` is assumed to be an `[`.
+    ///
+    /// ```
+    /// index_expr := '[' expr ']
+    /// ```
+    fn parse_index_expr(
+        &mut self,
+        target: BoxedAST<'src>,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Bracket));
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+        self.next();
+
+        // ---
+
+        let (expr, expr_errors) = self.parse_expr();
+        errors.extend(expr_errors);
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "]",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (Box::new(NullAST::new(span)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "]",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: self.current_token.unwrap().span,
+            });
+            return (Box::new(NullAST::new(span)), errors);
+        }
+
+        self.next();
+
+        // ---
+
+        (Box::new(SubAST::new(span, target, expr)), errors)
+    }
+
+    fn check_postfix_expr(&mut self) -> bool {
+        if self.current_token.is_none() {
+            return false;
+        }
+
+        if let TokenKind::UnOp(unop) = self.current_token.unwrap().kind {
+            if unop == UnOpToken::Q || unop == UnOpToken::Not {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Going into this function, `current_token` is assumed to be the first token after the
+    /// target.
+    ///
+    /// ```
+    /// postfix_expr := primary_expr [ '!' | '?' ]+
+    /// ```
+    fn parse_postfix_expr(
+        &mut self,
+        target: BoxedAST<'src>,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut working_ast = target;
+
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if let TokenKind::UnOp(unop) = self.current_token.unwrap().kind {
+                if unop == UnOpToken::Not {
+                    working_ast = Box::new(PostfixAST::new(
+                        self.current_token.unwrap().span,
+                        "!",
+                        working_ast,
+                    ));
+                    self.next();
+                    continue;
+                }
+
+                if unop == UnOpToken::Q {
+                    working_ast = Box::new(PostfixAST::new(
+                        self.current_token.unwrap().span,
+                        "?",
+                        working_ast,
+                    ));
+                    self.next();
+                    continue;
+                }
+            }
+
+            break;
+        }
+
+        (working_ast, vec![])
+    }
 }
 
 #[cfg(test)]
@@ -933,6 +1082,30 @@ mod tests {
         assert!(errors.is_empty());
 
         let mut reader = SourceReader::new("(a + b).bar");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_primary_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_index() {
+        let mut reader = SourceReader::new("arr[i][j]");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_primary_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_postfix() {
+        let mut reader = SourceReader::new("a?!");
         let tokens = reader.tokenize().0;
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
