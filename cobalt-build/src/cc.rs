@@ -1,5 +1,6 @@
 use crate::*;
 use anyhow_std::*;
+use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -104,44 +105,89 @@ impl CompileCommand {
                 .zip(triple.split('-'))
                 .skip(1)
                 .all(|(n, t)| n == "unknown" || t == "unknown" || n == t));
-        if triple.contains("wasm") {
-            // WASM doesn't have system link dirs
-            return Ok(vec![]);
-        }
         let mut out = vec![];
+        fn from_env(name: &str, out: &mut Vec<PathBuf>) {
+            if let Some(dirs) = std::env::var_os(name) {
+                out.extend(dirs.into_raw_vec().split(|&b| b == b':').filter_map(|b| {
+                    let p = Path::assert_from_raw_bytes(b);
+                    p.exists().then(|| p.to_path_buf())
+                }));
+            }
+        }
+        fn parse_bool(val: &str) -> Option<bool> {
+            match val {
+                "YES" | "ON" | "TRUE" | "ENABLE" | "ENABLED" | "Y" => Some(true),
+                "NO" | "OFF" | "FALSE" | "DISABLE" | "DISABLED" | "N" => Some(false),
+                _ => None,
+            }
+        }
+        fn env_flag(var: &str) -> Option<bool> {
+            std::env::var(var).ok().and_then(|v| parse_bool(&v))
+        }
+        if triple.starts_with("wasm") {
+            // WASM doesn't have system link dirs
+            let wasm32 = triple.contains("wasm32");
+            let wasm64 = !wasm32 && triple.contains("wasm64");
+            if wasm32 {
+                from_env("CO_WASM32_LINK_DIRS", &mut out);
+            }
+            if wasm64 {
+                from_env("CO_WASM64_LINK_DIRS", &mut out);
+            }
+            from_env("CO_WASM_LINK_DIRS", &mut out);
+            return Ok(out);
+        }
         fn append_paths<I: IntoIterator<Item = P>, P: Into<PathBuf>>(
             out: &mut Vec<PathBuf>,
             paths: I,
         ) {
             out.extend(paths.into_iter().map(Into::into).filter(|p| p.exists()))
         }
-        if compatible {
-            if is_x86(triple) || is_arm32(triple) {
-                append_paths(&mut out, ["/usr/lib32", "/lib32"]);
-            }
-            // all 64-bit targets have 64 somewhere in their name
-            if triple.contains("64") {
-                append_paths(&mut out, ["/usr/lib64", "/lib64"]);
-            }
-        }
-        #[cfg(target_os = "linux")]
-        'specific: {
+        let default = {
             let mut it = triple.split('-');
-            let Some(arch) = it.next() else {break 'specific};
-            let Some(_)    = it.next() else {break 'specific};
-            let Some(os)   = it.next() else {break 'specific};
-            let Some(info) = it.next() else {break 'specific};
-            let trip = format!("{arch}-{os}-{info}");
-            append_paths(
-                &mut out,
-                [format!("/usr/lib/{trip}"), format!("/lib/{trip}")],
-            );
-        }
-        if compatible {
-            append_paths(
-                &mut out,
-                ["/usr/local/lib", "/usr/lib", "/lib", "/opt/homebrew/opt"],
-            );
+            let arch = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
+            it.next();
+            let os = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
+            from_env(&format!("CO_{arch}_{os}_LINK_DIRS"), &mut out);
+            from_env(&format!("CO_{arch}_LINK_DIRS"), &mut out);
+            from_env(&format!("CO_{os}_LINK_DIRS"), &mut out);
+            !(self.no_default_link
+                || env_flag(&format!("CO_{arch}_{os}_NO_DEFAULT_LINK"))
+                    .or_else(|| env_flag(&format!("CO_{arch}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag(&format!("CO_{os}_NO_DEFAULT_LINK")))
+                    .unwrap_or(false))
+        };
+        if default {
+            if compatible {
+                if is_x86(triple) || is_arm32(triple) {
+                    append_paths(&mut out, ["/usr/lib32", "/lib32"]);
+                }
+                // all 64-bit targets have 64 somewhere in their name
+                if triple.contains("64") {
+                    append_paths(&mut out, ["/usr/lib64", "/lib64"]);
+                }
+            }
+            #[cfg(target_os = "linux")]
+            'specific: {
+                let mut it = triple.split('-');
+                let Some(arch) = it.next() else {break 'specific};
+                let Some(_)    = it.next() else {break 'specific};
+                let Some(os)   = it.next() else {break 'specific};
+                let trip = it.next().map_or_else(
+                    || format!("{arch}-{os}"),
+                    |info| format!("{arch}-{os}-{info}"),
+                );
+                append_paths(
+                    &mut out,
+                    [format!("/usr/lib/{trip}"), format!("/lib/{trip}")],
+                );
+            }
+            if compatible {
+                append_paths(
+                    &mut out,
+                    ["/usr/local/lib", "/usr/lib", "/lib", "/opt/homebrew/opt"],
+                );
+            }
         }
         if let Ok(cobalt) = std::env::var("COBALT_DIR") {
             append_paths(&mut out, [format!("{cobalt}/installed/lib/{triple}")]);
