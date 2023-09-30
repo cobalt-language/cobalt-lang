@@ -399,6 +399,7 @@ fn build_file_1(
     ctx: &CompCtx<'static, '_>,
     opts: &BuildOptions,
     force_build: bool,
+    ec: &mut usize,
 ) -> anyhow::Result<(([PathBuf; 2], bool), Option<TopLevelAST<'static>>)> {
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
@@ -437,12 +438,16 @@ fn build_file_1(
     let mut ast = ast.unwrap_or_default();
     let errs = errs.into_iter().flat_map(cvt_err);
     for err in errs {
-        fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+        let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+        if is_err {
+            *ec += 1;
+            fail = true;
+        }
         eprintln!("{:?}", Report::from(err).with_source_code(file));
     }
     ast.file = Some(file);
     if fail && !opts.continue_comp {
-        anyhow::bail!(CompileErrors)
+        anyhow::bail!(CompileErrors(*ec))
     }
     ast.run_passes(ctx);
     Ok((([out_path, head_path], fail), Some(ast)))
@@ -455,24 +460,28 @@ fn build_file_2(
     opts: &BuildOptions,
     (out_path, head_path): (&Path, &Path),
     mut fail: bool,
-) -> anyhow::Result<()> {
+    ec: &mut usize,
+) -> anyhow::Result<bool> {
     let (_, errs) = ast.codegen(ctx);
     for err in errs {
-        fail |= err.is_err();
-        eprintln!("{:?}", err.with_file(ast.file.unwrap()));
+        *ec += 1;
+        fail = true;
+        eprintln!(
+            "{:?}",
+            Report::from(err).with_source_code(ast.file.unwrap())
+        );
     }
     if fail && !opts.continue_comp {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));
-        anyhow::bail!(CompileErrors)
+        anyhow::bail!(CompileErrors(*ec))
     }
-    if let Err(msg) = ctx.module.verify() {
-        error!("\n{}", msg.to_string());
+    ctx.module.verify().map_err(|m| {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));
-        anyhow::bail!(CompileErrors)
-    }
+        LlvmVerifierError::from(m)
+    })?;
     if fail {
         ctx.with_vars(|v| clear_mod(&mut v.symbols));
-        anyhow::bail!(CompileErrors)
+        return Ok(false);
     }
     let pm = inkwell::passes::PassManager::create(());
     opt::load_profile(opts.profile, &pm);
@@ -503,7 +512,7 @@ fn build_file_2(
     file.write_all(&obj.write()?)?;
     file.flush()?;
     ctx.with_vars(|v| clear_mod(&mut v.symbols));
-    Ok(())
+    Ok(true)
 }
 /// Resolve dependencies for `build_target_single`
 /// This replaces project dependencies with packages, checks `plan` for installation versions, and
@@ -581,6 +590,7 @@ pub fn build_target_single(
         TargetType::Executable => {
             let mut paths = vec![];
             let mut asts = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     for file in glob::glob(
@@ -595,7 +605,8 @@ pub fn build_target_single(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -611,23 +622,23 @@ pub fn build_target_single(
                         {
                             anyhow::bail!("couldn't find file {file}")
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
@@ -641,6 +652,7 @@ pub fn build_target_single(
         TargetType::Library => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     for file in glob::glob(
@@ -655,7 +667,8 @@ pub fn build_target_single(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -671,23 +684,23 @@ pub fn build_target_single(
                         {
                             anyhow::bail!("couldn't find file {file}")
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut cc = cc::CompileCommand::new();
@@ -703,6 +716,7 @@ pub fn build_target_single(
         TargetType::Archive => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     for file in glob::glob(
@@ -717,7 +731,8 @@ pub fn build_target_single(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -733,7 +748,8 @@ pub fn build_target_single(
                         {
                             anyhow::bail!("couldn't find file {file}")
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -743,23 +759,22 @@ pub fn build_target_single(
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut builder = ar::Builder::new(output.create_file_anyhow()?);
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)?;
-                        builder.append_path(p2)?;
-                        anyhow::Ok(())
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                    builder.append_path(p2)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             Ok(output)
         }
         TargetType::Objects => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     for file in glob::glob(
@@ -774,7 +789,8 @@ pub fn build_target_single(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
@@ -790,23 +806,23 @@ pub fn build_target_single(
                         {
                             anyhow::bail!("couldn't find file {file}")
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
                         paths.push(path);
                         asts.push(ast);
                     }
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             Ok(output)
@@ -931,6 +947,7 @@ fn build_target(
         TargetType::Executable => {
             let mut paths = vec![];
             let mut asts = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -946,7 +963,8 @@ fn build_target(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -974,7 +992,8 @@ fn build_target(
                                 anyhow::bail!("couldn't find file {file}")
                             }
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -985,16 +1004,15 @@ fn build_target(
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
@@ -1009,6 +1027,7 @@ fn build_target(
         TargetType::Library => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -1024,7 +1043,8 @@ fn build_target(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1052,7 +1072,8 @@ fn build_target(
                                 anyhow::bail!("couldn't find file {file}")
                             }
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1063,16 +1084,15 @@ fn build_target(
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(libs::format_lib(name, opts.triple, true));
             cc.lib(true);
@@ -1088,6 +1108,7 @@ fn build_target(
         TargetType::Archive => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -1103,7 +1124,8 @@ fn build_target(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1131,7 +1153,8 @@ fn build_target(
                                 anyhow::bail!("couldn't find file {file}")
                             }
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1145,23 +1168,22 @@ fn build_target(
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             let mut builder = ar::Builder::new(output.create_file_anyhow()?);
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)?;
-                        builder.append_path(p2)?;
-                        anyhow::Ok(())
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                    builder.append_path(p2)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             Ok((changed, output))
         }
         TargetType::Objects => {
             let mut asts = vec![];
             let mut paths = vec![];
+            let mut num_errs = 0;
             match t.files.as_ref() {
                 Some(either::Left(files)) => {
                     let mut passed = false;
@@ -1177,7 +1199,8 @@ fn build_target(
                         {
                             continue;
                         }
-                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1205,7 +1228,8 @@ fn build_target(
                                 anyhow::bail!("couldn't find file {file}")
                             }
                         }
-                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        let (path, ast) =
+                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
                         changed |= ast.is_some();
                         paths.push(path);
                         asts.push(ast);
@@ -1216,16 +1240,15 @@ fn build_target(
                 }
                 None => anyhow::bail!("target must have files"),
             }
-            paths
-                .iter()
-                .zip(asts)
-                .try_for_each(|(([p1, p2], fail), ast)| {
-                    if let Some(ast) = ast {
-                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
-                    } else {
-                        Ok(())
-                    }
-                })?;
+            let mut succ = true;
+            for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
+                if let Some(ast) = ast {
+                    succ &= build_file_2(ast, &ctx, opts, (p1, p2), *fail, &mut num_errs)?;
+                }
+            }
+            if !succ {
+                anyhow::bail!(CompileErrors(num_errs))
+            }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
             Ok((changed, output))

@@ -966,14 +966,19 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
+            let mut ec = 0;
             for err in errs {
-                fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                if is_err {
+                    fail = true;
+                    ec += 1;
+                }
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
             reporter.comp_time = Some(comp_time);
@@ -981,17 +986,15 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             fail = false;
             for err in errs {
                 fail |= err.is_err();
+                ec += err.is_err() as usize;
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
             if fail && !continue_if_err {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
-            if let Err(msg) = ctx.module.verify() {
-                error!("\n{}", msg.to_string());
-                fail = true;
-            }
+            ctx.module.verify().map_err(LlvmVerifierError::from)?;
             if fail || overall_fail {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
@@ -1350,14 +1353,19 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
+            let mut ec = 0;
             for err in errs {
-                fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                if is_err {
+                    fail = true;
+                    ec += 1;
+                }
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
             overall_fail |= fail;
             fail = false;
             if fail && !continue_if_err {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
             reporter.comp_time = Some(comp_time);
@@ -1365,17 +1373,18 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             fail = false;
             for err in errs {
                 fail |= err.is_err();
+                ec += err.is_err() as usize;
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
             if fail && !continue_if_err {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             if let Err(msg) = ctx.module.verify() {
                 error!("\n{}", msg.to_string());
                 Err(Exit(101))?
             }
             if fail || overall_fail {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
@@ -1623,22 +1632,25 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
+            let mut ec = 0;
             for err in errs {
-                fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                if is_err {
+                    ec += 1;
+                    fail = true;
+                }
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
             let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
             reporter.comp_time = Some(comp_time);
             for err in errs {
                 fail |= err.is_err();
+                ec += err.is_err() as usize;
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
-            if let Err(msg) = ctx.module.verify() {
-                error!("\n{}", msg.to_string());
-                fail = true;
-            }
+            ctx.module.verify().map_err(LlvmVerifierError::from)?;
             if fail {
-                anyhow::bail!(CompileErrors)
+                anyhow::bail!(CompileErrors(ec))
             }
             reporter.finish();
         }
@@ -1900,6 +1912,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     reporter.libs_time = Some(start.elapsed());
                 };
                 let mut fail = false;
+                let mut ec = 0;
                 let asts = inputs
                     .iter()
                     .zip(&codes)
@@ -1916,7 +1929,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            if is_err {
+                                ec += 1;
+                                fail = true;
+                            }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
                         ast.run_passes(&ctx);
@@ -1947,12 +1964,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 Report::from(err).with_source_code(ast.file.unwrap())
                             );
                         }
-                        if let Err(msg) = ctx.module.verify() {
-                            error!("\n{}", msg.to_string());
-                            fail = true;
-                        }
+                        ctx.module.verify().map_err(LlvmVerifierError::from)?;
                         if fail {
-                            anyhow::bail!(CompileErrors)
+                            anyhow::bail!(CompileErrors(ec))
                         }
                         reporter.insts_before += insts(&ctx.module);
                         *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
@@ -2363,6 +2377,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     reporter.libs_time = Some(start.elapsed());
                 };
                 let mut fail = false;
+                let mut ec = 0;
                 let asts = inputs
                     .iter()
                     .zip(&codes)
@@ -2376,7 +2391,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         reporter.ast_nodes = ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            if is_err {
+                                fail = true;
+                                ec += 1;
+                            }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
                         ast.run_passes(&ctx);
@@ -2388,16 +2407,14 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                     for err in errs {
                         fail |= err.is_err();
+                        ec += err.is_err() as usize;
                         eprintln!(
                             "{:?}",
                             Report::from(err).with_source_code(ast.file.unwrap())
                         );
                     }
                 });
-                if let Err(msg) = ctx.module.verify() {
-                    error!("\n{}", msg.to_string());
-                    fail = true;
-                }
+                ctx.module.verify().map_err(LlvmVerifierError::from)?;
                 reporter.insts_before = insts(&ctx.module);
                 *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
                     reporter.insts_before += insts(&ctx.module);
@@ -2411,7 +2428,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .create_jit_execution_engine(inkwell::OptimizationLevel::None)
                     .map_err(|m| anyhow::Error::msg(m.to_string()))?;
                 if fail {
-                    anyhow::bail!(CompileErrors)
+                    anyhow::bail!(CompileErrors(ec))
                 }
                 reporter.finish();
                 unsafe {
@@ -2680,6 +2697,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     reporter.libs_time = Some(start.elapsed());
                 };
                 let mut fail = false;
+                let mut ec = 0;
                 let asts = inputs
                     .iter()
                     .zip(&codes)
@@ -2693,7 +2711,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         reporter.ast_nodes = ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            fail |= err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            if is_err {
+                                fail = true;
+                                ec += 1;
+                            }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
                         ast.run_passes(&ctx);
@@ -2705,18 +2727,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                     for err in errs {
                         fail |= err.is_err();
+                        ec += err.is_err() as usize;
                         eprintln!(
                             "{:?}",
                             Report::from(err).with_source_code(ast.file.unwrap())
                         );
                     }
                 });
-                if let Err(msg) = ctx.module.verify() {
-                    error!("\n{}", msg.to_string());
-                    fail = true;
-                }
+                ctx.module.verify().map_err(LlvmVerifierError::from)?;
                 if fail {
-                    anyhow::bail!(CompileErrors)
+                    anyhow::bail!(CompileErrors(ec))
                 }
                 reporter.finish();
             }
