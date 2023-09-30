@@ -243,6 +243,7 @@ pub struct BuildOptions<'a> {
     pub continue_build: bool,
     pub continue_comp: bool,
     pub rebuild: bool,
+    pub no_default_link: bool,
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>,
@@ -567,6 +568,7 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
+    cc.no_default_link = opts.no_default_link;
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
     match t.target_type {
         TargetType::Executable => {
@@ -623,10 +625,7 @@ pub fn build_target_single(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             Ok(output)
         }
         TargetType::Library => {
@@ -681,14 +680,10 @@ pub fn build_target_single(
                 })?;
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
-            let mut cc = cc::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             Ok(output)
         }
         TargetType::Meta => {
@@ -805,6 +800,7 @@ fn build_target(
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
+    cc.no_default_link = opts.no_default_link;
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -879,10 +875,7 @@ fn build_target(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             data.set(Some(output.clone()));
             Ok((changed, output))
         }
@@ -958,10 +951,7 @@ fn build_target(
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             data.set(Some(output.clone()));
             Ok((changed, output))
         }
