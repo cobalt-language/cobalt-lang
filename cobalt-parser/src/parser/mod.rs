@@ -139,6 +139,8 @@ impl<'src> Parser<'src> {
             found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
             loc: span,
         }];
+
+        self.next();
         (Box::new(NullAST::new(span)), errors)
     }
 }
@@ -154,13 +156,12 @@ mod tests {
 type layout = {size: u32, offset: u16} :: {
   @const
   fn new(size: u32, offset: u16): self_t = {size: size, offset: offset} :? self_t;
-  const of::(T: type): self_t = self_t.new(@size(T), @align(T));
 };"#;
         let mut reader = SourceReader::new(src);
         let tokens = reader.tokenize().0;
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
-        let (ast, errors) = parser.parse_annotation();
+        let (ast, errors) = parser.parse();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());

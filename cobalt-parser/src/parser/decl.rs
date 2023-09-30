@@ -155,7 +155,6 @@ impl<'src> Parser<'src> {
         let mut errors = vec![];
         self.next();
 
-        let primary_ident: Cow<'src, str>;
         let secondary_ident: Option<Cow<'src, str>>;
 
         // Parse (first) identifier.
@@ -169,16 +168,18 @@ impl<'src> Parser<'src> {
             return ((Cow::Borrowed("@"), None, span), errors);
         }
 
-        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-            primary_ident = Cow::Borrowed(ident);
-        } else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                loc: span,
-            });
-            return ((Cow::Borrowed("@"), None, span), errors);
-        }
+        let primary_ident = match self.current_token.unwrap().kind {
+            TokenKind::Ident(ident) => Cow::Borrowed(ident),
+            TokenKind::Keyword(kw) => Cow::Owned(kw.to_string()),
+            _ => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: span,
+                });
+                return ((Cow::Borrowed("@"), None, span), errors);
+            }
+        };
 
         self.next();
 
@@ -433,12 +434,27 @@ impl<'src> Parser<'src> {
     ///
     /// In particular, we check for this pattern:
     /// ```
-    /// 'type' ident '='
+    /// annotation* 'type' ident '='
     /// ```
     pub fn check_type_decl(&mut self) -> bool {
         assert!(self.current_token.is_some());
 
         let idx_on_entry = self.cursor.index;
+
+        // ---
+
+        loop {
+            if self.current_token.is_none() {
+                self.rewind_to_idx(idx_on_entry);
+                return false;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::At {
+                break;
+            }
+
+            let _ = self.parse_annotation();
+        }
 
         // ---
 
@@ -485,19 +501,64 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// type_decl
-    ///  := 'type' IDENT '=' expr ';'
-    ///  := 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
+    ///  := annotation* 'type' IDENT '=' expr ';'
+    ///  := annotation* 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
     /// ```
     pub fn parse_type_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
-        assert!(self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Type));
 
         let mut errors = vec![];
         let first_token_loc = self.current_token.unwrap().span;
 
-        // Next has to be an identifier, the name of the type.
+        // Annotations.
+
+        let mut anns = vec![];
+        loop {
+            if self.current_token.unwrap().kind == TokenKind::At {
+                let (ann, ann_errors) = self.parse_annotation();
+                errors.extend(ann_errors);
+                anns.push(ann);
+
+                if self.current_token.is_none() {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "type definition",
+                        found: ParserFound::Eof,
+                        loc: first_token_loc,
+                    });
+                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'type'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'type'",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
 
         self.next();
+
+        // Next has to be an identifier, the name of the type.
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -568,8 +629,6 @@ impl<'src> Parser<'src> {
 
         // Next has to be a semicolon or a double colon.
 
-        self.next();
-
         if self.current_token.is_none() {
             return (
                 Box::new(NullAST::new(first_token_loc)),
@@ -586,13 +645,7 @@ impl<'src> Parser<'src> {
         if self.current_token.unwrap().kind == TokenKind::Semicolon {
             self.next();
 
-            let ast = Box::new(TypeDefAST::new(
-                first_token_loc,
-                name,
-                expr,
-                vec![], // TODO: parse annotations
-                vec![],
-            ));
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
 
             return (ast, errors);
         }
@@ -661,14 +714,15 @@ impl<'src> Parser<'src> {
         self.next();
 
         let mut methods = vec![];
-        while self.current_token.is_some()
-            && self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace)
-        {
+
+        loop {
+            if !self.check_fn_def() {
+                break;
+            }
+
             let (func, func_errors) = self.parse_fn_def(true);
             errors.extend(func_errors);
             methods.push(func);
-
-            self.next();
         }
 
         // Next has to be a right brace.
@@ -719,23 +773,17 @@ impl<'src> Parser<'src> {
 
         // Done.
 
-        let ast = Box::new(TypeDefAST::new(
-            first_token_loc,
-            name,
-            expr,
-            vec![], // TODO: parse annotations
-            methods,
-        ));
+        self.next();
+
+        let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
 
         (ast, errors)
     }
 
     /// Checks if the current token starts a function definition.
     ///
-    /// In particular, it checks for the following patterns:
+    /// In particular, it checks for the following pattern:
     /// ```
-    /// 'fn'
-    ///
     /// annotation* 'fn'
     /// ```
     pub fn check_fn_def(&mut self) -> bool {
@@ -761,6 +809,7 @@ impl<'src> Parser<'src> {
         // ---
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
+            dbg!(&self.current_token.unwrap());
             self.rewind_to_idx(idx_on_entry);
             return false;
         }
@@ -773,7 +822,7 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// fn_def
-    ///   := annotation* 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] ['=' expr] ';'
+    ///   := annotation* 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' primary_expr]? ['=' expr] ';'
     pub fn parse_fn_def(&mut self, in_struct: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         let first_token_loc = self.current_token.unwrap().span;
@@ -906,15 +955,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            println!(
-                "current token before parse_fn_param: {:?}",
-                self.current_token
-            );
             let (param, param_errors) = self.parse_fn_param();
-            println!(
-                "current token after parse_fn_param: {:?}",
-                self.current_token
-            );
             errors.extend(param_errors);
             params.push(param);
         }
@@ -929,7 +970,7 @@ impl<'src> Parser<'src> {
         let mut ret: BoxedAST = Box::new(NullAST::new(first_token_loc));
         if self.current_token.is_some() && self.current_token.unwrap().kind == TokenKind::Colon {
             self.next();
-            let (ret_type, ret_errors) = self.parse_expr();
+            let (ret_type, ret_errors) = self.parse_primary_expr();
             errors.extend(ret_errors);
             ret = ret_type;
         }
@@ -976,6 +1017,8 @@ impl<'src> Parser<'src> {
             });
             return (Box::new(NullAST::new(first_token_loc)), errors);
         }
+
+        self.next();
 
         // Done.
 

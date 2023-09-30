@@ -46,6 +46,7 @@ impl<'src> Parser<'src> {
     /// ```
     /// primary_expr
     ///    := ident_expr
+    ///    := dotted_ident
     ///    := literal
     ///    := paren_expr
     ///    := block_expr
@@ -54,11 +55,15 @@ impl<'src> Parser<'src> {
     ///    := intrinsic
     ///    := fn_call
     /// ```
-    fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         if self.check_fn_call() {
             return self.parse_fn_call();
+        }
+
+        if self.check_dotted_ident() {
+            return self.parse_dotted_ident();
         }
 
         match self.current_token.unwrap().kind {
@@ -125,6 +130,104 @@ impl<'src> Parser<'src> {
         self.next();
 
         return (Box::new(VarGetAST::new(span, name, is_global)), errors);
+    }
+
+    fn check_dotted_ident(&mut self) -> bool {
+        if self.current_token.is_none() {
+            return false;
+        }
+
+        let idx_on_entry = self.cursor.index;
+
+        if let TokenKind::Ident(_) = self.current_token.unwrap().kind {
+        } else {
+            return false;
+        }
+
+        self.next();
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Dot {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.next();
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if let TokenKind::Ident(_) = self.current_token.unwrap().kind {
+        } else {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.rewind_to_idx(idx_on_entry);
+        true
+    }
+
+    /// Going into this function, `current_token` is assumed to be an ident.
+    ///
+    /// ```
+    /// dotted_ident := ident ['.' ident]+
+    /// ```
+    fn parse_dotted_ident(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut errors = vec![];
+        let span = self.current_token.unwrap().span;
+
+        let (first_ident, first_ident_errors) = self.parse_ident_expr();
+        errors.extend(first_ident_errors);
+
+        // ---
+
+        let mut obj = first_ident;
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::Dot {
+                break;
+            }
+
+            self.next();
+
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Eof,
+                    loc: span,
+                });
+                break;
+            }
+
+            let name: (Cow<'_, str>, SourceSpan);
+            if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+                name = (Cow::from(ident), self.current_token.unwrap().span);
+            } else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+                break;
+            }
+
+            self.next();
+
+            obj = Box::new(DotAST::new(obj, name));
+        }
+
+        (obj, errors)
     }
 
     /// Going into this function, `current_token` is assumed to be a unary operator.
@@ -775,6 +878,18 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_fn_call();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_dotted_ident() {
+        let mut reader = SourceReader::new("foo.bar.baz");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_dotted_ident();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
