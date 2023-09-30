@@ -126,12 +126,12 @@ impl CompileCommand {
             let wasm32 = triple.contains("wasm32");
             let wasm64 = !wasm32 && triple.contains("wasm64");
             if wasm32 {
-                from_env("CO_WASM32_LINK_DIRS", &mut out);
+                from_env("COBALT_WASM32_LINK_DIRS", &mut out);
             }
             if wasm64 {
-                from_env("CO_WASM64_LINK_DIRS", &mut out);
+                from_env("COBALT_WASM64_LINK_DIRS", &mut out);
             }
-            from_env("CO_WASM_LINK_DIRS", &mut out);
+            from_env("COBALT_WASM_LINK_DIRS", &mut out);
             return Ok(out);
         }
         fn append_paths<I: IntoIterator<Item = P>, P: Into<PathBuf>>(
@@ -145,15 +145,17 @@ impl CompileCommand {
             let arch = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
             it.next();
             let os = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
-            from_env(&format!("CO_{arch}_{os}_LINK_DIRS"), &mut out);
-            from_env(&format!("CO_{arch}_LINK_DIRS"), &mut out);
-            from_env(&format!("CO_{os}_LINK_DIRS"), &mut out);
+            from_env(&format!("COBALT_{arch}_{os}_LINK_DIRS"), &mut out);
+            from_env(&format!("COBALT_{arch}_LINK_DIRS"), &mut out);
+            from_env(&format!("COBALT_{os}_LINK_DIRS"), &mut out);
             !(self.no_default_link
-                || env_flag(&format!("CO_{arch}_{os}_NO_DEFAULT_LINK"))
-                    .or_else(|| env_flag(&format!("CO_{arch}_NO_DEFAULT_LINK")))
-                    .or_else(|| env_flag(&format!("CO_{os}_NO_DEFAULT_LINK")))
+                || env_flag(&format!("COBALT_{arch}_{os}_NO_DEFAULT_LINK"))
+                    .or_else(|| env_flag(&format!("COBALT_{arch}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag(&format!("COBALT_{os}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag("COBALT_NO_DEFAULT_LINK"))
                     .unwrap_or(false))
         };
+        from_env("COBALT_LINK_DIRS", &mut out);
         if default {
             #[cfg(target_os = "linux")]
             'specific: {
