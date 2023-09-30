@@ -561,73 +561,79 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         var.data_type = Type::load(buf)?;
         if !name.is_empty() {
             use inkwell::module::Linkage::DLLImport;
-            if let Type::Function(ret, params) = &var.data_type {
-                if let Some(llt) = ret.llvm_type(ctx) {
-                    let mut good = true;
-                    let ps = params
-                        .iter()
-                        .filter_map(|(x, c)| {
-                            if *c {
-                                None
-                            } else {
-                                Some(BasicMetadataTypeEnum::from(
-                                    x.llvm_type(ctx).unwrap_or_else(|| {
-                                        good = false;
-                                        IntType(ctx.context.i8_type())
-                                    }),
-                                ))
+            if let Type::Reference(r) = &var.data_type {
+                if let Type::Function(ret, params) = &**r {
+                    if let Some(llt) = ret.llvm_type(ctx) {
+                        let mut good = true;
+                        let ps = params
+                            .iter()
+                            .filter_map(|(x, c)| {
+                                if *c {
+                                    None
+                                } else {
+                                    Some(BasicMetadataTypeEnum::from(
+                                        x.llvm_type(ctx).unwrap_or_else(|| {
+                                            good = false;
+                                            IntType(ctx.context.i8_type())
+                                        }),
+                                    ))
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if good {
+                            let ft = llt.fn_type(&ps, false);
+                            let fv = ctx.module.add_function(
+                                std::str::from_utf8(&name)
+                                    .expect("LLVM function names should be valid UTF-8"),
+                                ft,
+                                None,
+                            );
+                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                                fv.set_call_conventions(cconv)
                             }
-                        })
-                        .collect::<Vec<_>>();
-                    if good {
-                        let ft = llt.fn_type(&ps, false);
-                        let fv = ctx.module.add_function(
-                            std::str::from_utf8(&name)
-                                .expect("LLVM function names should be valid UTF-8"),
-                            ft,
-                            None,
-                        );
-                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                            fv.set_call_conventions(cconv)
+                            let gv = fv.as_global_value();
+                            gv.set_linkage(DLLImport);
+                            var.comp_val =
+                                Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                         }
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
-                    }
-                } else if ret.size(ctx) == SizeType::Static(0) {
-                    let mut good = true;
-                    let ps = params
-                        .iter()
-                        .filter_map(|(x, c)| {
-                            if *c {
-                                None
-                            } else {
-                                Some(BasicMetadataTypeEnum::from(
-                                    x.llvm_type(ctx).unwrap_or_else(|| {
-                                        good = false;
-                                        IntType(ctx.context.i8_type())
-                                    }),
-                                ))
+                    } else if ret.size(ctx) == SizeType::Static(0) {
+                        let mut good = true;
+                        let ps = params
+                            .iter()
+                            .filter_map(|(x, c)| {
+                                if *c {
+                                    None
+                                } else {
+                                    Some(BasicMetadataTypeEnum::from(
+                                        x.llvm_type(ctx).unwrap_or_else(|| {
+                                            good = false;
+                                            IntType(ctx.context.i8_type())
+                                        }),
+                                    ))
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if good {
+                            let ft = ctx.context.void_type().fn_type(&ps, false);
+                            let fv = ctx.module.add_function(
+                                std::str::from_utf8(&name)
+                                    .expect("LLVM function names should be valid UTF-8"),
+                                ft,
+                                None,
+                            );
+                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                                fv.set_call_conventions(cconv)
                             }
-                        })
-                        .collect::<Vec<_>>();
-                    if good {
-                        let ft = ctx.context.void_type().fn_type(&ps, false);
-                        let fv = ctx.module.add_function(
-                            std::str::from_utf8(&name)
-                                .expect("LLVM function names should be valid UTF-8"),
-                            ft,
-                            None,
-                        );
-                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                            fv.set_call_conventions(cconv)
+                            let gv = fv.as_global_value();
+                            gv.set_linkage(DLLImport);
+                            var.comp_val =
+                                Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                         }
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
                     }
+                    return Ok(var);
                 }
-            } else if let Some(t) = if let Type::Reference(ref b) = var.data_type {
+            }
+            if let Some(t) = if let Type::Reference(ref b) = var.data_type {
                 b.llvm_type(ctx)
             } else {
                 None
