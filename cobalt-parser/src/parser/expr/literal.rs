@@ -111,6 +111,59 @@ impl<'src> Parser<'src> {
         )
     }
 
+    /// Check if the current token begins a struct literal.
+    ///
+    /// In particular, we look for the following pattern:
+    /// ```
+    /// '{' ident ':'
+    /// ```
+    /// This could be improved to next look for `expr [',' | '}']`.
+    pub fn check_struct_literal(&mut self) -> bool {
+        assert!(self.current_token.is_some());
+
+        let idx_on_entry = self.cursor.index;
+
+        // ---
+
+        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
+            return false;
+        }
+
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if let TokenKind::Ident(_) = self.current_token.unwrap().kind {
+        } else {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Colon {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        // ---
+
+        self.rewind_to_idx(idx_on_entry);
+        true
+    }
+
     /// Going into this function, the current token should be '{'.
     ///
     /// ```

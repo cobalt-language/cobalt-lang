@@ -217,11 +217,15 @@ impl<'src> Parser<'src> {
     /// ```
     /// block_expr
     ///     := '{' [ expr? ';' | decl ]* '}'
-    ///     := '{' [ident ':' expr] [',' ident ':' expr]* [',']? '}' // TODO
+    ///     := struct_literal
     /// ```
     fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Brace));
+
+        if self.check_struct_literal() {
+            return self.parse_struct_literal();
+        }
 
         let span_start = self.current_token.unwrap().span.offset();
         let mut span_len = self.current_token.unwrap().span.len();
@@ -461,6 +465,15 @@ mod tests {
         assert!(errors.is_empty());
 
         let mut reader = SourceReader::new("{ x = 4; }");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_block_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("{ x: u32, y: f64, }");
         let tokens = reader.tokenize().0;
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
