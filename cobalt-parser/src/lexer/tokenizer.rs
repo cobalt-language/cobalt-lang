@@ -68,7 +68,7 @@ impl<'src> SourceReader<'src> {
                 // Match an identifier.
                 // TODO: include check for underscore, but then there must be at least
                 // one xid_continue after the underscore.
-                c if is_xid_start(*c) => {
+                c if is_xid_start(*c) || *c == '_' => {
                     let ident_parse_res = self.eat_ident();
 
                     if let Err(ident_parse_err) = ident_parse_res {
@@ -425,7 +425,7 @@ impl<'src> SourceReader<'src> {
         let mut ident_len: usize = 0;
 
         if let Some(c) = self.peek() {
-            if !is_xid_start(*c) {
+            if !(is_xid_start(*c) || *c == '_') {
                 let err = TokenizeError {
                     kind: TokenizeErrorKind::BadFirstChar,
                     span: self.source_span_backward(1),

@@ -166,4 +166,37 @@ type layout = {size: u32, offset: u16} :: {
         dbg!(&errors);
         assert!(errors.is_empty());
     }
+
+    #[test]
+    fn test_parse_2() {
+        let src = r#"@export
+module alloc._utils;
+@link(weak) @forward
+fn memclear(ptr: *mut null, size: usize) = {
+  let ptr = ptr: *mut u8;
+  let mut i = 0;
+  while (i < size) {
+    ptr[i] = 0;
+    ++i;
+  }
+};
+@link(weak) @forward
+fn memcpy(dst: *mut null, src: *null, size: usize) = {
+  let dst = dst: *mut u8;
+  let src = src: *u8;
+  let mut i = 0;
+  while (i < size) {
+    dst[i] = src[i];
+    ++i;
+  }
+};"#;
+        let mut reader = SourceReader::new(src);
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
 }
