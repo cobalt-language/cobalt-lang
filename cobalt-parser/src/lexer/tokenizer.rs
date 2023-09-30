@@ -377,6 +377,13 @@ impl<'src> SourceReader<'src> {
                         span: self.source_span_backward(1),
                     });
                 }
+                '@' => {
+                    self.next_char();
+                    tokens.push(Token {
+                        kind: TokenKind::At,
+                        span: self.source_span_backward(1),
+                    });
+                }
 
                 _ => panic!("Unexpected character: {}", c),
             }

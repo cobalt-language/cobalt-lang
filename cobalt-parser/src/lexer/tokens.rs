@@ -11,6 +11,7 @@ pub enum Keyword {
     Fn,
     If,
     Else,
+    Module,
 }
 
 impl Keyword {
@@ -25,6 +26,7 @@ impl Keyword {
             "fn" => Some(Keyword::Fn),
             "if" => Some(Keyword::If),
             "else" => Some(Keyword::Else),
+            "module" => Some(Keyword::Module),
             _ => None,
         }
     }
@@ -137,6 +139,7 @@ pub enum TokenKind<'src> {
     BinOp(BinOpToken),
     UnOrBinOp(UnOrBinOpToken),
     Literal(LiteralToken<'src>),
+    At,
 }
 
 impl<'src> TokenKind<'src> {

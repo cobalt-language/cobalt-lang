@@ -4,7 +4,7 @@ use cobalt_ast::{
     ast::{FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
-use cobalt_errors::{CobaltError, ParserFound};
+use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 
 use crate::lexer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind};
 
@@ -50,6 +50,205 @@ impl<'src> Parser<'src> {
         };
 
         (ast, errors)
+    }
+
+    /// Going into the function, the current token is assumed to be `module`.
+    ///
+    /// ```
+    /// module_decl := 'module' ident ';'
+    /// ```
+    pub fn parse_module_decl(&mut self) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Module));
+
+        let span = self.current_token.unwrap().span;
+
+        let mut errors = vec![];
+
+        // Consume 'module'.
+
+        self.next();
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (None, errors);
+        }
+
+        let mut module_name: Option<DottedName<'src>> = None;
+
+        // Parse module name.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (None, errors);
+        }
+
+        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+            let span = self.current_token.unwrap().span;
+            let id = std::borrow::Cow::Borrowed(ident);
+
+            module_name = Some(DottedName::new(vec![(id, span)], true));
+        }
+
+        self.next();
+
+        // Next must be semicolon.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (module_name, errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::Semicolon {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return (module_name, errors);
+        }
+
+        self.next();
+
+        // ---
+
+        (module_name, errors)
+    }
+
+    /// Parses an annotation.
+    ///
+    /// Going into this function, the current token should be the '@'.
+    ///
+    /// ```
+    /// annotation := '@' ident ['(' ident ')']?
+    /// ```
+    pub fn parse_annotation(
+        &mut self,
+    ) -> (
+        (Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan),
+        Vec<CobaltError<'src>>,
+    ) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::At);
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+        self.next();
+
+        let primary_ident: Cow<'src, str>;
+        let secondary_ident: Option<Cow<'src, str>>;
+
+        // Parse (first) identifier.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return ((Cow::Borrowed("@"), None, span), errors);
+        }
+
+        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+            primary_ident = Cow::Borrowed(ident);
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return ((Cow::Borrowed("@"), None, span), errors);
+        }
+
+        self.next();
+
+        // Optionally parse (second) identifier.
+        // First eat the '('.
+
+        if self.current_token.is_none() {
+            return ((primary_ident, None, span), errors);
+        }
+
+        if let TokenKind::OpenDelimiter(delim) = self.current_token.unwrap().kind {
+            if delim != Delimiter::Paren {
+                return ((primary_ident, None, span), errors);
+            }
+        } else {
+            return ((primary_ident, None, span), errors);
+        }
+
+        self.next();
+
+        // Parse identifier.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return ((primary_ident, None, span), errors);
+        }
+
+        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+            secondary_ident = Some(Cow::Borrowed(ident));
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return ((primary_ident, None, span), errors);
+        }
+
+        self.next();
+
+        // Parse ')'.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "')'",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return ((primary_ident, secondary_ident, span), errors);
+        }
+
+        if let TokenKind::CloseDelimiter(delim) = self.current_token.unwrap().kind {
+            if delim != Delimiter::Paren {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "')'",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: span,
+                });
+                return ((primary_ident, secondary_ident, span), errors);
+            }
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "')'",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return ((primary_ident, secondary_ident, span), errors);
+        }
+
+        self.next();
+
+        // ---
+
+        ((primary_ident, secondary_ident, span), errors)
     }
 
     /// Parses a let declaration.
@@ -475,20 +674,52 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// fn_def
-    ///   := 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] ['=' expr] ';'
+    ///   := annotation* 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' TYPE] ['=' expr] ';'
     pub fn parse_fn_def(&mut self, in_struct: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
-        assert_eq!(
-            self.current_token.unwrap().kind,
-            TokenKind::Keyword(Keyword::Fn)
-        );
-
-        let mut errors = vec![];
         let first_token_loc = self.current_token.unwrap().span;
+        let mut errors = vec![];
 
-        // Next has to be an identifier.
+        // Annotations.
+
+        let mut anns = vec![];
+        loop {
+            if self.current_token.unwrap().kind == TokenKind::At {
+                let (ann, ann_errors) = self.parse_annotation();
+                errors.extend(ann_errors);
+                anns.push(ann);
+
+                if self.current_token.is_none() {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "function definition",
+                        found: ParserFound::Eof,
+                        loc: first_token_loc,
+                    });
+                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        // Next has to be 'fn'.
+
+        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
+            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let loc = self.current_token.unwrap().span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "function definition",
+                found,
+                loc,
+            });
+            return (Box::new(NullAST::new(first_token_loc)), errors);
+        }
 
         self.next();
+
+        // Next has to be an identifier.
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -655,7 +886,7 @@ impl<'src> Parser<'src> {
             ret,
             params,
             body,
-            vec![], // TODO: annotations
+            anns,
             in_struct,
         ));
 
@@ -925,12 +1156,55 @@ mod tests {
         dbg!(&errors);
         assert!(errors.is_empty());
 
+        let src = "@C(extern) @inline fn foo();";
+        let mut src_reader = SourceReader::new(src);
+        let token_stream = src_reader.tokenize().0;
+        let mut parser = Parser::new(&src_reader, token_stream);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_def(false);
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
         let src = "fn foo(): i32 = { let x = 3; x};";
         let mut src_reader = SourceReader::new(src);
         let token_stream = src_reader.tokenize().0;
         let mut parser = Parser::new(&src_reader, token_stream);
         parser.next();
         let (ast, errors) = parser.parse_fn_def(false);
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_module() {
+        let mut reader = SourceReader::new("module foo;");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_module_decl();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_annotation() {
+        let mut reader = SourceReader::new("@method");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_annotation();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("@C(extern)");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_annotation();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());
