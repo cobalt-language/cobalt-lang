@@ -30,6 +30,15 @@ pub enum TargetType {
     Executable,
     #[serde(rename = "lib", alias = "library")]
     Library,
+    #[serde(rename = "archive", alias = "static", alias = "static-lib")]
+    Archive,
+    #[serde(
+        rename = "obj",
+        alias = "object",
+        alias = "objects",
+        alias = "artifacts"
+    )]
+    Objects,
     #[serde(rename = "meta")]
     Meta,
 }
@@ -686,6 +695,117 @@ pub fn build_target_single(
             cc.run()?;
             Ok(output)
         }
+        TargetType::Archive => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob(
+                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
+                    )
+                    .context("error in file glob")?
+                    .filter_map(Result::ok)
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            continue;
+                        }
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                }
+                Some(either::Right(files)) => {
+                    for file in files
+                        .iter()
+                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            anyhow::bail!("couldn't find file {file}")
+                        }
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                }
+                None => anyhow::bail!("target must have files"),
+            }
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut builder = ar::Builder::new(output.create_file_anyhow()?);
+            paths
+                .iter()
+                .zip(asts)
+                .try_for_each(|(([p1, p2], fail), ast)| {
+                    if let Some(ast) = ast {
+                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)?;
+                        builder.append_path(p2)?;
+                        anyhow::Ok(())
+                    } else {
+                        Ok(())
+                    }
+                })?;
+            Ok(output)
+        }
+        TargetType::Objects => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    for file in glob::glob(
+                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
+                    )
+                    .context("error in file glob")?
+                    .filter_map(Result::ok)
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            continue;
+                        }
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                }
+                Some(either::Right(files)) => {
+                    for file in files
+                        .iter()
+                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            anyhow::bail!("couldn't find file {file}")
+                        }
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, true)?;
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                }
+                None => anyhow::bail!("target must have files"),
+            }
+            paths
+                .iter()
+                .zip(asts)
+                .try_for_each(|(([p1, p2], fail), ast)| {
+                    if let Some(ast) = ast {
+                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
+                    } else {
+                        Ok(())
+                    }
+                })?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            Ok(output)
+        }
         TargetType::Meta => {
             let output = opts.build_dir.join(name);
             let mut vec = Vec::new();
@@ -947,12 +1067,157 @@ fn build_target(
                     }
                 })?;
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(name, opts.triple));
+            output.push(libs::format_lib(name, opts.triple, true));
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
             cc.run()?;
             data.set(Some(output.clone()));
+            Ok((changed, output))
+        }
+        TargetType::Archive => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    let mut passed = false;
+                    for file in glob::glob(
+                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
+                    )
+                    .context("error in file glob")?
+                    .filter_map(Result::ok)
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            continue;
+                        }
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
+                        paths.push(path);
+                        asts.push(ast);
+                        passed = true;
+                    }
+                    if !passed {
+                        warning!("no files matching glob {files}")
+                    }
+                }
+                Some(either::Right(files)) => {
+                    let mut failed = None;
+                    for file in files
+                        .iter()
+                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            if opts.continue_build {
+                                error!("couldn't find file {file}");
+                                failed = Some(file);
+                                continue;
+                            } else {
+                                anyhow::bail!("couldn't find file {file}")
+                            }
+                        }
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                    if let Some(file) = failed {
+                        anyhow::bail!("couldn't find file {file}")
+                    }
+                }
+                None => anyhow::bail!("target must have files"),
+            }
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
+            let mut builder = ar::Builder::new(output.create_file_anyhow()?);
+            paths
+                .iter()
+                .zip(asts)
+                .try_for_each(|(([p1, p2], fail), ast)| {
+                    if let Some(ast) = ast {
+                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)?;
+                        builder.append_path(p2)?;
+                        anyhow::Ok(())
+                    } else {
+                        Ok(())
+                    }
+                })?;
+            Ok((changed, output))
+        }
+        TargetType::Objects => {
+            let mut asts = vec![];
+            let mut paths = vec![];
+            match t.files.as_ref() {
+                Some(either::Left(files)) => {
+                    let mut passed = false;
+                    for file in glob::glob(
+                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
+                    )
+                    .context("error in file glob")?
+                    .filter_map(Result::ok)
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            continue;
+                        }
+                        let (path, ast) = build_file_1(file.as_path(), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
+                        paths.push(path);
+                        asts.push(ast);
+                        passed = true;
+                    }
+                    if !passed {
+                        warning!("no files matching glob {files}")
+                    }
+                }
+                Some(either::Right(files)) => {
+                    let mut failed = None;
+                    for file in files
+                        .iter()
+                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
+                    {
+                        if std::fs::metadata(&file)
+                            .map(|m| !m.file_type().is_file())
+                            .unwrap_or(true)
+                        {
+                            if opts.continue_build {
+                                error!("couldn't find file {file}");
+                                failed = Some(file);
+                                continue;
+                            } else {
+                                anyhow::bail!("couldn't find file {file}")
+                            }
+                        }
+                        let (path, ast) = build_file_1(Path::new(&file), &ctx, opts, rebuild)?;
+                        changed |= ast.is_some();
+                        paths.push(path);
+                        asts.push(ast);
+                    }
+                    if let Some(file) = failed {
+                        anyhow::bail!("couldn't find file {file}")
+                    }
+                }
+                None => anyhow::bail!("target must have files"),
+            }
+            paths
+                .iter()
+                .zip(asts)
+                .try_for_each(|(([p1, p2], fail), ast)| {
+                    if let Some(ast) = ast {
+                        build_file_2(ast, &ctx, opts, (p1, p2), *fail)
+                    } else {
+                        Ok(())
+                    }
+                })?;
+            let mut output = opts.build_dir.to_path_buf();
+            output.push(name);
             Ok((changed, output))
         }
         TargetType::Meta => {

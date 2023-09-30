@@ -274,7 +274,7 @@ impl CompileCommand {
             .map(AsRef::<Path>::as_ref)
             .filter_map(|dir| dir.read_dir().ok())
         {
-            for libname in dir.filter_map(|entry| {
+            for (path, libname) in dir.filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
                 entry
                     .file_type()
@@ -284,17 +284,30 @@ impl CompileCommand {
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
                 name = &name[..name.find(sta_os_ext)?]; // check for matching extension and remove it
-                Some(name[(!windows as usize * 3)..].to_string()) // remove "lib" prefix if not windows
+                Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
+                // remove "lib" prefix if not windows
             }) {
-                remaining.retain(|lib| {
-                    // we can use retain here beause there aren't any errors
-                    if lib.as_ref() == libname {
-                        self.libs.push(lib.as_ref().into());
-                        false
-                    } else {
-                        true
-                    }
-                });
+                remaining = remaining
+                    .into_iter()
+                    .filter_map(|lib| {
+                        // there should really be a try_retain, but this had to be done instead
+                        if lib.as_ref() == libname {
+                            if let Some(ctx) = ctx {
+                                match libs::load_lib(&path, ctx) {
+                                    Ok(mut libs) => conflicts.append(&mut libs),
+                                    Err(e) => return Some(Err(e)),
+                                }
+                            }
+                            if load {
+                                cobalt_errors::warning!("{} was found for {libname}, but it is a static archive and can't be loaded", path.display());
+                            }
+                            self.libs.push(lib.as_ref().into());
+                            None
+                        } else {
+                            Some(Ok(lib))
+                        }
+                    })
+                    .collect::<anyhow::Result<_>>()?;
             }
         }
         Ok(remaining)
