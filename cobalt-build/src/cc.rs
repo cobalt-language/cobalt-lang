@@ -82,9 +82,6 @@ impl CompileCommand {
         self.target_ = Some(target.into());
         self
     }
-    pub fn run(&mut self) -> anyhow::Result<()> {
-        todo!()
-    }
     #[cfg(windows)]
     pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
         unimplemented!("I don't know how to do this on Windows. Get a better OS maybe?")
@@ -105,7 +102,7 @@ impl CompileCommand {
                 .zip(triple.split('-'))
                 .skip(1)
                 .all(|(n, t)| n == "unknown" || t == "unknown" || n == t));
-        let mut out = vec![];
+        let mut out = self.dirs.clone();
         fn from_env(name: &str, out: &mut Vec<PathBuf>) {
             if let Some(dirs) = std::env::var_os(name) {
                 out.extend(dirs.into_raw_vec().split(|&b| b == b':').filter_map(|b| {
@@ -158,15 +155,6 @@ impl CompileCommand {
                     .unwrap_or(false))
         };
         if default {
-            if compatible {
-                if is_x86(triple) || is_arm32(triple) {
-                    append_paths(&mut out, ["/usr/lib32", "/lib32"]);
-                }
-                // all 64-bit targets have 64 somewhere in their name
-                if triple.contains("64") {
-                    append_paths(&mut out, ["/usr/lib64", "/lib64"]);
-                }
-            }
             #[cfg(target_os = "linux")]
             'specific: {
                 let mut it = triple.split('-');
@@ -328,3 +316,6 @@ fn is_arm32(s: &str) -> bool {
 fn is_arm64(s: &str) -> bool {
     s == "arm64" || s == "aarch64"
 }
+
+#[cfg(feature = "cc-build")]
+mod impl_cc;

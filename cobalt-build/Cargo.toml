@@ -33,3 +33,9 @@ indexmap = "2.0.0"
 os_str_bytes = "6.5.0"
 toml = "0.8.0"
 bstr = "1.5.0"
+cc = { version = "1.0.83", optional = true }
+
+
+[features]
+cc-build = ["cc"]
+default = ["cc-build"]
