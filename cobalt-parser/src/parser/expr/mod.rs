@@ -51,9 +51,15 @@ impl<'src> Parser<'src> {
     ///    := block_expr
     ///    := prefix_expr
     ///    := if_expr
+    ///    := intrinsic
+    ///    := fn_call
     /// ```
     fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
+
+        if self.check_fn_call() {
+            return self.parse_fn_call();
+        }
 
         match self.current_token.unwrap().kind {
             TokenKind::Literal(_) => {
@@ -78,6 +84,9 @@ impl<'src> Parser<'src> {
                 if kw == Keyword::If {
                     return self.parse_if_expr();
                 }
+            }
+            TokenKind::At => {
+                return self.parse_intrinsic();
             }
             _ => {}
         }
@@ -397,6 +406,210 @@ impl<'src> Parser<'src> {
 
         (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
     }
+
+    /// Going into this function, `current_token` is assumed to be an `@`.
+    /// Instrinsics can be functions; these are parsed in the function call
+    /// parsing methods.
+    ///
+    /// ```
+    /// instinsic := '@' ident
+    /// ```
+    fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::At);
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: self.current_token.unwrap().span,
+            });
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+        }
+
+        let name: Cow<'_, str>;
+        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+            name = Cow::Borrowed(ident);
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: self.current_token.unwrap().span,
+            });
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+        }
+
+        self.next();
+
+        // ---
+
+        (Box::new(IntrinsicAST::new(span, name)), errors)
+    }
+
+    fn check_fn_call(&mut self) -> bool {
+        if self.current_token.is_none() {
+            return false;
+        }
+
+        let idx_on_entry = self.cursor.index;
+
+        match self.current_token.unwrap().kind {
+            TokenKind::Keyword(Keyword::Fn) => {
+                self.next();
+            }
+            TokenKind::At => {
+                self.parse_intrinsic();
+            }
+            _ => {
+                self.rewind_to_idx(idx_on_entry);
+                return false;
+            }
+        }
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.rewind_to_idx(idx_on_entry);
+        true
+    }
+
+    /// Going into this function, `current_token` is assumed to be an identifier.
+    ///
+    /// ```
+    /// fn_call := [ident | intrinsic] '(' [ expr [',' expr]*]? ')'
+    /// ```
+    fn parse_fn_call(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let mut errors = vec![];
+        let span = self.current_token.unwrap().span;
+
+        // ---
+
+        let name = match self.current_token.unwrap().kind {
+            TokenKind::Ident(s) => {
+                self.next();
+                Box::new(VarGetAST::new(
+                    self.current_token.unwrap().span,
+                    Cow::Borrowed(s),
+                    false,
+                ))
+            }
+            TokenKind::At => {
+                let (intrinsic, intrinsics_errors) = self.parse_intrinsic();
+                errors.extend(intrinsics_errors);
+                intrinsic
+            }
+            _ => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "function arg",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+                return (Box::new(NullAST::new(span)), errors);
+            }
+        };
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'('",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (Box::new(NullAST::new(span)), errors);
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'('",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: self.current_token.unwrap().span,
+            });
+            return (Box::new(NullAST::new(span)), errors);
+        }
+
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "')'",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (Box::new(NullAST::new(span)), errors);
+        }
+
+        if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
+            let cparen_span = self.current_token.unwrap().span;
+
+            self.next();
+
+            return (Box::new(CallAST::new(cparen_span, name, vec![])), errors);
+        }
+
+        let start = 0;
+        let atleast_one_arg = 1;
+        let mut local_state = start;
+
+        let mut args = vec![];
+        let cparen_span: SourceSpan;
+        loop {
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "')'",
+                    found: ParserFound::Eof,
+                    loc: span,
+                });
+                cparen_span = span;
+                break;
+            }
+
+            if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
+                cparen_span = self.current_token.unwrap().span;
+                break;
+            }
+
+            if local_state == atleast_one_arg {
+                if self.current_token.unwrap().kind != TokenKind::Comma {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: ",",
+                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        loc: self.current_token.unwrap().span,
+                    });
+                } else {
+                    self.next();
+                }
+            }
+
+            let (arg, arg_errors) = self.parse_expr();
+            errors.extend(arg_errors);
+            args.push(arg);
+            local_state = atleast_one_arg;
+        }
+
+        self.next();
+
+        // ---
+
+        (Box::new(CallAST::new(cparen_span, name, args)), errors)
+    }
 }
 
 #[cfg(test)]
@@ -432,6 +645,18 @@ mod tests {
     #[test]
     fn test_mul_add() {
         let mut reader = SourceReader::new("a * b + c");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_bitcast() {
+        let mut reader = SourceReader::new("a + 4 :? u8");
         let tokens = reader.tokenize().0;
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
@@ -520,6 +745,36 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_if_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_fn_call() {
+        let mut reader = SourceReader::new("foo()");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_call();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("foo(x, y + z)");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_call();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("@size(T)");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_fn_call();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());

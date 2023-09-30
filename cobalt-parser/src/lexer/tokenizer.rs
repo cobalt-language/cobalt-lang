@@ -364,10 +364,19 @@ impl<'src> SourceReader<'src> {
 
                 ':' => {
                     self.next_char();
-                    tokens.push(Token {
-                        kind: TokenKind::Colon,
-                        span: self.source_span_backward(1),
-                    });
+
+                    if self.peek() == Some(&'?') {
+                        self.next_char();
+                        tokens.push(Token {
+                            kind: TokenKind::BinOp(BinOpToken::Colonq),
+                            span: self.source_span_backward(2),
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Colon,
+                            span: self.source_span_backward(1),
+                        });
+                    }
                 }
 
                 ',' => {

@@ -56,14 +56,15 @@ pub enum BinOpToken {
     EqEq, // ==
     Neq,  // !=
 
-    Lt,   // <
-    Leq,  // <=
-    Gt,   // >
-    Geq,  // >=
-    Andq, // &?
-    Or,   // |
-    Orq,  // |?
-    Xor,  // ^
+    Lt,     // <
+    Leq,    // <=
+    Gt,     // >
+    Geq,    // >=
+    Andq,   // &?
+    Or,     // |
+    Orq,    // |?
+    Xor,    // ^
+    Colonq, // :?
 
     Add, // +
     Sub, // -
@@ -88,6 +89,7 @@ impl BinOpToken {
             BinOpToken::Or => "|",
             BinOpToken::Orq => "||",
             BinOpToken::Xor => "^",
+            BinOpToken::Colonq => ":?",
 
             BinOpToken::Add => "+",
             BinOpToken::Sub => "-",
@@ -150,6 +152,7 @@ impl<'src> TokenKind<'src> {
                 BinOpToken::Leq => 10,
                 BinOpToken::Gt => 10,
                 BinOpToken::Geq => 10,
+                BinOpToken::Colonq => 10,
 
                 BinOpToken::Sub => 20,
                 BinOpToken::Add => 25,

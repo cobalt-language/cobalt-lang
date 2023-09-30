@@ -33,6 +33,13 @@ pub enum CobaltError<'src> {
         #[label]
         loc: SourceSpan,
     },
+    #[error("multiple module declarations")]
+    RedefModule {
+        #[label]
+        loc: SourceSpan,
+        #[label("previously defined here")]
+        prev: SourceSpan,
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]

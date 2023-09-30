@@ -17,6 +17,12 @@
 //! A common idiom is to use a `check_` function to see if a token starts a particular
 //! grammar, and subsequently use a `parse_` function to parse the the grammar.
 
+use cobalt_ast::{
+    ast::{NullAST, TopLevelAST},
+    BoxedAST,
+};
+use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+
 use crate::lexer::{tokenizer::TokenStream, tokens::Token, SourceReader};
 
 mod decl;
@@ -68,7 +74,95 @@ impl<'src> Parser<'src> {
         self.next();
     }
 
-    pub fn parse(&mut self) {
-        unimplemented!()
+    /// Main entry point for parsing.
+    pub fn parse(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        if self.current_token.is_none() {
+            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), vec![]);
+        }
+
+        let mut vals = vec![];
+        let mut errs = vec![];
+        let mut module = None;
+        let mut module_span = None;
+
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if self.check_module_decl() {
+                let (module_parsed, errs_parsed) = self.parse_module_decl();
+
+                if module.is_some() {
+                    errs.push(CobaltError::RedefModule {
+                        loc: self.current_token.unwrap().span,
+                        prev: module_span.unwrap(),
+                    });
+                    continue;
+                }
+
+                errs.extend(errs_parsed);
+                module = module_parsed;
+                module_span = Some(self.current_token.unwrap().span);
+                continue;
+            }
+
+            let (val, err) = self.parse_top_level();
+            vals.push(val);
+            errs.extend(err);
+        }
+
+        (Box::new(TopLevelAST::new(vals, module)), errs)
+    }
+
+    /// Parses a top level item.
+    ///
+    /// ```
+    /// top_level
+    ///    := type_decl
+    ///    := fn_def
+    /// ```
+    pub fn parse_top_level(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        if self.check_type_decl() {
+            return self.parse_type_decl();
+        }
+
+        if self.check_fn_def() {
+            return self.parse_fn_def(false);
+        }
+
+        let span = self.current_token.unwrap().span;
+        let errors = vec![CobaltError::ExpectedFound {
+            ex: "function or type declaration",
+            found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+            loc: span,
+        }];
+        (Box::new(NullAST::new(span)), errors)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_1() {
+        let src = r#"module alloc;
+@transparent
+type layout = {size: u32, offset: u16} :: {
+  @const
+  fn new(size: u32, offset: u16): self_t = {size: size, offset: offset} :? self_t;
+  const of::(T: type): self_t = self_t.new(@size(T), @align(T));
+};"#;
+        let mut reader = SourceReader::new(src);
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_annotation();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
     }
 }

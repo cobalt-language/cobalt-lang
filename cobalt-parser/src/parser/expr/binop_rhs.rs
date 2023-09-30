@@ -1,10 +1,13 @@
 use cobalt_ast::{
-    ast::{BinOpAST, NullAST},
+    ast::{BinOpAST, BitCastAST, NullAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound};
 
-use crate::{lexer::tokens::TokenKind, parser::Parser};
+use crate::{
+    lexer::tokens::{BinOpToken, TokenKind},
+    parser::Parser,
+};
 
 impl<'src> Parser<'src> {
     /// - `lhs_precedence` is the precedence of the left-hand side operator. If it is
@@ -80,12 +83,17 @@ impl<'src> Parser<'src> {
             }
 
             // Merge rhs and lhs.
-            let binop_str = match binop_token.kind {
-                TokenKind::BinOp(op) => op.as_str(),
-                TokenKind::UnOrBinOp(op) => op.as_str(),
-                _ => unreachable!(),
-            };
-            lhs = Box::new(BinOpAST::new(binop_token.span, binop_str, lhs, rhs));
+
+            if binop_token.kind == TokenKind::BinOp(BinOpToken::Colonq) {
+                lhs = Box::new(BitCastAST::new(binop_token.span, lhs, rhs));
+            } else {
+                let binop_str = match binop_token.kind {
+                    TokenKind::BinOp(op) => op.as_str(),
+                    TokenKind::UnOrBinOp(op) => op.as_str(),
+                    _ => unreachable!(),
+                };
+                lhs = Box::new(BinOpAST::new(binop_token.span, binop_str, lhs, rhs));
+            }
         }
     }
 }

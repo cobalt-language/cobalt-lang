@@ -52,6 +52,14 @@ impl<'src> Parser<'src> {
         (ast, errors)
     }
 
+    pub fn check_module_decl(&mut self) -> bool {
+        if self.current_token.is_none() {
+            return false;
+        }
+
+        self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Module)
+    }
+
     /// Going into the function, the current token is assumed to be `module`.
     ///
     /// ```
@@ -421,6 +429,58 @@ impl<'src> Parser<'src> {
         (ast, errors)
     }
 
+    /// Checks if the current token starts a type declaration.
+    ///
+    /// In particular, we check for this pattern:
+    /// ```
+    /// 'type' ident '='
+    /// ```
+    pub fn check_type_decl(&mut self) -> bool {
+        assert!(self.current_token.is_some());
+
+        let idx_on_entry = self.cursor.index;
+
+        // ---
+
+        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
+            return false;
+        }
+
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if let TokenKind::Ident(_) = self.current_token.unwrap().kind {
+        } else {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        // ---
+
+        self.rewind_to_idx(idx_on_entry);
+        true
+    }
+
     /// Parses a type declaration.
     ///
     /// ```
@@ -668,6 +728,45 @@ impl<'src> Parser<'src> {
         ));
 
         (ast, errors)
+    }
+
+    /// Checks if the current token starts a function definition.
+    ///
+    /// In particular, it checks for the following patterns:
+    /// ```
+    /// 'fn'
+    ///
+    /// annotation* 'fn'
+    /// ```
+    pub fn check_fn_def(&mut self) -> bool {
+        assert!(self.current_token.is_some());
+
+        let idx_on_entry = self.cursor.index;
+
+        // ---
+
+        loop {
+            if self.current_token.is_none() {
+                self.rewind_to_idx(idx_on_entry);
+                return false;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::At {
+                break;
+            }
+
+            let _ = self.parse_annotation();
+        }
+
+        // ---
+
+        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
+
+        self.rewind_to_idx(idx_on_entry);
+        true
     }
 
     /// Parses a function definition.
