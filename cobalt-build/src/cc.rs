@@ -193,22 +193,13 @@ impl CompileCommand {
         }
         Ok(out)
     }
-    pub fn search_libs<
-        L: AsRef<str>,
-        I: IntoIterator<Item = L>,
-        P: AsRef<Path>,
-        D: IntoIterator<Item = P>,
-    >(
+    pub fn search_libs<L: AsRef<str>, I: IntoIterator<Item = L>>(
         &mut self,
         libs: I,
-        dirs: D,
         ctx: Option<&CompCtx>,
         load: bool,
     ) -> Result<Vec<L>, anyhow::Error> {
-        let mut lib_dirs = self.lib_dirs()?;
-        self.dirs
-            .extend(dirs.into_iter().map(|p| p.as_ref().to_path_buf()));
-        lib_dirs.extend_from_slice(&self.dirs);
+        let lib_dirs = self.lib_dirs()?;
         let mut remaining = libs.into_iter().collect::<Vec<_>>();
         let triple = inkwell::targets::TargetMachine::get_default_triple();
         let triple = self
@@ -216,14 +207,14 @@ impl CompileCommand {
             .as_deref()
             .unwrap_or_else(|| triple.as_str().to_str().unwrap());
         let windows = triple.contains("windows");
+        let apple = triple.contains("apple");
         let dyn_os_ext = if windows {
             ".dll"
-        } else if triple.contains("apple") {
+        } else if apple {
             ".dylib"
         } else {
             ".so"
         };
-        let sta_os_ext = if windows { ".lib" } else { ".a" };
         let mut conflicts = vec![];
         // dynamic libraries
         for dir in lib_dirs
@@ -241,6 +232,7 @@ impl CompileCommand {
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
                 name = &name[..name.find(dyn_os_ext)?]; // check for matching extension and remove it
+                name = &name[..name.find('.').unwrap_or(name.len())];
                 Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
                 // remove "lib" prefix if not windows
             }) {
@@ -285,7 +277,7 @@ impl CompileCommand {
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
-                name = &name[..name.find(sta_os_ext)?]; // check for matching extension and remove it
+                name = &name[..name.find(".a")?]; // check for matching extension and remove it
                 Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
                 // remove "lib" prefix if not windows
             }) {

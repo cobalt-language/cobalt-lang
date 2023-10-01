@@ -516,7 +516,6 @@ fn resolve_deps_internal(
     pkg: &str,
     v: &Version,
     plan: &IndexMap<(&str, &str), Version>,
-    opts: &BuildOptions,
 ) -> anyhow::Result<()> {
     let mut libs = vec![];
     let mut conflicts = vec![];
@@ -552,12 +551,7 @@ fn resolve_deps_internal(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(
-        libs,
-        opts.link_dirs.iter().copied().map(String::from),
-        Some(ctx),
-        false,
-    )?;
+    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -577,8 +571,9 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
+    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
     cc.no_default_link = opts.no_default_link;
-    resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
+    resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan)?;
     match t.target_type {
         TargetType::Executable => {
             let mut paths = vec![];
@@ -897,12 +892,7 @@ fn resolve_deps(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(
-        libs,
-        opts.link_dirs.iter().copied().map(String::from),
-        Some(ctx),
-        false,
-    )?;
+    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -921,6 +911,7 @@ fn build_target(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.no_default_link = opts.no_default_link;
+    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {

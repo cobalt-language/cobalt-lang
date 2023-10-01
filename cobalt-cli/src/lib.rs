@@ -908,12 +908,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
             cc.target(&triple);
+            cc.link_dirs(link_dirs);
             cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
                 if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
                     if !notfound.is_empty() {
                         anyhow::bail!(LibsNotFound(notfound))
                     }
@@ -1250,12 +1251,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let mut cc = cc::CompileCommand::new();
+            cc.link_dirs(link_dirs);
             cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
                 if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
+                    let notfound = cc.search_libs(linked, Some(&ctx), true)?;
                     if !notfound.is_empty() {
                         anyhow::bail!(LibsNotFound(notfound))
                     }
@@ -1492,12 +1494,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
             cc.target(&triple);
+            cc.link_dirs(link_dirs);
             cc.no_default_link = no_default_link;
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
                 if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
                     if !notfound.is_empty() {
                         anyhow::bail!(LibsNotFound(notfound))
                     }
@@ -1745,12 +1748,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
+                cc.link_dirs(link_dirs);
                 cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
                     if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        let notfound = cc.search_libs(linked, Some(&ctx), false)?;
                         if !notfound.is_empty() {
                             anyhow::bail!(LibsNotFound(notfound))
                         }
@@ -2171,12 +2175,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
+                cc.link_dirs(link_dirs);
                 cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
                     if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), true)?;
+                        let notfound = cc.search_libs(linked, Some(&ctx), true)?;
                         if !notfound.is_empty() {
                             anyhow::bail!(LibsNotFound(notfound))
                         }
@@ -2456,12 +2461,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
                 cc.target(&triple);
+                cc.link_dirs(link_dirs);
                 cc.no_default_link = no_default_link;
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
                     if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, link_dirs, Some(&ctx), false)?;
+                        let notfound = cc.search_libs(linked, Some(&ctx), false)?;
                         if !notfound.is_empty() {
                             anyhow::bail!(LibsNotFound(notfound))
                         }
