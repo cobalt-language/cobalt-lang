@@ -264,7 +264,11 @@ impl CompileCommand {
         // dynamic libraries
         for (path, libname) in lib_dirs
             .iter()
-            .flat_map(|d| walkdir::WalkDir::new(d).follow_links(true))
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .contents_first(true)
+            })
             .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
                 entry.file_type().is_file().then_some(())?;
@@ -316,7 +320,11 @@ impl CompileCommand {
         // static libraries
         for (path, libname) in lib_dirs
             .iter()
-            .flat_map(|d| walkdir::WalkDir::new(d).follow_links(true))
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .contents_first(true)
+            })
             .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
                 entry.file_type().is_file().then_some(())?;
