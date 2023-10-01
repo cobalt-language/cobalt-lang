@@ -217,14 +217,16 @@ impl CompileCommand {
         };
         let mut conflicts = vec![];
         // dynamic libraries
-        for dir in lib_dirs
+        for (path, libname) in lib_dirs
             .iter()
-            .map(AsRef::<Path>::as_ref)
-            .map(walkdir::WalkDir::new)
-        {
-            for (path, libname) in dir.into_iter().filter_map(|entry| {
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_entry(|e| e.file_type().is_file())
+            })
+            .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry.file_type().is_file().then_some(())?; // is it a file?
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
@@ -235,42 +237,44 @@ impl CompileCommand {
                     name[(!windows as usize * 3)..].to_string(),
                 ))
                 // remove "lib" prefix if not windows
-            }) {
-                remaining = remaining
-                    .into_iter()
-                    .filter_map(|lib| {
-                        // there should really be a try_retain, but this had to be done instead
-                        if lib.as_ref() == libname {
-                            if let Some(ctx) = ctx {
-                                match libs::load_lib(&path, ctx) {
-                                    Ok(mut libs) => conflicts.append(&mut libs),
-                                    Err(e) => return Some(Err(e)),
-                                }
+            })
+        {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(mut libs) => conflicts.append(&mut libs),
+                                Err(e) => return Some(Err(e)),
                             }
-                            if load {
-                                match path.to_str_anyhow() {
-                                    Ok(path) => inkwell::support::load_library_permanently(path),
-                                    Err(e) => return Some(Err(e)),
-                                };
-                            }
-                            self.libs.push(lib.as_ref().into());
-                            None
-                        } else {
-                            Some(Ok(lib))
                         }
-                    })
-                    .collect::<anyhow::Result<_>>()?;
-            }
+                        if load {
+                            match path.to_str_anyhow() {
+                                Ok(path) => inkwell::support::load_library_permanently(path),
+                                Err(e) => return Some(Err(e)),
+                            };
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
         }
         // static libraries
-        for dir in lib_dirs
+        for (path, libname) in lib_dirs
             .iter()
-            .map(AsRef::<Path>::as_ref)
-            .map(walkdir::WalkDir::new)
-        {
-            for (path, libname) in dir.into_iter().filter_map(|entry| {
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_entry(|e| e.file_type().is_file())
+            })
+            .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry.file_type().is_file().then_some(())?; // is it a file?
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
@@ -280,29 +284,29 @@ impl CompileCommand {
                     name[(!windows as usize * 3)..].to_string(),
                 ))
                 // remove "lib" prefix if not windows
-            }) {
-                remaining = remaining
-                    .into_iter()
-                    .filter_map(|lib| {
-                        // there should really be a try_retain, but this had to be done instead
-                        if lib.as_ref() == libname {
-                            if let Some(ctx) = ctx {
-                                match libs::load_lib(&path, ctx) {
-                                    Ok(mut libs) => conflicts.append(&mut libs),
-                                    Err(e) => return Some(Err(e)),
-                                }
+            })
+        {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(mut libs) => conflicts.append(&mut libs),
+                                Err(e) => return Some(Err(e)),
                             }
-                            if load {
-                                cobalt_errors::warning!("{} was found for {libname}, but it is a static archive and can't be loaded", path.display());
-                            }
-                            self.libs.push(lib.as_ref().into());
-                            None
-                        } else {
-                            Some(Ok(lib))
                         }
-                    })
-                    .collect::<anyhow::Result<_>>()?;
-            }
+                        if load {
+                            cobalt_errors::warning!("{} was found for {libname}, but it is a static archive and can't be loaded", path.display());
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
         }
         Ok(remaining)
     }
