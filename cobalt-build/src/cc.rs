@@ -1,5 +1,4 @@
 use crate::*;
-use anyhow_std::*;
 use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -199,8 +198,11 @@ impl CompileCommand {
         ctx: Option<&CompCtx>,
         load: bool,
     ) -> anyhow::Result<Vec<L>> {
-        let lib_dirs = self.lib_dirs()?;
         let mut remaining = libs.into_iter().collect::<Vec<_>>();
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
+        let lib_dirs = self.lib_dirs()?;
         let triple = inkwell::targets::TargetMachine::get_default_triple();
         let triple = self
             .target_
@@ -215,7 +217,44 @@ impl CompileCommand {
         } else {
             ".so"
         };
-        let mut conflicts = vec![];
+        // check for lib_dir/lib, which is most common
+        for dir in &lib_dirs {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    let path = dir.join(format!(
+                        "{}{}{}",
+                        if windows { "" } else { "lib" },
+                        lib.as_ref(),
+                        dyn_os_ext
+                    ));
+                    if path.exists() {
+                        if let Some(ctx) = ctx {
+                            if let Ok(c) = libs::load_lib(&path, ctx) {
+                                if !c.is_empty() {
+                                    return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(c))));
+                                }
+                            } else {
+                                return Some(Ok(lib));
+                            }
+                        }
+                        if load {
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
         // dynamic libraries
         for (path, libname) in lib_dirs
             .iter()
@@ -242,15 +281,20 @@ impl CompileCommand {
                     if lib.as_ref() == libname {
                         if let Some(ctx) = ctx {
                             match libs::load_lib(&path, ctx) {
-                                Ok(mut libs) => conflicts.append(&mut libs),
+                                Ok(c) => {
+                                    if !c.is_empty() {
+                                        return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(
+                                            c
+                                        ))));
+                                    }
+                                }
                                 Err(e) => return Some(Err(e)),
                             }
                         }
                         if load {
-                            match path.to_str_anyhow() {
-                                Ok(path) => inkwell::support::load_library_permanently(path),
-                                Err(e) => return Some(Err(e)),
-                            };
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
                         }
                         self.libs.push(lib.as_ref().into());
                         None
@@ -259,6 +303,9 @@ impl CompileCommand {
                     }
                 })
                 .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
         }
         // static libraries
         for (path, libname) in lib_dirs
@@ -285,7 +332,9 @@ impl CompileCommand {
                     if lib.as_ref() == libname {
                         if let Some(ctx) = ctx {
                             match libs::load_lib(&path, ctx) {
-                                Ok(mut libs) => conflicts.append(&mut libs),
+                                Ok(c) => if !c.is_empty() {
+                                    return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(c))));
+                                },
                                 Err(e) => return Some(Err(e)),
                             }
                         }

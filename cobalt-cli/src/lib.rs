@@ -913,11 +913,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
-                if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
-                    if !notfound.is_empty() {
-                        anyhow::bail!(LibsNotFound(notfound))
-                    }
+                let notfound = cc.search_libs(linked, Some(&ctx), false)?;
+                if !notfound.is_empty() {
+                    anyhow::bail!(LibsNotFound(notfound))
                 }
                 for head in headers {
                     let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -1256,11 +1254,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
-                if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, Some(&ctx), true)?;
-                    if !notfound.is_empty() {
-                        anyhow::bail!(LibsNotFound(notfound))
-                    }
+                let notfound = cc.search_libs(linked, Some(&ctx), true)?;
+                if !notfound.is_empty() {
+                    anyhow::bail!(LibsNotFound(notfound))
                 }
                 for head in headers {
                     let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -1499,11 +1495,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 reporter.nlibs = linked.len();
                 let start = Instant::now();
-                if !linked.is_empty() {
-                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
-                    if !notfound.is_empty() {
-                        anyhow::bail!(LibsNotFound(notfound))
-                    }
+                let notfound = cc.search_libs(linked, Some(&ctx), false)?;
+                if !notfound.is_empty() {
+                    anyhow::bail!(LibsNotFound(notfound))
                 }
                 for head in headers {
                     let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -1753,11 +1747,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
-                    if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, Some(&ctx), false)?;
-                        if !notfound.is_empty() {
-                            anyhow::bail!(LibsNotFound(notfound))
-                        }
+                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
+                    if !notfound.is_empty() {
+                        anyhow::bail!(LibsNotFound(notfound))
                     }
                     for head in headers {
                         let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -2180,11 +2172,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
-                    if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, Some(&ctx), true)?;
-                        if !notfound.is_empty() {
-                            anyhow::bail!(LibsNotFound(notfound))
-                        }
+                    let notfound = cc.search_libs(linked, Some(&ctx), true)?;
+                    if !notfound.is_empty() {
+                        anyhow::bail!(LibsNotFound(notfound))
                     }
                     for head in headers {
                         let mut file = BufReader::new(std::fs::File::open(head)?);
@@ -2466,11 +2456,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     reporter.nlibs = linked.len();
                     let start = Instant::now();
-                    if !linked.is_empty() {
-                        let notfound = cc.search_libs(linked, Some(&ctx), false)?;
-                        if !notfound.is_empty() {
-                            anyhow::bail!(LibsNotFound(notfound))
-                        }
+                    let notfound = cc.search_libs(linked, Some(&ctx), false)?;
+                    if !notfound.is_empty() {
+                        anyhow::bail!(LibsNotFound(notfound))
                     }
                     for head in headers {
                         let mut file = BufReader::new(std::fs::File::open(head)?);
