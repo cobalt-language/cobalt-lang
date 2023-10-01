@@ -139,6 +139,9 @@ impl CompileCommand {
         ) {
             out.extend(paths.into_iter().map(Into::into).filter(|p| p.exists()))
         }
+        if native == triple {
+            from_env("COBALT_NATIVE_LINK_DIRS", &mut out);
+        }
         let default = {
             let mut it = triple.split('-');
             let arch = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
@@ -148,7 +151,10 @@ impl CompileCommand {
             from_env(&format!("COBALT_{arch}_LINK_DIRS"), &mut out);
             from_env(&format!("COBALT_{os}_LINK_DIRS"), &mut out);
             !(self.no_default_link
-                || env_flag(&format!("COBALT_{arch}_{os}_NO_DEFAULT_LINK"))
+                || (native == triple)
+                    .then(|| env_flag("COBALT_NATIVE_NO_DEFAULT_LINK"))
+                    .flatten()
+                    .or_else(|| env_flag(&format!("COBALT_{arch}_{os}_NO_DEFAULT_LINK")))
                     .or_else(|| env_flag(&format!("COBALT_{arch}_NO_DEFAULT_LINK")))
                     .or_else(|| env_flag(&format!("COBALT_{os}_NO_DEFAULT_LINK")))
                     .or_else(|| env_flag("COBALT_NO_DEFAULT_LINK"))
