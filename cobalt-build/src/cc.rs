@@ -1,12 +1,7 @@
 use crate::*;
-use ::cc::{self, Tool};
-use anyhow_std::*;
-use bstr::ByteSlice;
-use os_str_bytes::OsStrBytes;
+use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::OsString;
-use std::io;
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct CompileCommand {
@@ -17,8 +12,7 @@ pub struct CompileCommand {
     pub output_file: PathBuf,
     pub target_: Option<String>,
     pub is_lib: bool,
-    tool: Option<Tool>,
-    modified: bool,
+    pub no_default_link: bool,
 }
 impl CompileCommand {
     pub fn new() -> Self {
@@ -30,24 +24,20 @@ impl CompileCommand {
             output_file: PathBuf::default(),
             target_: None,
             is_lib: false,
-            tool: None,
-            modified: true,
+            no_default_link: false,
         }
     }
     pub fn obj<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.objects.push(path.into());
-        self.modified = true;
         self
     }
     pub fn objs<P: Into<PathBuf>, I: IntoIterator<Item = P>>(&mut self, paths: I) -> &mut Self {
         self.objects
             .extend(paths.into_iter().map(Into::<PathBuf>::into));
-        self.modified = true;
         self
     }
     pub fn link_dir<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.dirs.push(path.into());
-        self.modified = true;
         self
     }
     pub fn link_dirs<P: Into<PathBuf>, I: IntoIterator<Item = P>>(
@@ -55,12 +45,10 @@ impl CompileCommand {
         paths: I,
     ) -> &mut Self {
         self.dirs.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
         self
     }
     pub fn link_lib<P: Into<OsString>>(&mut self, path: P) -> &mut Self {
         self.libs.push(path.into());
-        self.modified = true;
         self
     }
     pub fn link_libs<P: Into<OsString>, I: IntoIterator<Item = P>>(
@@ -68,12 +56,10 @@ impl CompileCommand {
         paths: I,
     ) -> &mut Self {
         self.libs.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
         self
     }
     pub fn link_abs<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.abss.push(path.into());
-        self.modified = true;
         self
     }
     pub fn link_abss<P: Into<PathBuf>, I: IntoIterator<Item = P>>(
@@ -81,246 +67,351 @@ impl CompileCommand {
         paths: I,
     ) -> &mut Self {
         self.abss.extend(paths.into_iter().map(Into::into));
-        self.modified = true;
         self
     }
     pub fn output<P: Into<PathBuf>>(&mut self, path: P) -> &mut Self {
         self.output_file = path.into();
-        self.modified = true;
         self
     }
     pub fn lib(&mut self, is_lib: bool) -> &mut Self {
         self.is_lib = is_lib;
-        self.modified = true;
         self
     }
     pub fn target<S: Into<String>>(&mut self, target: S) -> &mut Self {
         self.target_ = Some(target.into());
-        self.modified = true;
         self
     }
-    fn init_clang(&self, cmd: &mut Command) {
-        self.init_gnu(cmd)
+    #[cfg(windows)]
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
+        unimplemented!("I don't know how to do this on Windows. Get a better OS maybe?")
     }
-    fn init_gnu(&self, cmd: &mut Command) {
-        cmd.args(&self.objects);
-        cmd.arg("-o");
-        cmd.arg(&self.output_file);
-        if self.is_lib {
-            cmd.arg("-shared");
-        }
-        for dir in &self.dirs {
-            if !dir.exists() {
-                continue;
+    #[cfg(not(windows))]
+    pub fn lib_dirs(&mut self) -> anyhow::Result<Vec<PathBuf>> {
+        let native = inkwell::targets::TargetMachine::get_default_triple();
+        let native = native.as_str().to_str()?;
+        let triple = self.target_.as_deref().unwrap_or(native);
+        let compatible = self.target_.is_none()
+            || native == triple
+            || (triple.split_once('-').map_or(false, |(t, _)| {
+                let n = native.split_once('-').unwrap().0;
+                ((is_x86(n) || n == "x86_64") && (t == "x86_64" || is_x86(t)))
+                    || ((is_arm32(n) || is_arm64(n)) && (is_arm32(t) || is_arm64(t)))
+            }) && native
+                .split('-')
+                .zip(triple.split('-'))
+                .skip(1)
+                .all(|(n, t)| n == "unknown" || t == "unknown" || n == t));
+        let mut out = self.dirs.clone();
+        fn from_env(name: &str, out: &mut Vec<PathBuf>) {
+            if let Some(dirs) = std::env::var_os(name) {
+                out.extend(dirs.into_raw_vec().split(|&b| b == b':').filter_map(|b| {
+                    let p = Path::assert_from_raw_bytes(b);
+                    p.exists().then(|| p.to_path_buf())
+                }));
             }
-            let mut l = OsString::from("-L");
-            l.push(dir);
-            cmd.arg(l);
-            cmd.arg("-rpath");
-            cmd.arg(dir);
         }
-        for lib in &self.libs {
-            let mut l = OsString::from("-l");
-            l.push(lib);
-            cmd.arg(l);
-        }
-        for lib in &self.abss {
-            if !lib.exists() {
-                continue;
+        fn parse_bool(val: &str) -> Option<bool> {
+            match val {
+                "YES" | "ON" | "TRUE" | "ENABLE" | "ENABLED" | "Y" => Some(true),
+                "NO" | "OFF" | "FALSE" | "DISABLE" | "DISABLED" | "N" => Some(false),
+                _ => None,
             }
-            cmd.arg(lib);
         }
-    }
-    #[allow(unreachable_code, unused_variables)]
-    fn init_msvc(&self, cmd: &mut Command) {
-        panic!("MSVC is pain, use MinGW");
-        cmd.args(&self.objects);
-        let mut a = OsString::from("/OUT:");
-        a.push(&self.output_file);
-        cmd.arg(a);
-        if self.is_lib {
-            cmd.arg("/DLL");
+        fn env_flag(var: &str) -> Option<bool> {
+            std::env::var(var).ok().and_then(|v| parse_bool(&v))
         }
-    }
-    fn init_tool(&mut self) -> Result<(), cc::Error> {
-        let mut build = cc::Build::new();
-        build
-            .opt_level(0)
-            .cargo_metadata(false)
-            .warnings(false)
-            .host(env!("HOST"));
-        let default = inkwell::targets::TargetMachine::get_default_triple();
-        let default = default.as_str().to_str().unwrap();
-        build.target(self.target_.as_deref().unwrap_or(default));
-        if let Some(target) = self.target_.as_ref() {
-            build.target(target);
+        if triple.starts_with("wasm") {
+            // WASM doesn't have system link dirs
+            let wasm32 = triple.contains("wasm32");
+            let wasm64 = !wasm32 && triple.contains("wasm64");
+            if wasm32 {
+                from_env("COBALT_WASM32_LINK_DIRS", &mut out);
+            }
+            if wasm64 {
+                from_env("COBALT_WASM64_LINK_DIRS", &mut out);
+            }
+            from_env("COBALT_WASM_LINK_DIRS", &mut out);
+            return Ok(out);
         }
-        self.tool = Some(build.try_get_compiler()?);
-        self.modified = false;
-        Ok(())
-    }
-    pub fn get_tool(&mut self) -> Result<&Tool, cc::Error> {
-        if self.modified || self.tool.is_none() {
-            self.init_tool()?
+        fn append_paths<I: IntoIterator<Item = P>, P: Into<PathBuf>>(
+            out: &mut Vec<PathBuf>,
+            paths: I,
+        ) {
+            out.extend(paths.into_iter().map(Into::into).filter(|p| p.exists()))
         }
-        Ok(self.tool.as_ref().unwrap())
-    }
-    pub fn build_cmd(&mut self) -> Result<Command, cc::Error> {
-        let tool = self.get_tool()?;
-        let mut cmd = tool.to_command();
-        if tool.is_like_clang() {
-            self.init_clang(&mut cmd)
-        } else if tool.is_like_gnu() {
-            self.init_gnu(&mut cmd)
-        } else if tool.is_like_msvc() {
-            self.init_msvc(&mut cmd)
-        } else {
-            panic!("C compiler is not like Clang, GNU, or MSVC!")
+        if native == triple {
+            from_env("COBALT_NATIVE_LINK_DIRS", &mut out);
         }
-        Ok(cmd)
-    }
-    pub fn lib_dirs(&mut self) -> Result<Vec<PathBuf>, cc::Error> {
-        let tool = self.get_tool()?;
-        let mut cmd = tool.to_command();
-        cmd.arg("-print-search-dirs");
-        let output = cmd.output()?;
-        if !output.status.success() {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("cc -print-search-dirs failed with code {}", output.status),
-            ))?
+        let default = {
+            let mut it = triple.split('-');
+            let arch = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
+            it.next();
+            let os = it.next().unwrap_or("UNKNOWN").to_ascii_uppercase();
+            from_env(&format!("COBALT_{arch}_{os}_LINK_DIRS"), &mut out);
+            from_env(&format!("COBALT_{arch}_LINK_DIRS"), &mut out);
+            from_env(&format!("COBALT_{os}_LINK_DIRS"), &mut out);
+            !(self.no_default_link
+                || (native == triple)
+                    .then(|| env_flag("COBALT_NATIVE_NO_DEFAULT_LINK"))
+                    .flatten()
+                    .or_else(|| env_flag(&format!("COBALT_{arch}_{os}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag(&format!("COBALT_{arch}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag(&format!("COBALT_{os}_NO_DEFAULT_LINK")))
+                    .or_else(|| env_flag("COBALT_NO_DEFAULT_LINK"))
+                    .unwrap_or(false))
+        };
+        from_env("COBALT_LINK_DIRS", &mut out);
+        if default {
+            #[cfg(target_os = "linux")]
+            'specific: {
+                let mut it = triple.split('-');
+                let Some(arch) = it.next() else {break 'specific};
+                let Some(_)    = it.next() else {break 'specific};
+                let Some(os)   = it.next() else {break 'specific};
+                let trip = it.next().map_or_else(
+                    || format!("{arch}-{os}"),
+                    |info| format!("{arch}-{os}-{info}"),
+                );
+                append_paths(
+                    &mut out,
+                    [format!("/usr/lib/{trip}"), format!("/lib/{trip}")],
+                );
+            }
+            if compatible {
+                append_paths(
+                    &mut out,
+                    ["/usr/local/lib", "/usr/lib", "/lib", "/opt/homebrew/opt"],
+                );
+            }
         }
-        let stdout = output.stdout.as_bstr();
-        let idx = stdout.find("libraries: =").ok_or(io::Error::new(
-            io::ErrorKind::Other,
-            "couldn't find libraries in output of cc -print-search-dirs",
-        ))? + 12;
-        let mut buf = &stdout[idx..];
-        buf = &buf[..buf.find("\n").unwrap_or(buf.len())];
-        Ok(buf
-            .split_str(":")
-            .map(OsStrBytes::assert_from_raw_bytes)
-            .map(PathBuf::from)
-            .collect())
+        if let Ok(cobalt) = std::env::var("COBALT_DIR") {
+            append_paths(&mut out, [format!("{cobalt}/installed/lib/{triple}")]);
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            append_paths(
+                &mut out,
+                [
+                    format!("{home}/.cobalt/installed/{triple}"),
+                    format!("{home}/.local/lib/cobalt/installed/{triple}"),
+                ],
+            )
+        }
+        Ok(out)
     }
-    pub fn search_libs<
-        L: AsRef<str>,
-        I: IntoIterator<Item = L>,
-        P: AsRef<Path>,
-        D: IntoIterator<Item = P>,
-    >(
+    pub fn search_libs<L: AsRef<str>, I: IntoIterator<Item = L>>(
         &mut self,
         libs: I,
-        dirs: D,
         ctx: Option<&CompCtx>,
         load: bool,
-    ) -> Result<Vec<L>, anyhow::Error> {
-        let mut lib_dirs = self.lib_dirs()?;
-        self.dirs
-            .extend(dirs.into_iter().map(|p| p.as_ref().to_path_buf()));
-        lib_dirs.extend_from_slice(&self.dirs);
+    ) -> anyhow::Result<Vec<L>> {
         let mut remaining = libs.into_iter().collect::<Vec<_>>();
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
+        let lib_dirs = self.lib_dirs()?;
         let triple = inkwell::targets::TargetMachine::get_default_triple();
         let triple = self
             .target_
             .as_deref()
             .unwrap_or_else(|| triple.as_str().to_str().unwrap());
         let windows = triple.contains("windows");
+        let apple = triple.contains("apple");
         let dyn_os_ext = if windows {
             ".dll"
-        } else if triple.contains("apple") {
+        } else if apple {
             ".dylib"
         } else {
             ".so"
         };
-        let sta_os_ext = if windows { ".lib" } else { ".a" };
-        let mut conflicts = vec![];
-        // dynamic libraries
-        for dir in lib_dirs
+        // check for lib_dir/lib, which is most common
+        for dir in &lib_dirs {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    let path = dir.join(format!(
+                        "{}{}{}",
+                        if windows { "" } else { "lib" },
+                        lib.as_ref(),
+                        dyn_os_ext
+                    ));
+                    if path.exists() {
+                        if let Some(ctx) = ctx {
+                            if let Ok(c) = libs::load_lib(&path, ctx) {
+                                if !c.is_empty() {
+                                    return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(c))));
+                                }
+                            } else {
+                                return Some(Ok(lib));
+                            }
+                        }
+                        if load {
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
+        // dynamic libraries, 1 deep
+        for (path, libname) in lib_dirs
             .iter()
-            .map(AsRef::<Path>::as_ref)
-            .filter_map(|dir| dir.read_dir().ok())
-        {
-            for (path, libname) in dir.filter_map(|entry| {
+            .flat_map(|d| std::fs::read_dir(d).ok().into_iter().flatten())
+            .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry
-                    .file_type()
-                    .map_or(false, |x| x.is_file())
-                    .then_some(())?; // is it a file?
+                entry.file_type().ok()?.is_file().then_some(())?;
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
                 name = &name[..name.find(dyn_os_ext)?]; // check for matching extension and remove it
+                name = &name[..name.find('.').unwrap_or(name.len())];
                 Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
                 // remove "lib" prefix if not windows
-            }) {
-                remaining = remaining
-                    .into_iter()
-                    .filter_map(|lib| {
-                        // there should really be a try_retain, but this had to be done instead
-                        if lib.as_ref() == libname {
-                            if let Some(ctx) = ctx {
-                                match libs::load_lib(&path, ctx) {
-                                    Ok(mut libs) => conflicts.append(&mut libs),
-                                    Err(e) => return Some(Err(e)),
-                                }
-                            }
-                            if load {
-                                match path.to_str_anyhow() {
-                                    Ok(path) => inkwell::support::load_library_permanently(path),
-                                    Err(e) => return Some(Err(e)),
-                                };
-                            }
-                            self.libs.push(lib.as_ref().into());
-                            None
-                        } else {
-                            Some(Ok(lib))
-                        }
-                    })
-                    .collect::<anyhow::Result<_>>()?;
-            }
-        }
-        // static libraries
-        for dir in lib_dirs
-            .iter()
-            .map(AsRef::<Path>::as_ref)
-            .filter_map(|dir| dir.read_dir().ok())
+            })
         {
-            for (path, libname) in dir.filter_map(|entry| {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(c) => {
+                                    if !c.is_empty() {
+                                        return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(
+                                            c
+                                        ))));
+                                    }
+                                }
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        if load {
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
+        // dynamic libraries
+        for (path, libname) in lib_dirs
+            .iter()
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .contents_first(true)
+                    .min_depth(2)
+            })
+            .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry
-                    .file_type()
-                    .map_or(false, |x| x.is_file())
-                    .then_some(())?; // is it a file?
+                entry.file_type().is_file().then_some(())?;
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
-                name = &name[..name.find(sta_os_ext)?]; // check for matching extension and remove it
-                Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
+                name = &name[..name.find(dyn_os_ext)?]; // check for matching extension and remove it
+                name = &name[..name.find('.').unwrap_or(name.len())];
+                Some((
+                    entry.path().to_path_buf(),
+                    name[(!windows as usize * 3)..].to_string(),
+                ))
                 // remove "lib" prefix if not windows
-            }) {
-                remaining = remaining
-                    .into_iter()
-                    .filter_map(|lib| {
-                        // there should really be a try_retain, but this had to be done instead
-                        if lib.as_ref() == libname {
-                            if let Some(ctx) = ctx {
-                                match libs::load_lib(&path, ctx) {
-                                    Ok(mut libs) => conflicts.append(&mut libs),
-                                    Err(e) => return Some(Err(e)),
+            })
+        {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(c) => {
+                                    if !c.is_empty() {
+                                        return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(
+                                            c
+                                        ))));
+                                    }
                                 }
+                                Err(e) => return Some(Err(e)),
                             }
-                            if load {
-                                cobalt_errors::warning!("{} was found for {libname}, but it is a static archive and can't be loaded", path.display());
-                            }
-                            self.libs.push(lib.as_ref().into());
-                            None
-                        } else {
-                            Some(Ok(lib))
                         }
-                    })
-                    .collect::<anyhow::Result<_>>()?;
-            }
+                        if load {
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
+        // static libraries
+        for (path, libname) in lib_dirs
+            .iter()
+            .flat_map(|d| {
+                walkdir::WalkDir::new(d)
+                    .follow_links(true)
+                    .contents_first(true)
+            })
+            .filter_map(|entry| {
+                let entry = entry.ok()?; // is it accessible?
+                entry.file_type().is_file().then_some(())?;
+                let name = entry.file_name();
+                let mut name = name.to_str()?;
+                (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
+                name = &name[..name.find(".a")?]; // check for matching extension and remove it
+                Some((
+                    entry.path().to_path_buf(),
+                    name[(!windows as usize * 3)..].to_string(),
+                ))
+                // remove "lib" prefix if not windows
+            })
+        {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(c) => if !c.is_empty() {
+                                    return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(c))));
+                                },
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        if load {
+                            cobalt_errors::warning!("{} was found for {libname}, but it is a static archive and can't be loaded", path.display());
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
         }
         Ok(remaining)
     }
@@ -331,3 +422,16 @@ impl Default for CompileCommand {
         Self::new()
     }
 }
+fn is_x86(s: &str) -> bool {
+    let b = s.as_bytes();
+    matches!(b, [b'i', _, b'8', b'6']) && b[0].is_ascii_digit()
+}
+fn is_arm32(s: &str) -> bool {
+    s.starts_with("arm") && !s.contains("64")
+}
+fn is_arm64(s: &str) -> bool {
+    s == "arm64" || s == "aarch64"
+}
+
+#[cfg(feature = "cc-build")]
+mod impl_cc;

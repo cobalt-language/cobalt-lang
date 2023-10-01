@@ -27,10 +27,17 @@ object = { version = "0.32.0", features = ["write"] }
 anyhow = "1.0.71"
 anyhow-std = "0.1.3"
 thiserror = "1.0.40"
-cc = "1.0"
+llvm-sys = "160"
 lasso = { version = "0.7.2", features = ["multi-threaded"] }
 indexmap = "2.0.0"
 os_str_bytes = "6.5.0"
 toml = "0.8.0"
 bstr = "1.5.0"
+cc = { version = "1.0.83", optional = true }
 ar = "0.9.0"
+walkdir = "2.4.0"
+
+
+[features]
+cc-build = ["cc"]
+default = ["cc-build"]

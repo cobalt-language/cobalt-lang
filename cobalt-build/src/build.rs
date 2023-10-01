@@ -252,6 +252,7 @@ pub struct BuildOptions<'a> {
     pub continue_build: bool,
     pub continue_comp: bool,
     pub rebuild: bool,
+    pub no_default_link: bool,
     pub triple: &'a inkwell::targets::TargetTriple,
     pub profile: &'a str,
     pub link_dirs: Vec<&'a str>,
@@ -524,7 +525,6 @@ fn resolve_deps_internal(
     pkg: &str,
     v: &Version,
     plan: &IndexMap<(&str, &str), Version>,
-    opts: &BuildOptions,
 ) -> anyhow::Result<()> {
     let mut libs = vec![];
     let mut conflicts = vec![];
@@ -560,12 +560,7 @@ fn resolve_deps_internal(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(
-        libs,
-        opts.link_dirs.iter().copied().map(String::from),
-        Some(ctx),
-        false,
-    )?;
+    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -585,7 +580,9 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
-    resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan, opts)?;
+    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
+    cc.no_default_link = opts.no_default_link;
+    resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan)?;
     match t.target_type {
         TargetType::Executable => {
             let mut paths = vec![];
@@ -643,10 +640,7 @@ pub fn build_target_single(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             Ok(output)
         }
         TargetType::Library => {
@@ -703,14 +697,10 @@ pub fn build_target_single(
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
-            let mut cc = cc::CompileCommand::new();
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             Ok(output)
         }
         TargetType::Archive => {
@@ -918,12 +908,7 @@ fn resolve_deps(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(
-        libs,
-        opts.link_dirs.iter().copied().map(String::from),
-        Some(ctx),
-        false,
-    )?;
+    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -941,6 +926,8 @@ fn build_target(
     let mut ctx = CompCtx::new(&ink_ctx, "");
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
+    cc.no_default_link = opts.no_default_link;
+    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -1017,10 +1004,7 @@ fn build_target(
             output.push(name);
             cc.objs(paths.into_iter().map(|([x, _], _)| x));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             data.set(Some(output.clone()));
             Ok((changed, output))
         }
@@ -1098,10 +1082,7 @@ fn build_target(
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
-            let code = cc.build_cmd()?.status_anyhow()?.code().unwrap_or(-1);
-            if code != 0 {
-                anyhow::bail!("C compiler exited with code {code}")
-            }
+            cc.run()?;
             data.set(Some(output.clone()));
             Ok((changed, output))
         }

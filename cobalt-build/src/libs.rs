@@ -88,10 +88,15 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple, shared: b
                 _ => format!("lib{base}.so"),
             },
         }
-    } else if components.next().and_then(|_| components.next()) == Some("windows") {
-        format!("{base}.lib")
     } else {
-        format!("lib{base}.a")
+        format!(
+            "{}{base}.a",
+            if components.next().and_then(|_| components.next()) == Some("windows") {
+                "lib"
+            } else {
+                ""
+            }
+        )
     }
 }
 /// Populate the `.colib` header with the data from the context
