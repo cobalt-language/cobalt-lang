@@ -35,6 +35,7 @@ toml = "0.8.0"
 bstr = "1.5.0"
 cc = { version = "1.0.83", optional = true }
 ar = "0.9.0"
+walkdir = "2.4.0"
 
 
 [features]

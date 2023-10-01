@@ -220,20 +220,20 @@ impl CompileCommand {
         for dir in lib_dirs
             .iter()
             .map(AsRef::<Path>::as_ref)
-            .filter_map(|dir| dir.read_dir().ok())
+            .map(walkdir::WalkDir::new)
         {
-            for (path, libname) in dir.filter_map(|entry| {
+            for (path, libname) in dir.into_iter().filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry
-                    .file_type()
-                    .map_or(false, |x| x.is_file())
-                    .then_some(())?; // is it a file?
+                entry.file_type().is_file().then_some(())?; // is it a file?
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
                 name = &name[..name.find(dyn_os_ext)?]; // check for matching extension and remove it
                 name = &name[..name.find('.').unwrap_or(name.len())];
-                Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
+                Some((
+                    entry.path().to_path_buf(),
+                    name[(!windows as usize * 3)..].to_string(),
+                ))
                 // remove "lib" prefix if not windows
             }) {
                 remaining = remaining
@@ -266,19 +266,19 @@ impl CompileCommand {
         for dir in lib_dirs
             .iter()
             .map(AsRef::<Path>::as_ref)
-            .filter_map(|dir| dir.read_dir().ok())
+            .map(walkdir::WalkDir::new)
         {
-            for (path, libname) in dir.filter_map(|entry| {
+            for (path, libname) in dir.into_iter().filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
-                entry
-                    .file_type()
-                    .map_or(false, |x| x.is_file())
-                    .then_some(())?; // is it a file?
+                entry.file_type().is_file().then_some(())?; // is it a file?
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
                 name = &name[..name.find(".a")?]; // check for matching extension and remove it
-                Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
+                Some((
+                    entry.path().to_path_buf(),
+                    name[(!windows as usize * 3)..].to_string(),
+                ))
                 // remove "lib" prefix if not windows
             }) {
                 remaining = remaining
