@@ -1,4 +1,5 @@
 # cobalt-lang
+***This branch is no longer developed, and is only here as a reference.***
 Cobalt is a compiled programming language, with goals similar to C++.
 Documentation is available at <https://matt-cornell.github.io/cobalt-docs>, but may not be up to date.
 Everything related to the language is accessible through subcommands on the `co` command ([documentation](https://matt-cornell.github.io/cobalt-docs/co_cli.html)).
