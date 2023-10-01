@@ -48,7 +48,6 @@ impl super::CompileCommand {
             if self.is_lib {
                 cmd.arg("--shared");
             }
-            cmd.arg("-v");
         } else {
             unimplemented!("Command isn't like GCC, I don't know how to handle it")
         }

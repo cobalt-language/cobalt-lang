@@ -198,7 +198,7 @@ impl CompileCommand {
         libs: I,
         ctx: Option<&CompCtx>,
         load: bool,
-    ) -> Result<Vec<L>, anyhow::Error> {
+    ) -> anyhow::Result<Vec<L>> {
         let lib_dirs = self.lib_dirs()?;
         let mut remaining = libs.into_iter().collect::<Vec<_>>();
         let triple = inkwell::targets::TargetMachine::get_default_triple();
@@ -219,14 +219,10 @@ impl CompileCommand {
         // dynamic libraries
         for (path, libname) in lib_dirs
             .iter()
-            .flat_map(|d| {
-                walkdir::WalkDir::new(d)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter_entry(|e| e.file_type().is_file())
-            })
+            .flat_map(|d| walkdir::WalkDir::new(d).follow_links(true))
             .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
+                entry.file_type().is_file().then_some(())?;
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
@@ -267,14 +263,10 @@ impl CompileCommand {
         // static libraries
         for (path, libname) in lib_dirs
             .iter()
-            .flat_map(|d| {
-                walkdir::WalkDir::new(d)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter_entry(|e| e.file_type().is_file())
-            })
+            .flat_map(|d| walkdir::WalkDir::new(d).follow_links(true))
             .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
+                entry.file_type().is_file().then_some(())?;
                 let name = entry.file_name();
                 let mut name = name.to_str()?;
                 (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
