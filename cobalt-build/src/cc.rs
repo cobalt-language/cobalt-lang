@@ -261,6 +261,55 @@ impl CompileCommand {
         if remaining.is_empty() {
             return Ok(vec![]);
         }
+        // dynamic libraries, 1 deep
+        for (path, libname) in lib_dirs
+            .iter()
+            .flat_map(|d| std::fs::read_dir(d).ok().into_iter().flatten())
+            .filter_map(|entry| {
+                let entry = entry.ok()?; // is it accessible?
+                entry.file_type().ok()?.is_file().then_some(())?;
+                let name = entry.file_name();
+                let mut name = name.to_str()?;
+                (windows || name.starts_with("lib")).then_some(())?; // "lib" prefix
+                name = &name[..name.find(dyn_os_ext)?]; // check for matching extension and remove it
+                name = &name[..name.find('.').unwrap_or(name.len())];
+                Some((entry.path(), name[(!windows as usize * 3)..].to_string()))
+                // remove "lib" prefix if not windows
+            })
+        {
+            remaining = remaining
+                .into_iter()
+                .filter_map(|lib| {
+                    // there should really be a try_retain, but this had to be done instead
+                    if lib.as_ref() == libname {
+                        if let Some(ctx) = ctx {
+                            match libs::load_lib(&path, ctx) {
+                                Ok(c) => {
+                                    if !c.is_empty() {
+                                        return Some(Err(anyhow::anyhow!(libs::ConflictingDefs(
+                                            c
+                                        ))));
+                                    }
+                                }
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        if load {
+                            if let Some(path) = path.to_str() {
+                                inkwell::support::load_library_permanently(path);
+                            }
+                        }
+                        self.libs.push(lib.as_ref().into());
+                        None
+                    } else {
+                        Some(Ok(lib))
+                    }
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        if remaining.is_empty() {
+            return Ok(vec![]);
+        }
         // dynamic libraries
         for (path, libname) in lib_dirs
             .iter()
@@ -268,6 +317,7 @@ impl CompileCommand {
                 walkdir::WalkDir::new(d)
                     .follow_links(true)
                     .contents_first(true)
+                    .min_depth(2)
             })
             .filter_map(|entry| {
                 let entry = entry.ok()?; // is it accessible?
