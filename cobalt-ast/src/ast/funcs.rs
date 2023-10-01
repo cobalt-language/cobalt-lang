@@ -238,30 +238,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 }
                 "method" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = ctx
-                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                            .add_ref(false);
-                        let p = params[0].0;
-                        if !(self_t.impl_convertible(p, ctx)
-                            || self_t.add_ref(false).impl_convertible(p, ctx)
-                            || self_t.add_ref(true).impl_convertible(p, ctx))
-                        {
-                            fn_type = Some(MethodType::Normal)
-                        };
+                        fn_type = Some(MethodType::Method);
                     }
                 }
                 "getter" if self.in_struct => {
                     if fn_type.is_none() && !params.is_empty() {
-                        let self_t = ctx
-                            .with_vars(|v| v.symbols["self_t"].0.as_type().unwrap())
-                            .add_ref(false);
-                        let p = params[0].0;
-                        if !(self_t.impl_convertible(p, ctx)
-                            || self_t.add_ref(false).impl_convertible(p, ctx)
-                            || self_t.add_ref(true).impl_convertible(p, ctx))
-                        {
-                            fn_type = Some(MethodType::Getter)
-                        };
+                        fn_type = Some(MethodType::Getter);
                     }
                 }
                 _ => {}
@@ -878,7 +860,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                         param: Some(params[0].0.to_string()),
                                     });
                                 } else {
-                                    fn_type = Some((MethodType::Normal, loc));
+                                    fn_type = Some((MethodType::Method, loc));
                                 }
                             }
                         }
@@ -1213,12 +1195,17 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         }
                         std::mem::drop(graph);
                         if dtor.is_some() {
-                            if let Some(base) = params
+                            if let Some(ty) = params
                                 .get(0)
                                 .and_then(|ty| ty.0.downcast::<types::Reference>())
+                                .and_then(|ty| {
+                                    ty.base()
+                                        .downcast::<types::Mut>()
+                                        .map_or(ty as _, |b| b.base())
+                                        .downcast::<types::Custom>()
+                                })
                             {
-                                let ty = base.base();
-                                if !ty.nom_info(ctx).unwrap().no_auto_drop {
+                                if !ty.nom_info(ctx).no_auto_drop {
                                     Value::new(
                                         ty.llvm_type(ctx).and_then(|_| f.get_first_param()),
                                         None,
@@ -1499,12 +1486,17 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         }
                         std::mem::drop(graph);
                         if dtor.is_some() {
-                            if let Some(base) = params
+                            if let Some(ty) = params
                                 .get(0)
                                 .and_then(|ty| ty.0.downcast::<types::Reference>())
+                                .and_then(|ty| {
+                                    ty.base()
+                                        .downcast::<types::Mut>()
+                                        .map_or(ty as _, |b| b.base())
+                                        .downcast::<types::Custom>()
+                                })
                             {
-                                let ty = base.base();
-                                if !ty.nom_info(ctx).unwrap().no_auto_drop {
+                                if !ty.nom_info(ctx).no_auto_drop {
                                     Value::new(
                                         ty.llvm_type(ctx).and_then(|_| f.get_first_param()),
                                         None,

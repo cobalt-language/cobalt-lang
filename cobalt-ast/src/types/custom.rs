@@ -58,6 +58,12 @@ impl Custom {
         }
         Self::from_ref(this)
     }
+    pub fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> NominalInfo<'ctx> {
+        ctx.nom_info.borrow()[CUSTOM_DATA.pin().get(&*self.0).unwrap().3].clone()
+    }
+    pub fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) {
+        ctx.nom_info.borrow_mut()[CUSTOM_DATA.pin().get(&*self.0).unwrap().3] = info;
+    }
     pub fn base(&self) -> TypeRef {
         CUSTOM_DATA.pin().get(&*self.0).unwrap().0
     }
@@ -97,7 +103,6 @@ impl Custom {
         ctx: &CompCtx<'src, 'ctx>,
     ) {
         let mut mb = ctx.values.borrow_mut();
-        let guard = CUSTOM_DATA.guard();
         CUSTOM_DATA
             .pin()
             .compute_if_present(&*self.0, |k, (t, e, m, i)| {
@@ -129,13 +134,6 @@ impl Type for Custom {
     }
     fn align(&self) -> u16 {
         self.base().align()
-    }
-    fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
-        Some(ctx.nom_info.borrow()[CUSTOM_DATA.pin().get(&*self.0).unwrap().3].clone())
-    }
-    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
-        ctx.nom_info.borrow_mut()[CUSTOM_DATA.pin().get(&*self.0).unwrap().3] = info;
-        true
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().llvm_type(ctx)
@@ -210,7 +208,7 @@ impl Type for Custom {
             .unwrap();
         match mt {
             MethodType::Getter => field.call(None, vec![val], ctx),
-            MethodType::Normal => {
+            MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
                     .get(0)
@@ -307,7 +305,7 @@ impl Type for Custom {
             .unwrap();
         match mt {
             MethodType::Getter => field.call(None, vec![val], ctx),
-            MethodType::Normal => {
+            MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
                     .get(0)
@@ -359,7 +357,7 @@ impl Type for Custom {
             .unwrap();
         match mt {
             MethodType::Getter => field.call(None, vec![val], ctx),
-            MethodType::Normal => {
+            MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
                     .get(0)

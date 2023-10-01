@@ -98,18 +98,13 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
         (self.size() != SizeType::Meta).then(|| ctx.null_type.ptr_type(Default::default()).into())
     }
 
-    /// Get associated nominal info for this type.
-    fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
-        None
-    }
-    /// Set associate nominal info for this type.
-    /// Returns whether or not anything was changed.
-    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
+    /// Check if a type is linear - can only be used once
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
         false
     }
     /// Check if a type can be copied without tracking
     fn copyable(&'static self, ctx: &CompCtx) -> bool {
-        !(self.has_dtor(ctx) || self.nom_info(ctx).map_or(false, |i| i.is_linear_type))
+        !(self.has_dtor(ctx) || self.is_linear(ctx))
     }
     /// Check whether or not this type has a destructor.
     fn has_dtor(&'static self, ctx: &CompCtx) -> bool {

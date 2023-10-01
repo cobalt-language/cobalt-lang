@@ -7,8 +7,8 @@ use std::io::{self, BufRead, Read, Write};
 use std::rc::Rc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodType {
-    Normal,
     Static,
+    Method,
     Getter,
 }
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                 }
                 out.write_all(&v.cconv.to_be_bytes())?;
                 out.write_all(std::slice::from_ref(&match v.mt {
-                    MethodType::Normal => 1,
+                    MethodType::Method => 1,
                     MethodType::Static => 2,
                     MethodType::Getter => 3,
                 }))
@@ -148,7 +148,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                 let mut c = 0u8;
                 buf.read_exact(std::slice::from_mut(&mut c))?;
                 let mt = match c {
-                    1 => MethodType::Normal,
+                    1 => MethodType::Method,
                     2 => MethodType::Static,
                     3 => MethodType::Getter,
                     x => panic!("Expected 1, 2, or 3 for method type, got {x}"),

@@ -925,12 +925,6 @@ impl Type for Mut {
     fn align(&self) -> u16 {
         self.0.align()
     }
-    fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<NominalInfo<'ctx>> {
-        self.base().nom_info(ctx)
-    }
-    fn set_nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>, info: NominalInfo<'ctx>) -> bool {
-        self.base().set_nom_info(ctx, info)
-    }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
@@ -1094,6 +1088,14 @@ impl Type for Mut {
         }
         self.base()._econv_to(val, target, ctx)
     }
+    fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        target == self.base().add_ref(false)
+            || self.base()._can_refmut_iconv(target, ctx)
+            || self.base()._can_ref_iconv(target, ctx)
+    }
+    fn _can_ref_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        self.base()._can_refmut_econv(target, ctx) || self.base()._can_ref_econv(target, ctx)
+    }
     fn subscript<'src, 'ctx>(
         &'static self,
         mut val: Value<'src, 'ctx>,
@@ -1136,7 +1138,11 @@ impl Type for Mut {
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        self.base()._refmut_attr(val, attr, ctx)
+        if self.base()._has_refmut_attr(&attr.0, ctx) {
+            self.base()._refmut_attr(val, attr, ctx)
+        } else {
+            self.base()._ref_attr(val, attr, ctx)
+        }
     }
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         self.base()._has_refmut_attr(attr, ctx)
