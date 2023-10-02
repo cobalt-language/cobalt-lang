@@ -17,14 +17,31 @@ use std::io::{self, prelude::*, ErrorKind};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-#[error("compiler errors were encountered")]
-pub struct CompileErrors;
+#[derive(Debug, Clone, Copy, Error)]
+#[error("build failed because of {0} compiler error{}", if *.0 == 1 {""} else {"s"})]
+pub struct CompileErrors(pub usize);
 
 #[derive(Debug, Error)]
+#[error("LLVM verification failed: {0}")]
+pub struct LlvmVerifierError(Box<str>);
+impl From<String> for LlvmVerifierError {
+    fn from(value: String) -> Self {
+        Self(value.into_boxed_str())
+    }
+}
+impl From<inkwell::support::LLVMString> for LlvmVerifierError {
+    fn from(value: inkwell::support::LLVMString) -> Self {
+        Self(value.to_string().into_boxed_str())
+    }
+}
+#[derive(Debug, Clone, Copy, Error)]
 #[error("cobalt directory could not be found")]
 pub struct NoCobaltDir;
-
+impl From<NoCobaltDir> for io::Error {
+    fn from(_: NoCobaltDir) -> Self {
+        io::Error::new(ErrorKind::Other, "cobalt directory could not be found")
+    }
+}
 #[derive(Debug, Clone, Error)]
 #[error("couldn't find libraries: {}", .0.join(", "))]
 pub struct LibsNotFound(pub Vec<String>);

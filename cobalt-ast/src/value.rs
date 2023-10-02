@@ -575,7 +575,11 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         var.data_type = types::load_type(buf)?;
         if !name.is_empty() {
             use inkwell::module::Linkage::DLLImport;
-            if let Some(ty) = var.data_type.downcast::<types::Function>() {
+            if let Some(ty) = var
+                .data_type
+                .downcast::<types::Reference>()
+                .and_then(|ty| ty.base().downcast::<types::Function>())
+            {
                 let mut good = true;
                 let ps = ty
                     .params()
@@ -623,6 +627,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
                         gv.set_linkage(DLLImport);
                         var.comp_val = Some(gv.as_pointer_value().into());
                     }
+                    return Ok(var);
                 }
             } else if let Some(t) = var
                 .data_type

@@ -137,7 +137,12 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
                 s.dump(depth + 4)
             }
         } else {
-            eprintln!("variable of type {}", self.0.data_type)
+            eprintln!(
+                "variable of type {}; LLVM: {:?}, constant: {}",
+                self.0.data_type,
+                self.0.comp_val.map(|v| v.to_string()),
+                self.0.inter_val.is_some()
+            )
         }
     }
 }

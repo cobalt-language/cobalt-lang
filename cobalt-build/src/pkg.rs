@@ -604,6 +604,7 @@ fn install_single(
             profile: "default",
             triple: &inkwell::targets::TargetTriple::create(&opts.target),
             link_dirs: vec![],
+            no_default_link: false,
         },
     )?;
     out.copy_anyhow(path)?;
