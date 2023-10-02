@@ -1324,11 +1324,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 .create_jit_execution_engine(inkwell::OptimizationLevel::None)
                 .expect("Couldn't create execution engine!");
             unsafe {
-                let main_fn = match ee.get_function_value("_start") {
+                let main_fn = match ee.get_function_value("main") {
                     Ok(main_fn) => main_fn,
                     Err(FunctionLookupError::JITNotEnabled) => panic!("JIT not enabled here"),
                     Err(FunctionLookupError::FunctionNotFound) => {
-                        eprintln!("couldn't find symbol '_start'");
+                        eprintln!("couldn't find symbol 'main'");
                         Err(Exit(255))?
                     }
                 };
@@ -2252,11 +2252,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 reporter.finish();
                 unsafe {
-                    let main_fn = match ee.get_function_value("_start") {
+                    let main_fn = match ee.get_function_value("main") {
                         Ok(main_fn) => main_fn,
                         Err(FunctionLookupError::JITNotEnabled) => panic!("JIT not enabled here"),
                         Err(FunctionLookupError::FunctionNotFound) => {
-                            eprintln!("couldn't find symbol '_start'");
+                            eprintln!("couldn't find symbol 'main'");
                             Err(Exit(255))?
                         }
                     };
