@@ -165,6 +165,10 @@ impl Type for Custom {
             }
         }
     }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        let info = self.nom_info(ctx);
+        info.is_linear_type || (!info.no_auto_drop && self.base().is_linear(ctx))
+    }
     fn static_attr<'src, 'ctx>(
         &'static self,
         name: &str,

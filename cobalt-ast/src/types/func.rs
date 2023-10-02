@@ -339,6 +339,22 @@ impl Type for BoundMethod {
             Some(fty)
         }
     }
+    fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
+        self.self_ty().has_dtor(ctx)
+    }
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        if let Some(BasicValueEnum::StructValue(sv)) = val.comp_val {
+            Value::new(
+                ctx.builder.build_extract_value(sv, 0, ""),
+                None,
+                self.self_ty(),
+            )
+            .ins_dtor(ctx);
+        }
+    }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.self_ty().is_linear(ctx)
+    }
     fn call<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,

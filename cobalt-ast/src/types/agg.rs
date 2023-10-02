@@ -83,6 +83,9 @@ impl Type for Tuple {
             }
         }
     }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.types().iter().any(|ty| ty.is_linear(ctx))
+    }
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         other.is::<types::TypeData>()
             && self
@@ -229,6 +232,9 @@ impl Type for Struct {
                 .ins_dtor(ctx);
             }
         }
+    }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.types().iter().any(|ty| ty.is_linear(ctx))
     }
     fn pre_op<'src, 'ctx>(
         &'static self,
@@ -497,6 +503,9 @@ impl Type for UnsizedArray {
                 .into(),
         )
     }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.elem().is_linear(ctx)
+    }
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         matches!(attr, "ptr" | "len")
     }
@@ -608,6 +617,41 @@ impl Type for SizedArray {
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(self.elem().llvm_type(ctx)?.array_type(self.len()).into())
+    }
+    fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
+        self.elem().has_dtor(ctx)
+    }
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        let Some(ib) = ctx.builder.get_insert_block() else {return};
+        let Some(f) = ib.get_parent() else {return};
+        let Some(pv) = val.addr(ctx) else {return};
+        let at = self.llvm_type(ctx).unwrap();
+        let bb = ctx.context.append_basic_block(f, "arr.dtor.loop");
+        let ex = ctx.context.append_basic_block(f, "arr.dtor.exit");
+        ctx.builder.build_unconditional_branch(bb);
+        ctx.builder.position_at_end(bb);
+        let i64t = ctx.context.i64_type();
+        let phi = ctx.builder.build_phi(i64t, "");
+        let phiv = phi.as_basic_value().into_int_value();
+        let pv = unsafe {
+            ctx.builder
+                .build_in_bounds_gep(at, pv, &[i64t.const_zero(), phiv], "")
+        };
+        Value::with_addr(
+            Some(ctx.builder.build_load(at, pv, "")),
+            None,
+            self.elem(),
+            pv,
+        )
+        .ins_dtor(ctx);
+        phi.add_incoming(&[(&i64t.const_zero(), ib)]);
+        let next = ctx
+            .builder
+            .build_int_add(phiv, i64t.const_int(1, false), "");
+        phi.add_incoming(&[(&next, bb)]);
+    }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.elem().is_linear(ctx)
     }
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         other.is_and::<types::Pointer>(|r| r.base() == self.elem())

@@ -940,6 +940,9 @@ impl Type for Mut {
     fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
         self.base().ins_dtor(val, ctx)
     }
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        self.base().is_linear(ctx)
+    }
     fn pre_op<'src, 'ctx>(
         &'static self,
         mut val: Value<'src, 'ctx>,
