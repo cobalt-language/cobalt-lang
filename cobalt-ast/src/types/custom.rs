@@ -178,11 +178,16 @@ impl Type for Custom {
             .pin()
             .get(&*self.0)
             .and_then(|v| v.2.pin().get(name).map(|x| ctx.values.borrow()[*x].clone()));
-        res
+        res.or_else(|| {
+            self.nom_info(ctx)
+                .transparent
+                .then(|| self.base().static_attr(name, ctx))
+                .flatten()
+        })
     }
     fn attr<'src, 'ctx>(
         &'static self,
-        val: Value<'src, 'ctx>,
+        mut val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
@@ -193,6 +198,9 @@ impl Type for Custom {
                     loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
+            } else if self.nom_info(ctx).transparent {
+                val.data_type = self.base();
+                self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
             }
@@ -234,7 +242,7 @@ impl Type for Custom {
     }
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         let Some(field) = self.static_attr(attr, ctx) else {
-            return attr == "__base";
+            return attr == "__base"|| (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
             return false
@@ -255,7 +263,7 @@ impl Type for Custom {
     }
     fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         let Some(field) = self.static_attr(attr, ctx) else {
-            return attr == "__base";
+            return attr == "__base" || (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
             return false
@@ -275,11 +283,11 @@ impl Type for Custom {
             && self.add_ref(true).impl_convertible(fty.params()[0].0, ctx)
     }
     fn _has_mut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
-        attr == "__base"
+        attr == "__base" || (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx))
     }
     fn _ref_attr<'src, 'ctx>(
         &'static self,
-        val: Value<'src, 'ctx>,
+        mut val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
@@ -290,6 +298,9 @@ impl Type for Custom {
                     loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
+            } else if self.nom_info(ctx).transparent {
+                val.data_type = self.base();
+                self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
             }
@@ -331,7 +342,7 @@ impl Type for Custom {
     }
     fn _refmut_attr<'src, 'ctx>(
         &'static self,
-        val: Value<'src, 'ctx>,
+        mut val: Value<'src, 'ctx>,
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
@@ -342,6 +353,9 @@ impl Type for Custom {
                     loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
+            } else if self.nom_info(ctx).transparent {
+                val.data_type = self.base();
+                self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
             }
