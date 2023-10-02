@@ -377,7 +377,7 @@ impl Type for Null {
         if target.0.is::<TypeData>() {
             Ok(Value::make_type(types::Null::new()))
         } else {
-            Err(cant_econv(&val, target.0, target.1))
+            Err(cant_iconv(&val, target.0, target.1))
         }
     }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {

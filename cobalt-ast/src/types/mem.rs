@@ -345,7 +345,7 @@ impl Type for Reference {
                 ..val
             })
         } else {
-            Err(cant_econv(&val, self, target))
+            Err(cant_iconv(&val, self, target))
         }
     }
     fn attr<'src, 'ctx>(
