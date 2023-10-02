@@ -416,7 +416,7 @@ pub enum ArgError<'src> {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
-#[error("cannot pass argument of type {0} into inline assembly")]
+#[error("cannot pass argument of type {0} to or from inline assembly")]
 pub struct InvalidAsmArg<'src>(
     pub Cow<'src, str>,
     #[label("{0} is not a valid assembly type")] pub SourceSpan,

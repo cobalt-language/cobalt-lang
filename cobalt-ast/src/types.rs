@@ -654,12 +654,8 @@ impl LoadInfo {
         )
     }
 }
-pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> = Lazy::new(|| {
-    inventory::iter::<TypeLoader>
-        .into_iter()
-        .map(LoadInfo::new)
-        .collect()
-});
+pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> =
+    Lazy::new(|| inventory::iter::<TypeLoader>().map(LoadInfo::new).collect());
 /// save a type to the output buffer
 pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
     buf.write_all(&ty.kind().get().to_be_bytes())?;
@@ -769,6 +765,7 @@ pub mod custom;
 pub mod float;
 pub mod func;
 pub mod int;
+pub mod intrinsic;
 pub mod mem;
 pub mod meta;
 
@@ -777,6 +774,7 @@ pub use custom::*;
 pub use float::*;
 pub use func::*;
 pub use int::*;
+pub use intrinsic::*;
 pub use mem::*;
 pub use meta::*;
 

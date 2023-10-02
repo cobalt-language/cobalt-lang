@@ -1791,10 +1791,11 @@ impl<'src> AST<'src> for IntrinsicAST<'src> {
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        if matches!(
-            &*self.name,
-            "alloca" | "asm" | "sizeof" | "typeof" | "typename"
-        ) {
+        if intrinsics::FUNCTION_INTRINSICS
+            .pin()
+            .contains_key(&*self.name)
+            || intrinsics::VALUE_INTRINSICS.pin().contains_key(&*self.name)
+        {
             (
                 Value::new(None, None, types::Intrinsic::new_ref(&self.name)),
                 vec![],

@@ -346,6 +346,14 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
+    pub fn make_str<S: AsRef<[u8]>>(string: S, ctx: &CompCtx<'src, 'ctx>) -> Self {
+        let bytes = string.as_ref();
+        Value::interpreted(
+            ctx.context.const_string(bytes, true).into(),
+            InterData::Array(bytes.iter().map(|b| InterData::Int(*b as _)).collect()),
+            types::SizedArray::new(types::Int::unsigned(8), bytes.len() as _),
+        )
+    }
 
     pub fn addr(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<PointerValue<'ctx>> {
         if self.data_type.size() == SizeType::Static(0) {

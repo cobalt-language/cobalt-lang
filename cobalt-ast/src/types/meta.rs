@@ -388,42 +388,4 @@ impl Type for Null {
     }
 }
 
-static INTRINSIC_INTERN: Interner<Box<str>> = Interner::new();
-#[derive(Debug, Display, RefCastCustom)]
-#[repr(transparent)]
-#[display(fmt = "@{_0}")]
-pub struct Intrinsic(Box<str>);
-impl Intrinsic {
-    pub const KIND: NonZeroU64 = make_id(b"intrin");
-    #[ref_cast_custom]
-    #[inline(always)]
-    #[allow(clippy::borrowed_box)]
-    fn from_ref(name: &Box<str>) -> &Self;
-    pub fn new(name: impl Into<Box<str>>) -> &'static Self {
-        Self::from_ref(INTRINSIC_INTERN.intern(name.into()))
-    }
-    pub fn new_ref(name: &str) -> &'static Self {
-        Self::from_ref(INTRINSIC_INTERN.intern_ref(name))
-    }
-    pub fn name(&self) -> &str {
-        &self.0
-    }
-}
-impl ConcreteType for Intrinsic {
-    const KIND: NonZeroU64 = make_id(b"intrin");
-}
-impl Type for Intrinsic {
-    fn size(&self) -> SizeType {
-        SizeType::Meta
-    }
-    fn align(&self) -> u16 {
-        0
-    }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        serial_utils::save_str(out, self.name())
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        serial_utils::load_str(buf).map(|s| Self::new(s) as _)
-    }
-}
-submit_types!(TypeData, Module, Error, Null, Intrinsic);
+submit_types!(TypeData, Module, Error, Null);

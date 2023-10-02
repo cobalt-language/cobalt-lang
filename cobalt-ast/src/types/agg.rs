@@ -609,6 +609,54 @@ impl Type for SizedArray {
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(self.elem().llvm_type(ctx)?.array_type(self.len()).into())
     }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is_and::<types::Pointer>(|r| r.base() == self.elem())
+            || other.is_and::<types::Reference>(|b| {
+                b.base()
+                    .is_and::<types::UnsizedArray>(|a| a.elem() == self.elem())
+            })
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target
+            .0
+            .is_and::<types::Pointer>(|r| r.base() == self.elem())
+        {
+            Ok(Value {
+                data_type: target.0,
+                comp_val: val.addr(ctx).map(From::from),
+                ..val
+            })
+        } else if target.0.is_and::<types::Reference>(|b| {
+            b.base()
+                .is_and::<types::UnsizedArray>(|a| a.elem() == self.elem())
+        }) {
+            Ok(Value::new(
+                val.addr(ctx).map(|v| {
+                    ctx.context
+                        .const_struct(
+                            &[
+                                v.into(),
+                                ctx.context
+                                    .i64_type()
+                                    .const_int(self.len() as _, false)
+                                    .into(),
+                            ],
+                            false,
+                        )
+                        .into()
+                }),
+                val.inter_val,
+                target.0,
+            ))
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
+    }
     fn _ref_iconv<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -623,8 +671,30 @@ impl Type for SizedArray {
                 data_type: target.0,
                 ..val
             })
+        } else if target.0.is_and::<types::Reference>(|b| {
+            b.base()
+                .is_and::<types::UnsizedArray>(|a| a.elem() == self.elem())
+        }) {
+            Ok(Value::new(
+                val.comp_val.map(|v| {
+                    ctx.context
+                        .const_struct(
+                            &[
+                                v,
+                                ctx.context
+                                    .i64_type()
+                                    .const_int(self.len() as _, false)
+                                    .into(),
+                            ],
+                            false,
+                        )
+                        .into()
+                }),
+                val.inter_val,
+                target.0,
+            ))
         } else {
-            Err(cant_econv(&val, target.0, target.1))
+            Err(cant_iconv(&val, target.0, target.1))
         }
     }
     fn _refmut_iconv<'src, 'ctx>(
@@ -640,8 +710,32 @@ impl Type for SizedArray {
                 data_type: target.0,
                 ..val
             })
+        } else if target.0.is_and::<types::Reference>(|b| {
+            b.base().is_and::<types::Mut>(|m| {
+                m.base()
+                    .is_and::<types::UnsizedArray>(|a| a.elem() == self.elem())
+            })
+        }) {
+            Ok(Value::new(
+                val.comp_val.map(|v| {
+                    ctx.context
+                        .const_struct(
+                            &[
+                                v,
+                                ctx.context
+                                    .i64_type()
+                                    .const_int(self.len() as _, false)
+                                    .into(),
+                            ],
+                            false,
+                        )
+                        .into()
+                }),
+                val.inter_val,
+                target.0,
+            ))
         } else {
-            Err(cant_econv(&val, target.0, target.1))
+            Err(cant_iconv(&val, target.0, target.1))
         }
     }
     fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {

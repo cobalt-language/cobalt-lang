@@ -4,6 +4,7 @@ pub mod cfg;
 pub mod context;
 pub mod dottedname;
 pub mod error;
+pub mod intrinsics;
 pub mod serial_utils;
 pub mod types;
 pub mod value;
