@@ -125,6 +125,20 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: span,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (module_name, errors);
         }
 
@@ -219,6 +233,22 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: span,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren)
+                    || self.current_token.unwrap().kind == TokenKind::Semicolon
+                {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return ((primary_ident, None, span), errors);
         }
 
@@ -242,6 +272,23 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: span,
                 });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind
+                        == TokenKind::CloseDelimiter(Delimiter::Paren)
+                        || self.current_token.unwrap().kind == TokenKind::Semicolon
+                    {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
                 return ((primary_ident, secondary_ident, span), errors);
             }
         } else {
@@ -250,6 +297,22 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: span,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren)
+                    || self.current_token.unwrap().kind == TokenKind::Semicolon
+                {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return ((primary_ident, secondary_ident, span), errors);
         }
 
@@ -329,6 +392,19 @@ impl<'src> Parser<'src> {
                     loc,
                 });
 
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
                 return (Box::new(ErrorAST::new(first_token_loc)), errors);
             }
         };
@@ -383,6 +459,19 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -427,6 +516,19 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
 
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
@@ -577,6 +679,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -610,6 +726,20 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
                 return (Box::new(ErrorAST::new(first_token_loc)), errors);
             }
         };
@@ -638,6 +768,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -694,6 +838,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -719,6 +877,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -746,6 +918,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -787,6 +973,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -814,6 +1014,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -855,7 +1069,6 @@ impl<'src> Parser<'src> {
         // ---
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
-            dbg!(&self.current_token.unwrap());
             self.rewind_to_idx(idx_on_entry);
             return false;
         }
@@ -911,6 +1124,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
@@ -944,7 +1171,24 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
-                return (Box::new(ErrorAST::new(first_token_loc)), errors);
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
+                return (
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                    errors,
+                );
             }
         };
 
@@ -972,6 +1216,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (
                 Box::new(ErrorAST::new(self.current_token.unwrap().span)),
                 errors,
@@ -1082,6 +1340,20 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                    self.next();
+                    break;
+                }
+
+                self.next();
+            }
+
             return (
                 Box::new(ErrorAST::new(self.current_token.unwrap().span)),
                 errors,
@@ -1160,6 +1432,28 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Comma
+                        || self.current_token.unwrap().kind == TokenKind::Semicolon
+                    {
+                        self.next();
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind
+                        == TokenKind::CloseDelimiter(Delimiter::Paren)
+                    {
+                        break;
+                    }
+
+                    self.next();
+                }
+
                 return (
                     (
                         first_token_loc,
@@ -1203,6 +1497,26 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
+
+            loop {
+                if self.current_token.is_none() {
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::Comma
+                    || self.current_token.unwrap().kind == TokenKind::Semicolon
+                {
+                    self.next();
+                    break;
+                }
+
+                if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
+                    break;
+                }
+
+                self.next();
+            }
+
             return (
                 (
                     first_token_loc,
@@ -1254,6 +1568,28 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: first_token_loc,
                 });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Comma
+                        || self.current_token.unwrap().kind == TokenKind::Semicolon
+                    {
+                        self.next();
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind
+                        == TokenKind::CloseDelimiter(Delimiter::Paren)
+                    {
+                        break;
+                    }
+
+                    self.next();
+                }
+
                 return (
                     (
                         first_token_loc,

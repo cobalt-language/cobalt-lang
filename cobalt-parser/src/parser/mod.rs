@@ -143,7 +143,18 @@ impl<'src> Parser<'src> {
             loc: span,
         }];
 
-        self.next();
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if self.check_fn_def() || self.check_type_decl() {
+                break;
+            }
+
+            self.next();
+        }
+
         (Box::new(ErrorAST::new(span)), errors)
     }
 }
@@ -172,8 +183,7 @@ type layout = {size: u32, offset: u16} :: {
 
     #[test]
     fn test_parse_2() {
-        let src = r#"@export
-module alloc._utils;
+        let src = r#"module alloc._utils;
 @link(weak) @forward
 fn memclear(ptr: *mut null, size: usize) = {
   let ptr = ptr: *mut u8;
