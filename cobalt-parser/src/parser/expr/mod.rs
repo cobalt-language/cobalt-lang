@@ -226,7 +226,7 @@ impl<'src> Parser<'src> {
             TokenKind::Ident(name) => Cow::from(name),
             _ => {
                 return (
-                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
                     vec![CobaltError::ExpectedFound {
                         ex: "identifier",
                         found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
@@ -269,7 +269,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let name = match self.current_token.unwrap().kind {
@@ -280,7 +283,10 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: self.current_token.unwrap().span,
                 });
-                return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+                return (
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    errors,
+                );
             }
         };
 
@@ -307,24 +313,17 @@ impl<'src> Parser<'src> {
                 UnOrBinOpToken::And => "&",
                 UnOrBinOpToken::Star => "*",
             },
-            TokenKind::UnOp(op) => match op {
-                UnOpToken::Not => "!",
-                _ => {
-                    errors.push(CobaltError::ExpectedFound {
-                        ex: "unary operator",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                        loc: self.current_token.unwrap().span,
-                    });
-                    return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
-                }
-            },
+            TokenKind::UnOp(op) if op == UnOpToken::Not => "!",
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "unary operator",
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: self.current_token.unwrap().span,
                 });
-                return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+                return (
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                    errors,
+                );
             }
         };
 
@@ -336,7 +335,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (val, val_errors) = self.parse_primary_expr();
@@ -363,7 +365,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -375,7 +380,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -386,7 +394,10 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         self.next();
@@ -426,7 +437,7 @@ impl<'src> Parser<'src> {
         loop {
             if self.current_token.is_none() {
                 return (
-                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
                     vec![CobaltError::ExpectedFound {
                         ex: "'}'",
                         found: ParserFound::Eof,
@@ -506,7 +517,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (cond, cond_errors) = self.parse_primary_expr();
@@ -518,7 +532,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (if_true, if_true_errors) = self.parse_block_expr();
@@ -602,7 +619,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: self.current_token.unwrap().span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let name: Cow<'_, str>;
@@ -611,10 +631,13 @@ impl<'src> Parser<'src> {
         } else {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: self.current_token.unwrap().span,
             });
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         self.next();
@@ -691,7 +714,10 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: self.current_token.unwrap().span,
                 });
-                return (Box::new(NullAST::new(span)), errors);
+                return (
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                    errors,
+                );
             }
         };
 
@@ -703,7 +729,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -712,7 +741,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: self.current_token.unwrap().span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         self.next();
@@ -725,7 +757,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -812,7 +847,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {
@@ -821,7 +859,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                 loc: self.current_token.unwrap().span,
             });
-            return (Box::new(NullAST::new(span)), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         self.next();

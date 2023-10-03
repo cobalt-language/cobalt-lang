@@ -18,10 +18,10 @@
 //! grammar, and subsequently use a `parse_` function to parse the the grammar.
 
 use cobalt_ast::{
-    ast::{NullAST, TopLevelAST},
+    ast::{ErrorAST, TopLevelAST},
     BoxedAST,
 };
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_errors::{CobaltError, ParserFound};
 
 use crate::lexer::{tokenizer::TokenStream, tokens::Token, SourceReader};
 
@@ -77,7 +77,10 @@ impl<'src> Parser<'src> {
     /// Main entry point for parsing.
     pub fn parse(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         if self.current_token.is_none() {
-            return (Box::new(NullAST::new(SourceSpan::from((0, 1)))), vec![]);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                vec![],
+            );
         }
 
         let mut vals = vec![];
@@ -141,7 +144,7 @@ impl<'src> Parser<'src> {
         }];
 
         self.next();
-        (Box::new(NullAST::new(span)), errors)
+        (Box::new(ErrorAST::new(span)), errors)
     }
 }
 

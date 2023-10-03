@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use cobalt_ast::{
-    ast::{IntLiteralAST, StructLiteralAST},
+    ast::{ErrorAST, IntLiteralAST, StructLiteralAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
@@ -106,7 +106,7 @@ impl<'src> Parser<'src> {
             loc: span,
         });
         (
-            Box::new(cobalt_ast::ast::NullAST::new(SourceSpan::from((0, 1)))),
+            Box::new(ErrorAST::new(self.source_reader.source.len().into())),
             errors,
         )
     }

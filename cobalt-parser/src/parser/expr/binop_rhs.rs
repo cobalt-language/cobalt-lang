@@ -1,5 +1,5 @@
 use cobalt_ast::{
-    ast::{BinOpAST, BitCastAST, NullAST},
+    ast::{BinOpAST, BitCastAST, ErrorAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound};
@@ -59,11 +59,17 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: binop_token.span,
                 });
-                return (Box::new(NullAST::new(binop_token.span)), errors);
+                return (
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    errors,
+                );
             }
             let (mut rhs, rhs_errors) = self.parse_primary_expr();
             if !rhs_errors.is_empty() {
-                return (Box::new(NullAST::new(binop_token.span)), rhs_errors);
+                return (
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    rhs_errors,
+                );
             }
 
             // Look ahead at the next binary operator.
@@ -78,7 +84,10 @@ impl<'src> Parser<'src> {
             if curr_token_precedence < next_binop_precedence {
                 (rhs, errors) = self.parse_binop_rhs(curr_token_precedence + 1, rhs, errors);
                 if !errors.is_empty() {
-                    return (Box::new(NullAST::new(binop_token.span)), errors);
+                    return (
+                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                        errors,
+                    );
                 }
             }
 

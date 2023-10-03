@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{
-    ast::{FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
+    ast::{ErrorAST, FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
@@ -288,7 +288,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let mut is_mutable = false;
@@ -305,7 +308,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let name: Option<DottedName<'src>> = match self.current_token.unwrap().kind {
@@ -323,7 +329,7 @@ impl<'src> Parser<'src> {
                     loc,
                 });
 
-                return (Box::new(NullAST::new(first_token_loc)), errors);
+                return (Box::new(ErrorAST::new(first_token_loc)), errors);
             }
         };
         self.next();
@@ -337,7 +343,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind == TokenKind::Colon {
@@ -359,7 +368,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -371,7 +383,7 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
@@ -384,7 +396,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -398,7 +413,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -410,7 +428,7 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
@@ -525,7 +543,10 @@ impl<'src> Parser<'src> {
                         found: ParserFound::Eof,
                         loc: first_token_loc,
                     });
-                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                    return (
+                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                        errors,
+                    );
                 }
 
                 continue;
@@ -542,7 +563,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
@@ -553,7 +577,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
@@ -566,7 +590,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let name: DottedName<'src> = match self.current_token.unwrap().kind {
@@ -583,7 +610,7 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
-                return (Box::new(NullAST::new(first_token_loc)), errors);
+                return (Box::new(ErrorAST::new(first_token_loc)), errors);
             }
         };
 
@@ -597,7 +624,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -608,7 +638,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         // Next has to be an expression.
@@ -621,7 +651,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -630,13 +663,14 @@ impl<'src> Parser<'src> {
         // Next has to be a semicolon or a double colon.
 
         if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';' or '::'",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
             return (
-                Box::new(NullAST::new(first_token_loc)),
-                vec![CobaltError::ExpectedFound {
-                    ex: "';' or '::'",
-                    found: ParserFound::Eof,
-                    loc: first_token_loc,
-                }],
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
             );
         }
 
@@ -660,7 +694,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
@@ -671,7 +705,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::Colon {
@@ -682,7 +719,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         // Next has to be a left brace.
@@ -695,7 +732,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
@@ -706,7 +746,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         // Next is 0 or more function definitions.
@@ -733,7 +773,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
@@ -744,7 +787,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         // Next has to be a semicolon.
@@ -757,7 +800,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -768,7 +814,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         // Done.
@@ -843,7 +889,10 @@ impl<'src> Parser<'src> {
                         found: ParserFound::Eof,
                         loc: first_token_loc,
                     });
-                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                    return (
+                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                        errors,
+                    );
                 }
 
                 continue;
@@ -862,7 +911,7 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
@@ -875,7 +924,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         let name: DottedName<'src> = match self.current_token.unwrap().kind {
@@ -892,7 +944,7 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
-                return (Box::new(NullAST::new(first_token_loc)), errors);
+                return (Box::new(ErrorAST::new(first_token_loc)), errors);
             }
         };
 
@@ -906,7 +958,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -917,7 +972,10 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         // Next is 0 or more function parameters. After the first, each one has to be preceded by a
@@ -933,7 +991,10 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: first_token_loc,
                 });
-                return (Box::new(NullAST::new(first_token_loc)), errors);
+                return (
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    errors,
+                );
             }
 
             if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -951,7 +1012,7 @@ impl<'src> Parser<'src> {
                         found,
                         loc,
                     });
-                    return (Box::new(NullAST::new(first_token_loc)), errors);
+                    return (Box::new(ErrorAST::new(first_token_loc)), errors);
                 }
             }
 
@@ -984,10 +1045,13 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
-        let mut body: BoxedAST = Box::new(NullAST::new(first_token_loc));
+        let mut body: BoxedAST = Box::new(ErrorAST::new(first_token_loc));
 
         if self.current_token.unwrap().kind == TokenKind::BinOp(BinOpToken::Eq) {
             self.next();
@@ -1004,7 +1068,10 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                errors,
+            );
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -1015,7 +1082,10 @@ impl<'src> Parser<'src> {
                 found,
                 loc,
             });
-            return (Box::new(NullAST::new(first_token_loc)), errors);
+            return (
+                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                errors,
+            );
         }
 
         self.next();
@@ -1072,7 +1142,7 @@ impl<'src> Parser<'src> {
                     first_token_loc,
                     Cow::from(""),
                     ParamType::Normal,
-                    Box::new(NullAST::new(first_token_loc)),
+                    Box::new(ErrorAST::new(first_token_loc)),
                     None,
                 ),
                 errors,
@@ -1095,7 +1165,7 @@ impl<'src> Parser<'src> {
                         first_token_loc,
                         Cow::from(""),
                         ParamType::Normal,
-                        Box::new(NullAST::new(first_token_loc)),
+                        Box::new(ErrorAST::new(first_token_loc)),
                         None,
                     ),
                     errors,
@@ -1118,7 +1188,7 @@ impl<'src> Parser<'src> {
                     first_token_loc,
                     Cow::from(""),
                     ParamType::Normal,
-                    Box::new(NullAST::new(first_token_loc)),
+                    Box::new(ErrorAST::new(first_token_loc)),
                     None,
                 ),
                 errors,
@@ -1138,7 +1208,7 @@ impl<'src> Parser<'src> {
                     first_token_loc,
                     Cow::from(""),
                     ParamType::Normal,
-                    Box::new(NullAST::new(first_token_loc)),
+                    Box::new(ErrorAST::new(first_token_loc)),
                     None,
                 ),
                 errors,
@@ -1160,7 +1230,7 @@ impl<'src> Parser<'src> {
                     first_token_loc,
                     Cow::from(""),
                     ParamType::Normal,
-                    Box::new(NullAST::new(first_token_loc)),
+                    Box::new(ErrorAST::new(first_token_loc)),
                     None,
                 ),
                 errors,
@@ -1189,7 +1259,7 @@ impl<'src> Parser<'src> {
                         first_token_loc,
                         Cow::from(""),
                         ParamType::Normal,
-                        Box::new(NullAST::new(first_token_loc)),
+                        Box::new(ErrorAST::new(first_token_loc)),
                         None,
                     ),
                     errors,
