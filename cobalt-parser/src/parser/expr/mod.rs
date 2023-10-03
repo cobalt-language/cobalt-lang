@@ -82,9 +82,7 @@ impl<'src> Parser<'src> {
                 state |= parsed_something;
             }
             TokenKind::Ident(_) => {
-                println!("here1");
                 if self.check_fn_call() {
-                    println!("here2");
                     let (parsed_fn_call, parsed_errors) = self.parse_fn_call();
                     errors.extend(parsed_errors);
                     working_ast = parsed_fn_call;
@@ -216,10 +214,13 @@ impl<'src> Parser<'src> {
         (working_ast, errors)
     }
 
+    /// ```
+    /// ident_expr := ident ['.' ident]+
+    /// ```
     fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
-        let errors = vec![];
+        let mut errors = vec![];
 
         let span = self.current_token.unwrap().span;
         let name = match self.current_token.unwrap().kind {
@@ -239,7 +240,70 @@ impl<'src> Parser<'src> {
 
         self.next();
 
-        return (Box::new(VarGetAST::new(span, name, is_global)), errors);
+        // ---
+
+        let mut working_ast: BoxedAST = Box::new(VarGetAST::new(span, name, is_global));
+
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::Dot {
+                break;
+            }
+
+            self.next();
+
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Eof,
+                    loc: span,
+                });
+                return (
+                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    errors,
+                );
+            }
+
+            if let TokenKind::Ident(name) = self.current_token.unwrap().kind {
+                working_ast = Box::new(DotAST::new(
+                    working_ast,
+                    (Cow::Borrowed(name), self.current_token.unwrap().span),
+                ));
+            } else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
+                return (
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                    errors,
+                );
+            }
+
+            self.next();
+        }
+
+        // ---
+
+        (working_ast, errors)
     }
 
     /// Going into this function, `current_token` is assumed to be a '.'.
@@ -1109,6 +1173,15 @@ mod tests {
         let mut parser = Parser::new(&reader, tokens);
         parser.next();
         let (ast, errors) = parser.parse_primary_expr();
+        dbg!(ast);
+        dbg!(&errors);
+        assert!(errors.is_empty());
+
+        let mut reader = SourceReader::new("foo.bar.baz");
+        let tokens = reader.tokenize().0;
+        let mut parser = Parser::new(&reader, tokens);
+        parser.next();
+        let (ast, errors) = parser.parse_ident_expr();
         dbg!(ast);
         dbg!(&errors);
         assert!(errors.is_empty());

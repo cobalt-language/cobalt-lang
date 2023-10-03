@@ -63,7 +63,7 @@ impl<'src> Parser<'src> {
     /// Going into the function, the current token is assumed to be `module`.
     ///
     /// ```
-    /// module_decl := 'module' ident ';'
+    /// module_decl := 'module' [ident | dotted_expr] ';'
     /// ```
     pub fn parse_module_decl(&mut self) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -86,7 +86,7 @@ impl<'src> Parser<'src> {
             return (None, errors);
         }
 
-        let mut module_name: Option<DottedName<'src>> = None;
+        let mut dotted_ids = vec![];
 
         // Parse module name.
 
@@ -103,10 +103,58 @@ impl<'src> Parser<'src> {
             let span = self.current_token.unwrap().span;
             let id = std::borrow::Cow::Borrowed(ident);
 
-            module_name = Some(DottedName::new(vec![(id, span)], true));
+            dotted_ids.push((id, span));
         }
 
         self.next();
+
+        loop {
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if self.current_token.unwrap().kind != TokenKind::Dot {
+                break;
+            }
+
+            self.next();
+
+            if self.current_token.is_none() {
+                break;
+            }
+
+            if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+                let span = self.current_token.unwrap().span;
+                let id = std::borrow::Cow::Borrowed(ident);
+
+                dotted_ids.push((id, span));
+            } else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+
+                loop {
+                    if self.current_token.is_none() {
+                        break;
+                    }
+
+                    if self.current_token.unwrap().kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
+
+                    self.next();
+                }
+
+                return (Some(DottedName::new(dotted_ids, true)), errors);
+            }
+
+            self.next();
+        }
+
+        let module_name = Some(DottedName::new(dotted_ids, true));
 
         // Next must be semicolon.
 
