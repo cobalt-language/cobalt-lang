@@ -1258,7 +1258,27 @@ impl<'src> Parser<'src> {
                         found,
                         loc,
                     });
-                    return (Box::new(ErrorAST::new(first_token_loc)), errors);
+
+                    loop {
+                        if self.current_token.is_none() {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')'",
+                                found: ParserFound::Eof,
+                                loc: self.source.len().into(),
+                            });
+                            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                        }
+
+                        if self.current_token.unwrap().kind
+                            == TokenKind::CloseDelimiter(Delimiter::Paren)
+                        {
+                            break;
+                        }
+
+                        self.next();
+                    }
+
+                    break;
                 }
             }
 
@@ -1511,7 +1531,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        // Next is an expression.
+        // Next is the type of the param.
 
         self.next();
 
@@ -1559,7 +1579,6 @@ impl<'src> Parser<'src> {
                     if self.current_token.unwrap().kind == TokenKind::Comma
                         || self.current_token.unwrap().kind == TokenKind::Semicolon
                     {
-                        self.next();
                         break;
                     }
 
@@ -1630,6 +1649,12 @@ mod tests {
 
         test_parser_fn(
             "const x: i32 = 5i32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
+        );
+
+        test_parser_fn(
+            "x: *mut i32",
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
         );

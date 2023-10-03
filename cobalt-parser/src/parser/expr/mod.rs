@@ -145,6 +145,14 @@ impl<'src> Parser<'src> {
 
                     state |= parsed_something;
                 }
+
+                if kw == Keyword::Mut {
+                    let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
+                    errors.extend(parsed_errors);
+                    working_ast = parsed_expr;
+
+                    state |= parsed_something;
+                }
             }
             TokenKind::At => {
                 if self.check_fn_call() {
@@ -208,6 +216,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Str("something else".to_string()),
                 loc: initial_span,
             });
+            self.next();
             return (working_ast, errors);
         }
 
@@ -355,7 +364,7 @@ impl<'src> Parser<'src> {
     /// Going into this function, `current_token` is assumed to be a unary operator.
     ///
     /// ```
-    /// prefix_expr := [UNOP] primary_expr
+    /// prefix_expr := [UNOP | 'mut'] primary_expr
     /// ```
     fn parse_prefix_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -369,6 +378,7 @@ impl<'src> Parser<'src> {
                 UnOrBinOpToken::Star => "*",
             },
             TokenKind::UnOp(op) if op == UnOpToken::Not => "!",
+            TokenKind::Keyword(kw) if kw == Keyword::Mut => "mut",
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "unary operator",
