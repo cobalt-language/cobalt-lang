@@ -261,10 +261,7 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                    errors,
-                );
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
             }
 
             if let TokenKind::Ident(name) = self.current_token.unwrap().kind {
@@ -333,10 +330,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let name = match self.current_token.unwrap().kind {
@@ -347,10 +341,7 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
                     loc: self.current_token.unwrap().span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                    errors,
-                );
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
             }
         };
 
@@ -399,10 +390,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (val, val_errors) = self.parse_primary_expr();
@@ -429,10 +417,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -444,10 +429,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -501,7 +483,7 @@ impl<'src> Parser<'src> {
         loop {
             if self.current_token.is_none() {
                 return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    Box::new(ErrorAST::new(self.source.len().into())),
                     vec![CobaltError::ExpectedFound {
                         ex: "'}'",
                         found: ParserFound::Eof,
@@ -581,10 +563,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (cond, cond_errors) = self.parse_primary_expr();
@@ -596,10 +575,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (if_true, if_true_errors) = self.parse_block_expr();
@@ -683,10 +659,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: self.current_token.unwrap().span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let name: Cow<'_, str>;
@@ -793,10 +766,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -821,10 +791,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -911,10 +878,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {
@@ -1002,230 +966,167 @@ impl<'src> Parser<'src> {
 mod tests {
     use super::*;
 
-    use crate::lexer::SourceReader;
+    use crate::parser::test_parser_fn;
 
     #[test]
     fn test_simple_add() {
-        let mut reader = SourceReader::new("a + b");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a + b",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        );
     }
 
     #[test]
     fn test_paren_add() {
-        let mut reader = SourceReader::new("a + (b + c)");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a + (b + c)",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        );
     }
 
     #[test]
     fn test_mul_add() {
-        let mut reader = SourceReader::new("a * b + c");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a * b + c",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        );
     }
 
     #[test]
     fn test_bitcast() {
-        let mut reader = SourceReader::new("a + 4 :? u8");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a + 4 :? u8",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        );
     }
 
     #[test]
     fn test_mixed() {
-        let mut reader = SourceReader::new("a * b + c / (d - (f + g * h))");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a * b + c / (d - (f + g * h))",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        );
     }
 
     #[test]
     fn test_block_expr() {
-        let mut reader = SourceReader::new("{ a + b;; let x = 4; x }");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_block_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "{ a + b;; let x = 4; x }",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
+        );
 
-        let mut reader = SourceReader::new("{ x = 4; }");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_block_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "{ x = 4; }",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
+        );
 
-        let mut reader = SourceReader::new("{ x: u32, y: f64, }");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_block_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "{ x: u32, y: f64, }",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
+        );
     }
 
     #[test]
     fn test_prefix_expr() {
-        let mut reader = SourceReader::new("!a");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_prefix_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "!a",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_prefix_expr()),
+        );
 
-        let mut reader = SourceReader::new("!&*a");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "!&*a",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
     }
 
     #[test]
     fn test_if_expr() {
-        let mut reader = SourceReader::new("if a { x = 4; }");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_if_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "if a { x = 4; }",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_if_expr()),
+        );
 
-        let mut reader = SourceReader::new("if (x == 3) { x = 4; } else { y = 5; }");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_if_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "if (x == 3) { x = 4; } else { y = 5; }",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_if_expr()),
+        );
     }
 
     #[test]
     fn test_fn_call() {
-        let mut reader = SourceReader::new("foo()");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_call();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "foo()",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
+        );
 
-        let mut reader = SourceReader::new("foo(x, y + z)");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_call();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "foo(x, y + z)",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
+        );
 
-        let mut reader = SourceReader::new("@size(T)");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_call();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "@size(T)",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
+        );
     }
 
     #[test]
     fn test_dotted() {
-        let mut reader = SourceReader::new("foo.bar.baz");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "foo.bar.baz",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
 
-        let mut reader = SourceReader::new("foo.bar.baz");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_ident_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "foo.bar.baz()",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_ident_expr()),
+        );
 
-        let mut reader = SourceReader::new("foo().bar");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "foo().bar",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
 
-        let mut reader = SourceReader::new("(a + b).bar");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "(a + b).bar",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
     }
 
     #[test]
     fn test_index() {
-        let mut reader = SourceReader::new("arr[i][j]");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "arr[i][j]",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
     }
 
     #[test]
     fn test_postfix() {
-        let mut reader = SourceReader::new("a?!");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_primary_expr();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "a?!",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
     }
 }

@@ -17,11 +17,13 @@
 //! A common idiom is to use a `check_` function to see if a token starts a particular
 //! grammar, and subsequently use a `parse_` function to parse the the grammar.
 
+use std::fmt::Debug;
+
 use cobalt_ast::{
     ast::{ErrorAST, TopLevelAST},
     BoxedAST,
 };
-use cobalt_errors::{CobaltError, ParserFound};
+use cobalt_errors::{CobaltError, ParserFound, Report};
 
 use crate::lexer::{tokenizer::TokenStream, tokens::Token, SourceReader};
 
@@ -50,16 +52,16 @@ impl<'src> TokenStreamCursor<'src> {
 
 pub struct Parser<'src> {
     #[allow(dead_code)]
-    source_reader: &'src SourceReader<'src>,
+    source: &'src str,
     cursor: TokenStreamCursor<'src>,
     current_token: Option<Token<'src>>,
 }
 
 impl<'src> Parser<'src> {
-    pub fn new(source: &'src SourceReader<'src>, stream: TokenStream<'src>) -> Parser<'src> {
+    pub fn new(source: &'src str, stream: TokenStream<'src>) -> Parser<'src> {
         let cursor = TokenStreamCursor::new(stream);
         Parser {
-            source_reader: source,
+            source,
             cursor,
             current_token: None,
         }
@@ -77,10 +79,7 @@ impl<'src> Parser<'src> {
     /// Main entry point for parsing.
     pub fn parse(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         if self.current_token.is_none() {
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                vec![],
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), vec![]);
         }
 
         let mut vals = vec![];
@@ -159,6 +158,32 @@ impl<'src> Parser<'src> {
     }
 }
 
+pub fn test_parser_fn<T, F>(src: &'static str, show_output: bool, parse_fn: F)
+where
+    T: Debug + 'static,
+    F: Fn(&mut Parser<'static>) -> (T, Vec<CobaltError<'static>>),
+{
+    let mut reader = SourceReader::new(src);
+    let tokens = reader.tokenize().0;
+
+    let mut parser = Parser::new(src, tokens);
+    parser.next();
+    let (ast_or_similar, errors) = parse_fn(&mut parser);
+
+    if show_output {
+        dbg!(ast_or_similar);
+        for (err_count, e) in errors.iter().enumerate() {
+            if err_count > 5 {
+                break;
+            }
+            let printable_e = Report::from(e.clone()).with_source_code(src);
+            println!("{:?}", printable_e);
+        }
+    }
+
+    assert!(errors.is_empty());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,14 +196,11 @@ type layout = {size: u32, offset: u16} :: {
   @const
   fn new(size: u32, offset: u16): self_t = {size: size, offset: offset} :? self_t;
 };"#;
-        let mut reader = SourceReader::new(src);
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            src,
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse()),
+        );
     }
 
     #[test]
@@ -203,13 +225,10 @@ fn memcpy(dst: *mut null, src: *null, size: usize) = {
     ++i;
   }
 };"#;
-        let mut reader = SourceReader::new(src);
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            src,
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse()),
+        );
     }
 }

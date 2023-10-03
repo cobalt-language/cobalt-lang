@@ -399,10 +399,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let mut is_mutable = false;
@@ -419,10 +416,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let name: Option<DottedName<'src>> = match self.current_token.unwrap().kind {
@@ -467,10 +461,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind == TokenKind::Colon {
@@ -492,10 +483,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -533,10 +521,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -550,10 +535,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -693,10 +675,7 @@ impl<'src> Parser<'src> {
                         found: ParserFound::Eof,
                         loc: first_token_loc,
                     });
-                    return (
-                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                        errors,
-                    );
+                    return (Box::new(ErrorAST::new(self.source.len().into())), errors);
                 }
 
                 continue;
@@ -713,10 +692,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
@@ -754,10 +730,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let name: DottedName<'src> = match self.current_token.unwrap().kind {
@@ -802,10 +775,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -843,10 +813,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -860,10 +827,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         // If it's a semicolon, we're done.
@@ -911,10 +875,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Colon {
@@ -952,10 +913,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
@@ -1007,10 +965,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
@@ -1048,10 +1003,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -1150,10 +1102,7 @@ impl<'src> Parser<'src> {
                         found: ParserFound::Eof,
                         loc: first_token_loc,
                     });
-                    return (
-                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                        errors,
-                    );
+                    return (Box::new(ErrorAST::new(self.source.len().into())), errors);
                 }
 
                 continue;
@@ -1199,10 +1148,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let name: DottedName<'src> = match self.current_token.unwrap().kind {
@@ -1250,10 +1196,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -1297,10 +1240,7 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: first_token_loc,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                    errors,
-                );
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
             }
 
             if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1351,10 +1291,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         let mut body: BoxedAST = Box::new(ErrorAST::new(first_token_loc));
@@ -1374,10 +1311,7 @@ impl<'src> Parser<'src> {
                 found: ParserFound::Eof,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
@@ -1667,142 +1601,97 @@ impl<'src> Parser<'src> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::SourceReader;
+    use crate::parser::test_parser_fn;
 
     use super::*;
 
     #[test]
     fn test_parse_let_decl() {
-        let src = "let x: i32 = 5i32;";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_stream);
-        parser.next();
-        let (ast, errors) = parser.parse_let_decl();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "let x: i32 = 5i32;",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
+        );
     }
 
     #[test]
     fn test_parse_fn_param() {
-        let src = "x: i32";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream1 = src_reader.tokenize().0;
-        let mut parser1 = Parser::new(&src_reader, token_stream1);
-        parser1.next();
-        let (ast1, errors1) = parser1.parse_fn_param();
-        dbg!(ast1);
-        dbg!(&errors1);
-        assert!(errors1.is_empty());
+        test_parser_fn(
+            "x: i32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
+        );
 
-        let src = "mut x: i32";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream2 = src_reader.tokenize().0;
-        let mut parser2 = Parser::new(&src_reader, token_stream2);
-        parser2.next();
-        let (ast2, errors2) = parser2.parse_fn_param();
-        dbg!(ast2);
-        dbg!(&errors2);
-        assert!(errors2.is_empty());
+        test_parser_fn(
+            "mut x: i32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
+        );
 
-        let src = "const x: i32 = 5i32";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream3 = src_reader.tokenize().0;
-        let mut parser3 = Parser::new(&src_reader, token_stream3);
-        parser3.next();
-        let (ast3, errors3) = parser3.parse_fn_param();
-        dbg!(ast3);
-        dbg!(&errors3);
-        assert!(errors3.is_empty());
+        test_parser_fn(
+            "const x: i32 = 5i32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
+        );
     }
 
     #[test]
     fn test_parse_type_decl() {
-        let src = "type Foo = i32;";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream1 = src_reader.tokenize().0;
-        let mut parser1 = Parser::new(&src_reader, token_stream1);
-        parser1.next();
-        let (ast1, errors1) = parser1.parse_type_decl();
-        dbg!(ast1);
-        dbg!(&errors1);
-        assert!(errors1.is_empty());
+        test_parser_fn(
+            "type Foo = i32;",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_type_decl()),
+        );
     }
 
     #[test]
     fn test_fn_def() {
-        let src = "fn foo(x: i32): i32 = 5i32;";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_stream);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_def(false);
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "fn foo(x: i32): i32 = 5i32;",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        );
 
-        let src = "fn foo();";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_stream);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_def(false);
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "fn foo();",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        );
 
-        let src = "@C(extern) @inline fn foo();";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_stream);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_def(false);
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "@C(extern) @inline fn foo();",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        );
 
-        let src = "fn foo(): i32 = { let x = 3; x};";
-        let mut src_reader = SourceReader::new(src);
-        let token_stream = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_stream);
-        parser.next();
-        let (ast, errors) = parser.parse_fn_def(false);
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "fn foo(): i32 = { let x = 3; x};",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        );
     }
 
     #[test]
     fn test_module() {
-        let mut reader = SourceReader::new("module foo;");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_module_decl();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "module foo;",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_module_decl()),
+        );
     }
 
     #[test]
     fn test_annotation() {
-        let mut reader = SourceReader::new("@method");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_annotation();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "@method",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
+        );
 
-        let mut reader = SourceReader::new("@C(extern)");
-        let tokens = reader.tokenize().0;
-        let mut parser = Parser::new(&reader, tokens);
-        parser.next();
-        let (ast, errors) = parser.parse_annotation();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "@C(extern)",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
+        );
     }
 }

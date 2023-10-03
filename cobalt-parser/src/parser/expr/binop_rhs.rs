@@ -59,15 +59,12 @@ impl<'src> Parser<'src> {
                     found: ParserFound::Eof,
                     loc: binop_token.span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                    errors,
-                );
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
             }
             let (mut rhs, rhs_errors) = self.parse_primary_expr();
             if !rhs_errors.is_empty() {
                 return (
-                    Box::new(ErrorAST::new(self.source_reader.source.len().into())),
+                    Box::new(ErrorAST::new(self.source.len().into())),
                     rhs_errors,
                 );
             }
@@ -84,10 +81,7 @@ impl<'src> Parser<'src> {
             if curr_token_precedence < next_binop_precedence {
                 (rhs, errors) = self.parse_binop_rhs(curr_token_precedence + 1, rhs, errors);
                 if !errors.is_empty() {
-                    return (
-                        Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-                        errors,
-                    );
+                    return (Box::new(ErrorAST::new(self.source.len().into())), errors);
                 }
             }
 

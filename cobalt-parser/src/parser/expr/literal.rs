@@ -105,10 +105,7 @@ impl<'src> Parser<'src> {
             found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
             loc: span,
         });
-        (
-            Box::new(ErrorAST::new(self.source_reader.source.len().into())),
-            errors,
-        )
+        (Box::new(ErrorAST::new(self.source.len().into())), errors)
     }
 
     /// Check if the current token begins a struct literal.
@@ -305,57 +302,41 @@ impl<'src> Parser<'src> {
 mod tests {
     use super::*;
 
-    use crate::lexer::SourceReader;
+    use crate::parser::test_parser_fn;
 
     #[test]
     fn test_parse_literal() {
-        let src = "1";
-        let mut src_reader = SourceReader::new(src);
-        let token_strem = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_strem);
-        parser.next();
-        let (ast, errors) = parser.parse_literal();
-        assert!(errors.is_empty());
-        dbg!(ast);
+        test_parser_fn(
+            "1",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
+        );
 
-        let src = "1i32";
-        let mut src_reader = SourceReader::new(src);
-        let token_strem = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_strem);
-        parser.next();
-        let (ast, errors) = parser.parse_literal();
-        assert!(errors.is_empty());
-        dbg!(ast);
+        test_parser_fn(
+            "1i32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
+        );
 
-        let src = "1.0";
-        let mut src_reader = SourceReader::new(src);
-        let token_strem = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_strem);
-        parser.next();
-        let (ast, errors) = parser.parse_literal();
-        assert!(errors.is_empty());
-        dbg!(ast);
+        test_parser_fn(
+            "1.0",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
+        );
 
-        let src = "1.0f32";
-        let mut src_reader = SourceReader::new(src);
-        let token_strem = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_strem);
-        parser.next();
-        let (ast, errors) = parser.parse_literal();
-        assert!(errors.is_empty());
-        dbg!(ast);
+        test_parser_fn(
+            "1.0f32",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
+        );
     }
 
     #[test]
     fn test_parse_struct_literal() {
-        let src = "{size: u32, offset: u16}";
-        let mut src_reader = SourceReader::new(src);
-        let token_strem = src_reader.tokenize().0;
-        let mut parser = Parser::new(&src_reader, token_strem);
-        parser.next();
-        let (ast, errors) = parser.parse_struct_literal();
-        dbg!(ast);
-        dbg!(&errors);
-        assert!(errors.is_empty());
+        test_parser_fn(
+            "{size: u32, offset: u16}",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_struct_literal()),
+        );
     }
 }
