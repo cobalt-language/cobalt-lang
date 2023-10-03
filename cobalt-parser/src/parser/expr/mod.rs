@@ -385,7 +385,21 @@ impl<'src> Parser<'src> {
                 UnOrBinOpToken::And => "&",
                 UnOrBinOpToken::Star => "*",
             },
-            TokenKind::UnOp(op) if op == UnOpToken::Not => "!",
+            TokenKind::UnOp(op) => match op {
+                UnOpToken::Not => "!",
+                UnOpToken::PlusPlus => "++",
+                _ => {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "unary operator",
+                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        loc: self.current_token.unwrap().span,
+                    });
+                    return (
+                        Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                        errors,
+                    );
+                }
+            },
             TokenKind::Keyword(kw) if kw == Keyword::Mut => "mut",
             _ => {
                 errors.push(CobaltError::ExpectedFound {
@@ -924,7 +938,7 @@ impl<'src> Parser<'src> {
         }
 
         if let TokenKind::UnOp(unop) = self.current_token.unwrap().kind {
-            if unop == UnOpToken::Q || unop == UnOpToken::Not {
+            if unop == UnOpToken::Q || unop == UnOpToken::Not || unop == UnOpToken::PlusPlus {
                 return true;
             }
         }
@@ -966,6 +980,16 @@ impl<'src> Parser<'src> {
                     working_ast = Box::new(PostfixAST::new(
                         self.current_token.unwrap().span,
                         "?",
+                        working_ast,
+                    ));
+                    self.next();
+                    continue;
+                }
+
+                if unop == UnOpToken::PlusPlus {
+                    working_ast = Box::new(PostfixAST::new(
+                        self.current_token.unwrap().span,
+                        "++",
                         working_ast,
                     ));
                     self.next();
@@ -1097,6 +1121,12 @@ mod tests {
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
         );
+
+        test_parser_fn(
+            "++a",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
     }
 
     #[test]
@@ -1175,6 +1205,12 @@ mod tests {
     fn test_postfix() {
         test_parser_fn(
             "a?!",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
+
+        test_parser_fn(
+            "a++",
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
         );
