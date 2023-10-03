@@ -8,7 +8,7 @@ To build from source, use:
 ```bash
 cargo install --git https://github.com/matt-cornell/cobalt-lang
 ```
-By default, builds link dynamically to LLVM 16. They can also statically link to it by enabling the `prefer-static` or `force-static` features. LLVM 15 can be linked to instead with the `llvm-15` feature.
+By default, builds link dynamically to LLVM 16. They can also statically link to it by enabling the `prefer-static` or `force-static` features.
 ## Language features
 - Modern programming features without a focus on compatibility with an outdated standard
   - First-class functions, arrays, and types
