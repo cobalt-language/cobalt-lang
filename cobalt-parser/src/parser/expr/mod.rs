@@ -56,6 +56,7 @@ impl<'src> Parser<'src> {
     ///    := fn_call
     ///    := dotted_expr
     ///    := index_expr
+    ///    := cast_expr
     /// ```
     pub fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -203,6 +204,13 @@ impl<'src> Parser<'src> {
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
                 continue;
+            }
+
+            if self.current_token.unwrap().kind == TokenKind::Colon {
+                let (parsed_expr, parsed_errors) = self.parse_cast_expr(working_ast);
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
+                break;
             }
 
             break;
@@ -970,6 +978,38 @@ impl<'src> Parser<'src> {
 
         (working_ast, vec![])
     }
+
+    /// - `val` is the thing being casted.
+    ///
+    /// ```
+    /// cast_expr := primary_expr ':' expr
+    /// ```
+    fn parse_cast_expr(&mut self, val: BoxedAST<'src>) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+        assert!(self.current_token.unwrap().kind == TokenKind::Colon);
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+        self.next();
+
+        // ---
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: ParserFound::Eof,
+                loc: span,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        }
+
+        let (expr, expr_errors) = self.parse_expr();
+        errors.extend(expr_errors);
+
+        // ---
+
+        (Box::new(CastAST::new(span, val, expr)), errors)
+    }
 }
 
 #[cfg(test)]
@@ -1137,6 +1177,15 @@ mod tests {
             "a?!",
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
+        );
+    }
+
+    #[test]
+    fn test_cast() {
+        test_parser_fn(
+            "ptr : *mut u8",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
         );
     }
 }
