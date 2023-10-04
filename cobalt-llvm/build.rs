@@ -13,12 +13,6 @@ use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::process::Command;
 
-#[cfg(not(any(feature = "llvm-15", feature = "llvm-16")))]
-compile_error!("Either LLVM 15 or LLVM 16 must be specified!");
-
-#[cfg(feature = "llvm-15")]
-const LLVM_MAJOR: u64 = 15;
-#[cfg(feature = "llvm-16")]
 const LLVM_MAJOR: u64 = 16;
 
 // Environment variables that can guide compilation
@@ -35,13 +29,11 @@ static ENV_FORCE_FFI: &str = formatcp!("LLVM_SYS_{LLVM_MAJOR}_FFI_WORKAROUND");
 lazy_static! {
     /// LLVM version used by this version of the crate.
     static ref CRATE_VERSION: Version = {
-        let crate_version = Version::parse(env!("CARGO_PKG_VERSION"))
-            .expect("Crate version is somehow not valid semver");
-        Version {
-            major: LLVM_MAJOR,
-            minor: 0,
-            .. crate_version
-        }
+        Version::new(
+            LLVM_MAJOR,
+            0,
+            0
+        )
     };
 
     /// Filesystem path to an llvm-config binary for the correct version.
@@ -168,9 +160,7 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
     if strict {
         llvm_version.major == CRATE_VERSION.major && llvm_version.minor == CRATE_VERSION.minor
     } else {
-        llvm_version.major >= CRATE_VERSION.major
-            || (llvm_version.major == CRATE_VERSION.major
-                && llvm_version.minor >= CRATE_VERSION.minor)
+        llvm_version.major == CRATE_VERSION.major && llvm_version.minor >= CRATE_VERSION.minor
     }
 }
 
