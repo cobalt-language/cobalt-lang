@@ -77,9 +77,9 @@ impl<'src> Parser<'src> {
     }
 
     /// Main entry point for parsing.
-    pub fn parse(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse(&mut self) -> (Option<TopLevelAST<'src>>, Vec<CobaltError<'src>>) {
         if self.current_token.is_none() {
-            return (Box::new(ErrorAST::new(self.source.len().into())), vec![]);
+            return (None, vec![]);
         }
 
         let mut vals = vec![];
@@ -114,7 +114,7 @@ impl<'src> Parser<'src> {
             errs.extend(err);
         }
 
-        (Box::new(TopLevelAST::new(vals, module)), errs)
+        (Some(TopLevelAST::new(vals, module)), errs)
     }
 
     /// Parses a top level item.
