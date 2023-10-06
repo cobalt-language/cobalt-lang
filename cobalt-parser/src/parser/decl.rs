@@ -378,7 +378,8 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// let_decl
-    ///   := 'let' ['mut'] IDENT [':' primary_expr] '=' expr ';'
+    ///   := 'let' ['mut']? IDENT [':' primary_expr]? '=' expr ';'
+    ///   := 'let' ['mut']? IDENT [':' primary_expr] ';'
     /// ```
     fn parse_let_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -471,6 +472,47 @@ impl<'src> Parser<'src> {
 
             errors.extend(ty_errors);
             ty_expr = Some(ty);
+        }
+
+        // If the next token is a semicolon, the value defaults to null.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';' or '='",
+                found: ParserFound::Eof,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        }
+
+        if self.current_token.unwrap().kind == TokenKind::Semicolon {
+            if ty_expr.is_none() {
+                let loc = self.current_token.unwrap().span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "type",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc,
+                });
+                return (Box::new(ErrorAST::new(loc)), errors);
+            }
+
+            let semicolon_span = self.current_token.unwrap().span;
+            self.next();
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name.unwrap(),
+                Box::new(NullAST::new(SourceSpan::from((
+                    semicolon_span.offset() - 1,
+                    0,
+                )))),
+                ty_expr,
+                vec![],
+                false,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         }
 
         // Next has to be an equals sign.
@@ -1626,6 +1668,12 @@ mod tests {
     fn test_parse_let_decl() {
         test_parser_fn(
             "let x: i32 = 5i32;",
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
+        );
+
+        test_parser_fn(
+            "let x: i32;",
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
         );
