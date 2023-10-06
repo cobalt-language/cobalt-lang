@@ -5,14 +5,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 use cobalt_ast::{CompCtx, AST};
 use cobalt_build::*;
 use cobalt_errors::*;
-use cobalt_parser::prelude::*;
+use cobalt_parser::parse_str;
 use cobalt_utils::Flags;
 use const_format::{formatcp, str_index};
 use human_repr::*;
 use inkwell::execution_engine::FunctionLookupError;
 use inkwell::module::Module;
 use inkwell::targets::*;
-use miette::Severity;
 use std::fmt;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
@@ -479,9 +478,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             DbgSubcommand::Parse { files, code, locs } => {
                 for code in code {
                     let file = FILES.add_file(0, "<command line>".to_string(), code.into());
-                    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
+                    let (ast, errs) = parse_str(file.contents());
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {
                         eprintln!("{:?}", Report::from(err).with_source_code(file));
@@ -495,9 +493,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 for arg in files {
                     let code = Path::new(&arg).read_to_string_anyhow()?;
                     let file = FILES.add_file(0, arg.clone(), code.into());
-                    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
+                    let (ast, errs) = parse_str(file.contents());
                     let mut ast = ast.unwrap_or_default();
-                    let errs = errs.into_iter().flat_map(cvt_err);
                     ast.file = Some(file);
                     for err in errs {
                         eprintln!("{:?}", Report::from(err).with_source_code(file));
@@ -616,10 +613,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 let ink_ctx = inkwell::context::Context::create();
                 let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
                 let file = FILES.add_file(0, input, code.into());
-                let ((ast, errs), parse_time) =
-                    timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+                let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                 let mut ast = ast.unwrap_or_default();
-                let errs = errs.into_iter().flat_map(cvt_err);
                 reporter.parse_time = Some(parse_time);
                 reporter.ast_nodes = ast.nodes();
                 ast.file = Some(file);
@@ -926,16 +921,14 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code.into());
-            let ((ast, errs), parse_time) =
-                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+            let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
             let mut ec = 0;
             for err in errs {
-                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                 if is_err {
                     fail = true;
                     ec += 1;
@@ -1270,16 +1263,14 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             let mut fail = false;
             let mut overall_fail = false;
             let file = FILES.add_file(0, input.to_string(), code.into());
-            let ((ast, errs), parse_time) =
-                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+            let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
             let mut ec = 0;
             for err in errs {
-                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                 if is_err {
                     fail = true;
                     ec += 1;
@@ -1516,16 +1507,14 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             };
             let mut fail = false;
             let file = FILES.add_file(0, input.to_string(), code.into());
-            let ((ast, errs), parse_time) =
-                timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+            let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
             let mut ast = ast.unwrap_or_default();
-            let errs = errs.into_iter().flat_map(cvt_err);
             reporter.parse_time = Some(parse_time);
             reporter.ast_nodes = ast.nodes();
             ast.file = Some(file);
             let mut ec = 0;
             for err in errs {
-                let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                 if is_err {
                     ec += 1;
                     fail = true;
@@ -1779,15 +1768,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             anyhow::bail!("cannot pass absolute paths to multi-file input")
                         }
                         let file = FILES.add_file(0, input.clone(), code.clone().into());
-                        let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+                        let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
-                        let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                         reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
                                 ec += 1;
                                 fail = true;
@@ -2203,15 +2190,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .zip(&codes)
                     .map(|(input, code)| {
                         let file = FILES.add_file(0, input.clone(), code.clone().into());
-                        let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+                        let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
-                        let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                         reporter.ast_nodes = ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
                                 fail = true;
                                 ec += 1;
@@ -2490,15 +2475,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .zip(&codes)
                     .map(|(input, code)| {
                         let file = FILES.add_file(0, input.clone(), code.clone().into());
-                        let ((ast, errs), parse_time) =
-                            timeit(|| parse_tl().parse(file.contents()).into_output_errors());
+                        let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
-                        let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
                         reporter.ast_nodes = ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
-                            let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+                            let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
                                 fail = true;
                                 ec += 1;
