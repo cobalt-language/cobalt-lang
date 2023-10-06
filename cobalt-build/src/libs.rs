@@ -73,12 +73,12 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 /// - Apple formats to libname.dylib
 /// - Windows formats to name.dll
 /// - Anything else formats to libname.so
-pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String {
+pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple, shared: bool) -> String {
     let triple = triple.as_str().to_str().unwrap();
     let mut components = triple.split('-');
     if matches!(components.next(), Some("wasm" | "wasm32")) {
         format!("{base}.wasm")
-    } else {
+    } else if shared {
         match components.next() {
             Some("apple") => format!("lib{base}.dylib"),
             Some("linux") => format!("lib{base}.so"),
@@ -88,6 +88,15 @@ pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple) -> String
                 _ => format!("lib{base}.so"),
             },
         }
+    } else {
+        format!(
+            "{}{base}.a",
+            if components.next().and_then(|_| components.next()) == Some("windows") {
+                "lib"
+            } else {
+                ""
+            }
+        )
     }
 }
 /// Populate the `.colib` header with the data from the context
@@ -116,12 +125,27 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
         })?;
         Ok(conflicts)
     } else {
-        let obj = object::File::parse(buf.as_slice())?;
-        if let Some(colib) = obj
-            .section_by_name(".colib")
-            .and_then(|v| v.uncompressed_data().ok())
-        {
-            conflicts.extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+        if buf.len() >= 8 && &buf[..8] == b"!<arch>\n" {
+            let mut ar = ar::Archive::new(std::io::Cursor::new(&buf[..]));
+            while let Some(entry) = ar.next_entry() {
+                if let Ok(obj) = object::File::parse(&object::ReadCache::new(entry?)) {
+                    if let Some(colib) = obj
+                        .section_by_name(".colib")
+                        .and_then(|v| v.uncompressed_data().ok())
+                    {
+                        conflicts
+                            .extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+                    }
+                }
+            }
+        } else {
+            let obj = object::File::parse(&buf[..])?;
+            if let Some(colib) = obj
+                .section_by_name(".colib")
+                .and_then(|v| v.uncompressed_data().ok())
+            {
+                conflicts.extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+            }
         }
         Ok(conflicts)
     }

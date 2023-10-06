@@ -1,12 +1,16 @@
 [package]
 name = "cobalt-llvm"
-version = "0.7.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+documentation.workspace = true
 
 [dependencies]
-inkwell = { version = "0.2.0" }
-llvm-sys-15 = { package = "llvm-sys", version = "150", optional = true }
-llvm-sys-16 = { package = "llvm-sys", version = "160", optional = true }
+inkwell = { version = "0.2.0", features = ["llvm16-0"] }
+llvm-sys = "160"
 
 [build-dependencies]
 lazy_static = "1.4"
@@ -16,13 +20,11 @@ semver = "1.0"
 
 # features passed to llvm-sys
 [features]
-default = ["strict-versioning", "prefer-dynamic", "llvm-16"]
-llvm-15 = ["inkwell/llvm15-0", "llvm-sys-15"]
-llvm-16 = ["inkwell/llvm16-0", "llvm-sys-16"]
-strict-versioning = ["llvm-sys-15/strict-versioning", "llvm-sys-16/strict-versioning"]
-no-llvm-linking = ["llvm-sys-15/no-llvm-linking", "llvm-sys-16/no-llvm-linking"]
+default = ["strict-versioning", "prefer-dynamic"]
+strict-versioning = ["llvm-sys/strict-versioning"]
+no-llvm-linking = ["llvm-sys/no-llvm-linking"]
 
-prefer-dynamic = ["llvm-sys-15/prefer-dynamic", "llvm-sys-16/prefer-dynamic"]
-force-dynamic = ["llvm-sys-15/force-dynamic", "llvm-sys-16/force-dynamic"]
-prefer-static = ["llvm-sys-15/prefer-static", "llvm-sys-16/prefer-static"]
-force-static = ["llvm-sys-15/force-static", "llvm-sys-16/force-static"]
+prefer-dynamic = ["llvm-sys/prefer-dynamic"]
+force-dynamic = ["llvm-sys/force-dynamic"]
+prefer-static = ["llvm-sys/prefer-static"]
+force-static = ["llvm-sys/force-static"]

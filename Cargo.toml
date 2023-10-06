@@ -8,3 +8,12 @@ members = [
   "cobalt-parser",
   "cobalt-utils"
 ]
+
+[workspace.package]
+version = "0.7.0"
+authors = ["Matthew Cornell <mcornell400708@gmail.com>", "Varun Malladi <varun.malladi@gmail.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/matt-cornell/cobalt-lang"
+description = "Cobalt is a low-level, compiled programming language made as an alternative to C++ and Rust."
+documentation = "https://matt-cornell.github.io/cobalt-docs"

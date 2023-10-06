@@ -1,7 +1,12 @@
 [package]
 name = "cobalt-parser"
-version = "0.7.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+documentation.workspace = true
 
 [dependencies]
 cobalt-errors = { path = "../cobalt-errors" }
@@ -10,4 +15,3 @@ cobalt-ast = { path = "../cobalt-ast" }
 unicode-ident = "1.0.9"
 either = "1.8.1"
 chumsky = { version = "1.0.0-alpha.4", features = ["label"] }
-delegate-attr = "0.2.9"
