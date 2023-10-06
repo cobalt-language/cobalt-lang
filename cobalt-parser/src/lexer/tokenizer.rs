@@ -64,6 +64,10 @@ impl<'src> SourceReader<'src> {
                     self.next_char();
                 }
 
+                '#' => {
+                    self.eat_comment();
+                }
+
                 // An identifier is an xid_start followed by zero or more xid_continue.
                 // Match an identifier.
                 // TODO: include check for underscore, but then there must be at least
@@ -498,6 +502,55 @@ impl<'src> SourceReader<'src> {
 
         Ok(to_return)
     }
+
+    fn eat_comment(&mut self) {
+        assert!(self.next_char() == Some('#'));
+
+        let mut multiline_level = 0;
+        loop {
+            match self.next_char() {
+                Some('=') => {
+                    multiline_level += 1;
+                }
+                Some('\n') => {
+                    return;
+                }
+                _ => break,
+            }
+        }
+
+        if multiline_level == 0 {
+            // Single line comment.
+            loop {
+                match self.next_char() {
+                    None => break,
+                    Some('\n') => break,
+                    _ => {}
+                }
+            }
+
+            return;
+        }
+
+        // Multi-line comment.
+
+        let mut num_levels_eaten = 0;
+        loop {
+            match self.next_char() {
+                Some('=') => {
+                    num_levels_eaten += 1;
+                }
+                Some('#') => {
+                    if num_levels_eaten < multiline_level {
+                        num_levels_eaten = 0;
+                    } else {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -607,5 +660,52 @@ mod tests {
                 },
             ]
         )
+    }
+
+    #[test]
+    fn test_comments() {
+        let src = "Something # else\nOk\n#comment \nmore";
+        let mut string_reader = SourceReader::new(src);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert_eq!(
+            tokens.0.as_ref(),
+            &vec![
+                Token {
+                    kind: TokenKind::Ident("Something"),
+                    span: SourceSpan::from((0, 8)),
+                },
+                Token {
+                    kind: TokenKind::Ident("Ok"),
+                    span: SourceSpan::from((9, 1)),
+                },
+                Token {
+                    kind: TokenKind::Ident("more"),
+                    span: SourceSpan::from((0, 1)),
+                }
+            ]
+        );
+
+        let src = "#= bla bla =#";
+        let mut string_reader = SourceReader::new(src);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert!(tokens.0.is_empty());
+
+        let src = "#=== bla bla =========#";
+        let mut string_reader = SourceReader::new(src);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert!(tokens.0.is_empty());
+
+        let src = "#=== bla bla =# aadsf ===#";
+        let mut string_reader = SourceReader::new(src);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert!(tokens.0.is_empty());
     }
 }
