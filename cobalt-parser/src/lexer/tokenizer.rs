@@ -457,7 +457,7 @@ impl<'src> SourceReader<'src> {
     /// character after the one it was pointing at when this function was
     /// called.
     fn eat_ident(&mut self) -> Result<Token<'src>, TokenizeError> {
-        let mut ident_len: usize = 0;
+        let start_idx = self.index;
 
         if let Some(c) = self.peek() {
             if !(is_xid_start(*c) || *c == '_') {
@@ -478,27 +478,22 @@ impl<'src> SourceReader<'src> {
         }
 
         self.next_char();
-        ident_len += 1;
 
         // The reader is now pointing at the first character of the identifier.
 
         while let Some(c) = self.peek() {
             if !is_xid_continue(*c) {
-                // TODO: should also verify c is whitespace, to catch the error
-                // of invalid characters in the identifier.
-
                 break;
             }
 
             self.next_char();
-            ident_len += 1;
         }
 
         // The reader is now pointing at the last character of the identifier.
 
         let to_return = Token {
-            kind: TokenKind::Ident(self.slice_backward(ident_len)),
-            span: self.source_span_backward(ident_len),
+            kind: TokenKind::Ident(self.slice_from(start_idx)),
+            span: self.source_span_from(start_idx),
         };
 
         Ok(to_return)

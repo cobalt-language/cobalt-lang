@@ -378,7 +378,7 @@ impl<'src> Parser<'src> {
     ///
     /// ```
     /// let_decl
-    ///   := 'let' ['mut'] IDENT [':' expr] '=' expr ';'
+    ///   := 'let' ['mut'] IDENT [':' primary_expr] '=' expr ';'
     /// ```
     fn parse_let_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -467,12 +467,10 @@ impl<'src> Parser<'src> {
         if self.current_token.unwrap().kind == TokenKind::Colon {
             self.next();
 
-            let (ty, ty_errors) = self.parse_expr();
+            let (ty, ty_errors) = self.parse_primary_expr();
 
             errors.extend(ty_errors);
             ty_expr = Some(ty);
-
-            self.next();
         }
 
         // Next has to be an equals sign.
