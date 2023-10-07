@@ -13,6 +13,9 @@ pub use miette;
 pub fn unreachable_span() -> SourceSpan {
     (usize::MAX, usize::MAX).into()
 }
+pub fn remove_unreachable(span: SourceSpan) -> Option<SourceSpan> {
+    (span != unreachable_span()).then_some(span)
+}
 pub fn merge_spans(a: SourceSpan, b: SourceSpan) -> SourceSpan {
     use std::cmp::{max, min};
     let start = min(a.offset(), b.offset());

@@ -232,7 +232,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -376,7 +376,8 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             ctx.export.set(old_vis)
         }
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
-        std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
+        ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name)))
+            .unwrap();
         (Value::null(), errs)
     }
     fn print_impl(
@@ -441,7 +442,7 @@ impl<'src> AST<'src> for ImportAST<'src> {
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
         self.codegen(ctx);
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

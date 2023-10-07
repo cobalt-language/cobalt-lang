@@ -7,12 +7,12 @@ use cobalt_errors::*;
 use cobalt_parser::prelude::*;
 use cobalt_utils::CellExt as Cell;
 use either::Either;
+use hashbrown::HashMap;
 use indexmap::IndexMap;
 use os_str_bytes::OsStrBytes;
 use path_calculate::*;
 use semver::{Version, VersionReq};
 use serde::*;
-use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
@@ -371,22 +371,15 @@ impl<'de> Deserialize<'de> for Dependency {
 pub fn clear_mod(this: &mut HashMap<std::borrow::Cow<str>, Symbol>) {
     for sym in this.values_mut() {
         sym.1.export = false;
-        match sym {
-            Symbol(
-                Value {
-                    data_type: Type::Module,
-                    inter_val: Some(InterData::Module(m, ..)),
-                    ..
-                },
-                _,
-            ) => clear_mod(m),
-            Symbol(v, d) => {
-                if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
-                    if !d.fwd && d.init {
-                        unsafe {
-                            std::mem::transmute::<_, inkwell::values::GlobalValue>(pv)
-                                .set_linkage(inkwell::module::Linkage::AvailableExternally);
-                        }
+        if let Some((m, ..)) = sym.0.as_mod_mut() {
+            clear_mod(m);
+        } else {
+            let Symbol(v, d) = sym;
+            if let Some(inkwell::values::BasicValueEnum::PointerValue(pv)) = v.comp_val {
+                if !d.fwd && d.init {
+                    unsafe {
+                        std::mem::transmute::<_, inkwell::values::GlobalValue>(pv)
+                            .set_linkage(inkwell::module::Linkage::AvailableExternally);
                     }
                 }
             }

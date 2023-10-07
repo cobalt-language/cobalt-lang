@@ -1,8 +1,6 @@
 use crate::*;
-use std::collections::{
-    hash_map::{Entry, HashMap},
-    LinkedList,
-};
+use hashbrown::hash_map::{Entry, HashMap};
+use std::collections::LinkedList;
 use std::io::{self, BufRead, Read, Write};
 use std::num::NonZeroUsize;
 #[derive(Debug, Clone, Copy)]
@@ -113,9 +111,6 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
     )> {
         self.0.as_mod_mut()
     }
-    pub fn empty_mod(name: String) -> Self {
-        Value::empty_mod(name).into()
-    }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
         self.0.save(out)
     }
@@ -129,42 +124,29 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
         ))
     }
     pub fn dump(&self, depth: usize) {
-        match self {
-            Symbol(
-                Value {
-                    data_type: Type::Module,
-                    inter_val: Some(InterData::Module(s, i, n)),
-                    ..
-                },
-                _,
-            ) => {
-                let pre = " ".repeat(depth);
-                eprintln!("module {n:?}");
-                for (i, _) in i {
-                    eprintln!("{pre}    import: {i}")
-                }
-                for (k, s) in s {
-                    eprint!("{pre}    {k:?}: ");
-                    s.dump(depth + 4)
-                }
+        if let (types::Module::KIND, Some(InterData::Module(s, i, n))) =
+            (self.0.data_type.kind(), &self.0.inter_val)
+        {
+            let pre = " ".repeat(depth);
+            eprintln!("module {n:?}");
+            for (i, _) in i {
+                eprintln!("{pre}    import: {i}")
             }
-            Symbol(
-                Value {
-                    comp_val,
-                    inter_val,
-                    data_type,
-                    ..
-                },
-                _,
-            ) => eprintln!(
-                "variable of type {data_type}; LLVM: {:?}, constant: {}",
-                comp_val.map(|v| v.to_string()),
-                inter_val.is_some()
-            ),
+            for (k, s) in s {
+                eprint!("{pre}    {k:?}: ");
+                s.dump(depth + 4)
+            }
+        } else {
+            eprintln!(
+                "variable of type {}; LLVM: {:?}, constant: {}",
+                self.0.data_type,
+                self.0.comp_val.map(|v| v.to_string()),
+                self.0.inter_val.is_some()
+            )
         }
     }
 }
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct VarMap<'src, 'ctx> {
     pub parent: Option<Box<Self>>,
     pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
@@ -217,16 +199,11 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             panic!("mod_insert cannot insert a value at an empty name")
         }
         while idx + 1 < name.ids.len() {
-            if let Symbol(
-                Value {
-                    data_type: Type::Module,
-                    inter_val: Some(InterData::Module(x, _, _)),
-                    ..
-                },
-                _,
-            ) = this
+            if let Some((x, _, _)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| Symbol::empty_mod(name.start(idx + 1).to_string()))
+                .or_insert_with(|| Value::empty_mod(name.start(idx + 1).to_string()).into())
+                .0
+                .as_mod_mut()
             {
                 this = x
             } else {
@@ -275,16 +252,11 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         }
         let mut old = String::new();
         while idx + 1 < name.ids.len() {
-            if let Symbol(
-                Value {
-                    data_type: Type::Module,
-                    inter_val: Some(InterData::Module(x, _, n)),
-                    ..
-                },
-                _,
-            ) = this
+            if let Some((x, _, n)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| Symbol::empty_mod(old + "." + &name.ids[idx].0))
+                .or_insert_with(|| Value::empty_mod(old + "." + &name.ids[idx].0).into())
+                .0
+                .as_mod_mut()
             {
                 this = x;
                 old = n.clone();
@@ -297,25 +269,19 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol(
-                    Value {
-                        data_type: Type::Module,
-                        inter_val: Some(InterData::Module(ref mut m, ref mut i, _)),
-                        ..
-                    },
-                    _,
-                ) => {
+            Entry::Occupied(mut x) => {
+                if let Some((m, i, _)) = x.get_mut().0.as_mod_mut() {
                     *m = sym.0;
                     i.append(&mut sym.1);
                     Ok(x.into_mut().as_mod().unwrap())
+                } else {
+                    Err(RedefVariable::AlreadyExists(
+                        idx,
+                        x.get_mut().1.loc,
+                        Value::make_mod(sym.0, sym.1, mod_name).into(),
+                    ))
                 }
-                Symbol(_, d) => Err(RedefVariable::AlreadyExists(
-                    idx,
-                    d.loc,
-                    Value::make_mod(sym.0, sym.1, mod_name).into(),
-                )),
-            },
+            }
             Entry::Vacant(x) => Ok(x
                 .insert(Value::make_mod(sym.0, sym.1, mod_name).into())
                 .as_mod()
@@ -346,7 +312,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         while idx + 1 < name.ids.len() {
             if let Some((x, _, n)) = this
                 .entry(name.ids[idx].0.clone())
-                .or_insert_with(|| Symbol::empty_mod(old + "." + &name.ids[idx].0))
+                .or_insert_with(|| Value::empty_mod(old + "." + &name.ids[idx].0).into())
                 .as_mod_mut()
             {
                 this = x;
@@ -357,30 +323,17 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             idx += 1;
         }
         match this.entry(name.ids[idx].0.clone()) {
-            Entry::Occupied(mut x) => match x.get_mut() {
-                Symbol(
-                    Value {
-                        data_type: Type::Module,
-                        ..
-                    },
-                    _,
-                ) => {
-                    if let Symbol(
-                        Value {
-                            data_type: Type::Module,
-                            inter_val: Some(InterData::Module(s, i, n)),
-                            ..
-                        },
-                        _,
-                    ) = x.remove()
-                    {
+            Entry::Occupied(x) => {
+                if x.get().0.data_type.kind() == types::Module::KIND {
+                    if let Some(InterData::Module(s, i, n)) = x.remove().0.inter_val {
                         Ok((s, i, n))
                     } else {
                         Err(UndefVariable::NotAModule(idx))
                     }
+                } else {
+                    Err(UndefVariable::DoesNotExist(idx))
                 }
-                Symbol(..) => Err(UndefVariable::DoesNotExist(idx)), // should be AlreadyExists, but DoesNotExist wouldn't arise here
-            },
+            }
             Entry::Vacant(_) => Ok(Default::default()),
         }
     }
@@ -419,30 +372,27 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             }
             let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
             match self.symbols.entry(name.into()) {
-                Entry::Occupied(mut x) => match (x.get_mut(), Symbol::load(buf, ctx)?) {
-                    (
-                        Symbol(
-                            Value {
-                                data_type: Type::Module,
-                                inter_val: Some(InterData::Module(bs, bi, _)),
-                                ..
-                            },
-                            _,
-                        ),
-                        Symbol(
-                            Value {
-                                data_type: Type::Module,
-                                inter_val: Some(InterData::Module(ns, mut ni, _)),
-                                ..
-                            },
-                            _,
-                        ),
-                    ) => {
+                Entry::Occupied(mut x) => {
+                    let l = x.get_mut();
+                    let r = Symbol::load(buf, ctx)?;
+                    const MOD: std::num::NonZeroU64 = types::Module::KIND;
+                    if let (
+                        MOD,
+                        MOD,
+                        Some(InterData::Module(bs, bi, _)),
+                        Some(InterData::Module(ns, mut ni, _)),
+                    ) = (
+                        l.0.data_type.kind(),
+                        r.0.data_type.kind(),
+                        &mut l.0.inter_val,
+                        r.0.inter_val,
+                    ) {
                         bi.append(&mut ni);
                         out.append(&mut merge(bs, ns));
+                    } else {
+                        out.push(x.key().clone())
                     }
-                    _ => out.push(x.key().clone()),
-                },
+                }
                 Entry::Vacant(x) => {
                     x.insert(Symbol::load(buf, ctx)?);
                 }
@@ -525,15 +475,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
                     } else {
                         None
                     }
-                } else if let Some(Symbol(
-                    Value {
-                        data_type: Type::Module,
-                        inter_val: Some(InterData::Module(s, i, _)),
-                        ..
-                    },
-                    _,
-                )) = symbols.get(&**x)
-                {
+                } else if let Some((s, i, _)) = symbols.get(&**x).and_then(|s| s.0.as_mod()) {
                     Self::satisfy((s, i), name, &pattern[1..], root)
                 } else {
                     None
@@ -560,15 +502,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
                     })
                 } else {
                     symbols.values().find_map(|v| {
-                        if let Symbol(
-                            Value {
-                                data_type: Type::Module,
-                                inter_val: Some(InterData::Module(s, i, _)),
-                                ..
-                            },
-                            _,
-                        ) = v
-                        {
+                        if let Some((s, i, _)) = v.as_mod() {
                             Self::satisfy((s, i), name, &pattern[1..], root)
                         } else {
                             None
@@ -628,18 +562,17 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         use CompoundDottedNameSegment::*;
         match pattern.first() {
             None => vec![],
-            Some(Identifier(x, l)) => match Self::lookup_in_mod((symbols, imports), x, root) {
-                Some(_) if pattern.len() == 1 => vec![],
-                Some(Symbol(
-                    Value {
-                        data_type: Type::Module,
-                        inter_val: Some(InterData::Module(s, i, _)),
-                        ..
-                    },
-                    _,
-                )) => Self::verify_in_mod((s, i), &pattern[1..], root),
-                _ => vec![*l],
-            },
+            Some(Identifier(x, l)) => {
+                if pattern.len() == 1 {
+                    vec![]
+                } else if let Some((s, i, _)) =
+                    Self::lookup_in_mod((symbols, imports), x, root).and_then(|s| s.0.as_mod())
+                {
+                    Self::verify_in_mod((s, i), &pattern[1..], root)
+                } else {
+                    vec![*l]
+                }
+            }
             Some(Glob(l)) => {
                 if pattern.len() == 1 {
                     if symbols.is_empty() && imports.is_empty() {
@@ -724,30 +657,27 @@ fn merge<'src, 'ctx>(
     let mut out = vec![];
     for (key, val) in new {
         match base.entry(key) {
-            Entry::Occupied(mut e) => match (e.get_mut(), val) {
-                (
-                    Symbol(
-                        Value {
-                            data_type: Type::Module,
-                            inter_val: Some(InterData::Module(bs, bi, _)),
-                            ..
-                        },
-                        _,
-                    ),
-                    Symbol(
-                        Value {
-                            data_type: Type::Module,
-                            inter_val: Some(InterData::Module(ns, mut ni, _)),
-                            ..
-                        },
-                        _,
-                    ),
-                ) => {
+            Entry::Occupied(mut e) => {
+                let l = e.get_mut();
+                let r = val;
+                const MOD: std::num::NonZeroU64 = types::Module::KIND;
+                if let (
+                    MOD,
+                    MOD,
+                    Some(InterData::Module(bs, bi, _)),
+                    Some(InterData::Module(ns, mut ni, _)),
+                ) = (
+                    l.0.data_type.kind(),
+                    r.0.data_type.kind(),
+                    &mut l.0.inter_val,
+                    r.0.inter_val,
+                ) {
                     bi.append(&mut ni);
-                    out.extend(merge(bs, ns).into_iter().map(|x| e.key().clone() + x));
+                    out.append(&mut merge(bs, ns));
+                } else {
+                    out.push(e.key().clone())
                 }
-                _ => out.push(e.key().clone()),
-            },
+            }
             Entry::Vacant(e) => {
                 e.insert(val);
             }

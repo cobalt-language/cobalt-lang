@@ -16,7 +16,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -41,7 +41,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
         let end = cfg::Location::current(ctx);
         if let (Some(start), Some(end)) = (start, end) {
             if let Some(loc) = self.vals.last().map(|a| a.loc()) {
-                ops::mark_move(&out, end, ctx, loc);
+                cfg::mark_move(&out, end, ctx, loc);
             }
             let graph = cfg::Cfg::new(start, end, ctx);
             graph.insert_dtors(ctx, true);
@@ -104,7 +104,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -120,7 +120,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
             self.vals.last().map(|a| a.loc()),
             cfg::Location::current(ctx),
         ) {
-            ops::mark_move(&out, end, ctx, loc);
+            cfg::mark_move(&out, end, ctx, loc);
         }
         (out, errs)
     }
@@ -152,7 +152,7 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
