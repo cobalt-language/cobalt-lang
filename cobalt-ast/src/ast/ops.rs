@@ -280,10 +280,25 @@ impl<'src> AST<'src> for PrefixAST<'src> {
             return (Value::error(), errs);
         }
         (
-            v.pre_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
-                errs.push(e);
-                Value::error()
-            }),
+            if self.op == "&" {
+                if let Some(ty) = v.data_type.downcast::<types::Reference>() {
+                    Value {
+                        data_type: types::Pointer::new(ty.base()),
+                        ..v
+                    }
+                } else {
+                    Value::new(
+                        v.addr(ctx).map(From::from),
+                        None,
+                        v.data_type.add_ref(v.frozen.is_none()),
+                    )
+                }
+            } else {
+                v.pre_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::error()
+                })
+            },
             errs,
         )
     }
