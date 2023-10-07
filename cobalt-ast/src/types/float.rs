@@ -18,7 +18,6 @@ static F128: Float = Float(FPType::F128);
 #[derive(Debug, Display)]
 pub struct Float(FPType);
 impl Float {
-    pub const KIND: NonZeroU64 = make_id(b"float");
     pub fn new(val: FPType) -> &'static Self {
         match val {
             FPType::F16 => &F16,
@@ -72,6 +71,91 @@ impl Type for Float {
             }
             .into(),
         )
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        if let Some(ty) = other.downcast::<types::Float>() {
+            ty.kind() >= self.kind()
+        } else {
+            false
+        }
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(ty) = target.0.downcast::<types::Float>() {
+            if ty.kind() >= self.kind() {
+                return Ok(Value::new(
+                    if let Some(BasicValueEnum::FloatValue(v)) = val.comp_val {
+                        if self.kind() == ty.kind() {
+                            Some(v.into())
+                        } else {
+                            Some(
+                                ctx.builder
+                                    .build_float_ext(
+                                        v,
+                                        ty.llvm_type(ctx).unwrap().into_float_type(),
+                                        "",
+                                    )
+                                    .into(),
+                            )
+                        }
+                    } else {
+                        None
+                    },
+                    val.inter_val,
+                    target.0,
+                ));
+            }
+        }
+        Err(cant_econv(&val, target.0, target.1))
+    }
+    fn _econv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(ty) = target.0.downcast::<types::Float>() {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::FloatValue(v)) = val.comp_val {
+                    let ft = ty.llvm_type(ctx).unwrap().into_float_type();
+                    use std::cmp::Ordering;
+                    match ty.kind().cmp(&self.kind()) {
+                        Ordering::Greater => Some(ctx.builder.build_float_ext(v, ft, "").into()),
+                        Ordering::Less => Some(ctx.builder.build_float_trunc(v, ft, "").into()),
+                        Ordering::Equal => Some(v.into()),
+                    }
+                } else {
+                    None
+                },
+                val.inter_val,
+                target.0,
+            ))
+        } else if let Some(ty) = target.0.downcast::<types::Int>() {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::FloatValue(v)) = val.comp_val {
+                    let it = ty.llvm_type(ctx).unwrap().into_int_type();
+                    if ty.is_signed() {
+                        Some(ctx.builder.build_float_to_signed_int(v, it, "").into())
+                    } else {
+                        Some(ctx.builder.build_float_to_unsigned_int(v, it, "").into())
+                    }
+                } else {
+                    None
+                },
+                if let Some(InterData::Float(v)) = val.inter_val {
+                    Some(InterData::Int(v as _))
+                } else {
+                    None
+                },
+                target.0,
+            ))
+        } else {
+            Err(cant_econv(&val, target.0, target.1))
+        }
     }
     fn pre_op<'src, 'ctx>(
         &'static self,

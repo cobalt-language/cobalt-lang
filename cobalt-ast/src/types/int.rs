@@ -105,6 +105,125 @@ impl Type for Int {
             _ => Err(invalid_preop(&val, op, oloc)),
         }
     }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        if let Some(ty) = other.downcast::<types::Int>() {
+            ty.bits() >= self.bits()
+        } else {
+            other.is::<types::Float>()
+        }
+    }
+    fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is::<types::Int>()
+            || other.is_and::<types::Pointer>(|p| {
+                matches!(p.llvm_type(ctx), Some(BasicTypeEnum::PointerType(_)))
+            })
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(ty) = target.0.downcast::<types::Int>() {
+            if ty.bits() >= self.bits() {
+                Ok(Value::new(
+                    if ty.bits() == self.bits() {
+                        val.comp_val
+                    } else if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
+                        let ty = target.0.llvm_type(ctx).unwrap().into_int_type();
+                        if self.is_signed() {
+                            Some(ctx.builder.build_int_s_extend(v, ty, "").into())
+                        } else {
+                            Some(ctx.builder.build_int_z_extend(v, ty, "").into())
+                        }
+                    } else {
+                        None
+                    },
+                    if let Some(InterData::Int(v)) = val.inter_val {
+                        Some(InterData::Float(v as _))
+                    } else {
+                        None
+                    },
+                    target.0,
+                ))
+            } else {
+                Err(CobaltError::NarrowingIntConversion {
+                    sbits: self.bits(),
+                    dbits: ty.bits(),
+                    sloc: val.loc,
+                    dloc: target.1.unwrap_or(val.loc),
+                })
+            }
+        } else if target.0.is::<types::Float>() {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
+                    let ty = target.0.llvm_type(ctx).unwrap().into_float_type();
+                    if self.is_signed() {
+                        Some(ctx.builder.build_signed_int_to_float(v, ty, "").into())
+                    } else {
+                        Some(ctx.builder.build_unsigned_int_to_float(v, ty, "").into())
+                    }
+                } else {
+                    None
+                },
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Float(v as _))
+                } else {
+                    None
+                },
+                target.0,
+            ))
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
+    }
+    fn _econv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if let Some(ty) = target.0.downcast::<types::Int>() {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
+                    let it = target.0.llvm_type(ctx).unwrap().into_int_type();
+                    use std::cmp::Ordering;
+                    match ty.bits().cmp(&self.bits()) {
+                        Ordering::Greater => {
+                            if self.is_signed() {
+                                Some(ctx.builder.build_int_s_extend(v, it, "").into())
+                            } else {
+                                Some(ctx.builder.build_int_z_extend(v, it, "").into())
+                            }
+                        }
+                        Ordering::Less => Some(ctx.builder.build_int_truncate(v, it, "").into()),
+                        Ordering::Equal => Some(v.into()),
+                    }
+                } else {
+                    None
+                },
+                if let Some(InterData::Int(v)) = val.inter_val {
+                    Some(InterData::Float(v as _))
+                } else {
+                    None
+                },
+                target.0,
+            ))
+        } else if target.0.is::<types::Pointer>() {
+            Ok(Value::new(
+                if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
+                    let ty = target.0.llvm_type(ctx).unwrap().into_pointer_type();
+                    Some(ctx.builder.build_int_to_ptr(v, ty, "").into())
+                } else {
+                    None
+                },
+                None,
+                target.0,
+            ))
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
+    }
     fn _has_bin_lhs(
         &'static self,
         other: TypeRef,

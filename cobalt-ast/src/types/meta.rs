@@ -3,7 +3,6 @@ use super::*;
 #[display(fmt = "type")]
 pub struct TypeData(());
 impl TypeData {
-    pub const KIND: NonZeroU64 = make_id(b"type");
     pub fn new() -> &'static Self {
         static SELF: TypeData = Self(());
         &SELF
@@ -368,6 +367,15 @@ impl Type for Null {
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         other.is::<TypeData>()
     }
+    fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        matches!(
+            other.kind(),
+            types::Pointer::KIND | types::Int::KIND | types::Float::KIND
+        )
+    }
+    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        true
+    }
     fn _iconv_to<'src, 'ctx>(
         &'static self,
         val: Value<'src, 'ctx>,
@@ -379,6 +387,34 @@ impl Type for Null {
         } else {
             Err(cant_iconv(&val, target.0, target.1))
         }
+    }
+    fn _econv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match target.0.kind() {
+            types::Int::KIND => Ok(Value::metaval(InterData::Int(0), target.0)),
+            types::Float::KIND => Ok(Value::interpreted(
+                target.0.llvm_type(ctx).unwrap().const_zero(),
+                InterData::Float(0.),
+                target.0,
+            )),
+            types::Pointer::KIND => Ok(Value::compiled(
+                target.0.llvm_type(ctx).unwrap().const_zero(),
+                target.0,
+            )),
+            _ => Err(cant_econv(&val, target.0, target.1)),
+        }
+    }
+    fn _iconv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Ok(Value::null())
     }
     fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
         Ok(())

@@ -904,7 +904,6 @@ impl Type for Pointer {
 #[repr(transparent)]
 pub struct Mut(TypeRef);
 impl Mut {
-    pub const KIND: NonZeroU64 = make_id(b"mut");
     #[ref_cast_custom]
     fn from_ref(base: &TypeRef) -> &Self;
     pub fn new(base: TypeRef) -> &'static Self {
