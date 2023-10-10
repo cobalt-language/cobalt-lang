@@ -1,7 +1,7 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, str::Chars};
 
 use cobalt_ast::{
-    ast::{ErrorAST, IntLiteralAST, StructLiteralAST},
+    ast::{ErrorAST, IntLiteralAST, StringLiteralAST, StructLiteralAST},
     BoxedAST,
 };
 use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
@@ -9,6 +9,7 @@ use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 use crate::{
     lexer::tokens::{Delimiter, LiteralToken, TokenKind},
     parser::Parser,
+    utils::CharBytesIterator,
 };
 
 impl<'src> Parser<'src> {
@@ -97,6 +98,40 @@ impl<'src> Parser<'src> {
                 );
             }
 
+            TokenKind::Literal(LiteralToken::Str(_)) => {
+                let parsed_literal = self.parse_string_literal();
+                if parsed_literal.0.is_none() {
+                    return (Box::new(ErrorAST::new(span)), errors);
+                }
+
+                let mut ast = parsed_literal.0.unwrap();
+                let errors = parsed_literal.1;
+
+                if self.current_token.is_none() {
+                    return (Box::new(ast), errors);
+                }
+
+                // --- Check for suffixes.
+
+                let mut suffix: Option<(Cow<'src, str>, SourceSpan)> = None;
+
+                if let TokenKind::Ident(pf) = self.current_token.unwrap().kind {
+                    match pf {
+                        "c" => {
+                            suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
+                            self.next();
+                        }
+                        _ => {}
+                    }
+                }
+
+                ast.suffix = suffix;
+
+                // ---
+
+                return (Box::new(ast), errors);
+            }
+
             _ => {}
         }
 
@@ -105,6 +140,7 @@ impl<'src> Parser<'src> {
             found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
             loc: span,
         });
+        self.next();
         (Box::new(ErrorAST::new(self.source.len().into())), errors)
     }
 
@@ -296,6 +332,105 @@ impl<'src> Parser<'src> {
 
         (Box::new(StructLiteralAST::new(span, fields)), errors)
     }
+
+    /// Going into this function, expect current token to be 'LiteralToken::Str'.
+    pub fn parse_string_literal(
+        &mut self,
+    ) -> (Option<StringLiteralAST<'src>>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+
+        let mut chars: Chars;
+        if let TokenKind::Literal(LiteralToken::Str(s)) = self.current_token.unwrap().kind {
+            chars = s.chars();
+        } else {
+            self.next();
+            errors.push(CobaltError::ExpectedFound {
+                ex: "string literal",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return (None, errors);
+        }
+
+        self.next();
+
+        // ---
+
+        let mut cbi_s: Vec<CharBytesIterator> = vec![];
+        loop {
+            let cbi = match chars.next() {
+                None => break,
+                Some('\0') => CharBytesIterator::from_u8(0x00),
+                Some('\n') => CharBytesIterator::from_u8(0x0a),
+                Some('\r') => CharBytesIterator::from_u8(0x0d),
+                Some('\t') => CharBytesIterator::from_u8(0x09),
+                Some('\\') => {
+                    match chars.next() {
+                        None => break,
+                        Some('v') => CharBytesIterator::from_u8(0x0a),
+                        Some('b') => CharBytesIterator::from_u8(0x08),
+                        Some('e') => CharBytesIterator::from_u8(0x1b),
+                        Some('a') => CharBytesIterator::from_u8(0x07),
+                        //                 just("\\c").ignore_then(
+                        //                     text::digits(16)
+                        //                         .exactly(2)
+                        //                         .slice()
+                        //                         .map(|v| Cbi::from_u8(u8::from_str_radix(v, 16).unwrap()))
+                        //                         .recover_with(via_parser(empty().to(Cbi::from_u8(0)))),
+                        //                 ),
+                        Some('c') => todo!(),
+                        //                  just("\\x").ignore_then(
+                        //                     text::digits(16)
+                        //                         .exactly(2)
+                        //                         .slice()
+                        //                         .map(|v| Cbi::raw(u8::from_str_radix(v, 16).unwrap()))
+                        //                         .recover_with(via_parser(empty().to(Cbi::from_u8(0)))),
+                        //                 ),
+                        Some('x') => todo!(),
+                        //                 just("\\u").ignore_then(
+                        //                     text::digits(16)
+                        //                         .at_least(2)
+                        //                         .at_most(6)
+                        //                         .slice()
+                        //                         .validate(|v, span, e| {
+                        //                             let v = u32::from_str_radix(v, 16).unwrap();
+                        //                             Cbi::from_u32(v).unwrap_or_else(|| {
+                        //                                 e.emit(Rich::custom(
+                        //                                     span,
+                        //                                     format!("{v:0>4X} is not a valid Unicode codepoint"),
+                        //                                 ));
+                        //                                 Cbi::from_u8(0)
+                        //                             })
+                        //                         })
+                        //                         .recover_with(skip_until(
+                        //                             none_of("}'").ignored(),
+                        //                             one_of("}'").ignored(),
+                        //                             || Cbi::from_u8(0),
+                        //                         ))
+                        //                         .delimited_by(just('{'), just('}'))
+                        //                         .recover_with(skip_until(
+                        //                             none_of("}'").ignored(),
+                        //                             one_of("}'").ignored(),
+                        //                             || Cbi::from_u8(0),
+                        //                         )),
+                        //                 ),
+                        Some('u') => todo!(),
+                        Some(c) => CharBytesIterator::from_char(c),
+                    }
+                }
+                Some(c) => CharBytesIterator::from_char(c),
+            };
+
+            cbi_s.push(cbi);
+        }
+
+        let bytes: Vec<u8> = cbi_s.into_iter().flatten().collect();
+
+        (Some(StringLiteralAST::new(span, bytes, None)), errors)
+    }
 }
 
 #[cfg(test)]
@@ -338,5 +473,14 @@ mod tests {
             true,
             Box::new(|parser: &mut Parser<'static>| parser.parse_struct_literal()),
         );
+    }
+
+    #[test]
+    fn test_parse_string_literal() {
+        test_parser_fn(
+            r#""Hello, world!""#,
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse_string_literal()),
+        )
     }
 }

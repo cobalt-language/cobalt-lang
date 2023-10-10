@@ -143,6 +143,7 @@ impl UnOrBinOpToken {
 pub enum LiteralToken<'src> {
     Int(&'src str),
     Float(&'src str),
+    /// The slice is what's inside the double quotations.
     Str(&'src str),
 }
 

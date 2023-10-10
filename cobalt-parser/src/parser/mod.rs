@@ -165,6 +165,7 @@ where
 {
     let mut reader = SourceReader::new(src);
     let tokens = reader.tokenize().0;
+    //dbg!(&tokens.0);
 
     let mut parser = Parser::new(src, tokens);
     parser.next();
@@ -187,6 +188,22 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_hello_world() {
+        let src = r#"
+@C(extern) fn puts(str: *u8);
+
+fn main(): i32 = {
+    puts("Hello, World!"c);
+    0
+};"#;
+        test_parser_fn(
+            src,
+            true,
+            Box::new(|parser: &mut Parser<'static>| parser.parse()),
+        );
+    }
 
     #[test]
     fn test_parse_1() {

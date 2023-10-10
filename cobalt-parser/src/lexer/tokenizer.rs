@@ -440,6 +440,46 @@ impl<'src> SourceReader<'src> {
                     });
                 }
 
+                // --- String literal.
+                '"' => {
+                    self.next_char();
+
+                    let span_start = self.index;
+
+                    let mut last_was_escape = false;
+                    loop {
+                        let c = self.peek();
+                        if c.is_none() {
+                            todo!()
+                        }
+                        let c = c.unwrap();
+
+                        if c == &'\\' {
+                            last_was_escape = !last_was_escape;
+                            self.next_char();
+                            continue;
+                        }
+
+                        if c == &'"' && !last_was_escape {
+                            break;
+                        }
+
+                        last_was_escape = false;
+
+                        self.next_char();
+                    }
+
+                    let span_end = self.index;
+                    self.next_char();
+
+                    tokens.push(Token {
+                        kind: TokenKind::Literal(LiteralToken::Str(
+                            &self.source[span_start..span_end],
+                        )),
+                        span: SourceSpan::from((span_start, span_end - span_start)),
+                    });
+                }
+
                 _ => panic!("Unexpected character: {}", c),
             }
         }
@@ -659,7 +699,29 @@ mod tests {
                     span: SourceSpan::from((11, 1)),
                 },
             ]
-        )
+        );
+
+        let str_literal = r#""hello""#;
+        let mut string_reader = SourceReader::new(str_literal);
+        let (tokens, _errors) = string_reader.tokenize();
+        assert_eq!(
+            tokens.0.as_ref(),
+            &vec![Token {
+                kind: TokenKind::Literal(LiteralToken::Str("hello")),
+                span: SourceSpan::from((0, 0))
+            }]
+        );
+
+        let str_literal = r#""hello \"world\"""#;
+        let mut string_reader = SourceReader::new(str_literal);
+        let (tokens, _errors) = string_reader.tokenize();
+        assert_eq!(
+            tokens.0.as_ref(),
+            &vec![Token {
+                kind: TokenKind::Literal(LiteralToken::Str("hello \\\"world\\\"")),
+                span: SourceSpan::from((0, 0))
+            }]
+        );
     }
 
     #[test]
