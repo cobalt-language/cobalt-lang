@@ -769,5 +769,12 @@ mod tests {
         let (tokens, _errors) = string_reader.tokenize();
 
         assert!(tokens.0.is_empty());
+
+        let src = "#=== bla bla == =# bla";
+        let mut string_reader = SourceReader::new(src);
+
+        let (tokens, _errors) = string_reader.tokenize();
+
+        assert!(tokens.0.is_empty());
     }
 }
