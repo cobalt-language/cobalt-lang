@@ -18,10 +18,10 @@ impl<'src> Parser<'src> {
     /// Going into this function, the current token should be the first token
     /// of this grammar.
     ///
-    /// ```
+    /// ```text
     /// literal := LITERAL
     /// ```
-    pub fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let span = self.current_token.unwrap().span;
@@ -147,11 +147,11 @@ impl<'src> Parser<'src> {
     /// Check if the current token begins a struct literal.
     ///
     /// In particular, we look for the following pattern:
-    /// ```
+    /// ```text
     /// '{' ident ':'
     /// ```
     /// This could be improved to next look for `expr [',' | '}']`.
-    pub fn check_struct_literal(&mut self) -> bool {
+    pub(crate) fn check_struct_literal(&mut self) -> bool {
         assert!(self.current_token.is_some());
 
         let idx_on_entry = self.cursor.index;
@@ -199,10 +199,10 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, the current token should be '{'.
     ///
-    /// ```
+    /// ```text
     /// struct_literal := '{' [ident ':' expr] [',' ident ':' expr]* [',']? '}'
     /// ````
-    pub fn parse_struct_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_struct_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Brace));
 
@@ -334,7 +334,7 @@ impl<'src> Parser<'src> {
     }
 
     /// Going into this function, expect current token to be 'LiteralToken::Str'.
-    pub fn parse_string_literal(
+    pub(crate) fn parse_string_literal(
         &mut self,
     ) -> (Option<StringLiteralAST<'src>>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
@@ -430,57 +430,5 @@ impl<'src> Parser<'src> {
         let bytes: Vec<u8> = cbi_s.into_iter().flatten().collect();
 
         (Some(StringLiteralAST::new(span, bytes, None)), errors)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::parser::test_parser_fn;
-
-    #[test]
-    fn test_parse_literal() {
-        test_parser_fn(
-            "1",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
-        );
-
-        test_parser_fn(
-            "1i32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
-        );
-
-        test_parser_fn(
-            "1.0",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
-        );
-
-        test_parser_fn(
-            "1.0f32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_literal()),
-        );
-    }
-
-    #[test]
-    fn test_parse_struct_literal() {
-        test_parser_fn(
-            "{size: u32, offset: u16}",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_struct_literal()),
-        );
-    }
-
-    #[test]
-    fn test_parse_string_literal() {
-        test_parser_fn(
-            r#""Hello, world!""#,
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_string_literal()),
-        )
     }
 }

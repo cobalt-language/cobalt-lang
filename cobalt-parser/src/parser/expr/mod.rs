@@ -13,7 +13,7 @@ mod literal;
 impl<'src> Parser<'src> {
     /// Parse an expression.
     ///
-    /// ```
+    /// ```text
     /// expr
     ///    := primary_expr [BINOP primary_expr]*
     /// ```
@@ -43,7 +43,7 @@ impl<'src> Parser<'src> {
     /// `(a + b)` will be found to have primary expressions `a` and `b` upon being parsed
     /// recursively, but this is not the concern of the top level parsing.
     ///
-    /// ```
+    /// ```text
     /// primary_expr
     ///    := ident_expr
     ///    := literal
@@ -231,10 +231,10 @@ impl<'src> Parser<'src> {
         (working_ast, errors)
     }
 
-    /// ```
+    /// ```text
     /// ident_expr := ident ['.' ident]+
     /// ```
-    fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -322,12 +322,12 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be a '.'.
     ///
-    /// ```
+    /// ```text
     /// dotted_expr := primary_expr '.' ident
     /// ```
     ///
     /// - `target` is the thing on the left of the dot.
-    fn parse_dotted_expr(
+    pub(crate) fn parse_dotted_expr(
         &mut self,
         target: BoxedAST<'src>,
     ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
@@ -371,10 +371,10 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be a unary operator.
     ///
-    /// ```
+    /// ```text
     /// prefix_expr := [UNOP | 'mut'] primary_expr
     /// ```
-    fn parse_prefix_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_prefix_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -433,10 +433,10 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be an open paren.
     ///
-    /// ```
+    /// ```text
     /// paren_expr := '(' expr ')'
     /// ```
-    fn parse_paren_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_paren_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -484,12 +484,12 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be a open brace.
     ///
-    /// ```
+    /// ```text
     /// block_expr
     ///     := '{' [ expr? ';' | decl ]* '}'
     ///     := struct_literal
     /// ```
-    fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Brace));
 
@@ -577,11 +577,11 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be an `if` keyword.
     ///
-    /// ```
+    /// ```text
     /// if_expr :=
     ///    'if' primary_expr block_expr [ 'else' block_expr ]?
-    /// `
-    fn parse_if_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    /// ```
+    pub(crate) fn parse_if_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -672,10 +672,10 @@ impl<'src> Parser<'src> {
     /// Instrinsics can be functions; these are parsed in the function call
     /// parsing methods.
     ///
-    /// ```
+    /// ```text
     /// instinsic := '@' ident
     /// ```
-    fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::At);
 
@@ -716,7 +716,7 @@ impl<'src> Parser<'src> {
         (Box::new(IntrinsicAST::new(span, name)), errors)
     }
 
-    fn check_fn_call(&mut self) -> bool {
+    pub(crate) fn check_fn_call(&mut self) -> bool {
         if self.current_token.is_none() {
             return false;
         }
@@ -752,10 +752,10 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be an identifier.
     ///
-    /// ```
+    /// ```text
     /// fn_call := [ident | intrinsic] '(' [ expr [',' expr]*]? ')'
     /// ```
-    fn parse_fn_call(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_fn_call(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -883,10 +883,10 @@ impl<'src> Parser<'src> {
 
     /// Going into this function, `current_token` is assumed to be an `[`.
     ///
-    /// ```
+    /// ```text
     /// index_expr := '[' expr ']
     /// ```
-    fn parse_index_expr(
+    pub(crate) fn parse_index_expr(
         &mut self,
         target: BoxedAST<'src>,
     ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
@@ -949,10 +949,10 @@ impl<'src> Parser<'src> {
     /// Going into this function, `current_token` is assumed to be the first token after the
     /// target.
     ///
-    /// ```
+    /// ```text
     /// postfix_expr := primary_expr [ '!' | '?' ]+
     /// ```
-    fn parse_postfix_expr(
+    pub(crate) fn parse_postfix_expr(
         &mut self,
         target: BoxedAST<'src>,
     ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
@@ -1005,10 +1005,13 @@ impl<'src> Parser<'src> {
 
     /// - `val` is the thing being casted.
     ///
-    /// ```
+    /// ```text
     /// cast_expr := primary_expr ':' expr
     /// ```
-    fn parse_cast_expr(&mut self, val: BoxedAST<'src>) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_cast_expr(
+        &mut self,
+        val: BoxedAST<'src>,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::Colon);
 
@@ -1033,195 +1036,5 @@ impl<'src> Parser<'src> {
         // ---
 
         (Box::new(CastAST::new(span, val, expr)), errors)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::parser::test_parser_fn;
-
-    #[test]
-    fn test_simple_add() {
-        test_parser_fn(
-            "a + b",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
-    }
-
-    #[test]
-    fn test_paren_add() {
-        test_parser_fn(
-            "a + (b + c)",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
-    }
-
-    #[test]
-    fn test_mul_add() {
-        test_parser_fn(
-            "a * b + c",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
-    }
-
-    #[test]
-    fn test_bitcast() {
-        test_parser_fn(
-            "a + 4 :? u8",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
-    }
-
-    #[test]
-    fn test_mixed() {
-        test_parser_fn(
-            "a * b + c / (d - (f + g * h))",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
-    }
-
-    #[test]
-    fn test_block_expr() {
-        test_parser_fn(
-            "{ a + b;; let x = 4; x }",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
-        );
-
-        test_parser_fn(
-            "{ x = 4; }",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
-        );
-
-        test_parser_fn(
-            "{ x: u32, y: f64, }",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_block_expr()),
-        );
-    }
-
-    #[test]
-    fn test_prefix_expr() {
-        test_parser_fn(
-            "!a",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_prefix_expr()),
-        );
-
-        test_parser_fn(
-            "!&*a",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-
-        test_parser_fn(
-            "++a",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-    }
-
-    #[test]
-    fn test_if_expr() {
-        test_parser_fn(
-            "if a { x = 4; }",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_if_expr()),
-        );
-
-        test_parser_fn(
-            "if (x == 3) { x = 4; } else { y = 5; }",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_if_expr()),
-        );
-    }
-
-    #[test]
-    fn test_fn_call() {
-        test_parser_fn(
-            "foo()",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
-        );
-
-        test_parser_fn(
-            "foo(x, y + z)",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
-        );
-
-        test_parser_fn(
-            "@size(T)",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
-        );
-    }
-
-    #[test]
-    fn test_dotted() {
-        test_parser_fn(
-            "foo.bar.baz",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-
-        test_parser_fn(
-            "foo.bar.baz()",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_ident_expr()),
-        );
-
-        test_parser_fn(
-            "foo().bar",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-
-        test_parser_fn(
-            "(a + b).bar",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-    }
-
-    #[test]
-    fn test_index() {
-        test_parser_fn(
-            "arr[i][j]",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-    }
-
-    #[test]
-    fn test_postfix() {
-        test_parser_fn(
-            "a?!",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-
-        test_parser_fn(
-            "a++",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_primary_expr()),
-        );
-    }
-
-    #[test]
-    fn test_cast() {
-        test_parser_fn(
-            "ptr : *mut u8",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
-        );
     }
 }

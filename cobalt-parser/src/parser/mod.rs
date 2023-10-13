@@ -17,15 +17,13 @@
 //! A common idiom is to use a `check_` function to see if a token starts a particular
 //! grammar, and subsequently use a `parse_` function to parse the the grammar.
 
-use std::fmt::Debug;
-
 use cobalt_ast::{
     ast::{ErrorAST, TopLevelAST},
     BoxedAST,
 };
-use cobalt_errors::{CobaltError, ParserFound, Report};
+use cobalt_errors::{CobaltError, ParserFound};
 
-use crate::lexer::{tokenizer::TokenStream, tokens::Token, SourceReader};
+use crate::lexer::{tokenizer::TokenStream, tokens::Token};
 
 mod decl;
 mod expr;
@@ -119,7 +117,7 @@ impl<'src> Parser<'src> {
 
     /// Parses a top level item.
     ///
-    /// ```
+    /// ```text
     /// top_level
     ///    := type_decl
     ///    := fn_def
@@ -155,97 +153,5 @@ impl<'src> Parser<'src> {
         }
 
         (Box::new(ErrorAST::new(span)), errors)
-    }
-}
-
-pub fn test_parser_fn<T, F>(src: &'static str, show_output: bool, parse_fn: F)
-where
-    T: Debug + 'static,
-    F: Fn(&mut Parser<'static>) -> (T, Vec<CobaltError<'static>>),
-{
-    let mut reader = SourceReader::new(src);
-    let tokens = reader.tokenize().0;
-    //dbg!(&tokens.0);
-
-    let mut parser = Parser::new(src, tokens);
-    parser.next();
-    let (ast_or_similar, errors) = parse_fn(&mut parser);
-
-    if show_output {
-        dbg!(ast_or_similar);
-        for (err_count, e) in errors.iter().enumerate() {
-            if err_count > 5 {
-                break;
-            }
-            let printable_e = Report::from(e.clone()).with_source_code(src);
-            println!("{:?}", printable_e);
-        }
-    }
-
-    assert!(errors.is_empty());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hello_world() {
-        let src = r#"
-@C(extern) fn puts(str: *u8);
-
-fn main(): i32 = {
-    puts("Hello, World!"c);
-    0
-};"#;
-        test_parser_fn(
-            src,
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse()),
-        );
-    }
-
-    #[test]
-    fn test_parse_1() {
-        let src = r#"module alloc;
-@transparent
-type layout = {size: u32, offset: u16} :: {
-  @const
-  fn new(size: u32, offset: u16): self_t = {size: size, offset: offset} :? self_t;
-};"#;
-        test_parser_fn(
-            src,
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse()),
-        );
-    }
-
-    #[test]
-    fn test_parse_2() {
-        let src = r#"module alloc._utils;
-@link(weak) @forward
-fn memclear(ptr: *mut null, size: usize) = {
-  let ptr = ptr: *mut u8;
-  let mut i = 0;
-  while (i < size) {
-    ptr[i] = 0;
-    ++i;
-  }
-};
-@link(weak) @forward
-fn memcpy(dst: *mut null, src: *null, size: usize) = {
-  let dst = dst: *mut u8;
-  let src = src: *u8;
-  let mut i = 0;
-  while (i < size) {
-    dst[i] = src[i];
-    ++i;
-  }
-};"#;
-        test_parser_fn(
-            src,
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse()),
-        );
     }
 }

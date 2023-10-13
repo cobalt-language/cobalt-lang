@@ -1,7 +1,7 @@
 use cobalt_ast::ast::TopLevelAST;
 use cobalt_errors::CobaltError;
-use lexer::SourceReader;
-use parser::Parser;
+pub use lexer::SourceReader;
+pub use parser::Parser;
 
 pub mod lexer;
 pub mod parser;
@@ -15,3 +15,6 @@ pub fn parse_str<'src>(src: &'src str) -> (Option<TopLevelAST<'src>>, Vec<Cobalt
     parser.next();
     parser.parse()
 }
+
+#[cfg(test)]
+mod tests;
