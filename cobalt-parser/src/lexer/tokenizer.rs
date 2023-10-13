@@ -65,7 +65,9 @@ impl<'src> SourceReader<'src> {
                 }
 
                 '#' => {
-                    self.eat_comment();
+                    if let Err(err) = self.eat_comment() {
+                        errors.push(err);
+                    }
                 }
 
                 // An identifier is an xid_start followed by zero or more xid_continue.
@@ -543,7 +545,7 @@ impl<'src> SourceReader<'src> {
         Ok(to_return)
     }
 
-    fn eat_comment(&mut self) {
+    fn eat_comment(&mut self) -> Result<(), TokenizeError> {
         assert!(self.next_char() == Some('#'));
 
         let mut multiline_level = 0;
@@ -553,7 +555,7 @@ impl<'src> SourceReader<'src> {
                     multiline_level += 1;
                 }
                 Some('\n') => {
-                    return;
+                    return Ok(());
                 }
                 _ => break,
             }
@@ -569,7 +571,7 @@ impl<'src> SourceReader<'src> {
                 }
             }
 
-            return;
+            return Ok(());
         }
 
         // Multi-line comment.
@@ -584,10 +586,18 @@ impl<'src> SourceReader<'src> {
                     if num_levels_eaten < multiline_level {
                         num_levels_eaten = 0;
                     } else {
-                        return;
+                        return Ok(());
                     }
                 }
-                _ => {}
+                Some(_) => {
+                    num_levels_eaten = 0;
+                }
+                None => {
+                    return Err(TokenizeError {
+                        kind: TokenizeErrorKind::EmptyInput,
+                        span: self.index.into(),
+                    }); // TODO: return a better error?
+                }
             }
         }
     }
