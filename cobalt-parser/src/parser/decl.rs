@@ -16,7 +16,7 @@ impl<'src> Parser<'src> {
     /// Going into this function, the current token should be the first
     /// token of this grammar.
     ///
-    /// ```
+    /// ```text
     /// decl
     ///    := let_decl
     ///    := type_decl
@@ -52,7 +52,7 @@ impl<'src> Parser<'src> {
         (ast, errors)
     }
 
-    pub fn check_module_decl(&mut self) -> bool {
+    pub(crate) fn check_module_decl(&mut self) -> bool {
         if self.current_token.is_none() {
             return false;
         }
@@ -62,10 +62,12 @@ impl<'src> Parser<'src> {
 
     /// Going into the function, the current token is assumed to be `module`.
     ///
-    /// ```
+    /// ```text
     /// module_decl := 'module' [ident | dotted_expr] ';'
     /// ```
-    pub fn parse_module_decl(&mut self) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_module_decl(
+        &mut self,
+    ) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Module));
 
@@ -201,10 +203,10 @@ impl<'src> Parser<'src> {
     ///
     /// Going into this function, the current token should be the '@'.
     ///
-    /// ```
+    /// ```text
     /// annotation := '@' ident ['(' ident ')']?
     /// ```
-    pub fn parse_annotation(
+    pub(crate) fn parse_annotation(
         &mut self,
     ) -> (
         (Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan),
@@ -376,12 +378,12 @@ impl<'src> Parser<'src> {
     /// Going into this function, the current token should be the first
     /// token of this grammar.
     ///
-    /// ```
+    /// ```text
     /// let_decl
     ///   := 'let' ['mut']? IDENT [':' primary_expr]? '=' expr ';'
     ///   := 'let' ['mut']? IDENT [':' primary_expr] ';'
     /// ```
-    fn parse_let_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_let_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         assert!(self.current_token.unwrap().kind == TokenKind::Keyword(Keyword::Let));
 
@@ -623,10 +625,10 @@ impl<'src> Parser<'src> {
     /// Checks if the current token starts a type declaration.
     ///
     /// In particular, we check for this pattern:
-    /// ```
+    /// ```text
     /// annotation* 'type' ident '='
     /// ```
-    pub fn check_type_decl(&mut self) -> bool {
+    pub(crate) fn check_type_decl(&mut self) -> bool {
         assert!(self.current_token.is_some());
 
         let idx_on_entry = self.cursor.index;
@@ -689,12 +691,12 @@ impl<'src> Parser<'src> {
 
     /// Parses a type declaration.
     ///
-    /// ```
+    /// ```text
     /// type_decl
     ///  := annotation* 'type' IDENT '=' expr ';'
     ///  := annotation* 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
     /// ```
-    pub fn parse_type_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_type_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -1083,10 +1085,10 @@ impl<'src> Parser<'src> {
     /// Checks if the current token starts a function definition.
     ///
     /// In particular, it checks for the following pattern:
-    /// ```
+    /// ```text
     /// annotation* 'fn'
     /// ```
-    pub fn check_fn_def(&mut self) -> bool {
+    pub(crate) fn check_fn_def(&mut self) -> bool {
         assert!(self.current_token.is_some());
 
         let idx_on_entry = self.cursor.index;
@@ -1119,10 +1121,14 @@ impl<'src> Parser<'src> {
 
     /// Parses a function definition.
     ///
-    /// ```
+    /// ```text
     /// fn_def
     ///   := annotation* 'fn' IDENT '(' [fn_param [',' fn_param]*] ')' [':' primary_expr]? ['=' expr] ';'
-    pub fn parse_fn_def(&mut self, in_struct: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    /// ```
+    pub(crate) fn parse_fn_def(
+        &mut self,
+        in_struct: bool,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         let first_token_loc = self.current_token.unwrap().span;
         let mut errors = vec![];
@@ -1421,11 +1427,11 @@ impl<'src> Parser<'src> {
 
     /// Parses a function parameter.
     ///
-    /// ```
+    /// ```text
     /// fn_param
     ///  := ['mut' | 'const'] IDENT ':' expr ['=' expr]
     /// ```
-    pub fn parse_fn_param(&mut self) -> (Parameter<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_fn_param(&mut self) -> (Parameter<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -1655,114 +1661,5 @@ impl<'src> Parser<'src> {
             (first_token_loc, Cow::from(name), param_type, expr, default),
             errors,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::parser::test_parser_fn;
-
-    use super::*;
-
-    #[test]
-    fn test_parse_let_decl() {
-        test_parser_fn(
-            "let x: i32 = 5i32;",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
-        );
-
-        test_parser_fn(
-            "let x: i32;",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
-        );
-    }
-
-    #[test]
-    fn test_parse_fn_param() {
-        test_parser_fn(
-            "x: i32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
-        );
-
-        test_parser_fn(
-            "mut x: i32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
-        );
-
-        test_parser_fn(
-            "const x: i32 = 5i32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
-        );
-
-        test_parser_fn(
-            "x: *mut i32",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_param()),
-        );
-    }
-
-    #[test]
-    fn test_parse_type_decl() {
-        test_parser_fn(
-            "type Foo = i32;",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_type_decl()),
-        );
-    }
-
-    #[test]
-    fn test_fn_def() {
-        test_parser_fn(
-            "fn foo(x: i32): i32 = 5i32;",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
-        );
-
-        test_parser_fn(
-            "fn foo();",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
-        );
-
-        test_parser_fn(
-            "@C(extern) @inline fn foo();",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
-        );
-
-        test_parser_fn(
-            "fn foo(): i32 = { let x = 3; x};",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
-        );
-    }
-
-    #[test]
-    fn test_module() {
-        test_parser_fn(
-            "module foo;",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_module_decl()),
-        );
-    }
-
-    #[test]
-    fn test_annotation() {
-        test_parser_fn(
-            "@method",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
-        );
-
-        test_parser_fn(
-            "@C(extern)",
-            true,
-            Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
-        );
     }
 }
