@@ -7,7 +7,7 @@ use super::{
     SourceReader,
 };
 
-use cobalt_errors::SourceSpan;
+use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 #[derive(Debug, PartialEq)]
@@ -54,11 +54,11 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
 pub struct TokenStream<'src>(pub Rc<Vec<Token<'src>>>);
 
 impl<'src> SourceReader<'src> {
-    pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<TokenizeError>) {
+    pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<CobaltError<'src>>) {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
-        while let Some(c) = self.peek() {
+        while let Some(c) = self.peek().map(|c| c.clone()) {
             match c {
                 ' ' | '\n' | '\t' => {
                     self.next_char();
@@ -74,7 +74,7 @@ impl<'src> SourceReader<'src> {
                 // Match an identifier.
                 // TODO: include check for underscore, but then there must be at least
                 // one xid_continue after the underscore.
-                c if is_xid_start(*c) || *c == '_' => {
+                c if is_xid_start(c) || c == '_' => {
                     let ident_parse_res = self.eat_ident();
 
                     if let Err(ident_parse_err) = ident_parse_res {
@@ -482,7 +482,15 @@ impl<'src> SourceReader<'src> {
                     });
                 }
 
-                _ => panic!("Unexpected character: {}", c),
+                _ => {
+                    let span_start = self.index;
+                    self.next_char();
+                    let span_end = self.index;
+                    errors.push(CobaltError::UnexpectedChar {
+                        loc: SourceSpan::from((span_start, span_end - span_start)),
+                        ch: c,
+                    });
+                }
             }
         }
 
@@ -502,22 +510,24 @@ impl<'src> SourceReader<'src> {
     /// - Failure (wrong first character): the reader will be pointing at the
     /// character after the one it was pointing at when this function was
     /// called.
-    fn eat_ident(&mut self) -> Result<Token<'src>, TokenizeError> {
+    fn eat_ident(&mut self) -> Result<Token<'src>, CobaltError<'src>> {
         let start_idx = self.index;
 
-        if let Some(c) = self.peek() {
-            if !(is_xid_start(*c) || *c == '_') {
-                let err = TokenizeError {
-                    kind: TokenizeErrorKind::BadFirstChar,
-                    span: self.source_span_backward(1),
+        let option_c = self.peek().map(|c| c.clone());
+        if let Some(c) = option_c {
+            if !(is_xid_start(c) || c == '_') {
+                self.next_char();
+                let err = CobaltError::ExpectedFound {
+                    ex: "xid_start or _",
+                    found: ParserFound::Char(c),
+                    loc: SourceSpan::from((start_idx, self.index - start_idx)),
                 };
 
                 return Err(err);
             }
         } else {
-            let err = TokenizeError {
-                kind: TokenizeErrorKind::EmptyInput,
-                span: self.source_span_backward(0),
+            let err = CobaltError::UnexpectedEndOfInput {
+                loc: SourceSpan::from((self.source.len(), 0)),
             };
 
             return Err(err);
@@ -545,7 +555,7 @@ impl<'src> SourceReader<'src> {
         Ok(to_return)
     }
 
-    fn eat_comment(&mut self) -> Result<(), TokenizeError> {
+    fn eat_comment(&mut self) -> Result<(), CobaltError<'src>> {
         assert!(self.next_char() == Some('#'));
 
         let mut multiline_level = 0;
@@ -590,10 +600,9 @@ impl<'src> SourceReader<'src> {
                     num_levels_eaten = 0;
                 }
                 None => {
-                    return Err(TokenizeError {
-                        kind: TokenizeErrorKind::EmptyInput,
-                        span: self.index.into(),
-                    }); // TODO: return a better error?
+                    return Err(CobaltError::UnexpectedEndOfInput {
+                        loc: SourceSpan::from((self.source.len(), 0)),
+                    });
                 }
             }
         }

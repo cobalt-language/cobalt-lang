@@ -11,12 +11,15 @@ where
     F: Fn(&mut Parser<'static>) -> (T, Vec<CobaltError<'static>>),
 {
     let mut reader = SourceReader::new(src);
-    let tokens = reader.tokenize().0;
-    //dbg!(&tokens.0);
+    let mut errors = vec![];
 
-    let mut parser = Parser::new(src, tokens);
+    let tokenize_result = reader.tokenize();
+    errors.extend(tokenize_result.1);
+
+    let mut parser = Parser::new(src, tokenize_result.0);
     parser.next();
-    let (ast_or_similar, errors) = parse_fn(&mut parser);
+    let (ast_or_similar, parser_errors) = parse_fn(&mut parser);
+    errors.extend(parser_errors);
 
     if show_output {
         dbg!(ast_or_similar);

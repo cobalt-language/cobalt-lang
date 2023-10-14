@@ -9,11 +9,16 @@ pub mod utils;
 
 pub fn parse_str<'src>(src: &'src str) -> (Option<TopLevelAST<'src>>, Vec<CobaltError<'src>>) {
     let mut reader = SourceReader::new(src);
-    let tokens = reader.tokenize().0;
+    let mut errors = vec![];
+    let tokenize_result = reader.tokenize();
+    errors.extend(tokenize_result.1);
 
-    let mut parser = Parser::new(src, tokens);
+    let mut parser = Parser::new(src, tokenize_result.0);
     parser.next();
-    parser.parse()
+    let parse_result = parser.parse();
+    errors.extend(parse_result.1);
+
+    (parse_result.0, errors)
 }
 
 #[cfg(test)]

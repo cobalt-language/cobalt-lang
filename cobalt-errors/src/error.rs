@@ -41,6 +41,15 @@ pub enum CobaltError<'src> {
         prev: SourceSpan,
     },
 
+    #[error("unexpected character {ch}")]
+    UnexpectedChar {
+        #[label]
+        loc: SourceSpan,
+        ch: char,
+    },
+    #[error("unexpected end of input")]
+    UnexpectedEndOfInput { loc: SourceSpan },
+
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
     BinOpNotDefined {
