@@ -554,9 +554,6 @@ impl<'src> SourceReader<'src> {
                 Some('=') => {
                     multiline_level += 1;
                 }
-                Some('\n') => {
-                    return Ok(());
-                }
                 _ => break,
             }
         }

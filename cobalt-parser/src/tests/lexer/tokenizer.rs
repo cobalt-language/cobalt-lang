@@ -1,3 +1,7 @@
+use cobalt_errors::SourceSpan;
+
+use crate::lexer::tokens::*;
+
 use super::*;
 
 #[test]
@@ -129,6 +133,8 @@ fn test_literals() {
 
 #[test]
 fn test_comments() {
+    // ---
+
     let src = "Something # else\nOk\n#comment \nmore";
     let mut string_reader = SourceReader::new(src);
 
@@ -152,12 +158,16 @@ fn test_comments() {
         ]
     );
 
+    // ---
+
     let src = "#= bla bla =#";
     let mut string_reader = SourceReader::new(src);
 
     let (tokens, _errors) = string_reader.tokenize();
 
     assert!(tokens.0.is_empty());
+
+    // ---
 
     let src = "#=== bla bla =========#";
     let mut string_reader = SourceReader::new(src);
@@ -166,6 +176,8 @@ fn test_comments() {
 
     assert!(tokens.0.is_empty());
 
+    // ---
+
     let src = "#=== bla bla =# aadsf ===#";
     let mut string_reader = SourceReader::new(src);
 
@@ -173,10 +185,27 @@ fn test_comments() {
 
     assert!(tokens.0.is_empty());
 
+    // ---
+
     let src = "#=== bla bla == =# bla";
     let mut string_reader = SourceReader::new(src);
 
     let (tokens, _errors) = string_reader.tokenize();
 
     assert!(tokens.0.is_empty());
+
+    // ---
+
+    let src = "#===\nbla bla\n===# bla";
+    let mut string_reader = SourceReader::new(src);
+
+    let (tokens, _errors) = string_reader.tokenize();
+
+    assert_eq!(
+        tokens.0.as_ref(),
+        &vec![Token {
+            kind: TokenKind::Ident("bla"),
+            span: SourceSpan::from((0, 0)),
+        },]
+    );
 }
