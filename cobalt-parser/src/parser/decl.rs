@@ -630,6 +630,7 @@ impl<'src> Parser<'src> {
     /// ```
     pub(crate) fn check_type_decl(&mut self) -> bool {
         assert!(self.current_token.is_some());
+        let token_on_entry = self.current_token;
 
         let idx_on_entry = self.cursor.index;
 
@@ -651,6 +652,7 @@ impl<'src> Parser<'src> {
         // ---
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
+            self.rewind_to_idx(idx_on_entry);
             return false;
         }
 
@@ -686,6 +688,7 @@ impl<'src> Parser<'src> {
         // ---
 
         self.rewind_to_idx(idx_on_entry);
+        assert!(self.current_token == token_on_entry);
         true
     }
 
