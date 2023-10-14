@@ -1,6 +1,7 @@
 use super::*;
 use cobalt_errors::{CobaltError, Report};
 
+mod decl;
 mod expr;
 mod general;
 

@@ -1360,7 +1360,7 @@ impl<'src> Parser<'src> {
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
-        let mut body: BoxedAST = Box::new(ErrorAST::new(first_token_loc));
+        let mut body: BoxedAST = Box::new(NullAST::new(self.current_token.unwrap().span));
 
         if self.current_token.unwrap().kind == TokenKind::BinOp(BinOpToken::Eq) {
             self.next();
