@@ -363,13 +363,13 @@ impl<'src> Parser<'src> {
         loop {
             let cbi = match chars.next() {
                 None => break,
-                Some('\0') => CharBytesIterator::from_u8(0x00),
-                Some('\n') => CharBytesIterator::from_u8(0x0a),
-                Some('\r') => CharBytesIterator::from_u8(0x0d),
-                Some('\t') => CharBytesIterator::from_u8(0x09),
                 Some('\\') => {
                     match chars.next() {
                         None => break,
+                        Some('0') => CharBytesIterator::from_u8(0x00),
+                        Some('n') => CharBytesIterator::from_u8(0x0a),
+                        Some('r') => CharBytesIterator::from_u8(0x0d),
+                        Some('t') => CharBytesIterator::from_u8(0x09),
                         Some('v') => CharBytesIterator::from_u8(0x0a),
                         Some('b') => CharBytesIterator::from_u8(0x08),
                         Some('e') => CharBytesIterator::from_u8(0x1b),
