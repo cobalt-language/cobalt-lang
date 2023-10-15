@@ -3,7 +3,7 @@ use ast::funcs::hoist_allocas;
 use glob::Pattern;
 use inkwell::module::Linkage::*;
 use inkwell::values::{AsValueRef, BasicValueEnum::*, GlobalValue};
-use std::collections::{hash_map::Entry, HashSet};
+use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct VarDefAST<'src> {
     loc: SourceSpan,
@@ -139,21 +139,16 @@ impl<'src> AST<'src> for VarDefAST<'src> {
         let t2 = self.val.const_codegen(ctx).0.data_type;
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
             let oic = ctx.is_const.replace(true);
-            let t = ops::impl_convert(
-                t.loc(),
-                (t.codegen_errs(ctx, &mut errs), None),
-                (Type::TypeData, None),
-                ctx,
-            )
-            .ok()
-            .and_then(Value::into_type)
-            .unwrap_or(Type::Error);
+            let t = t
+                .codegen_errs(ctx, &mut errs)
+                .into_type(ctx)
+                .unwrap_or(types::Error::new());
             ctx.is_const.set(oic);
             t
         }) {
             t
         } else {
-            ops::decay(t2)
+            t2.decay()
         };
         let _ = ctx.with_vars(|v| {
             v.insert(
@@ -179,7 +174,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             PointerValue(gv.as_pointer_value())
                         }),
                         None,
-                        Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut)),
+                        dt.add_ref(self.is_mut),
                     ),
                     VariableData {
                         fwd: true,
@@ -189,7 +184,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             )
         });
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -410,31 +405,19 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 let t2 = self.val.const_codegen_errs(ctx, &mut errs).data_type;
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = ops::impl_convert(
-                        t.loc(),
-                        (t.codegen_errs(ctx, &mut errs), None),
-                        (Type::TypeData, None),
-                        ctx,
-                    )
-                    .map_or_else(
-                        |e| {
+                    let t = t
+                        .codegen_errs(ctx, &mut errs)
+                        .into_type(ctx)
+                        .unwrap_or_else(|e| {
                             errs.push(e);
-                            Type::Error
-                        },
-                        |v| {
-                            if let Some(InterData::Type(t)) = v.inter_val {
-                                *t
-                            } else {
-                                Type::Error
-                            }
-                        },
-                    );
+                            types::Error::new()
+                        });
                     ctx.is_const.set(oic);
                     t
                 }) {
                     t
                 } else {
-                    ops::decay(t2)
+                    t2.decay()
                 };
                 match ctx.with_vars(|v| {
                     v.insert(
@@ -466,7 +449,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                         PointerValue(gv.as_pointer_value())
                                     })
                                     .or_else(|| {
-                                        if dt != Type::Error {
+                                        if dt != types::Error::new() {
                                             errs.push(CobaltError::TypeIsConstOnly {
                                                 ty: dt.to_string(),
                                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -475,7 +458,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                         None
                                     }),
                                 None,
-                                Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut)),
+                                dt.add_ref(self.is_mut),
                             ),
                             VariableData::with_vis(self.loc, vs),
                         ),
@@ -500,34 +483,21 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 }
             } else if self.val.is_const() && self.type_.is_none() {
                 let mut val = self.val.codegen_errs(ctx, &mut errs);
-                let t2 = val.data_type.clone();
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = ops::impl_convert(
-                        t.loc(),
-                        (t.codegen_errs(ctx, &mut errs), None),
-                        (Type::TypeData, None),
-                        ctx,
-                    )
-                    .map_or_else(
-                        |e| {
+                    let t = t
+                        .codegen_errs(ctx, &mut errs)
+                        .into_type(ctx)
+                        .unwrap_or_else(|e| {
                             errs.push(e);
-                            Type::Error
-                        },
-                        |v| {
-                            if let Some(InterData::Type(t)) = v.inter_val {
-                                *t
-                            } else {
-                                Type::Error
-                            }
-                        },
-                    );
+                            types::Error::new()
+                        });
                     ctx.is_const.set(oic);
                     t
                 }) {
                     t
                 } else {
-                    ops::decay(t2)
+                    val.data_type.decay()
                 };
                 match if let Some(v) = val.value(ctx) {
                     val.inter_val = None;
@@ -562,7 +532,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                     Value::new(
                                         Some(PointerValue(gv.as_pointer_value())),
                                         None,
-                                        Type::Reference(ops::maybe_mut(Box::new(dt), self.is_mut)),
+                                        dt.add_ref(self.is_mut),
                                     ),
                                     VariableData::with_vis(self.loc, vs),
                                 ),
@@ -571,7 +541,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     }
                 } else {
                     val.inter_val = None;
-                    if dt != Type::Error {
+                    if dt != types::Error::new() {
                         errs.push(CobaltError::TypeIsConstOnly {
                             ty: dt.to_string(),
                             loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -604,33 +574,27 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             } else {
                 let res = if ctx.is_const.get() {
                     let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = ops::impl_convert(
-                            t.loc(),
-                            (t.codegen_errs(ctx, &mut errs), None),
-                            (Type::TypeData, None),
-                            ctx,
-                        )
-                        .map_or(Type::Error, |v| {
-                            if let Some(InterData::Type(t)) = v.inter_val {
-                                *t
-                            } else {
-                                Type::Error
-                            }
-                        });
+                        let t = t
+                            .codegen_errs(ctx, &mut errs)
+                            .into_type(ctx)
+                            .unwrap_or_else(|e| {
+                                errs.push(e);
+                                types::Error::new()
+                            });
                         ctx.is_const.set(oic);
                         t
                     }) {
                         t
                     } else {
-                        ops::decay(t2)
+                        val.data_type.decay()
                     };
-                    let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx)
+                    let mut val = val
+                        .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                         .unwrap_or_else(|e| {
                             errs.push(e);
-                            Value::error()
+                            Value::error().with_loc(self.val.loc())
                         });
                     val.inter_val = None;
                     ctx.with_vars(|v| {
@@ -650,41 +614,28 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     ctx.builder.position_at_end(entry);
                     let old_scope = ctx.push_scope(&self.name);
                     let val = self.val.codegen_errs(ctx, &mut errs);
-                    let t2 = val.data_type.clone();
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = ops::impl_convert(
-                            t.loc(),
-                            (t.codegen_errs(ctx, &mut errs), None),
-                            (Type::TypeData, None),
-                            ctx,
-                        )
-                        .map_or_else(
-                            |e| {
+                        let t = t
+                            .codegen_errs(ctx, &mut errs)
+                            .into_type(ctx)
+                            .unwrap_or_else(|e| {
                                 errs.push(e);
-                                Type::Error
-                            },
-                            |v| {
-                                if let Some(InterData::Type(t)) = v.inter_val {
-                                    *t
-                                } else {
-                                    Type::Error
-                                }
-                            },
-                        );
+                                types::Error::new()
+                            });
                         ctx.is_const.set(oic);
                         t
                     }) {
                         t
                     } else {
-                        ops::decay(t2)
+                        val.data_type.decay()
                     };
-                    let mut val =
-                        ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx)
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                Value::error()
-                            });
+                    let mut val = val
+                        .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
+                        .unwrap_or_else(|e| {
+                            errs.push(e);
+                            Value::error().with_loc(self.val.loc())
+                        });
                     if let Some(t) = dt.llvm_type(ctx) {
                         let mangled =
                             linkas.map_or_else(|| ctx.mangle(&self.name).into(), |(name, _)| name);
@@ -748,10 +699,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                         Value::new(
                                             Some(PointerValue(gv.as_pointer_value())),
                                             None,
-                                            Type::Reference(ops::maybe_mut(
-                                                Box::new(dt),
-                                                self.is_mut,
-                                            )),
+                                            dt.add_ref(self.is_mut),
                                         )
                                         .freeze(self.loc),
                                         VariableData::with_vis(self.loc, vs),
@@ -764,7 +712,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                 gv.delete();
                                 f.delete();
                             }
-                            if dt != Type::Error {
+                            if dt != types::Error::new() {
                                 errs.push(CobaltError::TypeIsConstOnly {
                                     ty: dt.to_string(),
                                     loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -782,40 +730,34 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         }
                     } else {
                         let old_scope = ctx.push_scope(&self.name);
-                        if dt != Type::Error {
+                        if dt != types::Error::new() {
                             errs.push(CobaltError::TypeIsConstOnly {
                                 ty: dt.to_string(),
                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                             })
                         }
                         let val = self.val.codegen_errs(ctx, &mut errs);
-                        let t2 = val.data_type.clone();
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = ops::impl_convert(
-                                t.loc(),
-                                (t.codegen_errs(ctx, &mut errs), None),
-                                (Type::TypeData, None),
-                                ctx,
-                            )
-                            .map_or(Type::Error, |v| {
-                                if let Some(InterData::Type(t)) = v.inter_val {
-                                    *t
-                                } else {
-                                    Type::Error
-                                }
-                            });
+                            let t = t
+                                .codegen_errs(ctx, &mut errs)
+                                .into_type(ctx)
+                                .unwrap_or_else(|e| {
+                                    errs.push(e);
+                                    types::Error::new()
+                                });
                             ctx.is_const.set(oic);
                             t
                         }) {
                             t
                         } else {
-                            ops::decay(t2)
+                            val.data_type.decay()
                         };
-                        let val = ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx)
+                        let val = val
+                            .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                             .unwrap_or_else(|e| {
                                 errs.push(e);
-                                Value::error()
+                                Value::error().with_loc(self.val.loc())
                             });
                         ctx.restore_scope(old_scope);
                         ctx.with_vars(|v| {
@@ -863,41 +805,29 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             }
             let old_scope = ctx.push_scope(&self.name);
             let val = self.val.codegen_errs(ctx, &mut errs);
-            let t2 = val.data_type.clone();
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                 let oic = ctx.is_const.replace(true);
-                let t = ops::impl_convert(
-                    t.loc(),
-                    (t.codegen_errs(ctx, &mut errs), None),
-                    (Type::TypeData, None),
-                    ctx,
-                )
-                .map_or_else(
-                    |e| {
+                let t = t
+                    .codegen_errs(ctx, &mut errs)
+                    .into_type(ctx)
+                    .unwrap_or_else(|e| {
                         errs.push(e);
-                        Type::Error
-                    },
-                    |v| {
-                        if let Some(InterData::Type(t)) = v.inter_val {
-                            *t
-                        } else {
-                            Type::Error
-                        }
-                    },
-                );
+                        types::Error::new()
+                    });
                 ctx.is_const.set(oic);
                 t
             }) {
                 t
             } else {
-                ops::decay(t2)
+                val.data_type.decay()
             };
-            let mut val = ops::impl_convert(self.val.loc(), (val, None), (dt.clone(), None), ctx)
+            let mut val = val
+                .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
                 .unwrap_or_else(|e| {
                     errs.push(e);
-                    Value::error()
+                    Value::error().with_loc(self.val.loc())
                 });
-            ops::mark_move(
+            cfg::mark_move(
                 &val,
                 cfg::Location::current(ctx).unwrap(),
                 ctx,
@@ -935,7 +865,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 let mut val = Value::new(
                     Some(PointerValue(a)),
                     val.inter_val,
-                    *ops::maybe_mut(Box::new(val.data_type), self.is_mut),
+                    val.data_type.add_ref(self.is_mut),
                 );
                 val.name = self
                     .name
@@ -949,7 +879,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     )
                 })
             } else {
-                if dt != Type::Error {
+                if dt != types::Error::new() {
                     errs.push(CobaltError::TypeIsConstOnly {
                         ty: dt.to_string(),
                         loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
@@ -1130,7 +1060,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         });
         ctx.prepass.set(pp);
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -1233,37 +1163,23 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         let old_is_const = ctx.is_const.replace(true);
         let old_scope = ctx.push_scope(&self.name);
         let val = self.val.codegen_errs(ctx, &mut errs);
-        let t2 = val.data_type.clone();
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            let t = ops::impl_convert(
-                t.loc(),
-                (t.codegen_errs(ctx, &mut errs), None),
-                (Type::TypeData, None),
-                ctx,
-            )
-            .map_or_else(
-                |e| {
+            t.codegen_errs(ctx, &mut errs)
+                .into_type(ctx)
+                .unwrap_or_else(|e| {
                     errs.push(e);
-                    Type::Error
-                },
-                |v| {
-                    if let Some(InterData::Type(t)) = v.inter_val {
-                        *t
-                    } else {
-                        Type::Error
-                    }
-                },
-            );
-            t
+                    types::Error::new()
+                })
         }) {
             t
         } else {
-            ops::decay(t2)
+            val.data_type.decay()
         };
-        let val =
-            ops::impl_convert(self.val.loc(), (val, None), (dt, None), ctx).unwrap_or_else(|e| {
+        let val = val
+            .impl_convert((dt, self.type_.as_ref().map(|a| a.loc())), ctx)
+            .unwrap_or_else(|e| {
                 errs.push(e);
-                Value::error()
+                Value::error().with_loc(self.val.loc())
             });
         ctx.restore_scope(old_scope);
         ctx.is_const.set(old_is_const);
@@ -1406,28 +1322,27 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
             )
         });
         let mangled = ctx.format(&self.name);
+        let self_t = types::Custom::create_ref(&mangled, ctx);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
-            let mut noms = ctx.nominals.borrow_mut();
-            if let Some(data) = noms.get_mut(&mangled) {
-                vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| {
+            vm.symbols
+                .extend(self_t.methods(ctx).into_iter().map(|(k, v)| {
                     (
-                        k,
+                        Cow::Borrowed(k),
                         Symbol(
-                            v,
+                            v.clone(),
                             VariableData {
                                 fwd: true,
                                 ..Default::default()
                             },
                         ),
                     )
-                }))
-            }
+                }));
             Box::new(vm)
         });
         let pp = ctx.prepass.replace(true);
         let old_scope = ctx.push_scope(&self.name);
-        let mut mb = ctx.nom_info.borrow_mut();
+        let mut mb = ctx.nom_stack.borrow_mut();
         mb.push(Default::default());
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
@@ -1437,34 +1352,18 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(Type::Null).freeze(self.loc).into(),
+                Value::make_type(types::Null::new()).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
-                Value::make_type(Type::Nominal(mangled.clone()))
-                    .freeze(self.loc)
-                    .into(),
+                Value::make_type(self_t).freeze(self.loc).into(),
             );
         });
-        {
-            let mut noms = ctx.nominals.borrow_mut();
-            if !noms.contains_key(&mangled) {
-                noms.insert(
-                    mangled.clone(),
-                    (Type::Null, true, Default::default(), Default::default()),
-                );
-            }
-        }
         self.methods.iter().for_each(|a| a.varfwd_prepass(ctx));
-        let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
-        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| {
-            (
-                v.parent.unwrap(),
-                v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect(),
-            )
-        });
-        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
+        self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         ctx.prepass.set(pp);
     }
     fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
@@ -1506,37 +1405,38 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         }
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
-        for err in self.codegen(ctx).1 {
+        let (val, errs) = self.val.codegen(ctx);
+        for err in errs {
             if let CobaltError::UninitializedGlobal { name, .. } = err {
                 missing.insert(name);
             }
         }
+        let mangled = ctx.format(&self.name);
+        let self_t = types::Custom::create_ref(&mangled, ctx);
+        self_t.set_base(val.into_type(ctx).unwrap_or(types::Error::new()));
         self.lastmissing.map(|v| {
             *needs_another |= !missing.is_empty() && (v.is_empty() || v.len() > missing.len());
             missing
         });
-        let mangled = ctx.format(&self.name);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
-            let mut noms = ctx.nominals.borrow_mut();
-            if let Some(data) = noms.get_mut(&mangled) {
-                vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| {
+            vm.symbols
+                .extend(self_t.methods(ctx).into_iter().map(|(k, v)| {
                     (
-                        k,
+                        Cow::Borrowed(k),
                         Symbol(
-                            v,
+                            v.clone(),
                             VariableData {
                                 fwd: true,
                                 ..Default::default()
                             },
                         ),
                     )
-                }))
-            }
+                }));
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        let mut mb = ctx.nom_info.borrow_mut();
+        let mut mb = ctx.nom_stack.borrow_mut();
         mb.push(Default::default());
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
@@ -1546,36 +1446,20 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(Type::Null).freeze(self.loc).into(),
+                Value::make_type(types::Null::new()).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
-                Value::make_type(Type::Nominal(mangled.clone()))
-                    .freeze(self.loc)
-                    .into(),
+                Value::make_type(self_t).freeze(self.loc).into(),
             );
         });
-        {
-            let mut noms = ctx.nominals.borrow_mut();
-            if !noms.contains_key(&mangled) {
-                noms.insert(
-                    mangled.clone(),
-                    (Type::Null, true, Default::default(), Default::default()),
-                );
-            }
-        }
         self.methods
             .iter()
             .for_each(|a| a.constinit_prepass(ctx, needs_another));
-        let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
-        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| {
-            (
-                v.parent.unwrap(),
-                v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect(),
-            )
-        });
-        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
+        self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         ctx.prepass.set(pp);
     }
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
@@ -1634,73 +1518,59 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         if target_match == 0 {
             return;
         }
+        let pp = ctx.prepass.replace(true);
         let mangled = ctx.format(&self.name);
+        let self_t = types::Custom::create_ref(&mangled, ctx);
+        let ty = self
+            .val
+            .const_codegen(ctx)
+            .0
+            .into_type(ctx)
+            .unwrap_or(types::Error::new());
+        self_t.set_base(ty);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
-            let mut noms = ctx.nominals.borrow_mut();
-            if let Some(data) = noms.get_mut(&mangled) {
-                vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| {
+            vm.symbols
+                .extend(self_t.methods(ctx).into_iter().map(|(k, v)| {
                     (
-                        k,
+                        Cow::Borrowed(k),
                         Symbol(
-                            v,
+                            v.clone(),
                             VariableData {
                                 fwd: true,
                                 ..Default::default()
                             },
                         ),
                     )
-                }))
-            }
+                }));
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        let mut mb = ctx.nom_info.borrow_mut();
+        let mut mb = ctx.nom_stack.borrow_mut();
         mb.push(Default::default());
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop;
         info.transparent = transparent;
         info.is_linear_type = linear;
         std::mem::drop(mb);
-        let ty = ops::impl_convert(
-            unreachable_span(),
-            (self.val.const_codegen(ctx).0, None),
-            (Type::TypeData, None),
-            ctx,
-        )
-        .ok()
-        .and_then(Value::into_type)
-        .unwrap_or(Type::Error);
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(ty.clone()).freeze(self.loc).into(),
+                Value::make_type(ty).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
-                Value::make_type(Type::Nominal(mangled.clone()))
-                    .freeze(self.loc)
-                    .into(),
+                Value::make_type(self_t).freeze(self.loc).into(),
             );
         });
-        match ctx.nominals.borrow_mut().entry(mangled.clone()) {
-            Entry::Occupied(mut x) => x.get_mut().0 = ty,
-            Entry::Vacant(x) => {
-                x.insert((ty, true, Default::default(), Default::default()));
-            }
-        }
         self.methods.iter().for_each(|a| a.fwddef_prepass(ctx));
-        let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
-        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| {
-            (
-                v.parent.unwrap(),
-                v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect(),
-            )
-        });
-        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
+        self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
+        ctx.prepass.set(pp);
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -1860,47 +1730,35 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         if target_match == 0 {
             return (Value::null(), errs);
         }
-        let ty = ops::impl_convert(
-            self.val.loc(),
-            (self.val.codegen_errs(ctx, &mut errs), None),
-            (Type::TypeData, None),
-            ctx,
-        )
-        .map_or_else(
-            |e| {
+        let ty = self
+            .val
+            .codegen_errs(ctx, &mut errs)
+            .into_type(ctx)
+            .unwrap_or_else(|e| {
                 errs.push(e);
-                Type::Error
-            },
-            |v| {
-                if let Some(InterData::Type(t)) = v.inter_val {
-                    *t
-                } else {
-                    Type::Error
-                }
-            },
-        );
+                types::Error::new()
+            });
         let mangled = ctx.format(&self.name);
+        let self_t = types::Custom::create_ref(&mangled, ctx);
         ctx.map_vars(|v| {
             let mut vm = VarMap::new(Some(v));
-            let mut noms = ctx.nominals.borrow_mut();
-            if let Some(data) = noms.get_mut(&mangled) {
-                vm.symbols.extend(data.2.clone().into_iter().map(|(k, v)| {
+            vm.symbols
+                .extend(self_t.methods(ctx).into_iter().map(|(k, v)| {
                     (
-                        k,
+                        Cow::Borrowed(k),
                         Symbol(
-                            v,
+                            v.clone(),
                             VariableData {
                                 fwd: true,
                                 ..Default::default()
                             },
                         ),
                     )
-                }))
-            }
+                }));
             Box::new(vm)
         });
         let old_scope = ctx.push_scope(&self.name);
-        let mut mb = ctx.nom_info.borrow_mut();
+        let mut mb = ctx.nom_stack.borrow_mut();
         mb.push(Default::default());
         let info = mb.last_mut().unwrap();
         info.no_auto_drop = no_auto_drop.is_some();
@@ -1910,40 +1768,27 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         ctx.with_vars(|v| {
             v.symbols.insert(
                 "base_t".into(),
-                Value::make_type(ty.clone()).freeze(self.loc).into(),
+                Value::make_type(ty).freeze(self.loc).into(),
             );
             v.symbols.insert(
                 "self_t".into(),
-                Value::make_type(Type::Nominal(mangled.clone()))
-                    .freeze(self.loc)
-                    .into(),
+                Value::make_type(self_t).freeze(self.loc).into(),
             );
         });
-        match ctx.nominals.borrow_mut().entry(mangled.clone()) {
-            Entry::Occupied(mut x) => x.get_mut().0 = ty,
-            Entry::Vacant(x) => {
-                x.insert((ty, true, Default::default(), Default::default()));
-            }
-        }
         if !ctx.prepass.get() {
             self.methods.iter().for_each(|a| {
                 a.codegen_errs(ctx, &mut errs);
             });
         }
-        let mut noms = ctx.nominals.borrow_mut();
         ctx.restore_scope(old_scope);
-        noms.get_mut(&mangled).unwrap().2 = ctx.map_split_vars(|v| {
-            (
-                v.parent.unwrap(),
-                v.symbols.into_iter().map(|(k, v)| (k, v.0)).collect(),
-            )
-        });
-        noms.get_mut(&mangled).unwrap().3 = ctx.nom_info.borrow_mut().pop().unwrap();
+        let map = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
+        self_t.set_methods(map.into_iter().map(|(k, v)| (k, v.0)), ctx);
+        self_t.set_nom_info(ctx, ctx.nom_stack.borrow_mut().pop().unwrap());
         match ctx.with_vars(|v| {
             v.insert(
                 &self.name,
                 Symbol(
-                    Value::make_type(Type::Nominal(mangled.clone())).freeze(self.loc),
+                    Value::make_type(types::Custom::create_ref(&mangled, ctx)).freeze(self.loc),
                     VariableData {
                         fwd: ctx.prepass.get(),
                         init: !errs
@@ -1956,7 +1801,6 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         }) {
             Ok(x) => (x.0.clone(), errs),
             Err(RedefVariable::NotAModule(x, _)) => {
-                noms.remove(&mangled);
                 errs.push(CobaltError::NotAModule {
                     loc: self.name.ids[x].1,
                     name: self.name.start(x).to_string(),
@@ -1964,7 +1808,6 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                 (Value::error(), errs)
             }
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
-                noms.remove(&mangled);
                 errs.push(CobaltError::RedefVariable {
                     loc: self.name.ids[x].1,
                     name: self.name.start(x).to_string(),
@@ -2025,7 +1868,7 @@ impl<'src> AST<'src> for VarGetAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {

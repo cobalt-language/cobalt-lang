@@ -1,14 +1,14 @@
 use crate::*;
+use hashbrown::HashMap;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum::*};
 use inkwell::values::{BasicValueEnum, PointerValue};
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
 use std::rc::Rc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodType {
-    Normal,
     Static,
+    Method,
     Getter,
 }
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ pub enum InterData<'src, 'ctx> {
     /// Used for default values of function parameters.
     Function(FnData<'src, 'ctx>),
     InlineAsm(String, String),
-    Type(Box<Type>),
+    Type(TypeRef),
     Module(
         HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         Vec<(CompoundDottedName<'src>, bool)>,
@@ -63,7 +63,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                 }
                 out.write_all(&v.cconv.to_be_bytes())?;
                 out.write_all(std::slice::from_ref(&match v.mt {
-                    MethodType::Normal => 1,
+                    MethodType::Method => 1,
                     MethodType::Static => 2,
                     MethodType::Getter => 3,
                 }))
@@ -148,7 +148,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                 let mut c = 0u8;
                 buf.read_exact(std::slice::from_mut(&mut c))?;
                 let mt = match c {
-                    1 => MethodType::Normal,
+                    1 => MethodType::Method,
                     2 => MethodType::Static,
                     3 => MethodType::Getter,
                     x => panic!("Expected 1, 2, or 3 for method type, got {x}"),
@@ -170,7 +170,7 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
                     String::from_utf8(body).expect("Inline assembly should be valid UTF-8"),
                 ))
             }
-            8 => Some(InterData::Type(Box::new(Type::load(buf)?))),
+            8 => Some(InterData::Type(types::load_type(buf)?)),
             9 => {
                 let mut out = HashMap::new();
                 let mut imports = vec![];
@@ -210,9 +210,10 @@ impl<'src, 'ctx> InterData<'src, 'ctx> {
 }
 #[derive(Debug, Clone)]
 pub struct Value<'src, 'ctx> {
+    pub loc: SourceSpan,
     pub comp_val: Option<BasicValueEnum<'ctx>>,
     pub inter_val: Option<InterData<'src, 'ctx>>,
-    pub data_type: Type,
+    pub data_type: TypeRef,
     pub address: Rc<Cell<Option<PointerValue<'ctx>>>>,
     pub name: Option<(Cow<'src, str>, usize)>,
     pub frozen: Option<SourceSpan>,
@@ -220,9 +221,10 @@ pub struct Value<'src, 'ctx> {
 impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn error() -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: None,
-            data_type: Type::Error,
+            data_type: types::Error::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -230,9 +232,10 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
     pub fn null() -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: None,
-            data_type: Type::Null,
+            data_type: types::Null::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -241,9 +244,10 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn new(
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
-        data_type: Type,
+        data_type: TypeRef,
     ) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val,
             inter_val,
             data_type,
@@ -255,10 +259,11 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn with_addr(
         comp_val: Option<BasicValueEnum<'ctx>>,
         inter_val: Option<InterData<'src, 'ctx>>,
-        data_type: Type,
+        data_type: TypeRef,
         addr: PointerValue<'ctx>,
     ) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val,
             inter_val,
             data_type,
@@ -267,8 +272,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: Type) -> Self {
+    pub fn compiled(comp_val: BasicValueEnum<'ctx>, data_type: TypeRef) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: Some(comp_val),
             inter_val: None,
             data_type,
@@ -280,9 +286,10 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     pub fn interpreted(
         comp_val: BasicValueEnum<'ctx>,
         inter_val: InterData<'src, 'ctx>,
-        data_type: Type,
+        data_type: TypeRef,
     ) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: Some(comp_val),
             inter_val: Some(inter_val),
             data_type,
@@ -291,8 +298,9 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: Type) -> Self {
+    pub fn metaval(inter_val: InterData<'src, 'ctx>, data_type: TypeRef) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(inter_val),
             data_type,
@@ -301,11 +309,12 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             frozen: None,
         }
     }
-    pub fn make_type(type_: Type) -> Self {
+    pub fn make_type(type_: TypeRef) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
-            inter_val: Some(InterData::Type(Box::new(type_))),
-            data_type: Type::TypeData,
+            inter_val: Some(InterData::Type(type_)),
+            data_type: types::TypeData::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -313,9 +322,10 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     }
     pub fn empty_mod(name: String) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(InterData::Module(HashMap::new(), vec![], name)),
-            data_type: Type::Module,
+            data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
@@ -327,17 +337,26 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         name: String,
     ) -> Self {
         Value {
+            loc: unreachable_span(),
             comp_val: None,
             inter_val: Some(InterData::Module(syms, imps, name)),
-            data_type: Type::Module,
+            data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
         }
     }
+    pub fn make_str<S: AsRef<[u8]>>(string: S, ctx: &CompCtx<'src, 'ctx>) -> Self {
+        let bytes = string.as_ref();
+        Value::interpreted(
+            ctx.context.const_string(bytes, true).into(),
+            InterData::Array(bytes.iter().map(|b| InterData::Int(*b as _)).collect()),
+            types::SizedArray::new(types::Int::unsigned(8), bytes.len() as _),
+        )
+    }
 
     pub fn addr(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<PointerValue<'ctx>> {
-        if self.data_type.size(ctx) == SizeType::Static(0) {
+        if self.data_type.size() == SizeType::Static(0) {
             Some(ctx.null_type.ptr_type(Default::default()).const_null())
         } else {
             self.address.get().or_else(|| {
@@ -355,129 +374,35 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             ..self
         }
     }
+    pub fn with_loc(self, loc: SourceSpan) -> Value<'src, 'ctx> {
+        Value { loc, ..self }
+    }
 
     pub fn value(&self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
         self.comp_val.or_else(|| {
             self.inter_val
                 .as_ref()
-                .and_then(|v| self.data_type.into_compiled(v, ctx))
-        })
-    }
-    pub fn into_value(self, ctx: &CompCtx<'src, 'ctx>) -> Option<BasicValueEnum<'ctx>> {
-        self.comp_val.or_else(|| {
-            self.inter_val
-                .as_ref()
-                .and_then(|v| self.data_type.into_compiled(v, ctx))
+                .and_then(|v| self.data_type.compiled(v, ctx))
         })
     }
 
     pub fn ins_dtor(&self, ctx: &CompCtx<'src, 'ctx>) {
-        match &self.data_type {
-            Type::Nominal(n) => {
-                if let Some(addr) = self.addr(ctx) {
-                    let b = ctx.nominals.borrow();
-                    let info = &b[n];
-                    if let Some(fv) = info.3.dtor {
-                        ctx.builder.build_call(fv, &[addr.into()], "");
-                    } else if !info.3.no_auto_drop {
-                        let mut this = self.clone();
-                        this.data_type = info.0.clone();
-                        this.ins_dtor(ctx)
-                    }
-                }
-            }
-            Type::Tuple(v) => {
-                if let Some(BasicValueEnum::StructValue(comp_val)) = self.comp_val {
-                    v.iter().enumerate().for_each(|(n, t)| {
-                        if t.has_dtor(ctx) {
-                            let val = ctx
-                                .builder
-                                .build_extract_value(comp_val, n as _, "")
-                                .unwrap();
-                            let mut val = Value::compiled(val, t.clone());
-                            if let Some(pv) = self.address.get() {
-                                val.address = Rc::new(Cell::new(Some(
-                                    ctx.builder
-                                        .build_struct_gep(
-                                            self.data_type.llvm_type(ctx).unwrap(),
-                                            pv,
-                                            n as _,
-                                            "",
-                                        )
-                                        .unwrap(),
-                                )));
-                            }
-                            val.ins_dtor(ctx);
-                        }
-                    })
-                }
-            }
-            Type::Array(b, Some(s)) => {
-                if let Some(BasicValueEnum::ArrayValue(comp_val)) = self.comp_val {
-                    if b.has_dtor(ctx) {
-                        let llt = self.data_type.llvm_type(ctx).unwrap();
-                        for n in 0..*s {
-                            let val = ctx.builder.build_extract_value(comp_val, n, "").unwrap();
-                            let mut val = Value::compiled(val, b.as_ref().clone());
-                            if let Some(pv) = self.address.get() {
-                                val.address = Rc::new(Cell::new(Some(
-                                    ctx.builder.build_struct_gep(llt, pv, n, "").unwrap(),
-                                )));
-                            }
-                            val.ins_dtor(ctx);
-                        }
-                    }
-                }
-            }
-            Type::Mut(b) => {
-                if let Some(BasicValueEnum::PointerValue(comp_val)) = self.comp_val {
-                    if b.has_dtor(ctx) {
-                        if let Some(llt) = b.llvm_type(ctx) {
-                            let val = ctx.builder.build_load(llt, comp_val, "");
-                            let mut val = Value::compiled(val, b.as_ref().clone());
-                            val.address = Rc::new(Cell::new(Some(comp_val)));
-                            val.ins_dtor(ctx);
-                        }
-                    }
-                }
-            }
-            Type::BoundMethod(_, a) => {
-                if let (Some(BasicValueEnum::StructValue(sv)), Some(ty)) = (self.comp_val, a.get(0))
-                {
-                    Value::compiled(
-                        ctx.builder.build_extract_value(sv, 0, "").unwrap(),
-                        ty.0.clone(),
-                    )
-                    .ins_dtor(ctx)
-                }
-            }
-            _ => {}
-        }
+        self.data_type.ins_dtor(self, ctx)
     }
 
-    pub fn into_type(self) -> Option<Type> {
-        if let Value {
-            data_type: Type::TypeData,
-            inter_val: Some(InterData::Type(t)),
-            ..
-        } = self
+    pub fn as_type(&self) -> Option<TypeRef> {
+        if let (types::TypeData::KIND, Some(InterData::Type(t))) =
+            (self.data_type.kind(), &self.inter_val)
         {
             Some(*t)
         } else {
             None
         }
     }
-    pub fn as_type(&self) -> Option<&Type> {
-        if let Value {
-            data_type: Type::TypeData,
-            inter_val: Some(InterData::Type(t)),
-            ..
-        } = self
-        {
-            Some(t.as_ref())
-        } else {
-            None
-        }
+    pub fn into_type(self, ctx: &CompCtx<'src, 'ctx>) -> Result<TypeRef, CobaltError<'src>> {
+        let loc = self.loc;
+        self.impl_convert((types::TypeData::new(), Some(loc)), ctx)
+            .map(|v| v.as_type().unwrap_or(types::Error::new()))
     }
     pub fn into_mod(
         self,
@@ -486,11 +411,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Vec<(CompoundDottedName<'src>, bool)>,
         String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.kind(), self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -504,11 +426,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &Vec<(CompoundDottedName<'src>, bool)>,
         &String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.kind(), &self.inter_val)
         {
             Some((s, m, n))
         } else {
@@ -522,16 +441,111 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &mut Vec<(CompoundDottedName<'src>, bool)>,
         &mut String,
     )> {
-        if let Value {
-            data_type: Type::Module,
-            inter_val: Some(InterData::Module(s, m, n)),
-            ..
-        } = self
+        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+            (self.data_type.kind(), &mut self.inter_val)
         {
             Some((s, m, n))
         } else {
             None
         }
+    }
+
+    pub fn decay(self, ctx: &CompCtx<'src, 'ctx>) -> Value<'src, 'ctx> {
+        let ty = self.data_type.decay();
+        let name = self.name.clone();
+        let loc = self.loc;
+        Value {
+            name,
+            loc,
+            ..self.impl_convert((ty, None), ctx).unwrap()
+        }
+    }
+    pub fn attr(
+        self,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.attr(self, attr, ctx)
+    }
+    pub fn impl_convert(
+        self,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.data_type == target.0 {
+            Ok(self)
+        } else if self.data_type._can_iconv_to(target.0, ctx) {
+            self.data_type._iconv_to(self, target, ctx)
+        } else if target.0._can_iconv_from(self.data_type, ctx) {
+            target.0._iconv_from(self, target.1, ctx)
+        } else {
+            Err(cant_iconv(&self, target.0, target.1))
+        }
+    }
+    pub fn expl_convert(
+        self,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self.data_type == target.0 {
+            Ok(self)
+        } else if self.data_type._can_econv_to(target.0, ctx) {
+            self.data_type._econv_to(self, target, ctx)
+        } else if target.0._can_econv_from(self.data_type, ctx) {
+            target.0._econv_from(self, target.1, ctx)
+        } else {
+            let err = cant_econv(&self, target.0, target.1);
+            self.impl_convert(target, ctx).map_err(|_| err)
+        }
+    }
+    pub fn pre_op(
+        self,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.pre_op(self, op.0, op.1, ctx, true)
+    }
+    pub fn post_op(
+        self,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.post_op(self, op.0, op.1, ctx, true)
+    }
+    pub fn bin_op(
+        self,
+        op: (&'static str, SourceSpan),
+        other: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if self
+            .data_type
+            ._has_bin_lhs(other.data_type, op.0, ctx, true, true)
+        {
+            self.data_type._bin_lhs(self, other, op, ctx, true, true)
+        } else if other
+            .data_type
+            ._has_bin_rhs(self.data_type, op.0, ctx, true, true)
+        {
+            other.data_type._bin_rhs(self, other, op, ctx, true, true)
+        } else {
+            Err(invalid_binop(&self, &other, op.0, op.1))
+        }
+    }
+    pub fn call(
+        self,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.call(self, cparen, args, ctx)
+    }
+    pub fn subscript(
+        self,
+        other: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        self.data_type.subscript(self, other, ctx)
     }
 
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -548,7 +562,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         } else {
             out.write_all(&[0])?
         } // Interpreted value, self-punctuating
-        self.data_type.save(out) // Type
+        types::save_type(out, self.data_type) // Type
     }
     pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
         let mut var = Value::error();
@@ -558,93 +572,75 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             name.pop();
         }
         var.inter_val = InterData::load(buf, ctx)?;
-        var.data_type = Type::load(buf)?;
+        var.data_type = types::load_type(buf)?;
         if !name.is_empty() {
             use inkwell::module::Linkage::DLLImport;
-            if let Type::Reference(r) = &var.data_type {
-                if let Type::Function(ret, params) = &**r {
-                    if let Some(llt) = ret.llvm_type(ctx) {
-                        let mut good = true;
-                        let ps = params
-                            .iter()
-                            .filter_map(|(x, c)| {
-                                if *c {
-                                    None
-                                } else {
-                                    Some(BasicMetadataTypeEnum::from(
-                                        x.llvm_type(ctx).unwrap_or_else(|| {
-                                            good = false;
-                                            IntType(ctx.context.i8_type())
-                                        }),
-                                    ))
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        if good {
-                            let ft = llt.fn_type(&ps, false);
-                            let fv = ctx.module.add_function(
-                                std::str::from_utf8(&name)
-                                    .expect("LLVM function names should be valid UTF-8"),
-                                ft,
-                                None,
-                            );
-                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                                fv.set_call_conventions(cconv)
-                            }
-                            let gv = fv.as_global_value();
-                            gv.set_linkage(DLLImport);
-                            var.comp_val =
-                                Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+            if let Some(ty) = var
+                .data_type
+                .downcast::<types::Reference>()
+                .and_then(|ty| ty.base().downcast::<types::Function>())
+            {
+                let mut good = true;
+                let ps = ty
+                    .params()
+                    .iter()
+                    .filter_map(|(x, c)| {
+                        if *c {
+                            None
+                        } else {
+                            Some(BasicMetadataTypeEnum::from(
+                                x.llvm_type(ctx).unwrap_or_else(|| {
+                                    good = false;
+                                    IntType(ctx.context.i8_type())
+                                }),
+                            ))
                         }
-                    } else if ret.size(ctx) == SizeType::Static(0) {
-                        let mut good = true;
-                        let ps = params
-                            .iter()
-                            .filter_map(|(x, c)| {
-                                if *c {
-                                    None
-                                } else {
-                                    Some(BasicMetadataTypeEnum::from(
-                                        x.llvm_type(ctx).unwrap_or_else(|| {
-                                            good = false;
-                                            IntType(ctx.context.i8_type())
-                                        }),
-                                    ))
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        if good {
-                            let ft = ctx.context.void_type().fn_type(&ps, false);
-                            let fv = ctx.module.add_function(
-                                std::str::from_utf8(&name)
-                                    .expect("LLVM function names should be valid UTF-8"),
-                                ft,
-                                None,
-                            );
-                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                                fv.set_call_conventions(cconv)
-                            }
-                            let gv = fv.as_global_value();
-                            gv.set_linkage(DLLImport);
-                            var.comp_val =
-                                Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                    })
+                    .collect::<Vec<_>>();
+                if good {
+                    if let Some(llt) = ty.ret().llvm_type(ctx) {
+                        let ft = llt.fn_type(&ps, false);
+                        let fv = ctx.module.add_function(
+                            std::str::from_utf8(&name)
+                                .expect("LLVM function names should be valid UTF-8"),
+                            ft,
+                            None,
+                        );
+                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                            fv.set_call_conventions(cconv)
                         }
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(gv.as_pointer_value().into());
+                    } else if ty.ret().size() == SizeType::Static(0) {
+                        let ft = ctx.context.void_type().fn_type(&ps, false);
+                        let fv = ctx.module.add_function(
+                            std::str::from_utf8(&name)
+                                .expect("LLVM function names should be valid UTF-8"),
+                            ft,
+                            None,
+                        );
+                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                            fv.set_call_conventions(cconv)
+                        }
+                        let gv = fv.as_global_value();
+                        gv.set_linkage(DLLImport);
+                        var.comp_val = Some(gv.as_pointer_value().into());
                     }
                     return Ok(var);
                 }
-            }
-            if let Some(t) = if let Type::Reference(ref b) = var.data_type {
-                b.llvm_type(ctx)
-            } else {
-                None
-            } {
+            } else if let Some(t) = var
+                .data_type
+                .downcast::<types::Reference>()
+                .and_then(|t| t.llvm_type(ctx))
+            {
                 let gv = ctx.module.add_global(
                     t,
                     None,
                     std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8"),
                 ); // maybe do something with linkage/call convention?
                 gv.set_linkage(DLLImport);
-                var.comp_val = Some(BasicValueEnum::PointerValue(gv.as_pointer_value()));
+                var.comp_val = Some(gv.as_pointer_value().into());
             }
         }
         Ok(var)

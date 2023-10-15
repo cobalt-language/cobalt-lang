@@ -160,9 +160,7 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
     if strict {
         llvm_version.major == CRATE_VERSION.major && llvm_version.minor == CRATE_VERSION.minor
     } else {
-        llvm_version.major == CRATE_VERSION.major
-            || (llvm_version.major == CRATE_VERSION.major
-                && llvm_version.minor >= CRATE_VERSION.minor)
+        llvm_version.major == CRATE_VERSION.major && llvm_version.minor >= CRATE_VERSION.minor
     }
 }
 

@@ -28,7 +28,7 @@ impl<'src> AST<'src> for IfAST<'src> {
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.if_true.nodes() + self.if_false.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -38,19 +38,15 @@ impl<'src> AST<'src> for IfAST<'src> {
         let mut errs = vec![];
         let (cond, mut es) = self.cond.codegen(ctx);
         errs.append(&mut es);
-        let cv = ops::expl_convert(
-            self.cond.loc(),
-            (cond, None),
-            (Type::Int(1, false), None),
-            ctx,
-        )
-        .unwrap_or_else(|e| {
-            errs.push(e);
-            Value::compiled(
-                ctx.context.bool_type().const_int(0, false).into(),
-                Type::Int(1, false),
-            )
-        });
+        let cv = cond
+            .impl_convert((types::Int::bool(), None), ctx)
+            .unwrap_or_else(|e| {
+                errs.push(e);
+                Value::compiled(
+                    ctx.context.bool_type().const_int(0, false).into(),
+                    types::Int::bool(),
+                )
+            });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
             (
                 {
@@ -67,31 +63,20 @@ impl<'src> AST<'src> for IfAST<'src> {
                         let if_true = self.if_true.codegen_errs(ctx, &mut errs);
                         ctx.builder.position_at_end(ifb);
                         let if_false = self.if_false.codegen_errs(ctx, &mut errs);
-                        if let Some(ty) = ops::common(&if_true.data_type, &if_false.data_type, ctx)
-                        {
+                        if let Some(ty) = if_true.data_type.common(if_false.data_type, ctx) {
                             ctx.builder.position_at_end(itb);
-                            let if_true = ops::impl_convert(
-                                self.if_true.loc(),
-                                (if_true, None),
-                                (ty.clone(), None),
-                                ctx,
-                            )
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                Value::error()
-                            });
+                            let if_true =
+                                if_true.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
+                                    errs.push(e);
+                                    Value::error().with_loc(self.if_true.loc())
+                                });
                             ctx.builder.build_unconditional_branch(mb);
                             ctx.builder.position_at_end(ifb);
-                            let if_false = ops::impl_convert(
-                                self.if_false.loc(),
-                                (if_false, None),
-                                (ty.clone(), None),
-                                ctx,
-                            )
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                Value::error()
-                            });
+                            let if_false =
+                                if_false.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
+                                    errs.push(e);
+                                    Value::error().with_loc(self.if_false.loc())
+                                });
                             ctx.builder.build_unconditional_branch(mb);
                             ctx.builder.position_at_end(mb);
                             Value::new(
@@ -166,7 +151,7 @@ impl<'src> AST<'src> for WhileAST<'src> {
     fn nodes(&self) -> usize {
         self.cond.nodes() + self.body.nodes() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -184,17 +169,17 @@ impl<'src> AST<'src> for WhileAST<'src> {
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(cond);
             let (c, mut errs) = self.cond.codegen(ctx);
-            let val =
-                ops::expl_convert(self.cond.loc(), (c, None), (Type::Int(1, false), None), ctx)
-                    .unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::compiled(
-                            ctx.context.bool_type().const_int(0, false).into(),
-                            Type::Int(1, false),
-                        )
-                    })
-                    .into_value(ctx)
-                    .unwrap_or(ctx.context.bool_type().const_int(0, false).into());
+            let val = c
+                .expl_convert((types::Int::bool(), None), ctx)
+                .unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::compiled(
+                        ctx.context.bool_type().const_int(0, false).into(),
+                        types::Int::bool(),
+                    )
+                })
+                .value(ctx)
+                .unwrap_or(ctx.context.bool_type().const_int(0, false).into());
             ctx.builder
                 .build_conditional_branch(val.into_int_value(), body, exit);
             ctx.builder.position_at_end(body);

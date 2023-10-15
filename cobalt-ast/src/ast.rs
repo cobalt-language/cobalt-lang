@@ -53,10 +53,21 @@ pub trait AST<'src>: ASTClone<'src> + std::fmt::Debug {
     fn fwddef_prepass(&self, _ctx: &CompCtx<'src, '_>) {} // create forward definitions for functions in LLVM
 
     // code generation
-    fn codegen<'ctx>(
+    /// Implementation point for AST code generation
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>);
+    /// Generate code
+    fn codegen<'ctx>(
+        &self,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        let (mut val, errs) = self.codegen_impl(ctx);
+        val.loc = self.loc();
+        (val, errs)
+    }
+    /// Generate code in a constant context
     fn const_codegen<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,

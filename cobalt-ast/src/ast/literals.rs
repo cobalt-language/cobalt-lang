@@ -21,47 +21,31 @@ impl<'src> AST<'src> for IntLiteralAST<'src> {
     fn is_const(&self) -> bool {
         true
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         match self.suffix.as_ref().map(|(x, y)| (&**x, y)) {
             None | Some(("", _)) => (
-                Value::metaval(InterData::Int(self.val), Type::IntLiteral),
+                Value::metaval(InterData::Int(self.val), types::IntLiteral::new()),
                 vec![],
             ),
-            Some(("isize", _)) => (
-                Value::interpreted(
-                    IntValue(ctx.context.i64_type().const_int(self.val as u64, false)),
-                    InterData::Int(self.val),
-                    Type::Int(64, false),
-                ),
-                vec![],
-            ),
-            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
-                let size: u16 = x[1..].parse().unwrap_or(0);
+            Some(("isize", _)) => {
+                let bits = ctx.flags.word_size * 8;
                 (
                     Value::interpreted(
                         IntValue(
                             ctx.context
-                                .custom_width_int_type(size as u32)
+                                .custom_width_int_type(bits as _)
                                 .const_int(self.val as u64, false),
                         ),
                         InterData::Int(self.val),
-                        Type::Int(size, false),
+                        types::Int::signed(bits),
                     ),
                     vec![],
                 )
             }
-            Some(("usize", _)) => (
-                Value::interpreted(
-                    IntValue(ctx.context.i64_type().const_int(self.val as u64, false)),
-                    InterData::Int(self.val),
-                    Type::Int(64, true),
-                ),
-                vec![],
-            ),
-            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
+            Some((x, _)) if x.as_bytes()[0] == b'i' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (
                     Value::interpreted(
@@ -71,7 +55,37 @@ impl<'src> AST<'src> for IntLiteralAST<'src> {
                                 .const_int(self.val as u64, false),
                         ),
                         InterData::Int(self.val),
-                        Type::Int(size, true),
+                        types::Int::signed(size),
+                    ),
+                    vec![],
+                )
+            }
+            Some(("usize", _)) => {
+                let bits = ctx.flags.word_size * 8;
+                (
+                    Value::interpreted(
+                        IntValue(
+                            ctx.context
+                                .custom_width_int_type(bits as _)
+                                .const_int(self.val as u64, false),
+                        ),
+                        InterData::Int(self.val),
+                        types::Int::unsigned(bits),
+                    ),
+                    vec![],
+                )
+            }
+            Some((x, _)) if x.as_bytes()[0] == b'u' && x[1..].chars().all(char::is_numeric) => {
+                let size: u16 = x[1..].parse().unwrap_or(0);
+                (
+                    Value::interpreted(
+                        IntValue(
+                            ctx.context
+                                .custom_width_int_type(size as u32)
+                                .const_int(self.val as u64, false),
+                        ),
+                        InterData::Int(self.val),
+                        types::Int::signed(size),
                     ),
                     vec![],
                 )
@@ -118,7 +132,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
     fn is_const(&self) -> bool {
         true
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -127,7 +141,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
                 Value::interpreted(
                     FloatValue(ctx.context.f64_type().const_float(self.val)),
                     InterData::Float(self.val),
-                    Type::Float64,
+                    types::Float::f64(),
                 ),
                 vec![],
             ),
@@ -135,7 +149,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
                 Value::interpreted(
                     FloatValue(ctx.context.f16_type().const_float(self.val)),
                     InterData::Float(self.val),
-                    Type::Float16,
+                    types::Float::f16(),
                 ),
                 vec![],
             ),
@@ -143,7 +157,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
                 Value::interpreted(
                     FloatValue(ctx.context.f32_type().const_float(self.val)),
                     InterData::Float(self.val),
-                    Type::Float32,
+                    types::Float::f32(),
                 ),
                 vec![],
             ),
@@ -151,7 +165,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
                 Value::interpreted(
                     FloatValue(ctx.context.f128_type().const_float(self.val)),
                     InterData::Float(self.val),
-                    Type::Float128,
+                    types::Float::f128(),
                 ),
                 vec![],
             ),
@@ -197,51 +211,31 @@ impl<'src> AST<'src> for CharLiteralAST<'src> {
     fn is_const(&self) -> bool {
         true
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         match self.suffix.as_ref().map(|(x, y)| (&**x, y)) {
             None | Some(("", _)) => (
-                Value::interpreted(
-                    IntValue(ctx.context.i64_type().const_int(self.val as u64, false)),
-                    InterData::Int(self.val as i128),
-                    Type::Int(32, true),
-                ),
+                Value::metaval(InterData::Int(self.val as _), types::Int::unsigned(32)),
                 vec![],
             ),
-            Some(("isize", _)) => (
-                Value::interpreted(
-                    IntValue(ctx.context.i64_type().const_int(self.val as u64, false)),
-                    InterData::Int(self.val as i128),
-                    Type::Int(64, false),
-                ),
-                vec![],
-            ),
-            Some((x, _)) if x.as_bytes()[0] == 0x69 && x[1..].chars().all(char::is_numeric) => {
-                let size: u16 = x[1..].parse().unwrap_or(0);
+            Some(("isize", _)) => {
+                let bits = ctx.flags.word_size * 8;
                 (
                     Value::interpreted(
                         IntValue(
                             ctx.context
-                                .custom_width_int_type(size as u32)
+                                .custom_width_int_type(bits as _)
                                 .const_int(self.val as u64, false),
                         ),
-                        InterData::Int(self.val as i128),
-                        Type::Int(size, false),
+                        InterData::Int(self.val as _),
+                        types::Int::signed(bits),
                     ),
                     vec![],
                 )
             }
-            Some(("usize", _)) => (
-                Value::interpreted(
-                    IntValue(ctx.context.i64_type().const_int(self.val as u64, false)),
-                    InterData::Int(self.val as i128),
-                    Type::Int(64, true),
-                ),
-                vec![],
-            ),
-            Some((x, _)) if x.as_bytes()[0] == 0x75 && x[1..].chars().all(char::is_numeric) => {
+            Some((x, _)) if x.as_bytes()[0] == b'i' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
                 (
                     Value::interpreted(
@@ -250,8 +244,38 @@ impl<'src> AST<'src> for CharLiteralAST<'src> {
                                 .custom_width_int_type(size as u32)
                                 .const_int(self.val as u64, false),
                         ),
-                        InterData::Int(self.val as i128),
-                        Type::Int(size, true),
+                        InterData::Int(self.val as _),
+                        types::Int::signed(size),
+                    ),
+                    vec![],
+                )
+            }
+            Some(("usize", _)) => {
+                let bits = ctx.flags.word_size * 8;
+                (
+                    Value::interpreted(
+                        IntValue(
+                            ctx.context
+                                .custom_width_int_type(bits as _)
+                                .const_int(self.val as u64, false),
+                        ),
+                        InterData::Int(self.val as _),
+                        types::Int::unsigned(bits),
+                    ),
+                    vec![],
+                )
+            }
+            Some((x, _)) if x.as_bytes()[0] == b'u' && x[1..].chars().all(char::is_numeric) => {
+                let size: u16 = x[1..].parse().unwrap_or(0);
+                (
+                    Value::interpreted(
+                        IntValue(
+                            ctx.context
+                                .custom_width_int_type(size as u32)
+                                .const_int(self.val as u64, false),
+                        ),
+                        InterData::Int(self.val as _),
+                        types::Int::signed(size),
                     ),
                     vec![],
                 )
@@ -306,7 +330,7 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
     fn is_const(&self) -> bool {
         true
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -328,10 +352,11 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
                                 .map(|&c| InterData::Int(c as i128))
                                 .collect(),
                         ),
-                        Type::Reference(Box::new(Type::Array(
-                            Box::new(Type::Int(8, true)),
-                            Some(self.val.len() as u32 + self.suffix.is_some() as u32),
-                        ))),
+                        types::SizedArray::new(
+                            types::Int::unsigned(8),
+                            self.val.len() as u32 + self.suffix.is_some() as u32,
+                        )
+                        .add_ref(false),
                     ),
                     vec![],
                 )
@@ -378,25 +403,25 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
         let mut elems = vec![];
-        let mut ty = Type::Null;
+        let mut ty = types::Null::new() as _;
         let mut first = true;
         let mut elem_loc = unreachable_span();
         let mut errs = vec![];
         for val in self.vals.iter() {
             let (v, mut es) = val.codegen(ctx);
-            let dt = ops::decay(v.data_type.clone());
+            let dt = v.data_type.decay();
             errs.append(&mut es);
             if first {
                 first = false;
                 elem_loc = val.loc();
                 ty = dt;
             } else if ty != dt {
-                if let Some(t) = ops::common(&ty, &dt, ctx) {
+                if let Some(t) = ty.common(dt, ctx) {
                     ty = t;
                     elem_loc = val.loc();
                 } else {
@@ -419,9 +444,8 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
         }
         let elems = elems
             .into_iter()
-            .enumerate()
-            .filter_map(|(n, v)| {
-                ops::impl_convert(self.vals[n].loc(), (v, None), (ty.clone(), None), ctx)
+            .filter_map(|v| {
+                v.impl_convert((ty, None), ctx)
                     .map_err(|e| errs.push(e))
                     .ok()
             })
@@ -448,7 +472,7 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
                     .map(|v| v.inter_val)
                     .collect::<Option<_>>()
                     .map(InterData::Array),
-                Type::Array(Box::new(ty), Some(len as u32)),
+                types::SizedArray::new(ty, len as _),
             ),
             errs,
         )
@@ -487,7 +511,7 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -496,10 +520,9 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
             .vals
             .iter()
             .map(|x| {
-                let mut v = x.codegen_errs(ctx, &mut errs);
-                let decayed = ops::decay(v.data_type.clone());
-                v = ops::impl_convert(unreachable_span(), (v, None), (decayed, None), ctx).unwrap();
-                v
+                let v = x.codegen_errs(ctx, &mut errs);
+                let decayed = v.data_type.decay();
+                v.impl_convert((decayed, None), ctx).unwrap()
             })
             .map(
                 |Value {
@@ -511,7 +534,7 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
             )
             .unzip();
         let mut val = Value::null();
-        val.data_type = Type::Tuple(types);
+        val.data_type = types::Tuple::new(types);
         if comps.iter().all(Option::is_some) {
             let llt = val.data_type.llvm_type(ctx).unwrap().into_struct_type();
             val.comp_val = comps
@@ -567,7 +590,7 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
     fn nodes(&self) -> usize {
         self.vals.values().map(|t| t.nodes()).sum::<usize>() + 1
     }
-    fn codegen<'ctx>(
+    fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
     ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
@@ -582,13 +605,13 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
 
         // Sort fields to have optimal memory layout.
         vec.sort_by(|(ln, lhs), (rn, rhs)| {
-            types::struct_order(&lhs.data_type, &rhs.data_type, Some((ln, rn)), ctx)
+            types::Struct::sort_fields((&**ln, lhs.data_type), (&**rn, rhs.data_type))
         });
 
         // Determine the data type of this literal just by looking at the fields it has defined.
-        let mut lookup = HashMap::with_capacity(vec.len());
+        let mut lookup = std::collections::BTreeMap::new();
         for (n, (name, _)) in vec.iter().enumerate() {
-            lookup.insert(name.to_string(), n);
+            lookup.insert(Box::from(&***name), n);
         }
 
         // Compute the value, if possible, of the fields.
@@ -623,7 +646,12 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
             .map(|v| v.1.inter_val.clone())
             .collect::<Option<_>>()
             .map(InterData::Array);
-        let data_type = Type::Struct(vec.into_iter().map(|v| v.1.data_type).collect(), lookup);
+        let data_type = unsafe {
+            types::Struct::new_arranged(
+                vec.into_iter().map(|v| v.1.data_type).collect::<Vec<_>>(),
+                lookup,
+            )
+        };
 
         (
             Value::new(comp_val.map(From::from), inter_val, data_type),

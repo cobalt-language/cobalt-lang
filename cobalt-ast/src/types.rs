@@ -1,16 +1,13 @@
+#![allow(unused_variables)]
 use crate::*;
-use cobalt_llvm::inkwell::values::FunctionValue;
-use inkwell::types::{
-    BasicMetadataTypeEnum, BasicType,
-    BasicTypeEnum::{self, *},
-};
-use inkwell::values::BasicValueEnum;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt::*;
+use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::values::{BasicValueEnum, FunctionValue};
+use once_cell::sync::Lazy;
+use std::fmt::{self, Debug, Display, Formatter};
+use std::hash::Hash;
 use std::io::{self, BufRead, Read, Write};
+use std::num::NonZeroU64;
 use SizeType::*;
-use Type::{Error, *};
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
     Static(u32),
@@ -43,7 +40,7 @@ impl SizeType {
     }
 }
 impl Display for SizeType {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             SizeType::Static(size) => write!(f, "{size}"),
             SizeType::Dynamic => write!(f, "dynamic"),
@@ -61,777 +58,634 @@ impl std::ops::Add for SizeType {
         }
     }
 }
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum Type {
-    IntLiteral,
-    Intrinsic(String),
-    Int(u16, bool),
-    Float16,
-    Float32,
-    Float64,
-    Float128,
-    Pointer(Box<Type>),
-    Reference(Box<Type>),
-    Mut(Box<Type>),
-    Null,
-    Module,
-    TypeData,
-    InlineAsm(Box<Type>),
-    Array(Box<Type>, Option<u32>),
-    Function(Box<Type>, Vec<(Type, bool)>),
-    BoundMethod(Box<Type>, Vec<(Type, bool)>),
-    Nominal(String),
-    Tuple(Vec<Type>),
-    /// IMPORTANT: this *must* be in the correct order- it must be sorted according to `struct_order`
-    Struct(Vec<Type>, HashMap<String, usize>),
-    Error,
+/// AsTypeRef was moved to a separate trait so concrete and trait objects can be used interchangeably
+pub trait AsTypeRef {
+    fn as_type_ref(&'static self) -> TypeRef;
 }
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            IntLiteral => write!(f, "<int literal>"),
-            Int(1, _) => write!(f, "bool"),
-            Int(size, false) => write!(f, "i{size}"),
-            Int(size, true) => write!(f, "u{size}"),
-            Intrinsic(s) => write!(f, "@{s}"),
-            Float16 => write!(f, "f16"),
-            Float32 => write!(f, "f32"),
-            Float64 => write!(f, "f64"),
-            Float128 => write!(f, "f128"),
-            Pointer(x) => write!(f, "*{x}"),
-            Reference(x) => write!(f, "&{x}"),
-            Mut(x) => write!(f, "mut {x}"),
-            Null => write!(f, "null"),
-            Module => write!(f, "module"),
-            TypeData => write!(f, "type"),
-            InlineAsm(x) => write!(f, "inline assembly (returing {})", *x),
-            Array(x, None) => write!(f, "{}[]", *x),
-            Array(x, Some(s)) => write!(f, "{}[{s}]", *x),
-            Function(ret, args) => {
-                write!(f, "fn (")?;
-                let mut len = args.len();
-                for (arg, ty) in args.iter() {
-                    write!(
-                        f,
-                        "{}{}",
-                        match ty {
-                            true => "const ",
-                            false => "",
-                        },
-                        arg
-                    )?;
-                    if len > 1 {
-                        write!(f, ", ")?
-                    }
-                    len -= 1;
-                }
-                write!(f, "): {}", *ret)
-            }
-            BoundMethod(ret, args) => {
-                write!(
-                    f,
-                    "{}{}.fn (",
-                    if args[0].1 { "const " } else { "" },
-                    args[0].0
-                )?;
-                let mut len = args.len();
-                for (arg, ty) in args[1..].iter() {
-                    write!(
-                        f,
-                        "{}{}",
-                        match ty {
-                            true => "const ",
-                            false => "",
-                        },
-                        arg
-                    )?;
-                    if len > 1 {
-                        write!(f, ", ")?
-                    }
-                    len -= 1;
-                }
-                write!(f, "): {}", *ret)
-            }
-            Nominal(n) => write!(f, "{n}"),
-            Tuple(v) => {
-                write!(f, "(")?;
-                let mut it = v.iter().peekable();
-                while let Some(v) = it.next() {
-                    write!(f, "{v}")?;
-                    if it.peek().is_some() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")")
-            }
-            Struct(fields, lookup) => write!(
-                f,
-                "{{{}}}",
-                lookup
-                    .iter()
-                    .map(|(name, idx)| format!("{name}: {}", fields[*idx]))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            Error => write!(f, "<error>"),
-        }
+impl<T: Type + Sized> AsTypeRef for T {
+    fn as_type_ref(&'static self) -> TypeRef {
+        self
+    }
+}
+/// TypeKind contains `self.kind()`, but it's moved to a separate trait so it can be auto-implemented
+pub trait TypeKind {
+    /// get the kind ID of this type
+    fn kind(&self) -> NonZeroU64;
+}
+/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
+pub trait ConcreteType: Type + Sized {
+    const KIND: NonZeroU64;
+}
+impl<T: ConcreteType> TypeKind for T {
+    fn kind(&self) -> NonZeroU64 {
+        Self::KIND
     }
 }
 
-/// Determine the most efficient layout for struct fields.
-///
-/// Returns `lhs` (ordering) `rhs`. This indicates that `lhs` should be
-/// layed out before `rhs` in memory.
-///
-/// Intended to be used with `sort_by` to sort a list of fields.
-pub fn struct_order(
-    lhs: &Type,
-    rhs: &Type,
-    names: Option<(&str, &str)>,
-    ctx: &CompCtx,
-) -> std::cmp::Ordering {
-    use std::cmp::Ordering::*;
-
-    // If `lhs` has a larger alignment than `rhs` then it should be
-    // layed out first.
-    let mut ord = rhs.align(ctx).cmp(&lhs.align(ctx));
-    if ord != Equal {
-        return ord;
+/// All values have types, and each kind of type implements `Type`.
+/// Methods with a leading underscore are customization points, and are not meant to be called directly.
+pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
+    /// Get the size of the current type.
+    fn size(&'static self) -> SizeType;
+    /// Get the alignment of the current type. An alignment of 0 is used for non-runtime data.
+    fn align(&'static self) -> u16;
+    /// Get the LLVM type that this type lowers to.
+    fn llvm_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        None
+    }
+    /// Get the LLVM type of `*<self>`. This is useful for fat pointer types.
+    fn ptr_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        (self.size() != SizeType::Meta).then(|| ctx.null_type.ptr_type(Default::default()).into())
     }
 
-    ord = match (lhs.size(ctx), rhs.size(ctx)) {
-        (Meta, _) | (_, Meta) => Equal,
-        (Dynamic, Dynamic) => Equal,
-        (_, Dynamic) => Less,
-        (Dynamic, _) => Greater,
-        (Static(l), Static(r)) => r.cmp(&l),
-    };
-    if ord != Equal {
-        return ord;
+    /// Check if a type is linear - can only be used once
+    fn is_linear(&'static self, ctx: &CompCtx) -> bool {
+        false
     }
-    names.map_or(Equal, |(l, r)| l.cmp(r))
-}
-impl Type {
-    pub fn size(&self, ctx: &CompCtx) -> SizeType {
-        match self {
-            IntLiteral => Static(8),
-            Int(size, _) => Static(((size + 7) / 8) as u32),
-            Float16 => Static(2),
-            Float32 => Static(4),
-            Float64 => Static(8),
-            Float128 => Static(16),
-            Null => Static(0),
-            Array(b, Some(s)) => b.size(ctx).map_static(|x| x * s),
-            Array(_, None) => Dynamic,
-            Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => Meta,
-            BoundMethod(..) => Static(ctx.flags.word_size as u32 * 2),
-            Pointer(b) | Reference(b) => match **b {
-                Type::Array(_, None) => Static(ctx.flags.word_size as u32 * 2),
-                _ => Static(ctx.flags.word_size as u32),
-            },
-            Mut(b) => b.size(ctx),
-            Tuple(v) | Type::Struct(v, _) => {
-                let size = v.iter().fold(Static(0), |v, t| {
-                    if let Static(bs) = v {
-                        let n = t.size(ctx);
-                        if let Static(ns) = n {
-                            let a = t.align(ctx) as u32;
-                            if a == 0 || a == 1 {
-                                Static(bs + ns)
-                            } else {
-                                Static(((bs + a - 1) / a) * a + ns)
-                            }
-                        } else {
-                            n
-                        }
-                    } else {
-                        v
-                    }
-                });
-                let align = self.align(ctx) as u32;
-                size.map_static(|size| (size + align - 1) / align)
-            }
-            Nominal(n) => ctx.nominals.borrow()[n].0.size(ctx),
-        }
+    /// Check if a type can be copied without tracking
+    fn copyable(&'static self, ctx: &CompCtx) -> bool {
+        !(self.has_dtor(ctx) || self.is_linear(ctx))
+    }
+    /// Check whether or not this type has a destructor.
+    fn has_dtor(&'static self, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Insert a destructor for a value at the current insertion position.
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {}
+    /// Get the "decayed" type - essentially what the type of a variable would be with this assigned to it.
+    fn decay(&'static self) -> TypeRef {
+        self.as_type_ref()
     }
 
-    /// Returns the alignment of the type in bytes.
-    pub fn align(&self, ctx: &CompCtx) -> u16 {
-        match self {
-            IntLiteral => 8,
-            Int(size, _) => match size {
-                0..=8 => 1,
-                9..=16 => 2,
-                17..=32 => 4,
-                33.. => 8,
-            },
-            Float16 => 2,
-            Float32 => 4,
-            Float64 | Float128 => 8,
-            Null => 1,
-            Array(b, _) => b.align(ctx),
-            Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => 0,
-            Pointer(_) | Reference(_) | BoundMethod(..) => ctx.flags.word_size,
-            Mut(b) => b.align(ctx),
-
-            // The alignment is the alignment of the largest field.
-            Tuple(v) | Type::Struct(v, _) => v.iter().map(|x| x.align(ctx)).max().unwrap_or(1),
-            Nominal(n) => ctx.nominals.borrow()[n].0.align(ctx),
-        }
+    /// Find a field on the type. Currently only used for custom types, but could be expanded
+    fn static_attr<'src, 'ctx>(
+        &'static self,
+        name: &str,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Option<Value<'src, 'ctx>> {
+        None
     }
-    pub fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
-        match self {
-            IntLiteral => Some(IntType(ctx.context.i64_type())),
-            Int(size, _) => Some(IntType(ctx.context.custom_width_int_type(*size as u32))),
-            Float16 => Some(FloatType(ctx.context.f16_type())),
-            Float32 => Some(FloatType(ctx.context.f32_type())),
-            Float64 => Some(FloatType(ctx.context.f64_type())),
-            Float128 => Some(FloatType(ctx.context.f128_type())),
-            Null | Function(..) | Module | TypeData | InlineAsm(_) | Intrinsic(_) | Error => None,
-            BoundMethod(ret, params) => Some(
-                ctx.context
-                    .struct_type(
-                        &[
-                            params[0].0.llvm_type(ctx)?,
-                            Type::Pointer(Box::new(Type::Function(ret.clone(), params.clone())))
-                                .llvm_type(ctx)?,
-                        ],
-                        false,
-                    )
-                    .into(),
-            ),
-            Array(b, Some(n)) => Some(b.llvm_type(ctx)?.array_type(*n).into()),
-            Array(_, None) => None,
-            Pointer(b) | Reference(b) => match &**b {
-                Type::Array(b, None) => Some(
-                    ctx.context
-                        .struct_type(
-                            &[
-                                b.llvm_type(ctx)?.ptr_type(Default::default()).into(),
-                                ctx.context.i64_type().into(),
-                            ],
-                            false,
-                        )
-                        .into(),
-                ),
-                Type::Array(b, Some(_)) => {
-                    Some(b.llvm_type(ctx)?.ptr_type(Default::default()).into())
-                }
-                Type::Function(r, p) => {
-                    let mut args = Vec::<BasicMetadataTypeEnum>::with_capacity(p.len());
-                    for (p, c) in p {
-                        if !c {
-                            args.push(p.llvm_type(ctx)?.into());
-                        }
-                    }
-                    Some(
-                        if r.size(ctx) == Static(0) {
-                            ctx.context.void_type().fn_type(&args, false)
-                        } else {
-                            r.llvm_type(ctx)?.fn_type(&args, false)
-                        }
-                        .ptr_type(Default::default())
-                        .into(),
-                    )
-                }
-                Type::Mut(b) => {
-                    if b.size(ctx) == Static(0) {
-                        Some(PointerType(ctx.null_type.ptr_type(Default::default())))
-                    } else {
-                        b.llvm_type(ctx)
-                            .map(|t| t.ptr_type(Default::default()).into())
-                    }
-                }
-                b => {
-                    if b.size(ctx) == Static(0) {
-                        Some(PointerType(ctx.null_type.ptr_type(Default::default())))
-                    } else {
-                        Some(PointerType(b.llvm_type(ctx)?.ptr_type(Default::default())))
-                    }
-                }
-            },
-            Mut(b) => {
-                if b.size(ctx) == Static(0) {
-                    Some(PointerType(ctx.null_type.ptr_type(Default::default())))
-                } else {
-                    b.llvm_type(ctx)
-                        .map(|t| t.ptr_type(Default::default()).into())
-                }
-            }
-            Tuple(v) | Struct(v, _) => {
-                let fields = v
-                    .iter()
-                    .map(|t| t.llvm_type(ctx))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(ctx.context.struct_type(&fields, false).into())
-            }
-            Nominal(n) => ctx.nominals.borrow()[n].0.llvm_type(ctx),
-        }
-    }
-    pub fn has_dtor(&self, ctx: &CompCtx) -> bool {
-        match self {
-            Type::Nominal(n) => {
-                let b = ctx.nominals.borrow();
-                let info = &b[n];
-                info.3.dtor.is_some() || (!info.3.no_auto_drop && info.0.has_dtor(ctx))
-            }
-            Type::Array(b, _) | Type::Mut(b) => b.has_dtor(ctx),
-            Type::Tuple(v) | Type::Struct(v, _) => v.iter().any(|t| t.has_dtor(ctx)),
-            Type::BoundMethod(_, a) => a.get(0).map_or(false, |t| t.0.has_dtor(ctx)),
-            _ => false,
-        }
-    }
-    fn can_be_compiled<'ctx>(&self, v: &InterData<'_, 'ctx>, ctx: &CompCtx<'_, 'ctx>) -> bool {
-        match self {
-            Type::IntLiteral | Type::Int(..) => matches!(v, InterData::Int(..)),
-            Type::Float16 | Type::Float32 | Type::Float64 | Type::Float128 => {
-                matches!(v, InterData::Float(..))
-            }
-            Type::Array(b, Some(n)) => {
-                if let InterData::Array(v) = v {
-                    v.len() == *n as _ && v.iter().all(|v| b.can_be_compiled(v, ctx))
-                } else {
-                    false
-                }
-            }
-            Type::Tuple(vs) | Type::Struct(vs, _) => {
-                if let InterData::Array(is) = v {
-                    vs.len() == is.len()
-                        && vs.iter().zip(is).all(|(t, v)| t.can_be_compiled(v, ctx))
-                } else {
-                    false
-                }
-            }
-            Type::Nominal(n) => ctx.nominals.borrow()[n].0.can_be_compiled(v, ctx),
-            Type::Mut(b) => b.can_be_compiled(v, ctx),
-            _ => false,
-        }
-    }
-    pub fn into_compiled<'ctx>(
-        &self,
-        v: &InterData<'_, 'ctx>,
-        ctx: &CompCtx<'_, 'ctx>,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        if ctx.is_const.get() {
-            return None;
-        }
-        match self {
-            Type::IntLiteral => {
-                if let InterData::Int(v) = v {
-                    Some(ctx.context.i64_type().const_int(*v as u64, true).into())
-                } else {
-                    None
-                }
-            }
-            Type::Int(s, u) => {
-                if let InterData::Int(v) = v {
-                    Some(
-                        ctx.context
-                            .custom_width_int_type(*s as u32)
-                            .const_int(*v as u64, *u)
-                            .into(),
-                    )
-                } else {
-                    None
-                }
-            }
-            Type::Float16 => {
-                if let InterData::Float(v) = v {
-                    Some(ctx.context.f16_type().const_float(*v).into())
-                } else {
-                    None
-                }
-            }
-            Type::Float32 => {
-                if let InterData::Float(v) = v {
-                    Some(ctx.context.f32_type().const_float(*v).into())
-                } else {
-                    None
-                }
-            }
-            Type::Float64 => {
-                if let InterData::Float(v) = v {
-                    Some(ctx.context.f64_type().const_float(*v).into())
-                } else {
-                    None
-                }
-            }
-            Type::Float128 => {
-                if let InterData::Float(v) = v {
-                    Some(ctx.context.f128_type().const_float(*v).into())
-                } else {
-                    None
-                }
-            }
-            Type::Array(b, Some(n)) => {
-                if let InterData::Array(v) = v {
-                    (v.len() == *n as _).then_some(())?;
-                    let ty = b.llvm_type(ctx)?;
-                    let arr = ty.array_type(*n);
-                    let val = arr.get_undef();
-                    v.iter()
-                        .enumerate()
-                        .try_fold(val, |val, (n, v)| {
-                            b.into_compiled(v, ctx)
-                                .and_then(|v| ctx.builder.build_insert_value(val, v, n as _, ""))
-                                .map(|v| v.into_array_value())
-                        })
-                        .map(From::from)
-                } else {
-                    None
-                }
-            }
-            Type::Tuple(vs) | Type::Struct(vs, _) => {
-                self.can_be_compiled(v, ctx).then_some(())?;
-                if let InterData::Array(is) = v {
-                    let (vals, types): (Vec<_>, Vec<_>) = vs
-                        .iter()
-                        .zip(is)
-                        .map(|(t, v)| {
-                            let llv = t.into_compiled(v, ctx).unwrap();
-                            (llv, llv.get_type())
-                        })
-                        .unzip();
-                    let ty = ctx.context.struct_type(&types, false);
-                    vals.into_iter()
-                        .enumerate()
-                        .try_fold(ty.get_undef(), |v, (n, val)| {
-                            ctx.builder
-                                .build_insert_value(v, val, n as u32, "")
-                                .map(|v| v.into_struct_value())
-                        })
-                        .map(From::from)
-                } else {
-                    unreachable!()
-                }
-            }
-            Type::Nominal(n) => ctx.nominals.borrow()[n].0.into_compiled(v, ctx),
-            Type::Mut(b) => b.into_compiled(v, ctx),
-            _ => None,
-        }
-    }
-    pub fn contains_nominal(&self) -> bool {
-        match self {
-            Type::Nominal(_) => true,
-            Type::Reference(b)
-            | Type::Pointer(b)
-            | Type::Mut(b)
-            | Type::Array(b, _)
-            | Type::InlineAsm(b) => b.contains_nominal(),
-            Type::Tuple(v) | Type::Struct(v, _) => v.iter().any(|t| t.contains_nominal()),
-            Type::Function(r, a) => {
-                r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
-            }
-            Type::BoundMethod(r, a) => {
-                r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal())
-            }
-            _ => false,
-        }
-    }
-    pub fn unwrapped(&self, ctx: &CompCtx) -> Cow<Self> {
-        match self {
-            Type::Nominal(n) => Cow::Owned(ctx.nominals.borrow()[n].0.clone()),
-            Type::Reference(b) => {
-                if b.contains_nominal() {
-                    Cow::Owned(Type::Reference(Box::new(b.unwrapped(ctx).into_owned())))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::Pointer(b) => {
-                if b.contains_nominal() {
-                    Cow::Owned(Type::Pointer(Box::new(b.unwrapped(ctx).into_owned())))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::Array(b, s) => {
-                if b.contains_nominal() {
-                    Cow::Owned(Type::Array(Box::new(b.unwrapped(ctx).into_owned()), *s))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::InlineAsm(b) => {
-                if b.contains_nominal() {
-                    Cow::Owned(Type::InlineAsm(Box::new(b.unwrapped(ctx).into_owned())))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::Tuple(v) => {
-                if v.iter().any(|t| t.contains_nominal()) {
-                    Cow::Owned(Type::Tuple(
-                        v.iter().map(|t| t.unwrapped(ctx).into_owned()).collect(),
-                    ))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::Struct(v, l) => {
-                if v.iter().any(|t| t.contains_nominal()) {
-                    Cow::Owned(Type::Struct(
-                        v.iter().map(|t| t.unwrapped(ctx).into_owned()).collect(),
-                        l.clone(),
-                    ))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::Function(r, a) => {
-                if r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()) {
-                    Cow::Owned(Type::Function(
-                        Box::new(r.unwrapped(ctx).into_owned()),
-                        a.iter()
-                            .map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c))
-                            .collect(),
-                    ))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            Type::BoundMethod(r, a) => {
-                if r.contains_nominal() || a.iter().any(|t| t.0.contains_nominal()) {
-                    Cow::Owned(Type::BoundMethod(
-                        Box::new(r.unwrapped(ctx).into_owned()),
-                        a.iter()
-                            .map(|(t, c)| (t.unwrapped(ctx).into_owned(), *c))
-                            .collect(),
-                    ))
-                } else {
-                    Cow::Borrowed(self)
-                }
-            }
-            _ => Cow::Borrowed(self),
-        }
-    }
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        match self {
-            IntLiteral => panic!("There shouldn't be an int literal in a variable!"),
-            Int(s, u) => {
-                out.write_all(&[1])?;
-                let mut v = *s as i16;
-                if *u {
-                    v = -v;
-                }
-                out.write_all(&v.to_be_bytes())
-            }
-            Intrinsic(s) => {
-                out.write_all(&[2])?;
-                out.write_all(s.as_bytes())?;
-                out.write_all(&[0])
-            }
-            Float16 => out.write_all(&[3]),
-            Float32 => out.write_all(&[4]),
-            Float64 => out.write_all(&[5]),
-            Float128 => out.write_all(&[6]),
-            Null => out.write_all(&[7]),
-            Pointer(b) => {
-                out.write_all(&[8])?;
-                b.save(out)
-            }
-            Reference(b) => {
-                out.write_all(&[10])?;
-                b.save(out)
-            }
-            Mut(b) => {
-                out.write_all(&[11])?;
-                b.save(out)
-            }
-            Function(b, p) => {
-                out.write_all(&[13])?;
-                out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
-                b.save(out)?;
-                for (par, c) in p {
-                    par.save(out)?;
-                    out.write_all(&[u8::from(*c)])?; // param is const
-                }
-                Ok(())
-            }
-            InlineAsm(b) => {
-                out.write_all(&[14])?;
-                b.save(out)
-            }
-            Error => panic!("error values shouldn't be serialized!"),
-            Array(b, None) => {
-                out.write_all(&[15])?;
-                b.save(out)
-            }
-            Array(b, Some(s)) => {
-                let mut data = [16u8, 0, 0, 0, 0];
-                data[1..].copy_from_slice(&s.to_be_bytes());
-                out.write_all(&data)?;
-                b.save(out)
-            }
-            TypeData => out.write_all(&[17]),
-            Nominal(n) => {
-                out.write_all(&[18])?;
-                out.write_all(n.as_bytes())?;
-                out.write_all(&[0])
-            }
-            Module => out.write_all(&[19]),
-            Tuple(v) => {
-                let mut buf = [20u8, 0, 0, 0, 0];
-                buf[1..].copy_from_slice(&(v.len() as u32).to_be_bytes());
-                out.write_all(&buf)?;
-                v.iter().try_for_each(|t| t.save(out))
-            }
-            Struct(fields, l) => {
-                out.write_all(&[22])?;
-                let mut rev_lookup = [None].repeat(fields.len());
-                for (k, &v) in l {
-                    rev_lookup[v] = Some(k);
-                }
-                for (n, ty) in fields.iter().enumerate() {
-                    out.write_all(rev_lookup[n].unwrap().as_bytes())?;
-                    out.write_all(&[0])?;
-                    ty.save(out)?;
-                }
-                out.write_all(&[0])
-            }
-            BoundMethod(r, p) => {
-                out.write_all(&[21])?;
-                out.write_all(&(p.len() as u16).to_be_bytes())?; // # of params
-                r.save(out)?;
-                for (par, c) in p {
-                    par.save(out)?;
-                    out.write_all(&[u8::from(*c)])?; // param is const
-                }
-                Ok(())
-            }
-        }
-    }
-    pub fn load<R: Read + BufRead>(buf: &mut R) -> io::Result<Self> {
-        let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
-        Ok(match c {
-            1 => {
-                let mut bytes = [0; 2];
-                buf.read_exact(&mut bytes)?;
-                let v = i16::from_be_bytes(bytes);
-                Type::Int(v.unsigned_abs(), v < 0)
-            }
-            2 => {
-                let mut vec = vec![];
-                buf.read_until(0, &mut vec)?;
-                if vec.last() == Some(&0) {
-                    vec.pop();
-                }
-                Type::Intrinsic(
-                    String::from_utf8(vec).expect("intrinsic name should be valid UTF-8"),
-                )
-            }
-            3 => Type::Float16,
-            4 => Type::Float32,
-            5 => Type::Float64,
-            6 => Type::Float128,
-            7 => Type::Null,
-            8 => Type::Pointer(Box::new(Type::load(buf)?)),
-            10 => Type::Reference(Box::new(Type::load(buf)?)),
-            11 => Type::Mut(Box::new(Type::load(buf)?)),
-            13 => {
-                let mut bytes = [0; 2];
-                buf.read_exact(&mut bytes)?;
-                let v = u16::from_be_bytes(bytes);
-                let ret = Type::load(buf)?;
-                let mut vec = Vec::with_capacity(v as usize);
-                for _ in 0..v {
-                    let t = Type::load(buf)?;
-                    buf.read_exact(std::slice::from_mut(&mut c))?;
-                    vec.push((t, c != 0));
-                }
-                Type::Function(Box::new(ret), vec)
-            }
-            14 => Type::InlineAsm(Box::new(Type::load(buf)?)),
-            15 => Type::Array(Box::new(Type::load(buf)?), None),
-            16 => {
-                let mut bytes = [0; 4];
-                buf.read_exact(&mut bytes)?;
-                Type::Array(Box::new(Type::load(buf)?), Some(u32::from_be_bytes(bytes)))
-            }
-            17 => Type::TypeData,
-            18 => {
-                let mut vec = Vec::<u8>::new();
-                buf.read_until(0, &mut vec)?;
-                if vec.last() == Some(&0) {
-                    vec.pop();
-                }
-                Type::Nominal(String::from_utf8(vec).expect("Type names should be valid UTF-8!"))
-            }
-            19 => Type::Module,
-            20 => {
-                let mut bytes = [0; 4];
-                buf.read_exact(&mut bytes)?;
-                let mut count = u32::from_be_bytes(bytes);
-                let mut vec = Vec::with_capacity(count as usize);
-                while count > 0 {
-                    vec.push(Type::load(buf)?);
-                    count -= 1;
-                }
-                Type::Tuple(vec)
-            }
-            21 => {
-                let mut bytes = [0; 2];
-                buf.read_exact(&mut bytes)?;
-                let v = u16::from_be_bytes(bytes);
-                let ret = Type::load(buf)?;
-                buf.read_exact(&mut bytes[..1])?;
-                let mut vec = Vec::with_capacity(v as usize);
-                for _ in 0..v {
-                    let t = Type::load(buf)?;
-                    buf.read_exact(std::slice::from_mut(&mut c))?;
-                    vec.push((t, c != 0));
-                }
-                Type::BoundMethod(Box::new(ret), vec)
-            }
-            22 => {
-                let mut fields = vec![];
-                let mut lookup = HashMap::new();
-                loop {
-                    let mut vec = vec![];
-                    buf.read_until(0, &mut vec)?;
-                    if vec.last() == Some(&0) {
-                        vec.pop();
-                    }
-                    if vec.is_empty() {
-                        break;
-                    }
-                    lookup.insert(String::from_utf8(vec).unwrap(), fields.len());
-                    fields.push(Type::load(buf)?);
-                }
-                Type::Struct(fields, lookup)
-            }
-            x => panic!("read type value expecting value in 1..=22, got {x}"),
+    /// Get an attribute on the value
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
         })
     }
-    /// Ensure that any symbols reachable from this type are exported
-    pub fn export(&self, ctx: &CompCtx) {
-        match self {
-            Type::Nominal(n) => ctx.nominals.borrow_mut().get_mut(n).unwrap().1 = true,
-            Type::Reference(b)
-            | Type::Pointer(b)
-            | Type::Mut(b)
-            | Type::Array(b, _)
-            | Type::InlineAsm(b) => b.export(ctx),
-            Type::Tuple(v) | Type::Struct(v, _) => v.iter().for_each(|t| t.export(ctx)),
-            Type::Function(r, a) => {
-                r.export(ctx);
-                a.iter().for_each(|t| t.0.export(ctx));
-            }
-            Type::BoundMethod(r, a) => {
-                r.export(ctx);
-                a.iter().for_each(|t| t.0.export(ctx));
-            }
-            _ => {}
+    fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_mut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_ref_attr(&attr.0, ctx));
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    fn _mut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_ref_attr(&attr.0, ctx));
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_refmut_attr(&attr.0, ctx));
+        Err(CobaltError::AttrNotDefined {
+            val: self.to_string(),
+            attr: attr.0,
+            vloc: val.loc,
+            aloc: attr.1,
+        })
+    }
+    /// Check if this type is implicitly convertible to another type.
+    fn impl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        self.as_type_ref() == other
+            || self._can_iconv_to(other, ctx)
+            || other._can_iconv_from(self.as_type_ref(), ctx)
+    }
+    /// Check if this type is explicitly convertible to another type.
+    fn expl_convertible(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        self._can_econv_to(other, ctx)
+            || other._can_econv_from(self.as_type_ref(), ctx)
+            || self.impl_convertible(other, ctx)
+    }
+    /// Find a common type between two types.
+    fn common(&'static self, other: TypeRef, ctx: &CompCtx) -> Option<TypeRef> {
+        let this = self.as_type_ref();
+        if this.impl_convertible(other, ctx) {
+            Some(other)
+        } else if other.impl_convertible(this, ctx) {
+            Some(this)
+        } else {
+            let ty = types::TypeData::new();
+            (this.impl_convertible(ty, ctx) && other.impl_convertible(ty, ctx)).then_some(ty)
+        }
+    }
+    /// Apply a prefix operator to a value of the current type.
+    fn pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_preop(&val, op, oloc))
+    }
+    /// Apply a postfix operator to a value of the current type.
+    fn post_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_postop(&val, op, oloc))
+    }
+    /// Call a value of the current type.
+    fn call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    /// Subscript a value of the current type.
+    /// If the index type is the error type, `Ok(Value::error())` should be returned.
+    fn subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        idx.data_type
+            .is::<types::Error>()
+            .then(Value::error)
+            .ok_or_else(|| invalid_sub(&val, &idx))
+    }
+
+    /// Implicitly convert a value of the current type to another
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    /// Implicitly convert a value to the current type
+    fn _iconv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, self.as_type_ref(), target))
+    }
+    /// Explicitly convert a value of the current type to another
+    fn _econv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
+    }
+    /// Explicitly convert a value to the current type
+    fn _econv_from<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: Option<SourceSpan>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, self.as_type_ref(), target))
+    }
+    /// Return true iff `_iconv_to` returns an `Ok` value
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Return true iff `_iconv_from` returns an `Ok` value
+    fn _can_iconv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Return true iff `_econv_to` returns an `Ok` value
+    fn _can_econv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Return true iff `_econv_from` returns an `Ok` value
+    fn _can_econv_from(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+
+    /// Override this for binary operators where this type appears on the left side.
+    /// `move_left` and `move_right` track whether or not moving from the left and right operands is permitted.
+    fn _bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_bin_lhs(
+            rhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    /// See [`_bin_lhs`].
+    fn _bin_rhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_bin_rhs(
+            lhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    /// Returns true iff `_bin_lhs` returns an `Ok` value
+    fn _has_bin_lhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        false
+    }
+    /// Returns true iff `_bin_rhs` returns an `Ok` value
+    fn _has_bin_rhs(
+        &'static self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        false
+    }
+    /// Override this to implement mutating prefix operators
+    fn _mut_pre_op<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        op: &'static str,
+        oloc: SourceSpan,
+        ctx: &CompCtx<'src, 'ctx>,
+        can_move: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_preop(&val, op, oloc))
+    }
+    /// Returns true iff `_mut_pre_op` returns an `Ok` value
+    fn _has_mut_pre_op(&'static self, op: &'static str, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Override this for types that have special behavior when their reference is called
+    fn _ref_call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    /// Override this for types that have special behavior when their mutable reference is called
+    fn _refmut_call<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        cparen: Option<SourceSpan>,
+        args: Vec<Value<'src, 'ctx>>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(invalid_call(&val, cparen, args.iter()))
+    }
+    fn _has_ref_call(&'static self, args: &[TypeRef], ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _has_refmut_call(&'static self, args: &[TypeRef], ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _mut_subscript<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        idx: Value<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        idx.data_type
+            .is::<types::Error>()
+            .then(Value::error)
+            .ok_or_else(|| invalid_sub(&val, &idx))
+    }
+    fn _has_mut_subscript(&'static self, idx: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Override this for types that have in-place operators or similar.
+    /// This does **not** need to be overridden for assignment.
+    fn _mut_bin_lhs<'src, 'ctx>(
+        &'static self,
+        lhs: Value<'src, 'ctx>,
+        rhs: Value<'src, 'ctx>,
+        op: (&'static str, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+        move_left: bool,
+        move_right: bool,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        assert!(!self._has_mut_bin_lhs(
+            rhs.data_type.as_type_ref(),
+            op.0,
+            ctx,
+            move_left,
+            move_right
+        ));
+        Err(invalid_binop(&lhs, &rhs, op.0, op.1))
+    }
+    fn _has_mut_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &'static str,
+        ctx: &CompCtx,
+        move_left: bool,
+        move_right: bool,
+    ) -> bool {
+        false
+    }
+    fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_ref_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_refmut_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    fn _can_refmut_econv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
+        false
+    }
+    /// Override implicit conversion from a reference to the current type
+    fn _ref_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    /// Override explicit conversion from a reference to the current type
+    fn _ref_econv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
+    }
+    /// Override implicit conversion from a mutable reference to the current type
+    fn _refmut_iconv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_iconv(&val, target.0, target.1))
+    }
+    /// Override explicit conversion from a nutable reference to the current type
+    fn _refmut_econv<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        Err(cant_econv(&val, target.0, target.1))
+    }
+
+    /// Get the compiled form of an interpreted value, if possible.
+    fn compiled<'src, 'ctx>(
+        &'static self,
+        inter_val: &InterData<'src, 'ctx>,
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        None
+    }
+    /// Save global state at the start of a serialization record.
+    fn save_header(out: &mut dyn Write) -> io::Result<()>
+    where
+        Self: ConcreteType,
+    {
+        Ok(())
+    }
+    /// Load global state saved by [`save_header`].
+    fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
+    where
+        Self: ConcreteType,
+    {
+        Ok(())
+    }
+    /// Save the current type to the output.
+    /// Should not be called directly, use `save_type` instead.
+    fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
+    /// Load the current type from the input.
+    /// Should not be called directly, use `load_type` instead.
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: ConcreteType;
+    /// Downcast from a type
+    /// # Safety
+    /// The casted from type must be the same as Self
+    unsafe fn downcast_impl(val: &dyn Type) -> &Self
+    where
+        Self: ConcreteType,
+    {
+        std::mem::transmute::<&dyn Type, (&Self, *const u8)>(val).0
+    }
+
+    fn add_ref(&'static self, is_mut: bool) -> TypeRef {
+        types::Reference::new(if is_mut {
+            types::Mut::new(self.as_type_ref())
+        } else {
+            self.as_type_ref()
+        })
+    }
+}
+impl dyn Type {
+    pub fn is<T: ConcreteType>(&self) -> bool {
+        self.kind() == T::KIND
+    }
+    pub fn is_and<'a, T: ConcreteType + 'a>(&'a self, f: impl FnOnce(&'a T) -> bool) -> bool {
+        self.downcast::<T>().map_or(false, f)
+    }
+    pub fn downcast<T: ConcreteType>(&self) -> Option<&T> {
+        if self.is::<T>() {
+            Some(unsafe { T::downcast_impl(self) })
+        } else {
+            None
+        }
+    }
+    /// Downcast to a concrete type
+    /// # Safety
+    /// The target type must be correct
+    pub unsafe fn downcast_unchecked<T: ConcreteType>(&self) -> &T {
+        T::downcast_impl(self)
+    }
+}
+/// Since all Type implementors intern their variables, &dyn Type can be checked for pointer equality
+impl PartialEq for dyn Type {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            // extract thin pointers
+            std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(self).0
+                == std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(other).0
         }
     }
 }
-pub fn tuple_type<'ctx>(v: &[Type], ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
-    let mut vec = Vec::with_capacity(v.len());
-    for t in v {
-        vec.push(t.llvm_type(ctx)?);
+impl<T: Type + Sized> PartialEq<T> for dyn Type {
+    fn eq(&self, other: &T) -> bool {
+        std::ptr::eq(
+            unsafe { std::mem::transmute::<&dyn Type, (*const T, *const u8)>(self).0 },
+            other,
+        )
     }
-    Some(ctx.context.struct_type(&vec, false).into())
+}
+impl Eq for dyn Type {}
+impl Hash for dyn Type {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(unsafe {
+            std::mem::transmute::<&dyn Type, (*const u8, *const u8)>(self).0
+        } as _)
+    }
+}
+pub type TypeRef = &'static dyn Type;
+
+pub struct TypeLoader {
+    pub kind: NonZeroU64,
+    pub save_header: fn(&mut dyn Write) -> io::Result<()>,
+    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
+    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+}
+#[macro_export]
+macro_rules! type_loader {
+    ($T:ty) => {
+        $crate::types::TypeLoader {
+            kind: <$T as $crate::types::ConcreteType>::KIND,
+            save_header: <$T as $crate::types::Type>::save_header,
+            load_header: <$T as $crate::types::Type>::load_header,
+            load_type: <$T as $crate::types::Type>::load,
+        }
+    };
+}
+macro_rules! submit_types {
+    ($T:ty) => (
+        inventory::submit! {type_loader!($T)}
+    );
+    ($T:ty, $($Ts:ty),+) => {
+        submit_types!($T);
+        submit_types!($($Ts),+);
+    }
+}
+inventory::collect!(TypeLoader);
+pub struct LoadInfo {
+    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
+    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+}
+impl LoadInfo {
+    pub fn new(
+        &TypeLoader {
+            kind,
+            load_header,
+            load_type,
+            ..
+        }: &'static TypeLoader,
+    ) -> (NonZeroU64, Self) {
+        (
+            kind,
+            Self {
+                load_header,
+                load_type,
+            },
+        )
+    }
+}
+pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> =
+    Lazy::new(|| inventory::iter::<TypeLoader>().map(LoadInfo::new).collect());
+/// save a type to the output buffer
+pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
+    buf.write_all(&ty.kind().get().to_be_bytes())?;
+    ty.save(buf)
+}
+/// load a type from the buffer
+pub fn load_type(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
+    load_type_opt(buf).and_then(|v| {
+        v.ok_or(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "unexpected end of input",
+        ))
+    })
+}
+/// type ids are NonZeroU64, so if it reads a 0 it returns None
+pub fn load_type_opt(buf: &mut dyn BufRead) -> io::Result<Option<TypeRef>> {
+    let mut bytes = [0u8; 8];
+    buf.read_exact(&mut bytes)?;
+    if let Some(kind) = NonZeroU64::new(u64::from_be_bytes(bytes)) {
+        let guard = TYPE_SERIAL_REGISTRY.guard();
+        let info = TYPE_SERIAL_REGISTRY.get(&kind, &guard).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unknown type ID {kind:8>0X}"),
+            )
+        })?;
+        (info.load_type)(buf).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 #[derive(Debug, Clone, Default)]
 pub struct NominalInfo<'ctx> {
@@ -883,35 +737,45 @@ impl<'ctx> NominalInfo<'ctx> {
     }
 }
 
-pub fn is_linear_type(ty: &Type, ctx: &CompCtx) -> bool {
-    let to_return: bool;
-
-    let nominal_behavior = |type_name: &String| {
-        if let Some((_, _, _, nom_info)) = ctx.nominals.borrow().get(type_name) {
-            nom_info.is_linear_type
-        } else {
-            false
-        }
-    };
-
-    // See if it's a nominal type.
-    match ty {
-        Type::Nominal(type_name) => {
-            to_return = nominal_behavior(type_name);
-        }
-
-        Type::Mut(ref boxed_type) => {
-            if let Type::Nominal(ref type_name) = **boxed_type {
-                to_return = nominal_behavior(type_name);
-            } else {
-                to_return = false;
-            }
-        }
-
-        _ => {
-            to_return = false;
-        }
+#[inline(always)]
+const fn pad_bytes<const N: usize>(val: &[u8]) -> [u8; N] {
+    // I wish more stuff was const
+    let len = if val.len() < N { val.len() } else { N };
+    let mut out = [0u8; N];
+    let mut i = 0;
+    while i < len {
+        out[i] = val[i];
+        i += 1;
     }
-
-    to_return
+    out
 }
+/// generate a type id from a byte string
+/// truncate or zero pad to 8 bytes
+#[inline(always)]
+pub const fn make_id(id: &[u8]) -> NonZeroU64 {
+    if let Some(id) = NonZeroU64::new(u64::from_be_bytes(pad_bytes(id))) {
+        id
+    } else {
+        panic!("ID string should not be empty (or all nulls)")
+    }
+}
+
+pub mod agg;
+pub mod custom;
+pub mod float;
+pub mod func;
+pub mod int;
+pub mod intrinsic;
+pub mod mem;
+pub mod meta;
+
+pub use agg::*;
+pub use custom::*;
+pub use float::*;
+pub use func::*;
+pub use int::*;
+pub use intrinsic::*;
+pub use mem::*;
+pub use meta::*;
+
+use ref_cast::*;

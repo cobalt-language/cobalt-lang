@@ -29,6 +29,36 @@ impl<'ctx> Location<'ctx> {
                 .unwrap_or(Self::Block(b)),
         )
     }
+    pub fn position_before(self, ctx: &CompCtx<'_, 'ctx>) {
+        match self {
+            Self::Block(bb) => {
+                if let Some(inst) = bb.get_first_instruction() {
+                    ctx.builder.position_before(&inst)
+                } else {
+                    ctx.builder.position_at_end(bb)
+                }
+            }
+            Self::Inst(inst, _) | Self::AfterInst(inst) => ctx.builder.position_before(&inst),
+        }
+    }
+    pub fn position_after(self, ctx: &CompCtx<'_, 'ctx>) {
+        match self {
+            Self::Block(bb) => {
+                if let Some(inst) = bb.get_first_instruction() {
+                    ctx.builder.position_before(&inst)
+                } else {
+                    ctx.builder.position_at_end(bb)
+                }
+            }
+            Self::Inst(inst, _) | Self::AfterInst(inst) => {
+                if let Some(inst) = inst.get_next_instruction() {
+                    ctx.builder.position_before(&inst);
+                } else {
+                    ctx.builder.position_at_end(inst.get_parent().unwrap())
+                }
+            }
+        }
+    }
 }
 impl<'ctx> From<InstructionValue<'ctx>> for Location<'ctx> {
     fn from(value: InstructionValue<'ctx>) -> Self {
@@ -789,7 +819,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
 
         ctx.with_vars(|v| {
             v.symbols.iter().for_each(|(n, v)| {
-                let is_linear_type = is_linear_type(&v.0.data_type, ctx);
+                let is_linear_type = v.0.data_type.is_linear(ctx);
                 if is_linear_type {
                     let lex_scope = v.1.scope.map(From::from);
                     let is_moved = self.is_moved(n, lex_scope, None, ctx);
@@ -982,7 +1012,6 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .unwrap()
             .get_parent()
             .unwrap();
-        let mut reposition = true;
         self.blocks
             .iter()
             .flat_map(|b| &b.moves)
@@ -990,11 +1019,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .filter(|s| unsafe { (***s).name.1 } == ctx.lex_scope.get())
             .for_each(|m| unsafe {
                 let m = &**m;
-                let i = if let Location::Inst(i, 0) = m.inst {
-                    i
-                } else {
-                    unreachable!("store locations should only be Location::Inst(_, 0)")
-                };
+                let Location::Inst(i, _) = m.inst else {unreachable!("store locations should only be Location::Inst(_, 0)")};
                 assert_eq!(
                     i.get_next_instruction()
                         .map(|i| (i.get_opcode(), i.get_num_operands())),
@@ -1002,7 +1027,6 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 );
                 let next = i.get_next_instruction().unwrap();
                 let next_block = next.get_operand(0).unwrap().unwrap_right();
-                reposition = false;
                 ctx.builder
                     .position_before(&i.get_next_instruction().unwrap());
                 let c = self.is_moved(&m.name.0, Some(m.name.1), Some(m.inst), ctx);
@@ -1027,6 +1051,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                 }
             });
         if at_end {
+            self.last.position_after(ctx);
             ctx.with_vars(|v| {
                 v.symbols.iter().for_each(|(n, v)| {
                     let scope =
@@ -1051,6 +1076,66 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                     }
                 });
             })
+        }
+    }
+}
+pub fn mark_move<'src, 'ctx>(
+    val: &Value<'src, 'ctx>,
+    inst: cfg::Location<'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
+    loc: SourceSpan,
+) {
+    if !ctx.is_const.get() {
+        if let (Some(name), true) = (
+            &val.name,
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
+        ) {
+            ctx.moves.borrow_mut().0.insert(cfg::Use {
+                is_move: true,
+                name: name.clone(),
+                real: !val.data_type.copyable(ctx),
+                inst,
+                loc,
+            });
+        }
+    }
+}
+pub fn mark_use<'src, 'ctx>(
+    val: &Value<'src, 'ctx>,
+    inst: cfg::Location<'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
+    loc: SourceSpan,
+) {
+    if !ctx.is_const.get() {
+        if let (Some(name), true) = (
+            &val.name,
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
+        ) {
+            ctx.moves.borrow_mut().0.insert(cfg::Use {
+                is_move: false,
+                name: name.clone(),
+                real: !val.data_type.copyable(ctx),
+                inst,
+                loc,
+            });
+        }
+    }
+}
+pub fn mark_store<'src, 'ctx>(
+    val: &Value<'src, 'ctx>,
+    inst: cfg::Location<'ctx>,
+    ctx: &CompCtx<'src, 'ctx>,
+) {
+    if !ctx.is_const.get() {
+        if let (Some(name), true) = (
+            &val.name,
+            ctx.flags.all_move_metadata || !val.data_type.copyable(ctx),
+        ) {
+            ctx.moves.borrow_mut().1.insert(cfg::Store {
+                name: name.clone(),
+                real: !val.data_type.copyable(ctx),
+                inst,
+            });
         }
     }
 }

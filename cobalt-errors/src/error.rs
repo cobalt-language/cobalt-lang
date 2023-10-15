@@ -108,8 +108,17 @@ pub enum CobaltError<'src> {
         vloc: Option<SourceSpan>,
         #[label("target type is `{ty}`")]
         tloc: Option<SourceSpan>,
-        #[label]
-        oloc: SourceSpan,
+    },
+    #[error("cannot implicitly narrow an integer")]
+    NarrowingIntConversion {
+        /// bits of source value
+        sbits: u16,
+        /// destination bit width
+        dbits: u16,
+        #[label("casting from a {sbits}-bit integer")]
+        sloc: SourceSpan,
+        #[label("casting to a {dbits}-bit integer")]
+        dloc: SourceSpan,
     },
     #[error("cannot call value of type `{val}` with arguments ({})", .args.join(", "))]
     CannotCallWithArgs {
@@ -448,7 +457,7 @@ pub enum ArgError<'src> {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
-#[error("cannot pass argument of type {0} into inline assembly")]
+#[error("cannot pass argument of type {0} to or from inline assembly")]
 pub struct InvalidAsmArg<'src>(
     pub Cow<'src, str>,
     #[label("{0} is not a valid assembly type")] pub SourceSpan,
