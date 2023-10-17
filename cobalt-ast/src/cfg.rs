@@ -286,21 +286,7 @@ pub struct DoubleMove<'src> {
 }
 impl PartialOrd for DoubleMove<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.loc.offset() == other.loc.offset() {
-            if self.loc.len() == other.loc.len() {
-                let lprev = self.prev.unwrap_or(self.loc);
-                let rprev = other.prev.unwrap_or(other.loc);
-                if lprev.offset() == rprev.offset() {
-                    Some(lprev.len().cmp(&rprev.len()))
-                } else {
-                    Some(lprev.offset().cmp(&rprev.offset()))
-                }
-            } else {
-                Some(self.loc.len().cmp(&other.loc.len()))
-            }
-        } else {
-            Some(self.loc.offset().cmp(&other.loc.offset()))
-        }
+        Some(self.cmp(other))
     }
 }
 impl Ord for DoubleMove<'_> {
@@ -1019,7 +1005,9 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
             .filter(|s| unsafe { (***s).name.1 } == ctx.lex_scope.get())
             .for_each(|m| unsafe {
                 let m = &**m;
-                let Location::Inst(i, _) = m.inst else {unreachable!("store locations should only be Location::Inst(_, 0)")};
+                let Location::Inst(i, _) = m.inst else {
+                    unreachable!("store locations should only be Location::Inst(_, 0)")
+                };
                 assert_eq!(
                     i.get_next_instruction()
                         .map(|i| (i.get_opcode(), i.get_num_operands())),

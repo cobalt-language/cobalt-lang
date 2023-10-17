@@ -553,7 +553,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
             self.comp_val
                 .as_ref()
                 .map(|v| v.into_pointer_value().get_name().to_bytes().to_owned())
-                .unwrap_or_else(Vec::new)
+                .unwrap_or_default()
                 .as_slice(),
         )?; // LLVM symbol name, null-terminated
         out.write_all(&[0])?;
