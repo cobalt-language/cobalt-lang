@@ -826,13 +826,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             } else {
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?
             }
-            let triple = triple.unwrap_or_else(|| {
-                TargetMachine::get_default_triple()
-                    .as_str()
-                    .to_string_lossy()
-                    .into_owned()
-            });
-            let trip = TargetTriple::create(&triple);
+            let (triple, trip) = triple.map_or_else(
+                || {
+                    let trip = TargetMachine::get_default_triple();
+                    (trip.as_str().to_string_lossy().into_owned(), trip)
+                },
+                |triple| {
+                    let trip = TargetTriple::create(&triple);
+                    (triple, trip)
+                },
+            );
             let target_machine = Target::from_triple(&trip)
                 .unwrap()
                 .create_target_machine(
@@ -857,7 +860,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     ),
                     OutputType::Library | OutputType::Archive => libs::format_lib(
                         input.rfind('.').map_or(input.as_str(), |i| &input[..i]),
-                        &trip,
+                        &triple,
                         emit == OutputType::Library,
                     ),
                     OutputType::RawObject => format!(
@@ -979,7 +982,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     OutputStream::new(output)?.write_all(&buf)?
                 }
                 OutputType::HeaderObj => {
-                    let mut obj = libs::new_object(&trip);
+                    let mut obj = libs::new_object(&triple);
                     let (vec, cg_time) = try_timeit(|| {
                         libs::populate_header(&mut obj, &ctx);
                         obj.write()
@@ -1042,7 +1045,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         }
                         OutputType::Library => {
                             if let Some(output) = output {
-                                let mut obj = libs::new_object(&trip);
+                                let mut obj = libs::new_object(&triple);
                                 libs::populate_header(&mut obj, &ctx);
                                 let tmp1 = temp_file::with_contents(&obj.write()?);
                                 let tmp2 = temp_file::with_contents(mb.as_slice());
@@ -1070,7 +1073,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 ),
                                 slice,
                             )?;
-                            let mut obj = libs::new_object(&trip);
+                            let mut obj = libs::new_object(&triple);
                             libs::populate_header(&mut obj, &ctx);
                             let out = obj.write()?;
                             builder.append(
@@ -1466,11 +1469,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 code
             };
             Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
-            let triple = TargetMachine::get_default_triple()
-                .as_str()
-                .to_string_lossy()
-                .into_owned();
-            let trip = TargetTriple::create(&triple);
+            let trip = TargetMachine::get_default_triple();
+            trip.as_str().to_string_lossy().into_owned();
             let target_machine = Target::from_triple(&trip)
                 .unwrap()
                 .create_target_machine(
@@ -1495,9 +1495,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 flags.word_size = size as u16;
             }
             let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            let trip = TargetMachine::get_default_triple();
+            let triple = trip.as_str().to_string_lossy();
             ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
-            cc.target(&triple);
+            cc.target(&*triple);
             cc.link_dirs(link_dirs);
             cc.no_default_link = no_default_link;
             {
@@ -1717,13 +1719,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 } else {
                     Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?
                 }
-                let triple = triple.unwrap_or_else(|| {
-                    TargetMachine::get_default_triple()
-                        .as_str()
-                        .to_string_lossy()
-                        .into_owned()
-                });
-                let trip = TargetTriple::create(&triple);
+                let (triple, trip) = triple.map_or_else(
+                    || {
+                        let trip = TargetMachine::get_default_triple();
+                        (trip.as_str().to_string_lossy().into_owned(), trip)
+                    },
+                    |triple| {
+                        let trip = TargetTriple::create(&triple);
+                        (triple, trip)
+                    },
+                );
                 let target_machine = Target::from_triple(&trip)
                     .unwrap()
                     .create_target_machine(
@@ -1859,7 +1864,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             }
                             OutputType::HeaderObj => {
                                 out.set_extension("coh.o");
-                                let mut obj = libs::new_object(&trip);
+                                let mut obj = libs::new_object(&triple);
                                 let (vec, cg_time) = try_timeit(|| {
                                     libs::populate_header(&mut obj, &ctx);
                                     obj.write()
@@ -1917,7 +1922,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         One(tmp)
                                     }
                                     OutputType::Library => {
-                                        let mut obj = libs::new_object(&trip);
+                                        let mut obj = libs::new_object(&triple);
                                         libs::populate_header(&mut obj, &ctx);
                                         let tmp1 = temp_file::with_contents(&obj.write()?);
                                         let tmp2 = temp_file::with_contents(mb.as_slice());
@@ -1962,7 +1967,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
                 if emit == OutputType::Archive {
-                    let mut obj = libs::new_object(&trip);
+                    let mut obj = libs::new_object(&triple);
                     libs::populate_header(&mut obj, &ctx);
                     let buf = obj.write()?;
                     archive.as_mut().unwrap().append(
@@ -2147,11 +2152,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }),
                 );
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
-                let triple = TargetMachine::get_default_triple()
-                    .as_str()
-                    .to_string_lossy()
-                    .into_owned();
-                let trip = TargetTriple::create(&triple);
+                let trip = TargetMachine::get_default_triple();
+                let triple = trip.as_str().to_string_lossy().into_owned();
                 let target_machine = Target::from_triple(&trip)
                     .unwrap()
                     .create_target_machine(
@@ -2434,11 +2436,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     })
                     .collect::<anyhow::Result<Vec<String>>>()?;
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
-                let triple = TargetMachine::get_default_triple()
-                    .as_str()
-                    .to_string_lossy()
-                    .into_owned();
-                let trip = TargetTriple::create(&triple);
+                let trip = TargetMachine::get_default_triple();
+                let triple = trip.as_str().to_string_lossy().into_owned();
                 let target_machine = Target::from_triple(&trip)
                     .unwrap()
                     .create_target_machine(
@@ -2705,6 +2704,12 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 } else {
                     Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?
                 }
+                let triple = triple.unwrap_or_else(|| {
+                    TargetMachine::get_default_triple()
+                        .as_str()
+                        .to_string_lossy()
+                        .into_owned()
+                });
                 build::build(
                     project_data,
                     if targets.is_empty() {
@@ -2716,14 +2721,12 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         source_dir: &source_dir,
                         build_dir: &build_dir,
                         profile: profile.as_deref().unwrap_or("default"),
-                        triple: &triple.map_or_else(TargetMachine::get_default_triple, |x| {
-                            TargetTriple::create(&x)
-                        }),
+                        triple: &triple,
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs.iter().map(|x| x.as_str()).collect(),
+                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
                     },
                 )?;
             }
@@ -2844,7 +2847,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         Ok(t)
                     },
                 )?;
-                let triple = TargetMachine::get_default_triple();
+                let triple = TargetMachine::get_default_triple()
+                    .as_str()
+                    .to_string_lossy()
+                    .into_owned();
                 build::build(
                     project_data,
                     Some(vec![target.clone()]),
@@ -2857,16 +2863,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs.iter().map(|x| x.as_str()).collect(),
+                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
                     },
                 )?;
                 let mut exe_path = build_dir;
-                if triple
-                    .as_str()
-                    .to_str()
-                    .ok()
-                    .map_or(false, |t| t.contains("windows"))
-                {
+                if triple.contains("windows") {
                     target.push_str(".exe");
                 }
                 exe_path.push(target);

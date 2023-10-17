@@ -9,6 +9,7 @@ use cobalt_utils::CellExt as Cell;
 use either::Either;
 use hashbrown::HashMap;
 use indexmap::IndexMap;
+use inkwell::targets::{FileType, Target as InkwellTarget, TargetTriple};
 use os_str_bytes::OsStrBytes;
 use path_calculate::*;
 use semver::{Version, VersionReq};
@@ -253,9 +254,9 @@ pub struct BuildOptions<'a> {
     pub continue_comp: bool,
     pub rebuild: bool,
     pub no_default_link: bool,
-    pub triple: &'a inkwell::targets::TargetTriple,
+    pub triple: &'a str,
     pub profile: &'a str,
-    pub link_dirs: Vec<&'a str>,
+    pub link_dirs: &'a [&'a Path],
 }
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PkgDepSpec {
@@ -480,10 +481,11 @@ fn build_file_2(
     let pm = inkwell::passes::PassManager::create(());
     opt::load_profile(opts.profile, &pm);
     pm.run_on(&ctx.module);
-    let target_machine = inkwell::targets::Target::from_triple(opts.triple)
+    let trip = TargetTriple::create(opts.triple);
+    let target_machine = InkwellTarget::from_triple(&trip)
         .unwrap()
         .create_target_machine(
-            opts.triple,
+            &trip,
             "",
             "",
             inkwell::OptimizationLevel::None,
@@ -498,7 +500,7 @@ fn build_file_2(
         head_path.parent().unwrap().create_dir_all_anyhow()?
     }
     target_machine
-        .write_to_file(&ctx.module, inkwell::targets::FileType::Object, out_path)
+        .write_to_file(&ctx.module, FileType::Object, out_path)
         .unwrap();
     let mut obj = libs::new_object(opts.triple);
     libs::populate_header(&mut obj, ctx);
@@ -573,7 +575,7 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
-    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
+    cc.link_dirs(opts.link_dirs.iter().copied());
     cc.no_default_link = opts.no_default_link;
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan)?;
     match t.target_type {
@@ -875,7 +877,7 @@ fn resolve_deps(
         let plan = pkg::install(
             to_install.iter().cloned(),
             &pkg::InstallOptions {
-                target: opts.triple.as_str().to_str().unwrap().to_string(),
+                target: opts.triple.to_string(),
                 ..Default::default()
             },
         )?;
@@ -920,7 +922,7 @@ fn build_target(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.no_default_link = opts.no_default_link;
-    cc.link_dirs(opts.link_dirs.iter().copied().map(String::from));
+    cc.link_dirs(opts.link_dirs.iter().copied());
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
