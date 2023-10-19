@@ -5,8 +5,10 @@ use cobalt_ast::ast::*;
 use cobalt_errors::miette::Severity;
 use cobalt_errors::*;
 use cobalt_parser::prelude::*;
-use cobalt_utils::CellExt as Cell;
+use cobalt_utils::CellExt;
 use either::Either;
+#[cfg(feature = "gluon-build")]
+use gluon_codegen::*;
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use inkwell::targets::{FileType, Target as InkwellTarget, TargetTriple};
@@ -14,18 +16,208 @@ use os_str_bytes::OsStrBytes;
 use path_calculate::*;
 use semver::{Version, VersionReq};
 use serde::*;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Project {
     pub name: String,
     pub version: Version,
     pub author: Option<String>,
     pub co_version: Option<VersionReq>,
     pub desc: Option<String>,
-    pub targets: HashMap<String, Target>,
+    pub targets: BTreeMap<String, Target>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+impl Project {
+    #[cfg(feature = "gluon-build")]
+    fn load_gluon<'a>(
+        path: &Path,
+        proj: Option<Self>,
+        opts: BuildOptions<'a>,
+    ) -> anyhow::Result<(Option<Self>, BuildOptions<'a>)> {
+        use cobalt_utils::static_ref::*;
+        use gluon::vm::ExternModule;
+        use gluon::ThreadExt;
+        let proj = proj.unwrap_or_default();
+        let file = path.read_to_string_anyhow()?;
+        let vm = gluon::new_vm();
+        let module = gluon_build::BuildConfig(proj, opts);
+        let guard = StaticValueGuard::<gluon_build::BuildConfig<'a>>::new(module);
+        let ref_: StaticRef<gluon_build::BuildConfig<'a>> = guard.get_ref();
+        gluon::import::add_extern_module(&vm, "cobalt", move |vm| ExternModule::new(vm, &*ref_));
+        vm.run_io(true);
+        let (proj, cfg): (Project, BuildOptions<'static>) = vm.run_expr("cobalt.glu", &file)?.0;
+        Ok((Some(proj), cfg))
+    }
+    pub fn load_exact<'a>(
+        path: &mut PathBuf,
+        mut opts: BuildOptions<'a>,
+        set_src: bool,
+        set_build: bool,
+    ) -> anyhow::Result<(Option<Self>, BuildOptions<'a>)> {
+        if path.metadata_anyhow()?.file_type().is_dir() {
+            path.push("cobalt.toml");
+            let mut cfg = path
+                .exists()
+                .then(|| -> anyhow::Result<Self> {
+                    let cfg = path.read_to_string_anyhow()?;
+                    toml::from_str::<Self>(&cfg).context("failed to parse project file")
+                })
+                .transpose()?;
+            path.set_extension("glu");
+            if cfg.is_some() || (path.exists() && cfg!(feature = "gluon-build")) {
+                if set_src {
+                    opts.source_dir = path.clone().into();
+                }
+                if set_build {
+                    opts.source_dir = path.join("build").into();
+                }
+            }
+            #[cfg(feature = "gluon-build")]
+            if path.exists() {
+                let (c, o) = Self::load_gluon(path, cfg, opts)?;
+                cfg = c;
+                opts = o;
+            }
+            path.pop();
+            Ok((cfg, opts))
+        } else {
+            if set_src {
+                opts.source_dir = path.clone().into();
+            }
+            if set_build {
+                opts.source_dir = path.join("build").into();
+            }
+            let cfg = match path.extension().and_then(|e| e.to_str()) {
+                Some("toml") => {
+                    let cfg = path.read_to_string_anyhow()?;
+                    Some(toml::from_str::<Project>(&cfg).context("failed to parse project file")?)
+                }
+                #[cfg(feature = "gluon-build")]
+                Some("glu") => {
+                    let (c, o) = Self::load_gluon(path, None, opts)?;
+                    opts = o;
+                    c
+                }
+                _ => anyhow::bail!("unknown config type for {}", path.display()),
+            };
+            path.pop();
+            Ok((cfg, opts))
+        }
+    }
+    pub fn load<'a, P: Into<PathBuf>>(
+        path: P,
+        mut opts: BuildOptions<'a>,
+        set_src: bool,
+        set_build: bool,
+    ) -> anyhow::Result<(Self, BuildOptions<'a>, PathBuf)> {
+        let mut path: PathBuf = path.into();
+        while path.pop() {
+            let (c, o) = Self::load_exact(&mut path, opts, set_src, set_build)?;
+            if let Some(c) = c {
+                return Ok((c, o, path));
+            } else {
+                opts = o
+            }
+        }
+        anyhow::bail!(
+            "couldn't find cobalt configuration in {} or any parent directories",
+            path.display()
+        )
+    }
+}
+impl Default for Project {
+    fn default() -> Self {
+        Self {
+            name: "".to_string(),
+            version: Version::new(0, 0, 0),
+            author: None,
+            co_version: None,
+            desc: None,
+            targets: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "gluon-build", derive(VmType, Getable, Pushable))]
+#[serde(untagged)]
+pub enum FileList {
+    Glob(String),
+    List(Vec<PathBuf>),
+}
+impl FileList {
+    pub fn validate(&self) -> Result<(), glob::PatternError> {
+        if let FileList::Glob(pattern) = self {
+            glob::Pattern::new(pattern).map(|_| ())
+        } else {
+            Ok(())
+        }
+    }
+    pub fn has_files(&self) -> bool {
+        match self {
+            FileList::Glob(pattern) => {
+                glob::glob(pattern).map_or(false, |mut p| p.next().is_some())
+            }
+            FileList::List(files) => !files.is_empty(),
+        }
+    }
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
+        self.into_iter()
+    }
+    pub fn relative_to<P: AsRef<Path>>(&mut self, root: P) {
+        match self {
+            FileList::Glob(pat) => *pat = root.as_ref().join(&pat).to_string_lossy().into(),
+            FileList::List(files) => files.iter_mut().for_each(|p| {
+                if p.is_relative() {
+                    *p = root.as_ref().join(&p)
+                }
+            }),
+        }
+    }
+}
+impl From<String> for FileList {
+    fn from(value: String) -> Self {
+        Self::Glob(value)
+    }
+}
+impl From<Vec<PathBuf>> for FileList {
+    fn from(value: Vec<PathBuf>) -> Self {
+        Self::List(value)
+    }
+}
+impl IntoIterator for FileList {
+    type IntoIter = Either<
+        glob::Paths,
+        std::iter::Map<std::vec::IntoIter<PathBuf>, fn(PathBuf) -> glob::GlobResult>,
+    >;
+    type Item = glob::GlobResult;
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            FileList::Glob(pattern) => Either::Left(glob::glob(&pattern).unwrap()),
+            FileList::List(list) => Either::Right(list.into_iter().map(Ok)),
+        }
+    }
+}
+impl<'a> IntoIterator for &'a FileList {
+    type IntoIter = Either<
+        std::iter::Map<glob::Paths, fn(glob::GlobResult) -> Self::Item>,
+        std::iter::Map<std::slice::Iter<'a, PathBuf>, fn(&'a PathBuf) -> Self::Item>,
+    >;
+    type Item = Result<Cow<'a, Path>, glob::GlobError>;
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            FileList::Glob(pattern) => {
+                Either::Left(glob::glob(pattern).unwrap().map(|p| p.map(Cow::Owned)))
+            }
+            FileList::List(list) => Either::Right(list.iter().map(|p| Ok(Cow::Borrowed(p)))),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "gluon-build", derive(VmType, Getable, Pushable))]
 pub enum TargetType {
     #[serde(rename = "exe", alias = "executable", alias = "bin", alias = "binary")]
     Executable,
@@ -43,12 +235,15 @@ pub enum TargetType {
     #[serde(rename = "meta")]
     Meta,
 }
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "gluon-build", derive(VmType, Getable, Pushable))]
 pub struct Target {
     pub target_type: TargetType,
-    pub files: Option<Either<String, Vec<String>>>,
-    pub deps: HashMap<String, Dependency>,
+    pub files: Option<FileList>,
+    pub deps: BTreeMap<String, Dependency>,
 }
+
 #[derive(Deserialize)]
 #[serde(rename = "target")]
 struct TargetShim {
@@ -56,19 +251,21 @@ struct TargetShim {
     #[serde(rename = "type")]
     target_type: TargetType,
     #[serde(with = "either::serde_untagged_optional")]
-    files: Option<Either<String, Vec<String>>>,
+    files: Option<Either<String, Vec<PathBuf>>>,
     #[serde(default)]
-    deps: HashMap<String, Dependency>,
+    deps: BTreeMap<String, Dependency>,
 }
+
 #[derive(Deserialize)]
 #[serde(rename = "target")]
 struct KnownTargetShim {
     name: String,
     #[serde(with = "either::serde_untagged_optional")]
-    files: Option<Either<String, Vec<String>>>,
+    files: Option<Either<String, Vec<PathBuf>>>,
     #[serde(default)]
-    deps: HashMap<String, Dependency>,
+    deps: BTreeMap<String, Dependency>,
 }
+
 impl<'de> Deserialize<'de> for Project {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::*;
@@ -85,7 +282,7 @@ impl<'de> Deserialize<'de> for Project {
                 let mut author = None;
                 let mut co_version = None;
                 let mut desc = None;
-                let mut targets = HashMap::new();
+                let mut targets = BTreeMap::new();
                 enum Field {
                     Name,
                     Version,
@@ -176,7 +373,7 @@ impl<'de> Deserialize<'de> for Project {
                                         Target {
                                             target_type,
                                             deps,
-                                            files,
+                                            files: files.map(|e| e.either_into()),
                                         },
                                     )
                                 },
@@ -190,7 +387,7 @@ impl<'de> Deserialize<'de> for Project {
                                         Target {
                                             target_type: TargetType::Executable,
                                             deps,
-                                            files,
+                                            files: files.map(|e| e.either_into()),
                                         },
                                     )
                                 },
@@ -204,7 +401,7 @@ impl<'de> Deserialize<'de> for Project {
                                         Target {
                                             target_type: TargetType::Library,
                                             deps,
-                                            files,
+                                            files: files.map(|e| e.either_into()),
                                         },
                                     )
                                 },
@@ -218,7 +415,7 @@ impl<'de> Deserialize<'de> for Project {
                                         Target {
                                             target_type: TargetType::Meta,
                                             deps,
-                                            files,
+                                            files: files.map(|e| e.either_into()),
                                         },
                                     )
                                 },
@@ -246,25 +443,65 @@ impl<'de> Deserialize<'de> for Project {
         )
     }
 }
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildOptions<'a> {
-    pub source_dir: &'a Path,
-    pub build_dir: &'a Path,
+    pub source_dir: Cow<'a, Path>,
+    pub build_dir: Cow<'a, Path>,
     pub continue_build: bool,
     pub continue_comp: bool,
     pub rebuild: bool,
     pub no_default_link: bool,
-    pub triple: &'a str,
-    pub profile: &'a str,
-    pub link_dirs: &'a [&'a Path],
+    pub triple: Cow<'a, str>,
+    pub profile: Cow<'a, str>,
+    pub link_dirs: Vec<Cow<'a, Path>>,
 }
-#[derive(Debug, Clone, Default, Deserialize)]
+impl<'a> BuildOptions<'a> {
+    pub fn to_static(&self) -> BuildOptions<'static> {
+        BuildOptions {
+            source_dir: self.source_dir.to_path_buf().into(),
+            build_dir: self.build_dir.to_path_buf().into(),
+            continue_build: self.continue_build,
+            continue_comp: self.continue_comp,
+            rebuild: self.rebuild,
+            no_default_link: self.no_default_link,
+            triple: self.triple.to_string().into(),
+            profile: self.profile.to_string().into(),
+            link_dirs: self
+                .link_dirs
+                .iter()
+                .map(|p| p.to_path_buf().into())
+                .collect(),
+        }
+    }
+    pub fn into_static(self) -> BuildOptions<'static> {
+        BuildOptions {
+            source_dir: self.source_dir.into_owned().into(),
+            build_dir: self.build_dir.into_owned().into(),
+            continue_build: self.continue_build,
+            continue_comp: self.continue_comp,
+            rebuild: self.rebuild,
+            no_default_link: self.no_default_link,
+            triple: self.triple.into_owned().into(),
+            profile: self.profile.into_owned().into(),
+            link_dirs: self
+                .link_dirs
+                .into_iter()
+                .map(|p| p.into_owned().into())
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PkgDepSpec {
     #[serde(default)]
     pub version: semver::VersionReq,
     pub targets: Option<Vec<String>>,
 }
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "gluon-build", derive(VmType, Getable, Pushable))]
 pub enum Dependency {
     Project,
     System,
@@ -369,6 +606,7 @@ impl<'de> Deserialize<'de> for Dependency {
         deserializer.deserialize_any(DepVisitor)
     }
 }
+
 pub fn clear_mod(this: &mut HashMap<std::borrow::Cow<str>, Symbol>) {
     for sym in this.values_mut() {
         sym.1.export = false;
@@ -399,12 +637,12 @@ fn build_file_1(
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push("objects");
-    out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    out_path.push(path.strip_prefix(&opts.source_dir).unwrap_or(path));
     out_path.set_extension("o");
     let mut head_path = opts.build_dir.to_path_buf();
     head_path.push(".artifacts");
     head_path.push("headers");
-    head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    head_path.push(path.strip_prefix(&opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     if !(force_build || opts.rebuild)
         && out_path.exists()
@@ -479,9 +717,9 @@ fn build_file_2(
         return Ok(false);
     }
     let pm = inkwell::passes::PassManager::create(());
-    opt::load_profile(opts.profile, &pm);
+    opt::load_profile(&opts.profile, &pm);
     pm.run_on(&ctx.module);
-    let trip = TargetTriple::create(opts.triple);
+    let trip = TargetTriple::create(&opts.triple);
     let target_machine = InkwellTarget::from_triple(&trip)
         .unwrap()
         .create_target_machine(
@@ -502,7 +740,7 @@ fn build_file_2(
     target_machine
         .write_to_file(&ctx.module, FileType::Object, out_path)
         .unwrap();
-    let mut obj = libs::new_object(opts.triple);
+    let mut obj = libs::new_object(&opts.triple);
     libs::populate_header(&mut obj, ctx);
     let mut file = BufWriter::new(std::fs::File::create(head_path)?);
     file.write_all(&obj.write()?)?;
@@ -575,7 +813,7 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
-    cc.link_dirs(opts.link_dirs.iter().copied());
+    cc.link_dirs(opts.link_dirs.iter().cloned());
     cc.no_default_link = opts.no_default_link;
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan)?;
     match t.target_type {
@@ -583,44 +821,28 @@ pub fn build_target_single(
             let mut paths = vec![];
             let mut asts = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let mut files = t // TODO: remove clone
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -642,44 +864,28 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -702,44 +908,28 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
@@ -760,44 +950,28 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -832,7 +1006,7 @@ fn resolve_deps(
     ctx: &CompCtx,
     cmd: &mut cc::CompileCommand,
     t: &Target,
-    targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>,
+    targets: &BTreeMap<String, (Target, CellExt<Option<PathBuf>>)>,
     opts: &BuildOptions,
 ) -> anyhow::Result<bool> {
     let mut out = vec![];
@@ -913,8 +1087,8 @@ fn resolve_deps(
 fn build_target(
     t: &Target,
     name: &str,
-    data: &Cell<Option<PathBuf>>,
-    targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>,
+    data: &CellExt<Option<PathBuf>>,
+    targets: &BTreeMap<String, (Target, CellExt<Option<PathBuf>>)>,
     opts: &BuildOptions,
 ) -> anyhow::Result<(bool, PathBuf)> {
     let ink_ctx = inkwell::context::Context::create();
@@ -922,7 +1096,7 @@ fn build_target(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.no_default_link = opts.no_default_link;
-    cc.link_dirs(opts.link_dirs.iter().copied());
+    cc.link_dirs(opts.link_dirs.iter().cloned());
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -930,61 +1104,29 @@ fn build_target(
             let mut paths = vec![];
             let mut asts = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            if opts.continue_build {
-                                error!("couldn't find file {file}");
-                                failed = Some(file);
-                                continue;
-                            } else {
-                                anyhow::bail!("couldn't find file {file}")
-                            }
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1007,61 +1149,29 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            if opts.continue_build {
-                                error!("couldn't find file {file}");
-                                failed = Some(file);
-                                continue;
-                            } else {
-                                anyhow::bail!("couldn't find file {file}")
-                            }
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1073,7 +1183,7 @@ fn build_target(
                 anyhow::bail!(CompileErrors(num_errs))
             }
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(name, opts.triple, true));
+            output.push(libs::format_lib(name, &opts.triple, true));
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);
@@ -1085,61 +1195,29 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            if opts.continue_build {
-                                error!("couldn't find file {file}");
-                                failed = Some(file);
-                                continue;
-                            } else {
-                                anyhow::bail!("couldn't find file {file}")
-                            }
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
@@ -1160,61 +1238,29 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
+            let mut files = t
+                .files
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("target must have files!"))?
+                .clone();
+            files.relative_to(&opts.source_dir);
+            anyhow::ensure!(files.has_files(), "target must have files!");
+            files.validate().context("error in file glob")?;
+            for file in files.iter().filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if matches!(files, FileList::Glob(_)) {
+                        continue;
+                    } else {
+                        anyhow::bail!("couldn't find file {}", file.display())
                     }
                 }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            if opts.continue_build {
-                                error!("couldn't find file {file}");
-                                failed = Some(file);
-                                continue;
-                            } else {
-                                anyhow::bail!("couldn't find file {file}")
-                            }
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(&file, &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1260,8 +1306,8 @@ pub fn build(
     let targets = pkg
         .targets
         .into_iter()
-        .map(|(n, t)| (n, (t, Cell::default())))
-        .collect::<HashMap<_, (Target, Cell<Option<PathBuf>>)>>();
+        .map(|(n, t)| (n, (t, CellExt::default())))
+        .collect::<BTreeMap<_, (Target, CellExt<Option<PathBuf>>)>>();
     if let Some(tb) = to_build {
         for target_name in tb {
             let (target, data) = if let Some(t) = targets.get(&target_name) {

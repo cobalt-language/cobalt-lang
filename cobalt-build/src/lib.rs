@@ -1,12 +1,13 @@
 #![allow(clippy::type_complexity)]
 pub mod build;
 pub mod cc;
+#[cfg(feature = "gluon-build")]
+mod gluon_build;
 pub mod graph;
 pub mod libs;
+pub mod obj;
 pub mod opt;
 pub mod pkg;
-
-pub mod obj;
 
 pub use build::clear_mod;
 use cobalt_ast::*;
