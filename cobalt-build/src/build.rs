@@ -37,16 +37,20 @@ impl Project {
         proj: Option<Self>,
         opts: BuildOptions<'a>,
     ) -> anyhow::Result<(Option<Self>, BuildOptions<'a>)> {
-        use cobalt_utils::static_ref::*;
         use gluon::vm::ExternModule;
         use gluon::ThreadExt;
+        use std::sync::Arc;
         let proj = proj.unwrap_or_default();
         let file = path.read_to_string_anyhow()?;
         let vm = gluon::new_vm();
-        let module = gluon_build::BuildConfig(proj, opts);
-        let guard = StaticValueGuard::<gluon_build::BuildConfig<'a>>::new(module);
-        let ref_: StaticRef<gluon_build::BuildConfig<'a>> = guard.get_ref();
-        gluon::import::add_extern_module(&vm, "cobalt", move |vm| ExternModule::new(vm, &*ref_));
+        // this is probably safe
+        // nothing else escapes this scope
+        let module = Arc::new(unsafe {
+            std::mem::transmute::<_, gluon_build::BuildConfig<'static>>(gluon_build::BuildConfig(
+                proj, opts,
+            ))
+        });
+        gluon::import::add_extern_module(&vm, "cobalt", move |vm| ExternModule::new(vm, &*module));
         vm.run_io(true);
         let (proj, cfg): (Project, BuildOptions<'static>) = vm.run_expr("cobalt.glu", &file)?.0;
         Ok((Some(proj), cfg))
@@ -107,12 +111,12 @@ impl Project {
             Ok((cfg, opts))
         }
     }
-    pub fn load<'a, P: Into<PathBuf>>(
+    pub fn load<P: Into<PathBuf>>(
         path: P,
-        mut opts: BuildOptions<'a>,
+        mut opts: BuildOptions,
         set_src: bool,
         set_build: bool,
-    ) -> anyhow::Result<(Self, BuildOptions<'a>, PathBuf)> {
+    ) -> anyhow::Result<(Self, BuildOptions, PathBuf)> {
         let mut path: PathBuf = path.into();
         while path.pop() {
             let (c, o) = Self::load_exact(&mut path, opts, set_src, set_build)?;
