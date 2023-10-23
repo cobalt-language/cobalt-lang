@@ -22,5 +22,7 @@ fn test_parse_struct_literal() {
 fn test_parse_string_literal() {
     test_parser_fn(r#""Hello, world!""#, true, |parser| {
         parser.parse_string_literal()
-    })
+    });
+
+    test_parser_fn(r#""\cff""#, true, |parser| parser.parse_string_literal())
 }

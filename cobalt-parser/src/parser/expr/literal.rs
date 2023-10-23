@@ -374,22 +374,87 @@ impl<'src> Parser<'src> {
                         Some('b') => CharBytesIterator::from_u8(0x08),
                         Some('e') => CharBytesIterator::from_u8(0x1b),
                         Some('a') => CharBytesIterator::from_u8(0x07),
-                        //                 just("\\c").ignore_then(
-                        //                     text::digits(16)
-                        //                         .exactly(2)
-                        //                         .slice()
-                        //                         .map(|v| Cbi::from_u8(u8::from_str_radix(v, 16).unwrap()))
-                        //                         .recover_with(via_parser(empty().to(Cbi::from_u8(0)))),
-                        //                 ),
-                        Some('c') => todo!(),
-                        //                  just("\\x").ignore_then(
-                        //                     text::digits(16)
-                        //                         .exactly(2)
-                        //                         .slice()
-                        //                         .map(|v| Cbi::raw(u8::from_str_radix(v, 16).unwrap()))
-                        //                         .recover_with(via_parser(empty().to(Cbi::from_u8(0)))),
-                        //                 ),
-                        Some('x') => todo!(),
+                        Some('c') => {
+                            // --- Next are exactly two hex digits.
+
+                            let mut digit1 = chars.next();
+                            let mut digit2 = chars.next();
+                            if digit1.is_none() || digit2.is_none() {
+                                errors.push(CobaltError::ExpectedFound {
+                                    ex: "two hex digits",
+                                    found: ParserFound::Str("something else".to_string()),
+                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                });
+                                digit1 = Some('0');
+                                digit2 = Some('0');
+                            }
+
+                            let digit1 = digit1.unwrap();
+                            let digit2 = digit2.unwrap();
+
+                            let mut buf = [0; 8]; // UTF-8 encoded chars can be up to 4 bytes each
+                            let size = digit1.encode_utf8(&mut buf).len()
+                                + digit2.encode_utf8(&mut buf[digit1.len_utf8()..]).len();
+                            let two_hex_digits = std::str::from_utf8(&buf[..size]).unwrap();
+
+                            let parsed_result = u8::from_str_radix(two_hex_digits, 16);
+                            let to_return: CharBytesIterator;
+                            if parsed_result.is_err() {
+                                errors.push(CobaltError::ExpectedFound {
+                                    ex: "two hex digits",
+                                    found: ParserFound::Str("something else".to_string()),
+                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                });
+                                to_return = CharBytesIterator::from_u8(0);
+                            } else {
+                                to_return = CharBytesIterator::from_u8(parsed_result.unwrap());
+                                self.next();
+                                self.next();
+                            }
+
+                            to_return
+                        }
+                        // This only differs from `\c` by ultimately calling `Cbi::raw` instead of `Cbi::from_u8`.
+                        Some('x') => {
+                            // --- Next are exactly two hex digits.
+
+                            let mut digit1 = chars.next();
+                            let mut digit2 = chars.next();
+                            if digit1.is_none() || digit2.is_none() {
+                                errors.push(CobaltError::ExpectedFound {
+                                    ex: "two hex digits",
+                                    found: ParserFound::Str("something else".to_string()),
+                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                });
+                                digit1 = Some('0');
+                                digit2 = Some('0');
+                            }
+
+                            let digit1 = digit1.unwrap();
+                            let digit2 = digit2.unwrap();
+
+                            let mut buf = [0; 8]; // UTF-8 encoded chars can be up to 4 bytes each
+                            let size = digit1.encode_utf8(&mut buf).len()
+                                + digit2.encode_utf8(&mut buf[digit1.len_utf8()..]).len();
+                            let two_hex_digits = std::str::from_utf8(&buf[..size]).unwrap();
+
+                            let parsed_result = u8::from_str_radix(two_hex_digits, 16);
+                            let to_return: CharBytesIterator;
+                            if parsed_result.is_err() {
+                                errors.push(CobaltError::ExpectedFound {
+                                    ex: "two hex digits",
+                                    found: ParserFound::Str("something else".to_string()),
+                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                });
+                                to_return = CharBytesIterator::from_u8(0);
+                            } else {
+                                to_return = CharBytesIterator::raw(parsed_result.unwrap());
+                                self.next();
+                                self.next();
+                            }
+
+                            to_return
+                        }
                         //                 just("\\u").ignore_then(
                         //                     text::digits(16)
                         //                         .at_least(2)
@@ -432,3 +497,10 @@ impl<'src> Parser<'src> {
         (Some(StringLiteralAST::new(span, bytes, None)), errors)
     }
 }
+
+//fn is_hex_digit(c: char) -> bool {
+//    match c {
+//        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
+//        _ => false,
+//    }
+//}
