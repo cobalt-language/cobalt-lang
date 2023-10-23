@@ -16,6 +16,7 @@ use semver::{Version, VersionReq};
 use serde::*;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+
 #[derive(Debug, Clone)]
 pub struct Project {
     pub name: String,
@@ -25,6 +26,7 @@ pub struct Project {
     pub desc: Option<String>,
     pub targets: HashMap<String, Target>,
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum TargetType {
     #[serde(rename = "exe", alias = "executable", alias = "bin", alias = "binary")]
@@ -43,12 +45,14 @@ pub enum TargetType {
     #[serde(rename = "meta")]
     Meta,
 }
+
 #[derive(Debug, Clone)]
 pub struct Target {
     pub target_type: TargetType,
     pub files: Option<Either<String, Vec<String>>>,
     pub deps: HashMap<String, Dependency>,
 }
+
 #[derive(Deserialize)]
 #[serde(rename = "target")]
 struct TargetShim {
@@ -60,6 +64,7 @@ struct TargetShim {
     #[serde(default)]
     deps: HashMap<String, Dependency>,
 }
+
 #[derive(Deserialize)]
 #[serde(rename = "target")]
 struct KnownTargetShim {
@@ -246,6 +251,7 @@ impl<'de> Deserialize<'de> for Project {
         )
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct BuildOptions<'a> {
     pub source_dir: &'a Path,
@@ -258,12 +264,14 @@ pub struct BuildOptions<'a> {
     pub profile: &'a str,
     pub link_dirs: &'a [&'a Path],
 }
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PkgDepSpec {
     #[serde(default)]
     pub version: semver::VersionReq,
     pub targets: Option<Vec<String>>,
 }
+
 #[derive(Debug, Clone)]
 pub enum Dependency {
     Project,
@@ -369,6 +377,7 @@ impl<'de> Deserialize<'de> for Dependency {
         deserializer.deserialize_any(DepVisitor)
     }
 }
+
 pub fn clear_mod(this: &mut HashMap<std::borrow::Cow<str>, Symbol>) {
     for sym in this.values_mut() {
         sym.1.export = false;
