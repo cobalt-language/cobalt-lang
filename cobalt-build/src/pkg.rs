@@ -610,8 +610,6 @@ fn install_single(
         version,
         plan,
         &build::BuildOptions {
-            source_dir: src_path.as_path().into(),
-            build_dir: build_path.as_path().into(),
             continue_comp: false,
             continue_build: false,
             rebuild: true,
@@ -620,6 +618,8 @@ fn install_single(
             link_dirs: vec![],
             no_default_link: false,
         },
+        &src_path,
+        &build_path,
     )?;
     out.copy_anyhow(path)?;
     Ok(())
