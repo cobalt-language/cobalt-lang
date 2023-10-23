@@ -2623,82 +2623,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 targets,
                 rebuild,
             } => {
-                let (project_data, project_dir) = match project_dir.as_deref() {
-                    Some("-") => {
-                        let mut cfg = String::new();
-                        std::io::stdin()
-                            .read_to_string(&mut cfg)
-                            .context("failed to read project file")?;
-                        (
-                            toml::from_str::<build::Project>(cfg.as_str())
-                                .context("failed to parse project file")?,
-                            PathBuf::from("."),
-                        )
-                    }
-                    Some(x) => {
-                        let mut x = x.to_string();
-                        let mut vecs = load_projects()?;
-                        if x.as_bytes()[0] == b':' {
-                            if let Some(p) = vecs
-                                .iter()
-                                .find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned())
-                            {
-                                x = p
-                            }
-                        }
-                        if Path::new(&x).metadata_anyhow()?.file_type().is_dir() {
-                            let mut path = std::path::PathBuf::from(&x);
-                            path.push("cobalt.toml");
-                            if !path.exists() {
-                                anyhow::bail!("failed to find cobalt.toml in {x}")
-                            }
-                            let cfg = path.read_to_string_anyhow()?;
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, path, &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, PathBuf::from(x))
-                        } else {
-                            let mut path = std::path::PathBuf::from(&x);
-                            let cfg = path.read_to_string_anyhow()?;
-                            path.pop();
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, x.into(), &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, path)
-                        }
-                    }
-                    None => {
-                        let mut path = std::env::current_dir()?;
-                        loop {
-                            path.push("cobalt.toml");
-                            if path.exists() {
-                                break;
-                            }
-                            path.pop();
-                            if !path.pop() {
-                                anyhow::bail!("couldn't find cobalt.toml in current directory")
-                            }
-                        }
-                        let cfg = Path::new(&path).read_to_string_anyhow()?;
-                        path.pop();
-                        (
-                            toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?,
-                            path,
-                        )
-                    }
-                };
-                let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
-                let build_dir: PathBuf = build_dir.map_or_else(
-                    || {
-                        let mut dir = project_dir.clone();
-                        dir.push("build");
-                        dir
-                    },
-                    PathBuf::from,
-                );
                 if triple.is_some() {
                     Target::initialize_all(&INIT_NEEDED)
                 } else {
@@ -2710,24 +2634,48 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         .to_string_lossy()
                         .into_owned()
                 });
+                let set_src = source_dir.is_none();
+                let set_build = build_dir.is_none();
+                let opts = build::BuildOptions {
+                    source_dir: source_dir.map_or_else(PathBuf::new, PathBuf::from).into(),
+                    build_dir: build_dir
+                        .map_or_else(|| PathBuf::from("build"), PathBuf::from)
+                        .into(),
+                    profile: profile.as_deref().unwrap_or("default").into(),
+                    triple: triple.as_str().into(),
+                    continue_build: false,
+                    continue_comp: false,
+                    rebuild,
+                    no_default_link,
+                    link_dirs: link_dirs.iter().map(Path::new).map(From::from).collect(),
+                };
+                let (project, opts, _) = if project_dir.as_deref() == Some("-") {
+                    let mut cfg = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut cfg)
+                        .context("failed to read project file")?;
+                    (
+                        toml::from_str::<build::Project>(cfg.as_str())
+                            .context("failed to parse project file")?,
+                        opts,
+                        PathBuf::from("."),
+                    )
+                } else {
+                    build::Project::load(
+                        project_dir.map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from),
+                        opts,
+                        set_src,
+                        set_build,
+                    )?
+                };
                 build::build(
-                    project_data,
+                    project,
                     if targets.is_empty() {
                         None
                     } else {
                         Some(targets.into_iter().map(String::from).collect())
                     },
-                    &build::BuildOptions {
-                        source_dir: source_dir.into(),
-                        build_dir: build_dir.into(),
-                        profile: profile.as_deref().unwrap_or("default").into(),
-                        triple: triple.into(),
-                        continue_build: false,
-                        continue_comp: false,
-                        rebuild,
-                        no_default_link,
-                        link_dirs: link_dirs.iter().map(Path::new).map(From::from).collect(),
-                    },
+                    &opts,
                 )?;
             }
             ProjSubcommand::Run {
@@ -2741,6 +2689,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 rebuild,
                 args,
             } => {
+                Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let triple = TargetMachine::get_default_triple()
                     .as_str()
                     .to_string_lossy()
@@ -2779,7 +2728,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         set_build,
                     )?
                 };
-                Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(
                     || {
                         let exes = project

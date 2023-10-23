@@ -35,25 +35,51 @@ impl Project {
     fn load_gluon<'a>(
         path: &Path,
         proj: Option<Self>,
-        opts: BuildOptions<'a>,
+        options: BuildOptions<'a>,
     ) -> anyhow::Result<(Option<Self>, BuildOptions<'a>)> {
+        use gluon::import::add_extern_module;
         use gluon::vm::ExternModule;
-        use gluon::ThreadExt;
+        use gluon::{record, ThreadExt};
+        use gluon_build::BuildConfig;
         use std::sync::Arc;
-        let proj = proj.unwrap_or_default();
+        let project = proj.unwrap_or_default();
         let file = path.read_to_string_anyhow()?;
         let vm = gluon::new_vm();
+        vm.load_file("std/map.glu")?;
         // this is probably safe
         // nothing else escapes this scope
         let module = Arc::new(unsafe {
-            std::mem::transmute::<_, gluon_build::BuildConfig<'static>>(gluon_build::BuildConfig(
-                proj, opts,
-            ))
+            std::mem::transmute::<_, BuildConfig<'static>>(BuildConfig { project, options })
         });
-        gluon::import::add_extern_module(&vm, "cobalt", move |vm| ExternModule::new(vm, &*module));
+        vm.register_type::<BuildOptions<'static>>("cobalt.Options", &[])?;
+        macro_rules! register_types {
+            ($name:ident) => {
+                vm.register_type::<$name>(concat!("cobalt.", stringify!($name)), &[])?;
+            };
+            ($name:ident, $($rest:ident),+) => {
+                register_types!($name);
+                register_types!($($rest),+);
+            };
+        }
+        register_types!(Project, FileList, Target, PkgDepSpec, Dependency);
+        add_extern_module(&vm, "cobalt", move |vm| {
+            ExternModule::new(
+                vm,
+                record! {
+                    type Project => Project,
+                    type Options => BuildOptions<'static>,
+                    type FileList => FileList,
+                    type Target => Target,
+                    type Dependency => Dependency,
+                    type PkgDepSpec => PkgDepSpec,
+                    values => &*module
+                },
+            )
+        });
         vm.run_io(true);
-        let (proj, cfg): (Project, BuildOptions<'static>) = vm.run_expr("cobalt.glu", &file)?.0;
-        Ok((Some(proj), cfg))
+        let BuildConfig { project, options } =
+            unsafe { std::mem::transmute(vm.run_expr::<BuildConfig<'static>>("cobalt", &file)?.0) };
+        Ok((Some(project), options))
     }
     pub fn load_exact<'a>(
         path: &mut PathBuf,
@@ -117,7 +143,14 @@ impl Project {
         set_src: bool,
         set_build: bool,
     ) -> anyhow::Result<(Self, BuildOptions, PathBuf)> {
-        let mut path: PathBuf = path.into();
+        let original: PathBuf = path.into();
+        let mut path = original.canonicalize_anyhow()?;
+        let (c, o) = Self::load_exact(&mut path, opts, set_src, set_build)?;
+        if let Some(c) = c {
+            return Ok((c, o, path));
+        } else {
+            opts = o
+        }
         while path.pop() {
             let (c, o) = Self::load_exact(&mut path, opts, set_src, set_build)?;
             if let Some(c) = c {
@@ -128,7 +161,7 @@ impl Project {
         }
         anyhow::bail!(
             "couldn't find cobalt configuration in {} or any parent directories",
-            path.display()
+            original.display()
         )
     }
 }

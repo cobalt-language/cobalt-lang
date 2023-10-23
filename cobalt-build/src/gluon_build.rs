@@ -99,7 +99,10 @@ impl<'vm> Pushable<'vm> for PkgDepSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuildConfig<'a>(pub Project, pub BuildOptions<'a>);
+pub struct BuildConfig<'a> {
+    pub project: Project,
+    pub options: BuildOptions<'a>,
+}
 impl VmType for BuildConfig<'_> {
     type Type = BuildConfig<'static>;
     fn make_type(vm: &Thread) -> ArcType {
@@ -111,10 +114,10 @@ impl VmType for BuildConfig<'_> {
         This::make_type(vm)
     }
 }
-impl<'a, 'vm: 'value, 'value: 'a> Getable<'vm, 'value> for BuildConfig<'a> {
+impl<'vm, 'value> Getable<'vm, 'value> for BuildConfig<'_> {
     impl_getable_simple!();
     fn from_value(vm: &'vm Thread, value: vm::Variants<'value>) -> Self {
-        De::<Self>::from_value(vm, value).0
+        De::from_value(vm, value).0
     }
 }
 impl<'vm> Pushable<'vm> for BuildConfig<'_> {
