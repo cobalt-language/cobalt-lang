@@ -1,5 +1,4 @@
 use crate::*;
-use anyhow::Context;
 use anyhow_std::*;
 use cobalt_ast::ast::*;
 use cobalt_errors::miette::Severity;

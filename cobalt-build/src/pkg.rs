@@ -1,3 +1,6 @@
+#[cfg(not(feature = "config-toml"))]
+compile_error!("TOML configuration is shown as optional as a placeholder. It's required to build.");
+
 use crate::*;
 use anyhow_std::*;
 use cobalt_errors::error;

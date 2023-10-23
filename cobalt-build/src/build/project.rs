@@ -1,19 +1,189 @@
-use hashbrown::HashSet;
-
 use super::*;
+use anyhow::Context;
+use hashbrown::HashSet;
 use std::fmt::{self, Display, Formatter};
 
 macro_rules! impl_project {
     ($name:ident) => {
         impl<'a> $name<'a> {
+            #[cfg(feature = "config-toml")]
             pub fn from_toml(project: &str) -> Result<Self, toml::de::Error> {
                 Self::deserialize(toml::Deserializer::new(project))
             }
+            #[cfg(feature = "config-toml")]
             pub fn from_toml_borrowed(project: &'a str) -> Result<Self, toml::de::Error> {
                 Self::deserialize(toml::Deserializer::new(project))
             }
+            #[cfg(feature = "config-toml")]
             pub fn from_toml_static(project: &str) -> Result<$name<'static>, toml::de::Error> {
                 $name::<'static>::deserialize(toml::Deserializer::new(project))
+            }
+            #[cfg(feature = "config-json")]
+            pub fn from_json<'b>(project: &'b str) -> serde_json::Result<Self> {
+                Ok(serde_json::from_str::<$name<'b>>(project)?.into_owned())
+            }
+            #[cfg(feature = "config-json")]
+            pub fn from_json_borrowed(project: &'a str) -> serde_json::Result<Self> {
+                serde_json::from_str(project)
+            }
+            #[cfg(feature = "config-json")]
+            pub fn from_json_static<'b>(project: &'b str) -> serde_json::Result<$name<'static>> {
+                Ok(serde_json::from_str::<$name<'b>>(project)?.into_owned())
+            }
+
+            fn load_exact_(
+                path: &mut PathBuf,
+                set_src: bool,
+                set_build: bool,
+                frag: ProjectFragment<'a>,
+            ) -> anyhow::Result<Result<Self, ProjectFragment<'a>>> {
+                if path.is_dir() {
+                    #[allow(unused_variables)]
+                    let succ = false;
+                    path.push("cobalt");
+                    #[cfg(feature = "config-toml")]
+                    let (frag, succ) = {
+                        path.set_extension("toml");
+                        if path.exists() {
+                            let mut cfg =
+                                ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
+                                    .context("failed to parse project file")?;
+                            cfg.merge(frag)?;
+                            if set_src {
+                                cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
+                                    if src.is_absolute() {
+                                        src
+                                    } else {
+                                        path.join(src).into()
+                                    }
+                                } else {
+                                    path.clone().into()
+                                });
+                            }
+                            if set_build {
+                                cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
+                                    if build.is_absolute() {
+                                        build
+                                    } else {
+                                        path.join(build).into()
+                                    }
+                                } else {
+                                    path.join("build").into()
+                                });
+                            }
+                            (cfg, true)
+                        } else {
+                            (frag, false)
+                        }
+                    };
+                    #[cfg(feature = "config-json")]
+                    let (frag, succ) = {
+                        path.set_extension("json");
+                        if path.exists() {
+                            let mut cfg =
+                                ProjectFragment::<'a>::from_json(&path.read_to_string_anyhow()?)
+                                    .context("failed to parse project file")?;
+                            cfg.merge(frag)?;
+                            if set_src {
+                                cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
+                                    if src.is_absolute() {
+                                        src
+                                    } else {
+                                        path.join(src).into()
+                                    }
+                                } else {
+                                    path.clone().into()
+                                });
+                            }
+                            if set_build {
+                                cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
+                                    if build.is_absolute() {
+                                        build
+                                    } else {
+                                        path.join(build).into()
+                                    }
+                                } else {
+                                    path.join("build").into()
+                                });
+                            }
+                            (cfg, true)
+                        } else {
+                            (frag, succ)
+                        }
+                    };
+                    path.pop();
+                    Ok(if succ {
+                        Ok(frag.try_into()?)
+                    } else {
+                        Err(frag)
+                    })
+                } else {
+                    let cfg = match path.extension().and_then(|e| e.to_str()) {
+                        #[cfg(feature = "config-toml")]
+                        Some("toml") => Ok({
+                            let mut cfg =
+                                ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
+                                    .context("failed to parse project file")?;
+                            cfg.merge(frag)?;
+                            if set_src {
+                                cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
+                                    if src.is_absolute() {
+                                        src
+                                    } else {
+                                        path.join(src).into()
+                                    }
+                                } else {
+                                    path.clone().into()
+                                });
+                            }
+                            if set_build {
+                                cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
+                                    if build.is_absolute() {
+                                        build
+                                    } else {
+                                        path.join(build).into()
+                                    }
+                                } else {
+                                    path.join("build").into()
+                                });
+                            }
+                            cfg.try_into()?
+                        }),
+                        #[cfg(feature = "config-json")]
+                        Some("json") => Ok({
+                            let mut cfg =
+                                ProjectFragment::<'a>::from_json(&path.read_to_string_anyhow()?)
+                                    .context("failed to parse project file")?;
+                            cfg.merge(frag)?;
+                            if set_src {
+                                cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
+                                    if src.is_absolute() {
+                                        src
+                                    } else {
+                                        path.join(src).into()
+                                    }
+                                } else {
+                                    path.clone().into()
+                                });
+                            }
+                            if set_build {
+                                cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
+                                    if build.is_absolute() {
+                                        build
+                                    } else {
+                                        path.join(build).into()
+                                    }
+                                } else {
+                                    path.join("build").into()
+                                });
+                            }
+                            cfg.try_into()?
+                        }),
+                        _ => anyhow::bail!("unknown config type for {}", path.display()),
+                    };
+                    path.pop();
+                    Ok(cfg)
+                }
             }
             pub fn load<P: Into<PathBuf>>(
                 path: P,
@@ -334,81 +504,6 @@ impl<'a> Project<'a> {
             ..self
         }
     }
-    fn load_exact_(
-        path: &mut PathBuf,
-        set_src: bool,
-        set_build: bool,
-        frag: ProjectFragment<'a>,
-    ) -> anyhow::Result<Result<Self, ProjectFragment<'a>>> {
-        if path.is_dir() {
-            path.push("cobalt.toml");
-            let cfg = if path.exists() {
-                let mut cfg = ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
-                    .context("failed to parse project file")?;
-                cfg.merge(frag)?;
-                if set_src {
-                    cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
-                        if src.is_absolute() {
-                            src
-                        } else {
-                            path.join(src).into()
-                        }
-                    } else {
-                        path.clone().into()
-                    });
-                }
-                if set_build {
-                    cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
-                        if build.is_absolute() {
-                            build
-                        } else {
-                            path.join(build).into()
-                        }
-                    } else {
-                        path.join("build").into()
-                    });
-                }
-                Ok(cfg.try_into()?)
-            } else {
-                Err(frag)
-            };
-            Ok(cfg)
-        } else {
-            let cfg = match path.extension().and_then(|e| e.to_str()) {
-                Some("toml") => Ok({
-                    let mut cfg = ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
-                        .context("failed to parse project file")?;
-                    cfg.merge(frag)?;
-                    if set_src {
-                        cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
-                            if src.is_absolute() {
-                                src
-                            } else {
-                                path.join(src).into()
-                            }
-                        } else {
-                            path.clone().into()
-                        });
-                    }
-                    if set_build {
-                        cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
-                            if build.is_absolute() {
-                                build
-                            } else {
-                                path.join(build).into()
-                            }
-                        } else {
-                            path.join("build").into()
-                        });
-                    }
-                    cfg.try_into()?
-                }),
-                _ => anyhow::bail!("unknown config type for {}", path.display()),
-            };
-            path.pop();
-            Ok(cfg)
-        }
-    }
 }
 impl<'a> TryFrom<ProjectFragment<'a>> for Project<'a> {
     type Error = MissingFields;
@@ -444,6 +539,7 @@ impl<'a> From<Project<'a>> for ProjectFragment<'a> {
     }
 }
 impl_project!(Project);
+
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct ProjectFragment<'a> {
     pub name: Option<Cow<'a, str>>,
@@ -540,81 +636,6 @@ impl<'a> ProjectFragment<'a> {
     pub fn into_merge(mut self, other: Self) -> Result<Self, FragmentMergeError> {
         self.merge(other)?;
         Ok(self)
-    }
-    fn load_exact_(
-        path: &mut PathBuf,
-        set_src: bool,
-        set_build: bool,
-        frag: ProjectFragment<'a>,
-    ) -> anyhow::Result<Result<Self, ProjectFragment<'a>>> {
-        if path.is_dir() {
-            path.push("cobalt.toml");
-            let cfg = if path.exists() {
-                let mut cfg = ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
-                    .context("failed to parse project file")?;
-                cfg.merge(frag)?;
-                if set_src {
-                    cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
-                        if src.is_absolute() {
-                            src
-                        } else {
-                            path.join(src).into()
-                        }
-                    } else {
-                        path.clone().into()
-                    });
-                }
-                if set_build {
-                    cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
-                        if build.is_absolute() {
-                            build
-                        } else {
-                            path.join(build).into()
-                        }
-                    } else {
-                        path.join("build").into()
-                    });
-                }
-                Ok(cfg)
-            } else {
-                Err(frag)
-            };
-            Ok(cfg)
-        } else {
-            let cfg = match path.extension().and_then(|e| e.to_str()) {
-                Some("toml") => Ok({
-                    let mut cfg = ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
-                        .context("failed to parse project file")?;
-                    cfg.merge(frag)?;
-                    if set_src {
-                        cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
-                            if src.is_absolute() {
-                                src
-                            } else {
-                                path.join(src).into()
-                            }
-                        } else {
-                            path.clone().into()
-                        });
-                    }
-                    if set_build {
-                        cfg.build_dir = Some(if let Some(build) = cfg.build_dir {
-                            if build.is_absolute() {
-                                build
-                            } else {
-                                path.join(build).into()
-                            }
-                        } else {
-                            path.join("build").into()
-                        });
-                    }
-                    cfg
-                }),
-                _ => anyhow::bail!("unknown config type for {}", path.display()),
-            };
-            path.pop();
-            Ok(cfg)
-        }
     }
 }
 impl_project!(ProjectFragment);

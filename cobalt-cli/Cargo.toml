@@ -11,7 +11,7 @@ documentation.workspace = true
 [dependencies]
 cobalt-parser = { path = "../cobalt-parser" }
 cobalt-ast = { path = "../cobalt-ast" }
-cobalt-build = { path = "../cobalt-build" }
+cobalt-build = { path = "../cobalt-build", features = ["config-toml"]}
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
 cobalt-llvm = { path = "../cobalt-llvm" }
