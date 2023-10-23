@@ -14,10 +14,11 @@ use os_str_bytes::OsStrBytes;
 use path_calculate::*;
 use semver::{Version, VersionReq};
 use serde::*;
+use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Project {
     pub name: String,
     pub version: Version,
@@ -27,7 +28,7 @@ pub struct Project {
     pub targets: HashMap<String, Target>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TargetType {
     #[serde(rename = "exe", alias = "executable", alias = "bin", alias = "binary")]
     Executable,
@@ -46,7 +47,7 @@ pub enum TargetType {
     Meta,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Target {
     pub target_type: TargetType,
     pub files: Option<Either<String, Vec<String>>>,
@@ -252,27 +253,14 @@ impl<'de> Deserialize<'de> for Project {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct BuildOptions<'a> {
-    pub source_dir: &'a Path,
-    pub build_dir: &'a Path,
-    pub continue_build: bool,
-    pub continue_comp: bool,
-    pub rebuild: bool,
-    pub no_default_link: bool,
-    pub triple: &'a str,
-    pub profile: &'a str,
-    pub link_dirs: &'a [&'a Path],
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PkgDepSpec {
     #[serde(default)]
     pub version: semver::VersionReq,
     pub targets: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Dependency {
     Project,
     System,
@@ -378,6 +366,19 @@ impl<'de> Deserialize<'de> for Dependency {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildOptions<'a> {
+    pub source_dir: Cow<'a, Path>,
+    pub build_dir: Cow<'a, Path>,
+    pub continue_build: bool,
+    pub continue_comp: bool,
+    pub rebuild: bool,
+    pub no_default_link: bool,
+    pub triple: Cow<'a, str>,
+    pub profile: Cow<'a, str>,
+    pub link_dirs: Vec<Cow<'a, Path>>,
+}
+
 pub fn clear_mod(this: &mut HashMap<std::borrow::Cow<str>, Symbol>) {
     for sym in this.values_mut() {
         sym.1.export = false;
@@ -408,12 +409,12 @@ fn build_file_1(
     let mut out_path = opts.build_dir.to_path_buf();
     out_path.push(".artifacts");
     out_path.push("objects");
-    out_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    out_path.push(path.strip_prefix(&opts.source_dir).unwrap_or(path));
     out_path.set_extension("o");
     let mut head_path = opts.build_dir.to_path_buf();
     head_path.push(".artifacts");
     head_path.push("headers");
-    head_path.push(path.strip_prefix(opts.source_dir).unwrap_or(path));
+    head_path.push(path.strip_prefix(&opts.source_dir).unwrap_or(path));
     head_path.set_extension("coh.o");
     if !(force_build || opts.rebuild)
         && out_path.exists()
@@ -488,9 +489,9 @@ fn build_file_2(
         return Ok(false);
     }
     let pm = inkwell::passes::PassManager::create(());
-    opt::load_profile(opts.profile, &pm);
+    opt::load_profile(&opts.profile, &pm);
     pm.run_on(&ctx.module);
-    let trip = TargetTriple::create(opts.triple);
+    let trip = TargetTriple::create(&opts.triple);
     let target_machine = InkwellTarget::from_triple(&trip)
         .unwrap()
         .create_target_machine(
@@ -511,7 +512,7 @@ fn build_file_2(
     target_machine
         .write_to_file(&ctx.module, FileType::Object, out_path)
         .unwrap();
-    let mut obj = libs::new_object(opts.triple);
+    let mut obj = libs::new_object(&opts.triple);
     libs::populate_header(&mut obj, ctx);
     let mut file = BufWriter::new(std::fs::File::create(head_path)?);
     file.write_all(&obj.write()?)?;
@@ -584,7 +585,7 @@ pub fn build_target_single(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.link_dir("$ORIGIN");
-    cc.link_dirs(opts.link_dirs.iter().copied());
+    cc.link_dirs(opts.link_dirs.iter().cloned());
     cc.no_default_link = opts.no_default_link;
     resolve_deps_internal(&ctx, &mut cc, t, pkg, v, plan)?;
     match t.target_type {
@@ -931,7 +932,7 @@ fn build_target(
     ctx.flags.prepass = false;
     let mut cc = cc::CompileCommand::new();
     cc.no_default_link = opts.no_default_link;
-    cc.link_dirs(opts.link_dirs.iter().copied());
+    cc.link_dirs(opts.link_dirs.iter().cloned());
     let rebuild = resolve_deps(&ctx, &mut cc, t, targets, opts)?;
     let mut changed = rebuild;
     match t.target_type {
@@ -1082,7 +1083,7 @@ fn build_target(
                 anyhow::bail!(CompileErrors(num_errs))
             }
             let mut output = opts.build_dir.to_path_buf();
-            output.push(libs::format_lib(name, opts.triple, true));
+            output.push(libs::format_lib(name, &opts.triple, true));
             cc.lib(true);
             cc.objs(paths.into_iter().flat_map(|x| x.0));
             cc.output(&output);

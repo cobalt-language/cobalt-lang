@@ -2718,15 +2718,19 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         Some(targets.into_iter().map(String::from).collect())
                     },
                     &build::BuildOptions {
-                        source_dir: &source_dir,
-                        build_dir: &build_dir,
-                        profile: profile.as_deref().unwrap_or("default"),
-                        triple: &triple,
+                        source_dir: source_dir.as_path().into(),
+                        build_dir: build_dir.as_path().into(),
+                        profile: profile.as_deref().unwrap_or("default").into(),
+                        triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
+                        link_dirs: link_dirs
+                            .iter()
+                            .map(Path::new)
+                            .map(From::from)
+                            .collect::<Vec<_>>(),
                     },
                 )?;
             }
@@ -2855,15 +2859,19 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     project_data,
                     Some(vec![target.clone()]),
                     &build::BuildOptions {
-                        source_dir: &source_dir,
-                        build_dir: &build_dir,
-                        profile: profile.as_deref().unwrap_or("default"),
-                        triple: &triple,
+                        source_dir: source_dir.as_path().into(),
+                        build_dir: build_dir.as_path().into(),
+                        profile: profile.as_deref().unwrap_or("default").into(),
+                        triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
+                        link_dirs: link_dirs
+                            .iter()
+                            .map(Path::new)
+                            .map(From::from)
+                            .collect::<Vec<_>>(),
                     },
                 )?;
                 let mut exe_path = build_dir;
