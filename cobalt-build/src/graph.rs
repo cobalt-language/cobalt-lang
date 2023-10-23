@@ -94,7 +94,7 @@ impl PkgNode {
                             .or_else(|| {
                                 proj.targets
                                     .contains_key("default")
-                                    .then(|| vec!["default".to_string()])
+                                    .then(|| vec!["default".into()])
                             })
                             .ok_or_else(|| {
                                 pkg::InstallError::NoDefaultTarget(STRINGS.resolve(&pkg))

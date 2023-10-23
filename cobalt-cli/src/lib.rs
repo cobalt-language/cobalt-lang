@@ -2535,7 +2535,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if let Some(proj) = std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| toml::from_str::<build::Project>(&x).ok())
+                        .and_then(|x| build::Project::from_toml_static(&x).ok())
                     {
                         let mut vecs = load_projects()?;
                         track_project(&proj.name, cfg_path, &mut vecs);
@@ -2555,7 +2555,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         path.push("cobalt.toml");
                     }
                     track_project(
-                        &toml::from_str::<build::Project>(
+                        &build::Project::from_toml_static(
                             &Path::new(&path).read_to_string_anyhow()?,
                         )?
                         .name,
@@ -2573,7 +2573,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| toml::from_str::<build::Project>(&x).ok())
+                        .and_then(|x| build::Project::from_toml_static(&x).ok())
                         .is_some()
                     {
                         let mut vecs = load_projects()?;
@@ -2630,7 +2630,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
                         (
-                            toml::from_str::<build::Project>(cfg.as_str())
+                            build::Project::from_toml_static(cfg.as_str())
                                 .context("failed to parse project file")?,
                             PathBuf::from("."),
                         )
@@ -2653,7 +2653,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 anyhow::bail!("failed to find cobalt.toml in {x}")
                             }
                             let cfg = path.read_to_string_anyhow()?;
-                            let cfg = toml::from_str::<build::Project>(&cfg)
+                            let cfg = build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?;
                             track_project(&cfg.name, path, &mut vecs);
                             save_projects(vecs)?;
@@ -2662,7 +2662,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             let mut path = std::path::PathBuf::from(&x);
                             let cfg = path.read_to_string_anyhow()?;
                             path.pop();
-                            let cfg = toml::from_str::<build::Project>(&cfg)
+                            let cfg = build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?;
                             track_project(&cfg.name, x.into(), &mut vecs);
                             save_projects(vecs)?;
@@ -2684,7 +2684,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         let cfg = Path::new(&path).read_to_string_anyhow()?;
                         path.pop();
                         (
-                            toml::from_str::<build::Project>(&cfg)
+                            build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?,
                             path,
                         )
@@ -2752,7 +2752,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
                         (
-                            toml::from_str::<build::Project>(cfg.as_str())
+                            build::Project::from_toml_static(cfg.as_str())
                                 .context("failed to parse project file")?,
                             PathBuf::from("."),
                         )
@@ -2775,7 +2775,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 anyhow::bail!("failed to find cobalt.toml in {x}")
                             }
                             let cfg = path.read_to_string_anyhow()?;
-                            let cfg = toml::from_str::<build::Project>(&cfg)
+                            let cfg = build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?;
                             track_project(&cfg.name, path, &mut vecs);
                             save_projects(vecs)?;
@@ -2784,7 +2784,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             let mut path = std::path::PathBuf::from(&x);
                             let cfg = path.read_to_string_anyhow()?;
                             path.pop();
-                            let cfg = toml::from_str::<build::Project>(&cfg)
+                            let cfg = build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?;
                             track_project(&cfg.name, x.into(), &mut vecs);
                             save_projects(vecs)?;
@@ -2806,7 +2806,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         let cfg = Path::new(&path).read_to_string_anyhow()?;
                         path.pop();
                         (
-                            toml::from_str::<build::Project>(&cfg)
+                            build::Project::from_toml_static(&cfg)
                                 .context("failed to parse project file")?,
                             path,
                         )
@@ -2828,8 +2828,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .targets
                             .iter()
                             .filter_map(|(k, x)| {
-                                (x.target_type == build::TargetType::Executable)
-                                    .then_some(k.as_str())
+                                (x.target_type == build::TargetType::Executable).then_some(&**k)
                             })
                             .collect::<Vec<_>>();
                         match exes.len() {
@@ -2843,7 +2842,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         }
                     },
                     |t| {
-                        if project_data.targets.get(&t).map(|x| x.target_type)
+                        if project_data.targets.get(&*t).map(|x| x.target_type)
                             != Some(build::TargetType::Executable)
                         {
                             anyhow::bail!("target type must be an executable")

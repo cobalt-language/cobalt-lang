@@ -1,5 +1,5 @@
 use crate::*;
-use anyhow::Context;
+use __private::PhantomData;
 use anyhow_std::*;
 use cobalt_ast::ast::*;
 use cobalt_errors::miette::Severity;
@@ -18,14 +18,38 @@ use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+pub mod file_list;
+pub use file_list::*;
+
 #[derive(Debug, Clone, Serialize)]
-pub struct Project {
-    pub name: String,
+pub struct Project<'a> {
+    pub name: Cow<'a, str>,
     pub version: Version,
-    pub author: Option<String>,
+    pub author: Option<Cow<'a, str>>,
     pub co_version: Option<VersionReq>,
-    pub desc: Option<String>,
-    pub targets: HashMap<String, Target>,
+    pub desc: Option<Cow<'a, str>>,
+    pub targets: HashMap<Cow<'a, str>, Target<'a>>,
+}
+impl<'a> Project<'a> {
+    pub fn into_owned(self) -> Project<'static> {
+        Project {
+            name: self.name.into_owned().into(),
+            author: self.author.map(|a| a.into_owned().into()),
+            desc: self.desc.map(|d| d.into_owned().into()),
+            targets: self
+                .targets
+                .into_iter()
+                .map(|(k, v)| (k.into_owned().into(), v.into_owned()))
+                .collect(),
+            ..self
+        }
+    }
+    pub fn from_toml(project: &'a str) -> Result<Self, toml::de::Error> {
+        Self::deserialize(toml::Deserializer::new(project))
+    }
+    pub fn from_toml_static(project: &str) -> Result<Project<'static>, toml::de::Error> {
+        Project::<'static>::deserialize(toml::Deserializer::new(project))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,45 +71,192 @@ pub enum TargetType {
     Meta,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PkgDepSpec<'a> {
+    #[serde(default)]
+    pub version: semver::VersionReq,
+    pub targets: Option<Vec<Cow<'a, str>>>,
+}
+impl PkgDepSpec<'_> {
+    pub fn into_owned(self) -> PkgDepSpec<'static> {
+        PkgDepSpec {
+            version: self.version,
+            targets: self
+                .targets
+                .map(|t| t.into_iter().map(|v| v.into_owned().into()).collect()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
-pub struct Target {
-    pub target_type: TargetType,
-    pub files: Option<Either<String, Vec<String>>>,
-    pub deps: HashMap<String, Dependency>,
+pub enum Dependency<'a> {
+    Project,
+    System,
+    Package(PkgDepSpec<'a>),
 }
-
-#[derive(Deserialize)]
-#[serde(rename = "target")]
-struct TargetShim {
-    name: String,
-    #[serde(rename = "type")]
-    target_type: TargetType,
-    #[serde(with = "either::serde_untagged_optional")]
-    files: Option<Either<String, Vec<String>>>,
-    #[serde(default)]
-    deps: HashMap<String, Dependency>,
+impl Dependency<'_> {
+    pub fn into_owned(self) -> Dependency<'static> {
+        match self {
+            Dependency::Project => Dependency::Project,
+            Dependency::System => Dependency::System,
+            Dependency::Package(spec) => Dependency::Package(spec.into_owned()),
+        }
+    }
 }
-
-#[derive(Deserialize)]
-#[serde(rename = "target")]
-struct KnownTargetShim {
-    name: String,
-    #[serde(with = "either::serde_untagged_optional")]
-    files: Option<Either<String, Vec<String>>>,
-    #[serde(default)]
-    deps: HashMap<String, Dependency>,
-}
-impl<'de> Deserialize<'de> for Project {
+impl<'a, 'de: 'a> Deserialize<'de> for Dependency<'a> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::*;
         use std::fmt::{self, Formatter};
-        struct ProjectVisitor;
-        impl<'de> Visitor<'de> for ProjectVisitor {
-            type Value = Project;
+        struct DepVisitor<'a>(PhantomData<&'a ()>);
+        impl<'a, 'de: 'a> Visitor<'de> for DepVisitor<'a> {
+            type Value = Dependency<'a>;
+            fn expecting(&self, f: &mut Formatter) -> fmt::Result {
+                f.write_str(r#""project", "version", or a version statement"#)
+            }
+            fn visit_str<E: Error>(self, v: &str) -> Result<Dependency<'a>, E> {
+                Ok(match v.trim() {
+                    "project" => Dependency::Project,
+                    "system" => Dependency::System,
+                    x => Dependency::Package({
+                        let mut it = v.match_indices(['@', ':']).peekable();
+                        if let Some(&(next, _)) = it.peek() {
+                            let mut targets = None;
+                            let mut version =
+                                VersionReq::parse(&v[..next]).map_err(Error::custom)?;
+                            while let Some((idx, ch)) = it.next() {
+                                let blk = if let Some(&(next, _)) = it.peek() {
+                                    v[idx..next].trim()
+                                } else {
+                                    v[idx..].trim()
+                                };
+                                match ch {
+                                    "@" => version.comparators.extend(
+                                        VersionReq::parse(blk).map_err(Error::custom)?.comparators,
+                                    ),
+                                    ":" => targets.get_or_insert_with(Vec::new).extend(
+                                        blk.split(',')
+                                            .map(str::trim)
+                                            .map(String::from)
+                                            .map(Cow::Owned),
+                                    ),
+                                    x => unreachable!("expected '@' or ':', got {x:?}"),
+                                }
+                            }
+                            PkgDepSpec { targets, version }
+                        } else {
+                            PkgDepSpec {
+                                targets: None,
+                                version: VersionReq::parse(x).map_err(Error::custom)?,
+                            }
+                        }
+                    }),
+                })
+            }
+            fn visit_map<M: MapAccess<'de>>(self, mut v: M) -> Result<Dependency<'a>, M::Error> {
+                enum Field {
+                    Version,
+                    Targets,
+                }
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D: Deserializer<'de>>(
+                        deserializer: D,
+                    ) -> Result<Field, D::Error> {
+                        struct FieldVisitor;
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+                            fn expecting(&self, f: &mut Formatter) -> fmt::Result {
+                                f.write_str("`version` or `targets`")
+                            }
+                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
+                                match v {
+                                    "version" => Ok(Field::Version),
+                                    "targets" => Ok(Field::Targets),
+                                    _ => Err(Error::unknown_field(v, &["version", "targets"])),
+                                }
+                            }
+                        }
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+                let mut targets = None;
+                let mut version = None;
+                while let Some(key) = v.next_key()? {
+                    match key {
+                        Field::Version => {
+                            if version.is_some() {
+                                return Err(Error::duplicate_field("version"));
+                            } else {
+                                version = Some(v.next_value()?)
+                            }
+                        }
+                        Field::Targets => {
+                            if targets.is_some() {
+                                return Err(Error::duplicate_field("targets"));
+                            } else {
+                                targets = Some(v.next_value()?)
+                            }
+                        }
+                    }
+                }
+                let version = version.ok_or_else(|| Error::missing_field("version"))?;
+                Ok(Dependency::Package(PkgDepSpec { targets, version }))
+            }
+        }
+        deserializer.deserialize_any(DepVisitor(PhantomData))
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Target<'a> {
+    pub target_type: TargetType,
+    pub files: Option<FileList<'a>>,
+    pub deps: HashMap<Cow<'a, str>, Dependency<'a>>,
+}
+impl Target<'_> {
+    pub fn into_owned(self) -> Target<'static> {
+        Target {
+            target_type: self.target_type,
+            files: self.files.map(FileList::into_owned),
+            deps: self
+                .deps
+                .into_iter()
+                .map(|(k, v)| (k.into_owned().into(), v.into_owned()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename = "target", bound = "'de: 'a")]
+struct TargetShim<'a> {
+    name: Cow<'a, str>,
+    #[serde(rename = "type")]
+    target_type: TargetType,
+    files: Option<FileList<'a>>,
+    #[serde(default)]
+    deps: HashMap<Cow<'a, str>, Dependency<'a>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename = "target", bound = "'de: 'a")]
+struct KnownTargetShim<'a> {
+    name: Cow<'a, str>,
+    files: Option<FileList<'a>>,
+    #[serde(default)]
+    deps: HashMap<Cow<'a, str>, Dependency<'a>>,
+}
+
+impl<'a, 'de: 'a> Deserialize<'de> for Project<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::*;
+        use std::fmt::{self, Formatter};
+        struct ProjectVisitor<'a>(PhantomData<&'a ()>);
+        impl<'a, 'de: 'a> Visitor<'de> for ProjectVisitor<'a> {
+            type Value = Project<'a>;
             fn expecting(&self, f: &mut Formatter) -> fmt::Result {
                 f.write_str("struct Project")
             }
-            fn visit_map<V: MapAccess<'de>>(self, mut map: V) -> Result<Project, V::Error> {
+            fn visit_map<V: MapAccess<'de>>(self, mut map: V) -> Result<Project<'a>, V::Error> {
                 let mut name = None;
                 let mut version = None;
                 let mut author = None;
@@ -248,121 +419,8 @@ impl<'de> Deserialize<'de> for Project {
         deserializer.deserialize_struct(
             "Project",
             &["name", "version", "author", "co_version", "desc", "targets"],
-            ProjectVisitor,
+            ProjectVisitor(PhantomData),
         )
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PkgDepSpec {
-    #[serde(default)]
-    pub version: semver::VersionReq,
-    pub targets: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum Dependency {
-    Project,
-    System,
-    Package(PkgDepSpec),
-}
-impl<'de> Deserialize<'de> for Dependency {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::*;
-        use std::fmt::{self, Formatter};
-        struct DepVisitor;
-        impl<'de> Visitor<'de> for DepVisitor {
-            type Value = Dependency;
-            fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-                f.write_str(r#""project", "version", or a version statement"#)
-            }
-            fn visit_str<E: Error>(self, v: &str) -> Result<Dependency, E> {
-                Ok(match v.trim() {
-                    "project" => Dependency::Project,
-                    "system" => Dependency::System,
-                    x => Dependency::Package({
-                        let mut it = v.match_indices(['@', ':']).peekable();
-                        if let Some(&(next, _)) = it.peek() {
-                            let mut targets: Option<Vec<String>> = None;
-                            let mut version =
-                                VersionReq::parse(&v[..next]).map_err(Error::custom)?;
-                            while let Some((idx, ch)) = it.next() {
-                                let blk = if let Some(&(next, _)) = it.peek() {
-                                    v[idx..next].trim()
-                                } else {
-                                    v[idx..].trim()
-                                };
-                                match ch {
-                                    "@" => version.comparators.extend(
-                                        VersionReq::parse(blk).map_err(Error::custom)?.comparators,
-                                    ),
-                                    ":" => targets
-                                        .get_or_insert_with(Vec::new)
-                                        .extend(blk.split(',').map(str::trim).map(String::from)),
-                                    x => unreachable!("expected '@' or ':', got {x:?}"),
-                                }
-                            }
-                            PkgDepSpec { targets, version }
-                        } else {
-                            PkgDepSpec {
-                                targets: None,
-                                version: VersionReq::parse(x).map_err(Error::custom)?,
-                            }
-                        }
-                    }),
-                })
-            }
-            fn visit_map<M: MapAccess<'de>>(self, mut v: M) -> Result<Dependency, M::Error> {
-                enum Field {
-                    Version,
-                    Targets,
-                }
-                impl<'de> Deserialize<'de> for Field {
-                    fn deserialize<D: Deserializer<'de>>(
-                        deserializer: D,
-                    ) -> Result<Field, D::Error> {
-                        struct FieldVisitor;
-                        impl<'de> Visitor<'de> for FieldVisitor {
-                            type Value = Field;
-                            fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-                                f.write_str("`version` or `targets`")
-                            }
-                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
-                                match v {
-                                    "version" => Ok(Field::Version),
-                                    "targets" => Ok(Field::Targets),
-                                    _ => Err(Error::unknown_field(v, &["version", "targets"])),
-                                }
-                            }
-                        }
-                        deserializer.deserialize_identifier(FieldVisitor)
-                    }
-                }
-                let mut targets: Option<Vec<String>> = None;
-                let mut version: Option<VersionReq> = None;
-                while let Some(key) = v.next_key()? {
-                    match key {
-                        Field::Version => {
-                            if version.is_some() {
-                                return Err(Error::duplicate_field("version"));
-                            } else {
-                                version = Some(v.next_value()?)
-                            }
-                        }
-                        Field::Targets => {
-                            if targets.is_some() {
-                                return Err(Error::duplicate_field("targets"));
-                            } else {
-                                targets = Some(v.next_value()?)
-                            }
-                        }
-                    }
-                }
-                let version = version.ok_or_else(|| Error::missing_field("version"))?;
-                Ok(Dependency::Package(PkgDepSpec { targets, version }))
-            }
-        }
-        deserializer.deserialize_any(DepVisitor)
     }
 }
 
@@ -541,7 +599,7 @@ fn resolve_deps_internal(
                 let mut artifact = installed_path.clone();
                 artifact.push(pkg);
                 artifact.push(v.to_string());
-                artifact.push(target);
+                artifact.push(&**target);
                 conflicts.append(&mut libs::load_lib(&artifact, ctx)?);
                 cmd.link_abs(artifact);
             }
@@ -549,13 +607,13 @@ fn resolve_deps_internal(
             Dependency::Package(spec) => spec
                 .targets
                 .clone()
-                .unwrap_or_else(|| vec!["default".to_string()])
+                .unwrap_or_else(|| vec!["default".into()])
                 .into_iter()
                 .try_for_each(|tar| {
                     let mut path = installed_path.clone();
-                    path.push(target);
-                    path.push(plan[&(target.as_str(), tar.as_str())].to_string());
-                    path.push(tar);
+                    path.push(&**target);
+                    path.push(plan[&(&**target, &*tar)].to_string());
+                    path.push(&*tar);
                     conflicts.append(&mut libs::load_lib(&path, ctx)?);
                     cmd.link_abs(path);
                     anyhow::Ok(())
@@ -565,7 +623,11 @@ fn resolve_deps_internal(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
+    let notfound = cmd
+        .search_libs(libs, Some(ctx), false)?
+        .into_iter()
+        .map(From::from)
+        .collect::<Vec<_>>();
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -593,44 +655,24 @@ pub fn build_target_single(
             let mut paths = vec![];
             let mut asts = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        anyhow::bail!("couldn't find file {}", file.display());
                     }
+                    continue;
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -652,44 +694,24 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        anyhow::bail!("couldn't find file {}", file.display());
                     }
+                    continue;
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -712,44 +734,24 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        anyhow::bail!("couldn't find file {}", file.display());
                     }
+                    continue;
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
@@ -770,44 +772,24 @@ pub fn build_target_single(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        anyhow::bail!("couldn't find file {}", file.display());
                     }
+                    continue;
                 }
-                Some(either::Right(files)) => {
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            anyhow::bail!("couldn't find file {file}")
-                        }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, true, &mut num_errs)?;
-                        paths.push(path);
-                        asts.push(ast);
-                    }
-                }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                paths.push(path);
+                asts.push(ast);
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -842,7 +824,7 @@ fn resolve_deps(
     ctx: &CompCtx,
     cmd: &mut cc::CompileCommand,
     t: &Target,
-    targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>,
+    targets: &HashMap<Cow<str>, (Target, Cell<Option<PathBuf>>)>,
     opts: &BuildOptions,
 ) -> anyhow::Result<bool> {
     let mut out = vec![];
@@ -853,7 +835,7 @@ fn resolve_deps(
     for (target, version) in t.deps.iter() {
         match version {
             Dependency::Project => {
-                let (t, d) = if let Some(t) = targets.get(target.as_str()) {
+                let (t, d) = if let Some(t) = targets.get(&**target) {
                     t
                 } else {
                     anyhow::bail!("target {target:?} is not a target in this project")
@@ -876,9 +858,11 @@ fn resolve_deps(
             Dependency::System => libs.push(target.clone()),
             Dependency::Package(PkgDepSpec { version, targets }) => {
                 to_install.push(pkg::InstallSpec {
-                    name: target.clone(),
+                    name: target.to_string(),
                     version: version.clone(),
-                    targets: targets.clone(),
+                    targets: targets
+                        .as_ref()
+                        .map(|t| t.iter().map(ToString::to_string).collect()),
                 })
             }
         }
@@ -913,7 +897,11 @@ fn resolve_deps(
     if !conflicts.is_empty() {
         anyhow::bail!(libs::ConflictingDefs(conflicts))
     }
-    let notfound = cmd.search_libs(libs, Some(ctx), false)?;
+    let notfound = cmd
+        .search_libs(libs, Some(ctx), false)?
+        .into_iter()
+        .map(From::from)
+        .collect::<Vec<_>>();
     if !notfound.is_empty() {
         anyhow::bail!(LibsNotFound(notfound))
     }
@@ -924,7 +912,7 @@ fn build_target(
     t: &Target,
     name: &str,
     data: &Cell<Option<PathBuf>>,
-    targets: &HashMap<String, (Target, Cell<Option<PathBuf>>)>,
+    targets: &HashMap<Cow<str>, (Target, Cell<Option<PathBuf>>)>,
     opts: &BuildOptions,
 ) -> anyhow::Result<(bool, PathBuf)> {
     let ink_ctx = inkwell::context::Context::create();
@@ -940,61 +928,44 @@ fn build_target(
             let mut paths = vec![];
             let mut asts = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
-                    }
-                }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            let mut passed = false;
+            let mut failed = None;
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        if opts.continue_build {
                             if opts.continue_build {
-                                error!("couldn't find file {file}");
+                                error!("couldn't find file {}", file.display());
                                 failed = Some(file);
                                 continue;
                             } else {
-                                anyhow::bail!("couldn't find file {file}")
+                                anyhow::bail!("couldn't find file {}", file.display());
                             }
+                        } else {
+                            anyhow::bail!("couldn't find file {}", file.display());
                         }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
                     }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
+                    continue;
                 }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
+                passed = true;
+            }
+            if let Some(file) = failed {
+                anyhow::bail!("couldn't find file {}", file.display());
+            }
+            if let (FileList::Glob(files), false) = (files, passed) {
+                warning!("no files matching glob {files}")
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1017,61 +988,44 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
-                    }
-                }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            let mut passed = false;
+            let mut failed = None;
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        if opts.continue_build {
                             if opts.continue_build {
-                                error!("couldn't find file {file}");
+                                error!("couldn't find file {}", file.display());
                                 failed = Some(file);
                                 continue;
                             } else {
-                                anyhow::bail!("couldn't find file {file}")
+                                anyhow::bail!("couldn't find file {}", file.display());
                             }
+                        } else {
+                            anyhow::bail!("couldn't find file {}", file.display());
                         }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
                     }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
+                    continue;
                 }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
+                passed = true;
+            }
+            if let Some(file) = failed {
+                anyhow::bail!("couldn't find file {}", file.display());
+            }
+            if let (FileList::Glob(files), false) = (files, passed) {
+                warning!("no files matching glob {files}")
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1095,61 +1049,44 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
-                    }
-                }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            let mut passed = false;
+            let mut failed = None;
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        if opts.continue_build {
                             if opts.continue_build {
-                                error!("couldn't find file {file}");
+                                error!("couldn't find file {}", file.display());
                                 failed = Some(file);
                                 continue;
                             } else {
-                                anyhow::bail!("couldn't find file {file}")
+                                anyhow::bail!("couldn't find file {}", file.display());
                             }
+                        } else {
+                            anyhow::bail!("couldn't find file {}", file.display());
                         }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
                     }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
+                    continue;
                 }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
+                passed = true;
+            }
+            if let Some(file) = failed {
+                anyhow::bail!("couldn't find file {}", file.display());
+            }
+            if let (FileList::Glob(files), false) = (files, passed) {
+                warning!("no files matching glob {files}")
             }
             let mut output = opts.build_dir.to_path_buf();
             output.push(name);
@@ -1170,61 +1107,44 @@ fn build_target(
             let mut asts = vec![];
             let mut paths = vec![];
             let mut num_errs = 0;
-            match t.files.as_ref() {
-                Some(either::Left(files)) => {
-                    let mut passed = false;
-                    for file in glob::glob(
-                        (opts.source_dir.to_str().unwrap_or("").to_string() + "/" + files).as_str(),
-                    )
-                    .context("error in file glob")?
-                    .filter_map(Result::ok)
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
-                            continue;
-                        }
-                        let (path, ast) =
-                            build_file_1(file.as_path(), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
-                        passed = true;
-                    }
-                    if !passed {
-                        warning!("no files matching glob {files}")
-                    }
-                }
-                Some(either::Right(files)) => {
-                    let mut failed = None;
-                    for file in files
-                        .iter()
-                        .filter_map(|f| Some(opts.source_dir.to_str()?.to_string() + "/" + f))
-                    {
-                        if std::fs::metadata(&file)
-                            .map(|m| !m.file_type().is_file())
-                            .unwrap_or(true)
-                        {
+            let files = t
+                .files
+                .as_ref()
+                .ok_or(anyhow::anyhow!("target must have files"))?;
+            let required = files.is_list();
+            let mut passed = false;
+            let mut failed = None;
+            for file in files.iter(&opts.source_dir).filter_map(Result::ok) {
+                if std::fs::metadata(&file)
+                    .map(|m| !m.file_type().is_file())
+                    .unwrap_or(true)
+                {
+                    if required {
+                        if opts.continue_build {
                             if opts.continue_build {
-                                error!("couldn't find file {file}");
+                                error!("couldn't find file {}", file.display());
                                 failed = Some(file);
                                 continue;
                             } else {
-                                anyhow::bail!("couldn't find file {file}")
+                                anyhow::bail!("couldn't find file {}", file.display());
                             }
+                        } else {
+                            anyhow::bail!("couldn't find file {}", file.display());
                         }
-                        let (path, ast) =
-                            build_file_1(Path::new(&file), &ctx, opts, rebuild, &mut num_errs)?;
-                        changed |= ast.is_some();
-                        paths.push(path);
-                        asts.push(ast);
                     }
-                    if let Some(file) = failed {
-                        anyhow::bail!("couldn't find file {file}")
-                    }
+                    continue;
                 }
-                None => anyhow::bail!("target must have files"),
+                let (path, ast) = build_file_1(file.as_path(), &ctx, opts, true, &mut num_errs)?;
+                changed |= ast.is_some();
+                paths.push(path);
+                asts.push(ast);
+                passed = true;
+            }
+            if let Some(file) = failed {
+                anyhow::bail!("couldn't find file {}", file.display());
+            }
+            if let (FileList::Glob(files), false) = (files, passed) {
+                warning!("no files matching glob {files}")
             }
             let mut succ = true;
             for (([p1, p2], fail), ast) in paths.iter().zip(asts) {
@@ -1274,7 +1194,7 @@ pub fn build(
         .collect::<HashMap<_, (Target, Cell<Option<PathBuf>>)>>();
     if let Some(tb) = to_build {
         for target_name in tb {
-            let (target, data) = if let Some(t) = targets.get(&target_name) {
+            let (target, data) = if let Some(t) = targets.get(&*target_name) {
                 t
             } else {
                 anyhow::bail!("target {target_name:?} is not a target in this project");
