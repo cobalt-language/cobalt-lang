@@ -21,7 +21,9 @@ jobs:
       with:
         version: "16.0"
     - name: Run Clippy
-      run: cargo clippy -F no-llvm-linking
+      run: cargo clippy
+      env:
+        RUSTFLAGS: "-Dwarnings"
   test:
     runs-on: ubuntu-latest
     steps:
