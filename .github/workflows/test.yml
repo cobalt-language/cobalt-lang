@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Run Clippy
-      run: cargo clippy --verbose -F no-llvm-linking
+      run: cargo clippy --manifest-path lang/Cargo.toml --verbose -F no-llvm-linking
   test:
     runs-on: ubuntu-latest
     steps:
@@ -22,9 +22,9 @@ jobs:
       with:
         version: "16.0"
     - name: Run Cargo Test
-      run: cargo test --verbose
+      run: cargo test --manifest-path lang/Cargo.toml  --verbose
   fmt:
     runs-on: ubuntu-latest
     steps:
     - name: Run Cargo Formatter
-      run: cargo fmt --verbose --check
+      run: cargo fmt --manifest-path lang/Cargo.toml  --verbose --check
