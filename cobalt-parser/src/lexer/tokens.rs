@@ -145,6 +145,8 @@ pub enum LiteralToken<'src> {
     Float(&'src str),
     /// The slice is what's inside the double quotations.
     Str(&'src str),
+    /// The slice is what's inside the single quotes.
+    Char(&'src str),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

@@ -1,6 +1,7 @@
 use std::iter::Peekable;
 use std::{borrow::Cow, collections::HashMap, str::CharIndices};
 
+use cobalt_ast::ast::CharLiteralAST;
 use cobalt_ast::{
     ast::{ErrorAST, IntLiteralAST, StringLiteralAST, StructLiteralAST},
     BoxedAST,
@@ -95,6 +96,35 @@ impl<'src> Parser<'src> {
                 );
             }
 
+            TokenKind::Literal(LiteralToken::Char(_)) => {
+                let parsed_literal = self.parse_char_literal();
+                if parsed_literal.0.is_none() {
+                    return (Box::new(ErrorAST::new(span)), errors);
+                }
+
+                let mut ast = parsed_literal.0.unwrap();
+                let errors = parsed_literal.1;
+
+                if self.current_token.is_none() {
+                    return (Box::new(ast), errors);
+                }
+
+                // --- Check for suffixes.
+
+                let mut suffix: Option<(Cow<'src, str>, SourceSpan)> = None;
+
+                if let TokenKind::Ident(pf) = self.current_token.unwrap().kind {
+                    suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
+                    self.next();
+                }
+
+                ast.suffix = suffix;
+
+                // ---
+
+                return (Box::new(ast), errors);
+            }
+
             TokenKind::Literal(LiteralToken::Str(_)) => {
                 let parsed_literal = self.parse_string_literal();
                 if parsed_literal.0.is_none() {
@@ -113,13 +143,8 @@ impl<'src> Parser<'src> {
                 let mut suffix: Option<(Cow<'src, str>, SourceSpan)> = None;
 
                 if let TokenKind::Ident(pf) = self.current_token.unwrap().kind {
-                    match pf {
-                        "c" => {
-                            suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
-                            self.next();
-                        }
-                        _ => {}
-                    }
+                    suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
+                    self.next();
                 }
 
                 ast.suffix = suffix;
@@ -333,6 +358,117 @@ impl<'src> Parser<'src> {
         (Box::new(StructLiteralAST::new(span, fields)), errors)
     }
 
+    /// Going into this function, expect current token to be 'LiteralToken::Char'.
+    pub(crate) fn parse_char_literal(
+        &mut self,
+    ) -> (Option<CharLiteralAST<'src>>, Vec<CobaltError<'src>>) {
+        assert!(self.current_token.is_some());
+
+        let span = self.current_token.unwrap().span;
+        let mut errors = vec![];
+
+        let mut char_indices: Peekable<CharIndices>;
+        if let TokenKind::Literal(LiteralToken::Char(s)) = self.current_token.unwrap().kind {
+            char_indices = s.char_indices().peekable();
+        } else {
+            self.next();
+            errors.push(CobaltError::ExpectedFound {
+                ex: "char literal",
+                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                loc: span,
+            });
+            return (None, errors);
+        }
+
+        self.next();
+
+        // ---
+
+        let val: u32 = match char_indices.next() {
+            None => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "a char",
+                    found: ParserFound::Str("nothing".to_string()),
+                    loc: span,
+                });
+                0
+            }
+            Some((_, '\\')) => {
+                match char_indices.next() {
+                    None => {
+                        errors.push(CobaltError::ExpectedFound {
+                            ex: "a char",
+                            found: ParserFound::Str("nothing".to_string()),
+                            loc: span,
+                        });
+                        0
+                    }
+                    Some((_, '0')) => 0x00,
+                    Some((_, 'n')) => 0x0a,
+                    Some((_, 'r')) => 0x0d,
+                    Some((_, 't')) => 0x09,
+                    Some((_, 'v')) => 0x0a,
+                    Some((_, 'b')) => 0x08,
+                    Some((_, 'e')) => 0x1b,
+                    Some((_, 'a')) => 0x07,
+                    Some((offset, 'c')) => {
+                        // --- Next are exactly two hex digits.
+
+                        let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
+
+                        let to_return: u32;
+                        if parsed_hex.is_none() {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "two hex digits",
+                                found: ParserFound::Str("something else".to_string()),
+                                loc: SourceSpan::from((span.offset() + offset, 1)),
+                            });
+                            to_return = 0;
+                        } else {
+                            to_return = parsed_hex.unwrap();
+                        }
+
+                        to_return
+                    }
+                    Some((offset, 'u')) => match parse_unicode_literal(&mut char_indices) {
+                        Ok(res) => res.explode().0,
+                        Err(ParseUnicodeLiteralError::HexIsNotValidUnicode) => {
+                            errors.push(CobaltError::InvalidUnicodeLiteral {
+                                loc: SourceSpan::from((span.offset() + offset, 1)),
+                            });
+                            0
+                        }
+                        Err(ParseUnicodeLiteralError::MissingOpenDelim) => {
+                            errors.push(CobaltError::ExpectedHere {
+                                ex: "'{'",
+                                loc: SourceSpan::from((span.offset() + offset, 1)),
+                            });
+                            0
+                        }
+                        Err(ParseUnicodeLiteralError::MissingClosingDelim) => {
+                            errors.push(CobaltError::ExpectedHere {
+                                ex: "'}'",
+                                loc: SourceSpan::from((span.offset() + offset, 1)),
+                            });
+                            0
+                        }
+                        Err(ParseUnicodeLiteralError::FailedToParseHex) => {
+                            errors.push(CobaltError::InvalidThing {
+                                ex: "hex literal",
+                                loc: SourceSpan::from((span.offset() + offset, 1)),
+                            });
+                            0
+                        }
+                    },
+                    Some((_, c)) => u32::from(c),
+                }
+            }
+            Some((_, c)) => u32::from(c),
+        };
+
+        (Some(CharLiteralAST::new(span, val, None)), errors)
+    }
+
     /// Going into this function, expect current token to be 'LiteralToken::Str'.
     pub(crate) fn parse_string_literal(
         &mut self,
@@ -513,10 +649,11 @@ fn parse_unicode_literal(
         Some((_, '{')) => {}
         _ => {
             loop {
-                match chars.peek() {
-                    None => break,
-                    Some(&(_, '}')) => {
-                        chars.next();
+                match chars.next() {
+                    None => {
+                        break;
+                    }
+                    Some((_, '}')) => {
                         break;
                     }
                     _ => {}
@@ -536,10 +673,9 @@ fn parse_unicode_literal(
         Some((_, '}')) => {}
         _ => {
             loop {
-                match chars.peek() {
+                match chars.next() {
                     None => break,
-                    Some(&(_, '}')) => {
-                        chars.next();
+                    Some((_, '}')) => {
                         break;
                     }
                     _ => {}

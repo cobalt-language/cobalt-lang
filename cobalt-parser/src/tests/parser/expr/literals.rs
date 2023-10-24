@@ -31,4 +31,15 @@ fn test_parse_string_literal() {
     test_parser_fn(r#""before \u{2122}""#, true, |parser| {
         parser.parse_string_literal()
     });
+
+    test_parser_fn(r#""c string"c"#, true, |parser| parser.parse_literal());
+}
+
+#[test]
+fn test_parse_char_literal() {
+    test_parser_fn(r#"'c'"#, true, |parser| parser.parse_char_literal());
+
+    test_parser_fn(r#"'\u{2122}'"#, true, |parser| parser.parse_char_literal());
+
+    test_parser_fn(r#"'\0'"#, true, |parser| parser.parse_char_literal());
 }

@@ -482,6 +482,46 @@ impl<'src> SourceReader<'src> {
                     });
                 }
 
+                // --- Char literal
+                '\'' => {
+                    self.next_char();
+
+                    let span_start = self.index;
+
+                    let mut last_was_escape = false;
+                    loop {
+                        let c = self.peek();
+                        if c.is_none() {
+                            todo!()
+                        }
+                        let c = c.unwrap();
+
+                        if c == &'\\' {
+                            last_was_escape = !last_was_escape;
+                            self.next_char();
+                            continue;
+                        }
+
+                        if c == &'\'' && !last_was_escape {
+                            break;
+                        }
+
+                        last_was_escape = false;
+
+                        self.next_char();
+                    }
+
+                    let span_end = self.index;
+                    self.next_char();
+
+                    tokens.push(Token {
+                        kind: TokenKind::Literal(LiteralToken::Char(
+                            &self.source[span_start..span_end],
+                        )),
+                        span: SourceSpan::from((span_start, span_end - span_start)),
+                    });
+                }
+
                 _ => {
                     let span_start = self.index;
                     self.next_char();
