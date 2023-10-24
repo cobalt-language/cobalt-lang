@@ -37,10 +37,8 @@ impl<'src> Parser<'src> {
 
                 if self.current_token.is_some() {
                     if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-                        if ident.starts_with('i') {
-                            suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
-                            self.next();
-                        }
+                        suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                        self.next();
                     }
                 }
 
@@ -70,10 +68,8 @@ impl<'src> Parser<'src> {
 
                 if self.current_token.is_some() {
                     if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-                        if ident.starts_with('f') {
-                            suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
-                            self.next();
-                        }
+                        suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                        self.next();
                     }
                 }
 
