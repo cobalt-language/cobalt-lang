@@ -1,3 +1,4 @@
+use std::iter::Peekable;
 use std::{borrow::Cow, collections::HashMap, str::Chars};
 
 use cobalt_ast::{
@@ -204,7 +205,10 @@ impl<'src> Parser<'src> {
     /// ````
     pub(crate) fn parse_struct_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
-        assert!(self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Brace));
+        assert_eq!(
+            self.current_token.unwrap().kind,
+            TokenKind::OpenDelimiter(Delimiter::Brace)
+        );
 
         let mut errors = vec![];
         let span = self.current_token.unwrap().span;
@@ -216,7 +220,7 @@ impl<'src> Parser<'src> {
         let mut field_spans: HashMap<Cow<'src, str>, SourceSpan> = HashMap::new();
 
         let start = 0;
-        let atleast_one_field = 1;
+        let at_least_one_field = 1;
         let mut local_state = start;
 
         loop {
@@ -237,7 +241,7 @@ impl<'src> Parser<'src> {
             }
 
             // If we just parsed a field, then a comma should separate it from the next field.
-            if local_state == atleast_one_field {
+            if local_state == at_least_one_field {
                 if self.current_token.is_none() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
@@ -325,7 +329,7 @@ impl<'src> Parser<'src> {
             fields.insert(field_name.clone(), expr);
             field_spans.insert(field_name, field_name_span);
 
-            local_state = atleast_one_field;
+            local_state = at_least_one_field;
         }
 
         // ---
@@ -342,9 +346,9 @@ impl<'src> Parser<'src> {
         let span = self.current_token.unwrap().span;
         let mut errors = vec![];
 
-        let mut chars: Chars;
+        let mut chars: Peekable<Chars>;
         if let TokenKind::Literal(LiteralToken::Str(s)) = self.current_token.unwrap().kind {
-            chars = s.chars();
+            chars = s.chars().peekable();
         } else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
@@ -377,29 +381,10 @@ impl<'src> Parser<'src> {
                         Some('c') => {
                             // --- Next are exactly two hex digits.
 
-                            let mut digit1 = chars.next();
-                            let mut digit2 = chars.next();
-                            if digit1.is_none() || digit2.is_none() {
-                                errors.push(CobaltError::ExpectedFound {
-                                    ex: "two hex digits",
-                                    found: ParserFound::Str("something else".to_string()),
-                                    loc: SourceSpan::from((self.cursor.index, 2)),
-                                });
-                                digit1 = Some('0');
-                                digit2 = Some('0');
-                            }
+                            let parsed_hex = parse_hex_literal(&mut chars, 2, 2);
 
-                            let digit1 = digit1.unwrap();
-                            let digit2 = digit2.unwrap();
-
-                            let mut buf = [0; 8]; // UTF-8 encoded chars can be up to 4 bytes each
-                            let size = digit1.encode_utf8(&mut buf).len()
-                                + digit2.encode_utf8(&mut buf[digit1.len_utf8()..]).len();
-                            let two_hex_digits = std::str::from_utf8(&buf[..size]).unwrap();
-
-                            let parsed_result = u8::from_str_radix(two_hex_digits, 16);
                             let to_return: CharBytesIterator;
-                            if parsed_result.is_err() {
+                            if parsed_hex.is_none() {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
@@ -407,9 +392,7 @@ impl<'src> Parser<'src> {
                                 });
                                 to_return = CharBytesIterator::from_u8(0);
                             } else {
-                                to_return = CharBytesIterator::from_u8(parsed_result.unwrap());
-                                self.next();
-                                self.next();
+                                to_return = CharBytesIterator::from_u8(parsed_hex.unwrap() as u8);
                             }
 
                             to_return
@@ -418,29 +401,10 @@ impl<'src> Parser<'src> {
                         Some('x') => {
                             // --- Next are exactly two hex digits.
 
-                            let mut digit1 = chars.next();
-                            let mut digit2 = chars.next();
-                            if digit1.is_none() || digit2.is_none() {
-                                errors.push(CobaltError::ExpectedFound {
-                                    ex: "two hex digits",
-                                    found: ParserFound::Str("something else".to_string()),
-                                    loc: SourceSpan::from((self.cursor.index, 2)),
-                                });
-                                digit1 = Some('0');
-                                digit2 = Some('0');
-                            }
+                            let parsed_hex = parse_hex_literal(&mut chars, 2, 2);
 
-                            let digit1 = digit1.unwrap();
-                            let digit2 = digit2.unwrap();
-
-                            let mut buf = [0; 8]; // UTF-8 encoded chars can be up to 4 bytes each
-                            let size = digit1.encode_utf8(&mut buf).len()
-                                + digit2.encode_utf8(&mut buf[digit1.len_utf8()..]).len();
-                            let two_hex_digits = std::str::from_utf8(&buf[..size]).unwrap();
-
-                            let parsed_result = u8::from_str_radix(two_hex_digits, 16);
                             let to_return: CharBytesIterator;
-                            if parsed_result.is_err() {
+                            if parsed_hex.is_none() {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
@@ -448,41 +412,41 @@ impl<'src> Parser<'src> {
                                 });
                                 to_return = CharBytesIterator::from_u8(0);
                             } else {
-                                to_return = CharBytesIterator::raw(parsed_result.unwrap());
-                                self.next();
-                                self.next();
+                                to_return = CharBytesIterator::raw(parsed_hex.unwrap() as u8);
                             }
 
                             to_return
                         }
-                        //                 just("\\u").ignore_then(
-                        //                     text::digits(16)
-                        //                         .at_least(2)
-                        //                         .at_most(6)
-                        //                         .slice()
-                        //                         .validate(|v, span, e| {
-                        //                             let v = u32::from_str_radix(v, 16).unwrap();
-                        //                             Cbi::from_u32(v).unwrap_or_else(|| {
-                        //                                 e.emit(Rich::custom(
-                        //                                     span,
-                        //                                     format!("{v:0>4X} is not a valid Unicode codepoint"),
-                        //                                 ));
-                        //                                 Cbi::from_u8(0)
-                        //                             })
-                        //                         })
-                        //                         .recover_with(skip_until(
-                        //                             none_of("}'").ignored(),
-                        //                             one_of("}'").ignored(),
-                        //                             || Cbi::from_u8(0),
-                        //                         ))
-                        //                         .delimited_by(just('{'), just('}'))
-                        //                         .recover_with(skip_until(
-                        //                             none_of("}'").ignored(),
-                        //                             one_of("}'").ignored(),
-                        //                             || Cbi::from_u8(0),
-                        //                         )),
-                        //                 ),
-                        Some('u') => todo!(),
+                        Some('u') => match parse_unicode_literal(&mut chars) {
+                            Ok(res) => res,
+                            Err(ParseUnicodeLiteralError::HexIsNotValidUnicode) => {
+                                errors.push(CobaltError::InvalidUnicodeLiteral {
+                                    loc: self.current_token.unwrap().span,
+                                });
+                                CharBytesIterator::from_u8(0)
+                            }
+                            Err(ParseUnicodeLiteralError::MissingOpenDelim) => {
+                                errors.push(CobaltError::ExpectedHere {
+                                    ex: "'{'",
+                                    loc: self.current_token.unwrap().span,
+                                });
+                                CharBytesIterator::from_u8(0)
+                            }
+                            Err(ParseUnicodeLiteralError::MissingClosingDelim) => {
+                                errors.push(CobaltError::ExpectedHere {
+                                    ex: "'}'",
+                                    loc: self.current_token.unwrap().span,
+                                });
+                                CharBytesIterator::from_u8(0)
+                            }
+                            Err(ParseUnicodeLiteralError::FailedToParseHex) => {
+                                errors.push(CobaltError::InvalidThing {
+                                    ex: "hex literal",
+                                    loc: self.current_token.unwrap().span,
+                                });
+                                CharBytesIterator::from_u8(0)
+                            }
+                        },
                         Some(c) => CharBytesIterator::from_char(c),
                     }
                 }
@@ -498,9 +462,90 @@ impl<'src> Parser<'src> {
     }
 }
 
-//fn is_hex_digit(c: char) -> bool {
-//    match c {
-//        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
-//        _ => false,
-//    }
-//}
+fn is_hex_digit(c: char) -> bool {
+    match c {
+        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
+        _ => false,
+    }
+}
+
+/// Parse 2-6 hex digits as a unicode value, delimited by '{}'.
+fn parse_hex_literal(
+    chars: &mut Peekable<Chars>,
+    min_num_digits: u8,
+    max_num_digits: u8,
+) -> Option<u32> {
+    assert!(min_num_digits >= 2 && max_num_digits <= 6 && min_num_digits <= max_num_digits);
+
+    let mut cbi_s = Vec::with_capacity((max_num_digits).into());
+    for _ in 0..max_num_digits {
+        let next = chars.peek();
+        if next.is_none() {
+            break;
+        }
+
+        let next_unwrapped = next.unwrap().to_owned();
+        if !is_hex_digit(next_unwrapped) {
+            break;
+        }
+
+        chars.next();
+        cbi_s.push(CharBytesIterator::from_char(next_unwrapped));
+    }
+
+    if cbi_s.len() < min_num_digits.into() {
+        return None;
+    }
+
+    let bytes: Vec<u8> = cbi_s.into_iter().flatten().collect();
+    let str_bytes = unsafe { std::str::from_utf8_unchecked(bytes.as_slice()) };
+
+    u32::from_str_radix(str_bytes, 16).ok()
+}
+
+enum ParseUnicodeLiteralError {
+    MissingOpenDelim,
+    MissingClosingDelim,
+    FailedToParseHex,
+    HexIsNotValidUnicode,
+}
+
+fn parse_unicode_literal(
+    chars: &mut Peekable<Chars>,
+) -> Result<CharBytesIterator, ParseUnicodeLiteralError> {
+    if chars.next() != Some('{') {
+        loop {
+            let next = chars.peek();
+            if next.is_none() {
+                break;
+            } else if next == Some(&'}') {
+                chars.next();
+                break;
+            }
+        }
+
+        return Err(ParseUnicodeLiteralError::MissingOpenDelim);
+    }
+
+    let parsed_hex = parse_hex_literal(chars, 2, 6);
+    if parsed_hex.is_none() {
+        return Err(ParseUnicodeLiteralError::FailedToParseHex);
+    }
+
+    if chars.next() != Some('}') {
+        loop {
+            let next = chars.peek();
+            if next.is_none() {
+                break;
+            } else if next == Some(&'}') {
+                chars.next();
+                break;
+            }
+        }
+
+        return Err(ParseUnicodeLiteralError::MissingClosingDelim);
+    }
+
+    CharBytesIterator::from_u32(parsed_hex.unwrap())
+        .ok_or(ParseUnicodeLiteralError::HexIsNotValidUnicode)
+}

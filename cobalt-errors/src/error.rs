@@ -33,6 +33,18 @@ pub enum CobaltError<'src> {
         #[label]
         loc: SourceSpan,
     },
+    #[error("expected {ex} here")]
+    ExpectedHere {
+        ex: &'static str,
+        #[label]
+        loc: SourceSpan,
+    },
+    #[error("invalid {ex}")]
+    InvalidThing {
+        ex: &'static str,
+        #[label]
+        loc: SourceSpan,
+    },
     #[error("multiple module declarations")]
     RedefModule {
         #[label]
@@ -49,6 +61,12 @@ pub enum CobaltError<'src> {
     },
     #[error("unexpected end of input")]
     UnexpectedEndOfInput { loc: SourceSpan },
+
+    #[error("invalid unicode literal")]
+    InvalidUnicodeLiteral {
+        #[label]
+        loc: SourceSpan,
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]
