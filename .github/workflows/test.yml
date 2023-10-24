@@ -3,7 +3,7 @@ name: Run Clippy, Tests, and Fmt
 on:
   push:
     branches: [main]
-  pull-request:
+  pull_request:
     branches: [main]
 
 jobs:
