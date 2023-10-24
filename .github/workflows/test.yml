@@ -18,6 +18,8 @@ jobs:
       uses: actions/checkout@v4
     - name: Install LLVM
       uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "16.0"
     - name: Run Clippy
       run: cargo clippy -F no-llvm-linking
   test:
