@@ -165,9 +165,11 @@ impl CompileCommand {
             #[cfg(target_os = "linux")]
             'specific: {
                 let mut it = triple.split('-');
-                let Some(arch) = it.next() else {break 'specific};
-                let Some(_)    = it.next() else {break 'specific};
-                let Some(os)   = it.next() else {break 'specific};
+                let Some(arch) = it.next() else {
+                    break 'specific;
+                };
+                let Some(_) = it.next() else { break 'specific };
+                let Some(os) = it.next() else { break 'specific };
                 let trip = it.next().map_or_else(
                     || format!("{arch}-{os}"),
                     |info| format!("{arch}-{os}-{info}"),
