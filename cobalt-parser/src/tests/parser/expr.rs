@@ -116,3 +116,8 @@ fn test_postfix() {
 fn test_cast() {
     test_parser_fn("ptr : *mut u8", true, |parser| parser.parse_expr());
 }
+
+#[test]
+fn test_intrinsics() {
+    test_parser_fn("@const", true, |parser| parser.parse_intrinsic());
+}

@@ -31,6 +31,19 @@ impl Keyword {
         }
     }
 
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Keyword::Let => "let",
+            Keyword::Mut => "mut",
+            Keyword::Const => "const",
+            Keyword::Type => "type",
+            Keyword::Fn => "fn",
+            Keyword::If => "if",
+            Keyword::Else => "else",
+            Keyword::Module => "module",
+        }
+    }
+
     /// Returns `None` if the token is not a keyword. Otherwise, returns
     /// the keyword.
     ///

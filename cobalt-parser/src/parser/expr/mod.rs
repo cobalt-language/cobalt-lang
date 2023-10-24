@@ -673,11 +673,11 @@ impl<'src> Parser<'src> {
     /// parsing methods.
     ///
     /// ```text
-    /// instinsic := '@' ident
+    /// instinsic := '@' [ident | keyword]
     /// ```
     pub(crate) fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
-        assert!(self.current_token.unwrap().kind == TokenKind::At);
+        assert_eq!(self.current_token.unwrap().kind, TokenKind::At);
 
         let span = self.current_token.unwrap().span;
         let mut errors = vec![];
@@ -687,27 +687,28 @@ impl<'src> Parser<'src> {
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
+                ex: "name of intrinsic",
                 found: ParserFound::Eof,
                 loc: self.current_token.unwrap().span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
-        let name: Cow<'_, str>;
-        if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-            name = Cow::Borrowed(ident);
-        } else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                loc: self.current_token.unwrap().span,
-            });
-            return (
-                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
-                errors,
-            );
-        }
+        let name: Cow<'_, str> = match self.current_token.unwrap().kind {
+            TokenKind::Ident(ident) => Cow::Borrowed(ident),
+            TokenKind::Keyword(kw) => Cow::Borrowed(kw.as_str()),
+            _ => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "name of intrinsic",
+                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    loc: self.current_token.unwrap().span,
+                });
+                return (
+                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
+                    errors,
+                );
+            }
+        };
 
         self.next();
 

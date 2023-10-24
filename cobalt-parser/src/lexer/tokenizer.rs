@@ -452,7 +452,12 @@ impl<'src> SourceReader<'src> {
                     loop {
                         let c = self.peek();
                         if c.is_none() {
-                            todo!()
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "rest of string literal",
+                                found: ParserFound::Eof,
+                                loc: SourceSpan::from((self.source.len(), 0)),
+                            });
+                            continue;
                         }
                         let c = c.unwrap();
 
@@ -492,7 +497,12 @@ impl<'src> SourceReader<'src> {
                     loop {
                         let c = self.peek();
                         if c.is_none() {
-                            todo!()
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "rest of char literal",
+                                found: ParserFound::Eof,
+                                loc: SourceSpan::from((self.source.len(), 0)),
+                            });
+                            continue;
                         }
                         let c = c.unwrap();
 
