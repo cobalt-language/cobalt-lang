@@ -289,7 +289,9 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
             let mut bytes = [0u8; 8];
             loop {
                 buf.read_exact(&mut bytes)?;
-                let Some(kind) = std::num::NonZeroU64::new(u64::from_be_bytes(bytes)) else {break};
+                let Some(kind) = std::num::NonZeroU64::new(u64::from_be_bytes(bytes)) else {
+                    break;
+                };
                 let guard = types::TYPE_SERIAL_REGISTRY.guard();
                 let info = types::TYPE_SERIAL_REGISTRY
                     .get(&kind, &guard)

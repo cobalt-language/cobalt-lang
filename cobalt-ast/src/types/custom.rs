@@ -195,7 +195,8 @@ impl Type for Custom {
             return if attr.0 == "__base" {
                 Ok(Value {
                     data_type: self.base(),
-                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    loc: remove_unreachable(attr.1)
+                        .map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
             } else if self.nom_info(ctx).transparent {
@@ -203,10 +204,10 @@ impl Type for Custom {
                 self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
-            }
+            };
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
-            return Err(invalid_attr(&val, attr.0, attr.1))
+            return Err(invalid_attr(&val, attr.0, attr.1));
         };
         assert!(field
             .data_type
@@ -242,10 +243,11 @@ impl Type for Custom {
     }
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         let Some(field) = self.static_attr(attr, ctx) else {
-            return attr == "__base"|| (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
+            return attr == "__base"
+                || (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
-            return false
+            return false;
         };
         assert!(field
             .data_type
@@ -263,10 +265,11 @@ impl Type for Custom {
     }
     fn _has_refmut_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         let Some(field) = self.static_attr(attr, ctx) else {
-            return attr == "__base" || (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
+            return attr == "__base"
+                || (self.nom_info(ctx).transparent && self.base()._has_mut_attr(attr, ctx));
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
-            return false
+            return false;
         };
         assert!(field
             .data_type
@@ -295,7 +298,8 @@ impl Type for Custom {
             return if attr.0 == "__base" {
                 Ok(Value {
                     data_type: self.base().add_ref(false),
-                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    loc: remove_unreachable(attr.1)
+                        .map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
             } else if self.nom_info(ctx).transparent {
@@ -303,10 +307,10 @@ impl Type for Custom {
                 self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
-            }
+            };
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
-            return Err(invalid_attr(&val, attr.0, attr.1))
+            return Err(invalid_attr(&val, attr.0, attr.1));
         };
         assert!(field
             .data_type
@@ -350,7 +354,8 @@ impl Type for Custom {
             return if attr.0 == "__base" {
                 Ok(Value {
                     data_type: self.base().add_ref(true),
-                    loc: remove_unreachable(attr.1).map_or(val.loc, |loc| merge_spans(val.loc, loc)),
+                    loc: remove_unreachable(attr.1)
+                        .map_or(val.loc, |loc| merge_spans(val.loc, loc)),
                     ..val
                 })
             } else if self.nom_info(ctx).transparent {
@@ -358,10 +363,10 @@ impl Type for Custom {
                 self.base().attr(val, attr, ctx)
             } else {
                 Err(invalid_attr(&val, attr.0, attr.1))
-            }
+            };
         };
         let Some(InterData::Function(FnData { mt, .. })) = field.inter_val else {
-            return Err(invalid_attr(&val, attr.0, attr.1))
+            return Err(invalid_attr(&val, attr.0, attr.1));
         };
         assert!(field
             .data_type
