@@ -3,7 +3,7 @@ name: Run Clippy, Tests, and Fmt
 on:
   workflow_dispatch:
   push:
-    branches: [main, pr-lints]
+    branches: [main]
   pull_request:
     branches: [main]
 
