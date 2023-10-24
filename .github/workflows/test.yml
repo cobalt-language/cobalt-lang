@@ -2,7 +2,6 @@ name: Run Clippy, Tests, and Fmt
 
 on:
   workflow_dispatch:
-  
   push:
     branches: [main, pr-lints]
   pull_request:
@@ -12,19 +11,25 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
     - name: Run Clippy
-      run: cargo clippy --manifest-path lang/Cargo.toml --verbose -F no-llvm-linking
+      run: cargo clippy --verbose -F no-llvm-linking
   test:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
     - name: Install LLVM
       uses: KyleMayes/install-llvm-action@v1
       with:
         version: "16.0"
     - name: Run Cargo Test
-      run: cargo test --manifest-path lang/Cargo.toml  --verbose
+      run: cargo test --verbose
   fmt:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
     - name: Run Cargo Formatter
-      run: cargo fmt --manifest-path lang/Cargo.toml  --verbose --check
+      run: cargo fmt --verbose --check
