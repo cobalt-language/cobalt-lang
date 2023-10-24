@@ -24,5 +24,11 @@ fn test_parse_string_literal() {
         parser.parse_string_literal()
     });
 
-    test_parser_fn(r#""\cff""#, true, |parser| parser.parse_string_literal())
+    test_parser_fn(r#""\cff""#, true, |parser| parser.parse_string_literal());
+
+    test_parser_fn(r#""\xff""#, true, |parser| parser.parse_string_literal());
+
+    test_parser_fn(r#""before \u{2122}""#, true, |parser| {
+        parser.parse_string_literal()
+    });
 }

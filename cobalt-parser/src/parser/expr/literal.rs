@@ -1,5 +1,5 @@
 use std::iter::Peekable;
-use std::{borrow::Cow, collections::HashMap, str::Chars};
+use std::{borrow::Cow, collections::HashMap, str::CharIndices};
 
 use cobalt_ast::{
     ast::{ErrorAST, IntLiteralAST, StringLiteralAST, StructLiteralAST},
@@ -342,9 +342,9 @@ impl<'src> Parser<'src> {
         let span = self.current_token.unwrap().span;
         let mut errors = vec![];
 
-        let mut chars: Peekable<Chars>;
+        let mut char_indices: Peekable<CharIndices>;
         if let TokenKind::Literal(LiteralToken::Str(s)) = self.current_token.unwrap().kind {
-            chars = s.chars().peekable();
+            char_indices = s.char_indices().peekable();
         } else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
@@ -361,30 +361,30 @@ impl<'src> Parser<'src> {
 
         let mut cbi_s: Vec<CharBytesIterator> = vec![];
         loop {
-            let cbi = match chars.next() {
+            let cbi = match char_indices.next() {
                 None => break,
-                Some('\\') => {
-                    match chars.next() {
+                Some((_, '\\')) => {
+                    match char_indices.next() {
                         None => break,
-                        Some('0') => CharBytesIterator::from_u8(0x00),
-                        Some('n') => CharBytesIterator::from_u8(0x0a),
-                        Some('r') => CharBytesIterator::from_u8(0x0d),
-                        Some('t') => CharBytesIterator::from_u8(0x09),
-                        Some('v') => CharBytesIterator::from_u8(0x0a),
-                        Some('b') => CharBytesIterator::from_u8(0x08),
-                        Some('e') => CharBytesIterator::from_u8(0x1b),
-                        Some('a') => CharBytesIterator::from_u8(0x07),
-                        Some('c') => {
+                        Some((_, '0')) => CharBytesIterator::from_u8(0x00),
+                        Some((_, 'n')) => CharBytesIterator::from_u8(0x0a),
+                        Some((_, 'r')) => CharBytesIterator::from_u8(0x0d),
+                        Some((_, 't')) => CharBytesIterator::from_u8(0x09),
+                        Some((_, 'v')) => CharBytesIterator::from_u8(0x0a),
+                        Some((_, 'b')) => CharBytesIterator::from_u8(0x08),
+                        Some((_, 'e')) => CharBytesIterator::from_u8(0x1b),
+                        Some((_, 'a')) => CharBytesIterator::from_u8(0x07),
+                        Some((offset, 'c')) => {
                             // --- Next are exactly two hex digits.
 
-                            let parsed_hex = parse_hex_literal(&mut chars, 2, 2);
+                            let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
                             let to_return: CharBytesIterator;
                             if parsed_hex.is_none() {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
-                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 to_return = CharBytesIterator::from_u8(0);
                             } else {
@@ -394,17 +394,17 @@ impl<'src> Parser<'src> {
                             to_return
                         }
                         // This only differs from `\c` by ultimately calling `Cbi::raw` instead of `Cbi::from_u8`.
-                        Some('x') => {
+                        Some((offset, 'x')) => {
                             // --- Next are exactly two hex digits.
 
-                            let parsed_hex = parse_hex_literal(&mut chars, 2, 2);
+                            let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
                             let to_return: CharBytesIterator;
                             if parsed_hex.is_none() {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
-                                    loc: SourceSpan::from((self.cursor.index, 2)),
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 to_return = CharBytesIterator::from_u8(0);
                             } else {
@@ -413,40 +413,40 @@ impl<'src> Parser<'src> {
 
                             to_return
                         }
-                        Some('u') => match parse_unicode_literal(&mut chars) {
+                        Some((offset, 'u')) => match parse_unicode_literal(&mut char_indices) {
                             Ok(res) => res,
                             Err(ParseUnicodeLiteralError::HexIsNotValidUnicode) => {
                                 errors.push(CobaltError::InvalidUnicodeLiteral {
-                                    loc: self.current_token.unwrap().span,
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 CharBytesIterator::from_u8(0)
                             }
                             Err(ParseUnicodeLiteralError::MissingOpenDelim) => {
                                 errors.push(CobaltError::ExpectedHere {
                                     ex: "'{'",
-                                    loc: self.current_token.unwrap().span,
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 CharBytesIterator::from_u8(0)
                             }
                             Err(ParseUnicodeLiteralError::MissingClosingDelim) => {
                                 errors.push(CobaltError::ExpectedHere {
                                     ex: "'}'",
-                                    loc: self.current_token.unwrap().span,
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 CharBytesIterator::from_u8(0)
                             }
                             Err(ParseUnicodeLiteralError::FailedToParseHex) => {
                                 errors.push(CobaltError::InvalidThing {
                                     ex: "hex literal",
-                                    loc: self.current_token.unwrap().span,
+                                    loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 CharBytesIterator::from_u8(0)
                             }
                         },
-                        Some(c) => CharBytesIterator::from_char(c),
+                        Some((_, c)) => CharBytesIterator::from_char(c),
                     }
                 }
-                Some(c) => CharBytesIterator::from_char(c),
+                Some((_, c)) => CharBytesIterator::from_char(c),
             };
 
             cbi_s.push(cbi);
@@ -467,7 +467,7 @@ fn is_hex_digit(c: char) -> bool {
 
 /// Parse 2-6 hex digits as a unicode value, delimited by '{}'.
 fn parse_hex_literal(
-    chars: &mut Peekable<Chars>,
+    chars: &mut Peekable<CharIndices>,
     min_num_digits: u8,
     max_num_digits: u8,
 ) -> Option<u32> {
@@ -481,12 +481,12 @@ fn parse_hex_literal(
         }
 
         let next_unwrapped = next.unwrap().to_owned();
-        if !is_hex_digit(next_unwrapped) {
+        if !is_hex_digit(next_unwrapped.1) {
             break;
         }
 
         chars.next();
-        cbi_s.push(CharBytesIterator::from_char(next_unwrapped));
+        cbi_s.push(CharBytesIterator::from_char(next_unwrapped.1));
     }
 
     if cbi_s.len() < min_num_digits.into() {
@@ -507,20 +507,24 @@ enum ParseUnicodeLiteralError {
 }
 
 fn parse_unicode_literal(
-    chars: &mut Peekable<Chars>,
+    chars: &mut Peekable<CharIndices>,
 ) -> Result<CharBytesIterator, ParseUnicodeLiteralError> {
-    if chars.next() != Some('{') {
-        loop {
-            let next = chars.peek();
-            if next.is_none() {
-                break;
-            } else if next == Some(&'}') {
-                chars.next();
-                break;
+    match chars.next() {
+        Some((_, '{')) => {}
+        _ => {
+            loop {
+                match chars.peek() {
+                    None => break,
+                    Some(&(_, '}')) => {
+                        chars.next();
+                        break;
+                    }
+                    _ => {}
+                }
             }
-        }
 
-        return Err(ParseUnicodeLiteralError::MissingOpenDelim);
+            return Err(ParseUnicodeLiteralError::MissingOpenDelim);
+        }
     }
 
     let parsed_hex = parse_hex_literal(chars, 2, 6);
@@ -528,18 +532,22 @@ fn parse_unicode_literal(
         return Err(ParseUnicodeLiteralError::FailedToParseHex);
     }
 
-    if chars.next() != Some('}') {
-        loop {
-            let next = chars.peek();
-            if next.is_none() {
-                break;
-            } else if next == Some(&'}') {
-                chars.next();
-                break;
+    match chars.next() {
+        Some((_, '}')) => {}
+        _ => {
+            loop {
+                match chars.peek() {
+                    None => break,
+                    Some(&(_, '}')) => {
+                        chars.next();
+                        break;
+                    }
+                    _ => {}
+                }
             }
-        }
 
-        return Err(ParseUnicodeLiteralError::MissingClosingDelim);
+            return Err(ParseUnicodeLiteralError::MissingClosingDelim);
+        }
     }
 
     CharBytesIterator::from_u32(parsed_hex.unwrap())
