@@ -622,9 +622,11 @@ impl Type for SizedArray {
         self.elem().has_dtor(ctx)
     }
     fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
-        let Some(ib) = ctx.builder.get_insert_block() else {return};
-        let Some(f) = ib.get_parent() else {return};
-        let Some(pv) = val.addr(ctx) else {return};
+        let Some(ib) = ctx.builder.get_insert_block() else {
+            return;
+        };
+        let Some(f) = ib.get_parent() else { return };
+        let Some(pv) = val.addr(ctx) else { return };
         let at = self.llvm_type(ctx).unwrap();
         let bb = ctx.context.append_basic_block(f, "arr.dtor.loop");
         let ex = ctx.context.append_basic_block(f, "arr.dtor.exit");

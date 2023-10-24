@@ -1,0 +1,42 @@
+name: Run Clippy, Tests, and Fmt
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+ CARGO_TERM_COLOR: always
+
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install LLVM
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "16.0"
+    - name: Run Clippy
+      run: cargo clippy -F no-llvm-linking
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install LLVM
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "16.0"
+    - name: Run Cargo Test
+      run: cargo test
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Run Cargo Formatter
+      run: cargo fmt --check
