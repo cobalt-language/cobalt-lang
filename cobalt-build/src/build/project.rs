@@ -208,6 +208,19 @@ macro_rules! impl_project {
                     original.display()
                 )
             }
+            pub fn load_exact<P: Into<PathBuf>>(
+                path: P,
+                set_src: bool,
+                set_build: bool,
+                frag: ProjectFragment<'a>,
+            ) -> anyhow::Result<Self> {
+                let mut path = path.into();
+                Self::load_exact_(&mut path, set_src, set_build, frag).and_then(|r| {
+                    r.map_err(|_| {
+                        anyhow::anyhow!("couldn't find cobalt configuration in {}", path.display())
+                    })
+                })
+            }
         }
         impl<'a, 'de: 'a> Deserialize<'de> for $name<'a> {
             fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
