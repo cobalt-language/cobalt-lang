@@ -20,6 +20,12 @@ jobs:
       uses: KyleMayes/install-llvm-action@v1
       with:
         version: "16.0"
+    - name: Cache Build Outputs
+      uses: actions/cache@v3
+      with:
+        path: |
+          Cargo.lock
+          target/
     - name: Run Clippy
       run: cargo clippy
       env:
@@ -33,6 +39,12 @@ jobs:
       uses: KyleMayes/install-llvm-action@v1
       with:
         version: "16.0"
+    - name: Cache Build Outputs
+      uses: actions/cache@v3
+      with:
+        path: |
+          Cargo.lock
+          target/
     - name: Run Cargo Test
       run: cargo test
   fmt:
