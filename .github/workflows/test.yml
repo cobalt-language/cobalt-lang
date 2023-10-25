@@ -23,7 +23,10 @@ jobs:
     - name: Cache Build Outputs
       uses: actions/cache@v3
       with:
-        key: test-${{ github.ref_name }}
+        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+        restore-keys: |
+          test-${{ github.ref_name }}-
+          test-
         path: |
           Cargo.lock
           target/
@@ -44,7 +47,10 @@ jobs:
     - name: Cache Build Outputs
       uses: actions/cache@v3
       with:
-        key: test-${{ github.ref_name }}
+        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+        restore-keys: |
+          test-${{ github.ref_name }}-
+          test-
         path: |
           Cargo.lock
           target/
