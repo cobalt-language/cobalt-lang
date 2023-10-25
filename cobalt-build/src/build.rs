@@ -22,6 +22,7 @@ pub mod file_list;
 pub mod project;
 pub use file_list::*;
 pub use project::*;
+pub(crate) mod cond;
 
 #[derive(Debug, Clone, Copy, Error)]
 #[error("source_dir and build_dir need to be set on a project before it is built!")]

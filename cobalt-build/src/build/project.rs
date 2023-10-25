@@ -48,7 +48,11 @@ macro_rules! impl_project {
                             let mut cfg =
                                 ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
                                     .context("failed to parse project file")?;
-                            cfg.merge(frag)?;
+                            if succ {
+                                cfg.merge(frag)?;
+                            } else {
+                                cfg.fill_from(frag);
+                            }
                             if set_src {
                                 cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
                                     if src.is_absolute() {
@@ -83,7 +87,11 @@ macro_rules! impl_project {
                             let mut cfg =
                                 ProjectFragment::<'a>::from_json(&path.read_to_string_anyhow()?)
                                     .context("failed to parse project file")?;
-                            cfg.merge(frag)?;
+                            if succ {
+                                cfg.merge(frag)?;
+                            } else {
+                                cfg.fill_from(frag);
+                            }
                             if set_src {
                                 cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
                                     if src.is_absolute() {
@@ -124,7 +132,7 @@ macro_rules! impl_project {
                             let mut cfg =
                                 ProjectFragment::<'a>::from_toml(&path.read_to_string_anyhow()?)
                                     .context("failed to parse project file")?;
-                            cfg.merge(frag)?;
+                            cfg.fill_from(frag);
                             if set_src {
                                 cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
                                     if src.is_absolute() {
@@ -154,7 +162,7 @@ macro_rules! impl_project {
                             let mut cfg =
                                 ProjectFragment::<'a>::from_json(&path.read_to_string_anyhow()?)
                                     .context("failed to parse project file")?;
-                            cfg.merge(frag)?;
+                            cfg.fill_from(frag);
                             if set_src {
                                 cfg.source_dir = Some(if let Some(src) = cfg.source_dir {
                                     if src.is_absolute() {
@@ -461,6 +469,48 @@ impl<'a> ProjectFragment<'a> {
     pub fn into_merge(mut self, other: Self) -> Result<Self, FragmentMergeError> {
         self.merge(other)?;
         Ok(self)
+    }
+    pub fn overwrite_from(&mut self, other: Self) {
+        self.name = self.name.take().or(other.name);
+        self.version = self.version.take().or(other.version);
+        self.author = match (std::mem::take(&mut self.author), other.author) {
+            (Some(l), Some(r)) => Some(l + ", " + r),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        self.co_version = match (std::mem::take(&mut self.co_version), other.co_version) {
+            (Some(mut l), Some(mut r)) => {
+                l.comparators.append(&mut r.comparators);
+                Some(l)
+            }
+            (Some(c), None) | (None, Some(c)) => Some(c),
+            (None, None) => None,
+        };
+        self.source_dir = self.source_dir.take().or(other.source_dir);
+        self.build_dir = self.build_dir.take().or(other.build_dir);
+        self.targets.extend(other.targets);
+    }
+    pub fn fill_from(&mut self, other: Self) {
+        self.name = other.name.or(self.name.take());
+        self.version = other.version.or(self.version.take());
+        self.author = match (std::mem::take(&mut self.author), other.author) {
+            (Some(l), Some(r)) => Some(l + ", " + r),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        self.co_version = match (std::mem::take(&mut self.co_version), other.co_version) {
+            (Some(mut l), Some(mut r)) => {
+                l.comparators.append(&mut r.comparators);
+                Some(l)
+            }
+            (Some(c), None) | (None, Some(c)) => Some(c),
+            (None, None) => None,
+        };
+        self.source_dir = other.source_dir.or(self.source_dir.take());
+        self.build_dir = other.build_dir.or(self.build_dir.take());
+        let mut targets = other.targets;
+        targets.extend(self.targets.drain());
+        self.targets = targets;
     }
     pub fn set_dirs<P: Into<PathBuf>>(&mut self, path: P) {
         match (self.source_dir.is_none(), self.build_dir.is_none()) {

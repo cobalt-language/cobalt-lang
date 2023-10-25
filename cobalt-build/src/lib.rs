@@ -9,6 +9,7 @@ pub mod pkg;
 pub mod obj;
 
 pub use build::clear_mod;
+pub use build::cond::*;
 use cobalt_ast::*;
 use cobalt_errors::error;
 use cobalt_llvm::*;

@@ -2625,17 +2625,32 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             } => {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
-                let (mut project, project_dir) = match project_dir.as_deref() {
+                let frag = build::ProjectFragment {
+                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
+                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    ..Default::default()
+                };
+                let (project, _project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin()
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
-                        (
-                            build::ProjectFragment::from_toml_static(cfg.as_str())
-                                .context("failed to parse project file")?,
-                            PathBuf::from("."),
-                        )
+                        let mut project = build::ProjectFragment::default();
+                        if_config_json! {
+                            if cfg.trim_start().starts_with('{') {
+                                project = build::ProjectFragment::from_json_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        if_config_toml! {
+                            if !(CONFIG_JSON && cfg.trim_start().starts_with('{')) {
+                                project = build::ProjectFragment::from_toml_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        project.set_dirs(".");
+                        (project, PathBuf::from("."))
                     }
                     Some(path) => {
                         let mut path = path.to_string();
@@ -2648,12 +2663,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) = build::ProjectFragment::load(
-                            path,
-                            set_src,
-                            set_build,
-                            Default::default(),
-                        )?;
+                        let (proj, path) =
+                            build::ProjectFragment::load(path, set_src, set_build, frag)?;
                         track_project(proj.get_name()?, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
@@ -2662,16 +2673,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         std::env::current_dir()?,
                         set_src,
                         set_build,
-                        Default::default(),
+                        frag,
                     )?,
                 };
-                if let Some(p) = source_dir.as_deref() {
-                    project.source_dir = Some(Path::new(p).into());
-                }
-                if let Some(p) = build_dir.as_deref() {
-                    project.build_dir = Some(Path::new(p).into());
-                }
-                project.set_dirs(project_dir);
                 if triple.is_some() {
                     Target::initialize_all(&INIT_NEEDED)
                 } else {
@@ -2718,17 +2722,32 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             } => {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
-                let (mut project, project_dir) = match project_dir.as_deref() {
+                let frag = build::ProjectFragment {
+                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
+                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    ..Default::default()
+                };
+                let (project, _project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin()
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
-                        (
-                            build::ProjectFragment::from_toml_static(cfg.as_str())
-                                .context("failed to parse project file")?,
-                            PathBuf::from("."),
-                        )
+                        let mut project = build::ProjectFragment::default();
+                        if_config_json! {
+                            if cfg.trim_start().starts_with('{') {
+                                project = build::ProjectFragment::from_json_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        if_config_toml! {
+                            if !(CONFIG_JSON && cfg.trim_start().starts_with('{')) {
+                                project = build::ProjectFragment::from_toml_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        project.set_dirs(".");
+                        (project, PathBuf::from("."))
                     }
                     Some(path) => {
                         let mut path = path.to_string();
@@ -2741,12 +2760,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) = build::ProjectFragment::load(
-                            path,
-                            set_src,
-                            set_build,
-                            Default::default(),
-                        )?;
+                        let (proj, path) =
+                            build::ProjectFragment::load(path, set_src, set_build, frag)?;
                         track_project(proj.get_name()?, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
@@ -2755,16 +2770,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         std::env::current_dir()?,
                         set_src,
                         set_build,
-                        Default::default(),
+                        frag,
                     )?,
                 };
-                if let Some(p) = source_dir.as_deref() {
-                    project.source_dir = Some(Path::new(p).into());
-                }
-                if let Some(p) = build_dir.as_deref() {
-                    project.build_dir = Some(Path::new(p).into());
-                }
-                project.set_dirs(project_dir);
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(
                     || {
