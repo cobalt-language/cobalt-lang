@@ -52,5 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [checkout]
     steps:
+    - name: List files
+      run: ls
     - name: Run Cargo Formatter
       run: cargo fmt --check
