@@ -2535,10 +2535,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if let Some(proj) = std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| build::Project::from_toml_static(&x).ok())
+                        .and_then(|x| build::ProjectFragment::from_toml_static(&x).ok())
                     {
                         let mut vecs = load_projects()?;
-                        track_project(&proj.name, cfg_path, &mut vecs);
+                        track_project(proj.get_name()?, cfg_path, &mut vecs);
                         save_projects(vecs)?;
                         break 'found;
                     }
@@ -2555,10 +2555,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         path.push("cobalt.toml");
                     }
                     track_project(
-                        &build::Project::from_toml_static(
+                        build::ProjectFragment::from_toml_static(
                             &Path::new(&path).read_to_string_anyhow()?,
                         )?
-                        .name,
+                        .get_name()?,
                         path,
                         &mut vec,
                     );
@@ -2573,7 +2573,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| build::Project::from_toml_static(&x).ok())
+                        .and_then(|x| build::ProjectFragment::from_toml_static(&x).ok())
                         .is_some()
                     {
                         let mut vecs = load_projects()?;
@@ -2632,7 +2632,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
                         (
-                            build::Project::from_toml_static(cfg.as_str())
+                            build::ProjectFragment::from_toml_static(cfg.as_str())
                                 .context("failed to parse project file")?,
                             PathBuf::from("."),
                         )
@@ -2648,31 +2648,30 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) =
-                            build::Project::load(path, set_src, set_build, Default::default())?;
-                        track_project(&proj.name, path.clone(), &mut vecs);
+                        let (proj, path) = build::ProjectFragment::load(
+                            path,
+                            set_src,
+                            set_build,
+                            Default::default(),
+                        )?;
+                        track_project(proj.get_name()?, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
                     }
-                    None => build::Project::load(
+                    None => build::ProjectFragment::load(
                         std::env::current_dir()?,
                         set_src,
                         set_build,
                         Default::default(),
                     )?,
                 };
-                project.source_dir = Some(source_dir.map_or(
-                    project.source_dir.unwrap_or(project_dir.clone().into()),
-                    |p| PathBuf::from(p).into(),
-                ));
-                project.build_dir = Some(build_dir.map_or_else(
-                    || {
-                        project
-                            .build_dir
-                            .unwrap_or_else(|| project_dir.join("build").into())
-                    },
-                    |p| PathBuf::from(p).into(),
-                ));
+                if let Some(p) = source_dir.as_deref() {
+                    project.source_dir = Some(Path::new(p).into());
+                }
+                if let Some(p) = build_dir.as_deref() {
+                    project.build_dir = Some(Path::new(p).into());
+                }
+                project.set_dirs(project_dir);
                 if triple.is_some() {
                     Target::initialize_all(&INIT_NEEDED)
                 } else {
@@ -2685,7 +2684,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         .into_owned()
                 });
                 build::build(
-                    &project,
+                    &project.try_into()?,
                     if targets.is_empty() {
                         None
                     } else {
@@ -2726,7 +2725,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
                         (
-                            build::Project::from_toml_static(cfg.as_str())
+                            build::ProjectFragment::from_toml_static(cfg.as_str())
                                 .context("failed to parse project file")?,
                             PathBuf::from("."),
                         )
@@ -2742,31 +2741,30 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) =
-                            build::Project::load(path, set_src, set_build, Default::default())?;
-                        track_project(&proj.name, path.clone(), &mut vecs);
+                        let (proj, path) = build::ProjectFragment::load(
+                            path,
+                            set_src,
+                            set_build,
+                            Default::default(),
+                        )?;
+                        track_project(proj.get_name()?, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
                     }
-                    None => build::Project::load(
+                    None => build::ProjectFragment::load(
                         std::env::current_dir()?,
                         set_src,
                         set_build,
                         Default::default(),
                     )?,
                 };
-                project.source_dir = Some(source_dir.map_or(
-                    project.source_dir.unwrap_or(project_dir.clone().into()),
-                    |p| PathBuf::from(p).into(),
-                ));
-                project.build_dir = Some(build_dir.map_or_else(
-                    || {
-                        project
-                            .build_dir
-                            .unwrap_or_else(|| project_dir.join("build").into())
-                    },
-                    |p| PathBuf::from(p).into(),
-                ));
+                if let Some(p) = source_dir.as_deref() {
+                    project.source_dir = Some(Path::new(p).into());
+                }
+                if let Some(p) = build_dir.as_deref() {
+                    project.build_dir = Some(Path::new(p).into());
+                }
+                project.set_dirs(project_dir);
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(
                     || {
@@ -2800,6 +2798,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .as_str()
                     .to_string_lossy()
                     .into_owned();
+                let project = project.try_into()?;
                 build::build(
                     &project,
                     Some(vec![target.clone()]),
@@ -2817,7 +2816,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .collect::<Vec<_>>(),
                     },
                 )?;
-                let mut exe_path = project.build_dir.unwrap().into_owned();
+                let mut exe_path = project.build_dir.into_owned();
                 if triple.contains("windows") {
                     target.push_str(".exe");
                 }

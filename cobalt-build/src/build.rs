@@ -882,8 +882,8 @@ pub fn build(
                 data,
                 &targets,
                 opts,
-                pkg.source_dir.as_deref().ok_or(MissingDirOptions)?,
-                pkg.build_dir.as_deref().ok_or(MissingDirOptions)?,
+                &pkg.source_dir,
+                &pkg.build_dir,
             )?;
         }
     } else {
@@ -897,8 +897,8 @@ pub fn build(
                 data,
                 &targets,
                 opts,
-                pkg.source_dir.as_deref().ok_or(MissingDirOptions)?,
-                pkg.build_dir.as_deref().ok_or(MissingDirOptions)?,
+                &pkg.source_dir,
+                &pkg.build_dir,
             )?;
         }
     }

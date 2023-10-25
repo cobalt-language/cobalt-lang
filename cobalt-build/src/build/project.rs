@@ -222,227 +222,15 @@ macro_rules! impl_project {
                 })
             }
         }
-        impl<'a, 'de: 'a> Deserialize<'de> for $name<'a> {
-            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                use serde::de::*;
-                use std::fmt::{self, Formatter};
-                struct ProjectVisitor<'a>(PhantomData<&'a ()>);
-                impl<'a, 'de: 'a> Visitor<'de> for ProjectVisitor<'a> {
-                    type Value = $name<'a>;
-                    fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-                        f.write_str("struct Project")
-                    }
-                    fn visit_map<V: MapAccess<'de>>(
-                        self,
-                        mut map: V,
-                    ) -> Result<$name<'a>, V::Error> {
-                        let mut name = None;
-                        let mut version = None;
-                        let mut author = None;
-                        let mut co_version = None;
-                        let mut desc = None;
-                        let mut source_dir = None;
-                        let mut build_dir = None;
-                        let mut targets = HashMap::new();
-                        enum Field {
-                            Name,
-                            Version,
-                            Author,
-                            CoVersion,
-                            Desc,
-                            SourceDir,
-                            BuildDir,
-                            Targets,
-                            Bin,
-                            Lib,
-                            Meta,
-                            Ignore,
-                        }
-                        impl<'de> Deserialize<'de> for Field {
-                            fn deserialize<D: Deserializer<'de>>(
-                                deserializer: D,
-                            ) -> Result<Field, D::Error> {
-                                struct FieldVisitor;
-                                impl<'de> Visitor<'de> for FieldVisitor {
-                                    type Value = Field;
-                                    fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                                        f.write_str("field identifier")
-                                    }
-                                    fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
-                                        Ok(match v {
-                                            "name" => Field::Name,
-                                            "version" => Field::Version,
-                                            "author" => Field::Author,
-                                            "co_version" | "co-version" | "cobalt" => {
-                                                Field::CoVersion
-                                            }
-                                            "desc" | "description" => Field::Desc,
-                                            "src" | "source" | "src_dir" | "src-dir"
-                                            | "source_dir" | "source-dir" => Field::SourceDir,
-                                            "build" | "build_dir" | "build-dir" => Field::BuildDir,
-                                            "target" | "targets" => Field::Targets,
-                                            "bin" | "binary" | "exe" | "executable" => Field::Bin,
-                                            "lib" | "library" => Field::Lib,
-                                            "meta" => Field::Meta,
-                                            _ => Field::Ignore,
-                                        })
-                                    }
-                                }
-                                deserializer.deserialize_identifier(FieldVisitor)
-                            }
-                        }
-                        while let Some(key) = map.next_key()? {
-                            match key {
-                                Field::Name => {
-                                    if name.is_some() {
-                                        return Err(Error::duplicate_field("name"));
-                                    } else {
-                                        name = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::Version => {
-                                    if version.is_some() {
-                                        return Err(Error::duplicate_field("version"));
-                                    } else {
-                                        version = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::Author => {
-                                    if author.is_some() {
-                                        return Err(Error::duplicate_field("author"));
-                                    } else {
-                                        author = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::CoVersion => {
-                                    if co_version.is_some() {
-                                        return Err(Error::duplicate_field("co_version"));
-                                    } else {
-                                        co_version = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::Desc => {
-                                    if desc.is_some() {
-                                        return Err(Error::duplicate_field("desc"));
-                                    } else {
-                                        desc = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::SourceDir => {
-                                    if source_dir.is_some() {
-                                        return Err(Error::duplicate_field("source_dir"));
-                                    } else {
-                                        source_dir = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::BuildDir => {
-                                    if build_dir.is_some() {
-                                        return Err(Error::duplicate_field("build_dir"));
-                                    } else {
-                                        build_dir = Some(map.next_value()?)
-                                    }
-                                }
-                                Field::Targets => targets.extend(
-                                    &mut map.next_value::<Vec<TargetShim>>()?.into_iter().map(
-                                        |TargetShim {
-                                             name,
-                                             target_type,
-                                             deps,
-                                             files,
-                                         }| {
-                                            (
-                                                name,
-                                                Target {
-                                                    target_type,
-                                                    deps,
-                                                    files,
-                                                },
-                                            )
-                                        },
-                                    ),
-                                ),
-                                Field::Bin => targets.extend(
-                                    &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
-                                        |KnownTargetShim { name, deps, files }| {
-                                            (
-                                                name,
-                                                Target {
-                                                    target_type: TargetType::Executable,
-                                                    deps,
-                                                    files,
-                                                },
-                                            )
-                                        },
-                                    ),
-                                ),
-                                Field::Lib => targets.extend(
-                                    &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
-                                        |KnownTargetShim { name, deps, files }| {
-                                            (
-                                                name,
-                                                Target {
-                                                    target_type: TargetType::Library,
-                                                    deps,
-                                                    files,
-                                                },
-                                            )
-                                        },
-                                    ),
-                                ),
-                                Field::Meta => targets.extend(
-                                    &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
-                                        |KnownTargetShim { name, deps, files }| {
-                                            (
-                                                name,
-                                                Target {
-                                                    target_type: TargetType::Meta,
-                                                    deps,
-                                                    files,
-                                                },
-                                            )
-                                        },
-                                    ),
-                                ),
-                                Field::Ignore => {}
-                            }
-                        }
-                        let name = name.ok_or_else(|| Error::missing_field("name"))?;
-                        let version = version.ok_or_else(|| Error::missing_field("version"))?;
-                        Ok($name {
-                            name,
-                            version,
-                            author,
-                            co_version,
-                            source_dir,
-                            build_dir,
-                            desc,
-                            targets,
-                        })
-                    }
-                }
-                deserializer.deserialize_struct(
-                    "Project",
-                    &[
-                        "name",
-                        "version",
-                        "author",
-                        "co_version",
-                        "desc",
-                        "source_dir",
-                        "target_dir",
-                        "targets",
-                    ],
-                    ProjectVisitor(PhantomData),
-                )
-            }
-        }
     };
 }
 
-#[derive(Debug, Clone, Copy, Error)]
+#[derive(Debug, Default, Clone, Copy, Error)]
 pub struct MissingFields {
     pub name: bool,
     pub version: bool,
+    pub source_dir: bool,
+    pub build_dir: bool,
 }
 impl Display for MissingFields {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -497,8 +285,8 @@ pub struct Project<'a> {
     pub author: Option<Cow<'a, str>>,
     pub co_version: Option<VersionReq>,
     pub desc: Option<Cow<'a, str>>,
-    pub source_dir: Option<Cow<'a, Path>>,
-    pub build_dir: Option<Cow<'a, Path>>,
+    pub source_dir: Cow<'a, Path>,
+    pub build_dir: Cow<'a, Path>,
     pub targets: HashMap<Cow<'a, str>, Target<'a>>,
 }
 impl<'a> Project<'a> {
@@ -507,8 +295,8 @@ impl<'a> Project<'a> {
             name: self.name.into_owned().into(),
             author: self.author.map(|a| a.into_owned().into()),
             desc: self.desc.map(|d| d.into_owned().into()),
-            source_dir: self.source_dir.map(|s| s.into_owned().into()),
-            build_dir: self.build_dir.map(|b| b.into_owned().into()),
+            source_dir: self.source_dir.into_owned().into(),
+            build_dir: self.build_dir.into_owned().into(),
             targets: self
                 .targets
                 .into_iter()
@@ -518,12 +306,36 @@ impl<'a> Project<'a> {
         }
     }
 }
+impl<'a, 'de: 'a> Deserialize<'de> for Project<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = ProjectFragment::deserialize(deserializer)?;
+        Self::try_from(value).map_err(|e| {
+            use serde::de::Error;
+            D::Error::missing_field(if e.name {
+                "name"
+            } else if e.version {
+                "version"
+            } else if e.source_dir {
+                "source_dir"
+            } else if e.build_dir {
+                "build_dir"
+            } else {
+                unreachable!()
+            })
+        })
+    }
+}
 impl<'a> TryFrom<ProjectFragment<'a>> for Project<'a> {
     type Error = MissingFields;
     fn try_from(value: ProjectFragment<'a>) -> Result<Self, Self::Error> {
         let err = MissingFields {
             name: value.name.is_none(),
             version: value.version.is_none(),
+            source_dir: value.source_dir.is_none(),
+            build_dir: value.build_dir.is_none(),
         };
         Ok(Project {
             name: value.name.ok_or(err)?,
@@ -531,8 +343,8 @@ impl<'a> TryFrom<ProjectFragment<'a>> for Project<'a> {
             author: value.author,
             co_version: value.co_version,
             desc: value.desc,
-            source_dir: value.source_dir,
-            build_dir: value.build_dir,
+            source_dir: value.source_dir.ok_or(err)?,
+            build_dir: value.build_dir.ok_or(err)?,
             targets: value.targets,
         })
     }
@@ -545,8 +357,8 @@ impl<'a> From<Project<'a>> for ProjectFragment<'a> {
             author: value.author,
             co_version: value.co_version,
             desc: value.desc,
-            source_dir: value.source_dir,
-            build_dir: value.build_dir,
+            source_dir: Some(value.source_dir),
+            build_dir: Some(value.build_dir),
             targets: value.targets,
         }
     }
@@ -649,6 +461,237 @@ impl<'a> ProjectFragment<'a> {
     pub fn into_merge(mut self, other: Self) -> Result<Self, FragmentMergeError> {
         self.merge(other)?;
         Ok(self)
+    }
+    pub fn set_dirs<P: Into<PathBuf>>(&mut self, path: P) {
+        match (self.source_dir.is_none(), self.build_dir.is_none()) {
+            (false, false) => {}
+            (false, true) => {
+                let mut p = path.into();
+                p.push("build");
+                self.build_dir = Some(Cow::Owned(p))
+            }
+            (true, false) => self.source_dir = Some(Cow::Owned(path.into())),
+            (true, true) => {
+                let path = path.into();
+                self.build_dir = Some(path.join("build").into());
+                self.source_dir = Some(path.into());
+            }
+        }
+    }
+    pub fn get_name(&self) -> Result<&str, MissingFields> {
+        self.name.as_deref().ok_or(build::MissingFields {
+            name: true,
+            ..Default::default()
+        })
+    }
+}
+impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::*;
+        struct ProjectVisitor<'a>(PhantomData<&'a ()>);
+        impl<'a, 'de: 'a> Visitor<'de> for ProjectVisitor<'a> {
+            type Value = ProjectFragment<'a>;
+            fn expecting(&self, f: &mut Formatter) -> fmt::Result {
+                f.write_str("struct Project")
+            }
+            fn visit_map<V: MapAccess<'de>>(
+                self,
+                mut map: V,
+            ) -> Result<ProjectFragment<'a>, V::Error> {
+                let mut name = None;
+                let mut version = None;
+                let mut author = None;
+                let mut co_version = None;
+                let mut desc = None;
+                let mut source_dir = None;
+                let mut build_dir = None;
+                let mut targets = HashMap::new();
+                enum Field {
+                    Name,
+                    Version,
+                    Author,
+                    CoVersion,
+                    Desc,
+                    SourceDir,
+                    BuildDir,
+                    Targets,
+                    Bin,
+                    Lib,
+                    Meta,
+                    Ignore,
+                }
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D: Deserializer<'de>>(
+                        deserializer: D,
+                    ) -> Result<Field, D::Error> {
+                        struct FieldVisitor;
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+                            fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                                f.write_str("field identifier")
+                            }
+                            fn visit_str<E: Error>(self, v: &str) -> Result<Field, E> {
+                                Ok(match v {
+                                    "name" => Field::Name,
+                                    "version" => Field::Version,
+                                    "author" => Field::Author,
+                                    "co_version" | "co-version" | "cobalt" => Field::CoVersion,
+                                    "desc" | "description" => Field::Desc,
+                                    "src" | "source" | "src_dir" | "src-dir" | "source_dir"
+                                    | "source-dir" => Field::SourceDir,
+                                    "build" | "build_dir" | "build-dir" => Field::BuildDir,
+                                    "target" | "targets" => Field::Targets,
+                                    "bin" | "binary" | "exe" | "executable" => Field::Bin,
+                                    "lib" | "library" => Field::Lib,
+                                    "meta" => Field::Meta,
+                                    _ => Field::Ignore,
+                                })
+                            }
+                        }
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Name => {
+                            if name.is_some() {
+                                return Err(Error::duplicate_field("name"));
+                            } else {
+                                name = Some(map.next_value()?)
+                            }
+                        }
+                        Field::Version => {
+                            if version.is_some() {
+                                return Err(Error::duplicate_field("version"));
+                            } else {
+                                version = Some(map.next_value()?)
+                            }
+                        }
+                        Field::Author => {
+                            if author.is_some() {
+                                return Err(Error::duplicate_field("author"));
+                            } else {
+                                author = Some(map.next_value()?)
+                            }
+                        }
+                        Field::CoVersion => {
+                            if co_version.is_some() {
+                                return Err(Error::duplicate_field("co_version"));
+                            } else {
+                                co_version = Some(map.next_value()?)
+                            }
+                        }
+                        Field::Desc => {
+                            if desc.is_some() {
+                                return Err(Error::duplicate_field("desc"));
+                            } else {
+                                desc = Some(map.next_value()?)
+                            }
+                        }
+                        Field::SourceDir => {
+                            if source_dir.is_some() {
+                                return Err(Error::duplicate_field("source_dir"));
+                            } else {
+                                source_dir = Some(map.next_value()?)
+                            }
+                        }
+                        Field::BuildDir => {
+                            if build_dir.is_some() {
+                                return Err(Error::duplicate_field("build_dir"));
+                            } else {
+                                build_dir = Some(map.next_value()?)
+                            }
+                        }
+                        Field::Targets => targets.extend(
+                            &mut map.next_value::<Vec<TargetShim>>()?.into_iter().map(
+                                |TargetShim {
+                                     name,
+                                     target_type,
+                                     deps,
+                                     files,
+                                 }| {
+                                    (
+                                        name,
+                                        Target {
+                                            target_type,
+                                            deps,
+                                            files,
+                                        },
+                                    )
+                                },
+                            ),
+                        ),
+                        Field::Bin => targets.extend(
+                            &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
+                                |KnownTargetShim { name, deps, files }| {
+                                    (
+                                        name,
+                                        Target {
+                                            target_type: TargetType::Executable,
+                                            deps,
+                                            files,
+                                        },
+                                    )
+                                },
+                            ),
+                        ),
+                        Field::Lib => targets.extend(
+                            &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
+                                |KnownTargetShim { name, deps, files }| {
+                                    (
+                                        name,
+                                        Target {
+                                            target_type: TargetType::Library,
+                                            deps,
+                                            files,
+                                        },
+                                    )
+                                },
+                            ),
+                        ),
+                        Field::Meta => targets.extend(
+                            &mut map.next_value::<Vec<KnownTargetShim>>()?.into_iter().map(
+                                |KnownTargetShim { name, deps, files }| {
+                                    (
+                                        name,
+                                        Target {
+                                            target_type: TargetType::Meta,
+                                            deps,
+                                            files,
+                                        },
+                                    )
+                                },
+                            ),
+                        ),
+                        Field::Ignore => {}
+                    }
+                }
+                Ok(ProjectFragment {
+                    name,
+                    version,
+                    author,
+                    co_version,
+                    source_dir,
+                    build_dir,
+                    desc,
+                    targets,
+                })
+            }
+        }
+        deserializer.deserialize_struct(
+            "Project",
+            &[
+                "name",
+                "version",
+                "author",
+                "co_version",
+                "desc",
+                "source_dir",
+                "target_dir",
+                "targets",
+            ],
+            ProjectVisitor(PhantomData),
+        )
     }
 }
 impl_project!(ProjectFragment);
