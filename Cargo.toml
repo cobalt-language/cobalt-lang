@@ -8,6 +8,7 @@ members = [
   "cobalt-parser",
   "cobalt-utils"
 ]
+resolver = "2"
 
 [workspace.package]
 version = "0.7.1"

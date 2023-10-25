@@ -1145,7 +1145,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     });
                                     n += 1;
                                 } else {
-                                    ctx.with_vars(|v| {
+                                    let _ = ctx.with_vars(|v| {
                                         v.insert(
                                             &DottedName::local((name.clone(), unreachable_span())),
                                             Symbol(
@@ -1153,8 +1153,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                                 VariableData::default(),
                                             ),
                                         )
-                                    })
-                                    .map_or((), |_| ());
+                                    });
                                 }
                             }
                         }
@@ -1436,7 +1435,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     });
                                     n += 1;
                                 } else {
-                                    ctx.with_vars(|v| {
+                                    let _ = ctx.with_vars(|v| {
                                         v.insert(
                                             &DottedName::local((name.clone(), unreachable_span())),
                                             Symbol(
@@ -1444,8 +1443,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                                 VariableData::default(),
                                             ),
                                         )
-                                    })
-                                    .map_or((), |_| ());
+                                    });
                                 }
                             }
                         }
