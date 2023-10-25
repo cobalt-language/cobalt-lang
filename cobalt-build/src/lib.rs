@@ -3,10 +3,10 @@ pub mod build;
 pub mod cc;
 pub mod graph;
 pub mod libs;
+pub mod obj;
 pub mod opt;
 pub mod pkg;
-
-pub mod obj;
+mod serde_utils;
 
 pub use build::clear_mod;
 pub use build::cond::*;

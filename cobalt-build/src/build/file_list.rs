@@ -1,3 +1,5 @@
+use crate::serde_utils::CowPath;
+
 use super::*;
 use wax::{BuildError, Glob, Walk, WalkEntry, WalkError};
 
@@ -5,6 +7,7 @@ use wax::{BuildError, Glob, Walk, WalkEntry, WalkError};
 #[serde(try_from = "FileListShim")]
 #[serde(into = "FileListShim")]
 pub enum FileList<'a> {
+    #[serde(borrow)]
     Glob(Glob<'a>),
     List(Vec<Cow<'a, Path>>),
 }
@@ -40,8 +43,17 @@ impl<'a> FileList<'a> {
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum FileListShim<'a> {
+    #[serde(borrow)]
     Glob(Cow<'a, str>),
-    List(Vec<Cow<'a, Path>>),
+    List(Vec<CowPath<'a>>),
+}
+impl<'a> From<FileList<'a>> for FileListShim<'a> {
+    fn from(value: FileList<'a>) -> Self {
+        match value {
+            FileList::Glob(pat) => FileListShim::Glob(pat.to_string().into()),
+            FileList::List(files) => FileListShim::List(unsafe { std::mem::transmute(files) }),
+        }
+    }
 }
 impl<'a> TryFrom<FileListShim<'a>> for FileList<'a> {
     type Error = BuildError;
@@ -51,21 +63,10 @@ impl<'a> TryFrom<FileListShim<'a>> for FileList<'a> {
                 Cow::Borrowed(pat) => Glob::new(pat).map(FileList::Glob),
                 Cow::Owned(pat) => Glob::new(&pat).map(Glob::into_owned).map(FileList::Glob),
             },
-            FileListShim::List(files) => Ok(FileList::List(files)),
+            FileListShim::List(files) => Ok(FileList::List(unsafe { std::mem::transmute(files) })),
         }
     }
 }
-impl<'a> From<FileList<'a>> for FileListShim<'a> {
-    fn from(value: FileList<'a>) -> Self {
-        match value {
-            FileList::Glob(pat) => FileListShim::Glob(pat.to_string().into()),
-            FileList::List(files) => {
-                FileListShim::List(files.into_iter().map(From::from).collect())
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Iter<'a, 'this>(Either<Walk<'a>, (std::slice::Iter<'this, Cow<'a, Path>>, Box<Path>)>);
 impl Iterator for Iter<'_, '_> {

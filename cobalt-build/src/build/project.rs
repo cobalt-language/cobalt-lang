@@ -1,6 +1,7 @@
 use super::*;
 use anyhow::Context;
 use hashbrown::HashSet;
+use serde_utils::*;
 use std::fmt::{self, Display, Formatter};
 
 macro_rules! impl_project {
@@ -607,7 +608,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                             if name.is_some() {
                                 return Err(Error::duplicate_field("name"));
                             } else {
-                                name = Some(map.next_value()?)
+                                name = Some(map.next_value::<CowStr>()?.0)
                             }
                         }
                         Field::Version => {
@@ -621,7 +622,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                             if author.is_some() {
                                 return Err(Error::duplicate_field("author"));
                             } else {
-                                author = Some(map.next_value()?)
+                                author = Some(map.next_value::<CowStr>()?.0)
                             }
                         }
                         Field::CoVersion => {
@@ -635,21 +636,21 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                             if desc.is_some() {
                                 return Err(Error::duplicate_field("desc"));
                             } else {
-                                desc = Some(map.next_value()?)
+                                desc = Some(map.next_value::<CowStr>()?.0)
                             }
                         }
                         Field::SourceDir => {
                             if source_dir.is_some() {
                                 return Err(Error::duplicate_field("source_dir"));
                             } else {
-                                source_dir = Some(map.next_value()?)
+                                source_dir = Some(map.next_value::<CowPath>()?.0)
                             }
                         }
                         Field::BuildDir => {
                             if build_dir.is_some() {
                                 return Err(Error::duplicate_field("build_dir"));
                             } else {
-                                build_dir = Some(map.next_value()?)
+                                build_dir = Some(map.next_value::<CowPath>()?.0)
                             }
                         }
                         Field::Targets => targets.extend(
@@ -664,7 +665,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                                         name,
                                         Target {
                                             target_type,
-                                            deps,
+                                            deps: unsafe { std::mem::transmute(deps) },
                                             files,
                                         },
                                     )
@@ -678,7 +679,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                                         name,
                                         Target {
                                             target_type: TargetType::Executable,
-                                            deps,
+                                            deps: unsafe { std::mem::transmute(deps) },
                                             files,
                                         },
                                     )
@@ -692,7 +693,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                                         name,
                                         Target {
                                             target_type: TargetType::Library,
-                                            deps,
+                                            deps: unsafe { std::mem::transmute(deps) },
                                             files,
                                         },
                                     )
@@ -706,7 +707,7 @@ impl<'a, 'de: 'a> Deserialize<'de> for ProjectFragment<'a> {
                                         name,
                                         Target {
                                             target_type: TargetType::Meta,
-                                            deps,
+                                            deps: unsafe { std::mem::transmute(deps) },
                                             files,
                                         },
                                     )
@@ -781,7 +782,6 @@ impl PkgDepSpec<'_> {
         }
     }
 }
-
 #[derive(Debug, Clone, Serialize)]
 pub enum Dependency<'a> {
     Project,
@@ -886,7 +886,9 @@ impl<'a, 'de: 'a> Deserialize<'de> for Dependency<'a> {
                             if targets.is_some() {
                                 return Err(Error::duplicate_field("targets"));
                             } else {
-                                targets = Some(v.next_value()?)
+                                targets = Some(unsafe {
+                                    std::mem::transmute(v.next_value::<Vec<CowStr>>()?)
+                                });
                             }
                         }
                     }
@@ -920,21 +922,24 @@ impl Target<'_> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename = "target", bound = "'de: 'a")]
+#[serde(rename = "target")]
 struct TargetShim<'a> {
+    #[serde(borrow)]
     name: Cow<'a, str>,
     #[serde(rename = "type")]
     target_type: TargetType,
+    #[serde(borrow)]
     files: Option<FileList<'a>>,
     #[serde(default)]
     deps: HashMap<Cow<'a, str>, Dependency<'a>>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename = "target", bound = "'de: 'a")]
+#[serde(rename = "target")]
 struct KnownTargetShim<'a> {
+    #[serde(borrow)]
     name: Cow<'a, str>,
     files: Option<FileList<'a>>,
     #[serde(default)]
-    deps: HashMap<Cow<'a, str>, Dependency<'a>>,
+    deps: HashMap<CowStr<'a>, Dependency<'a>>,
 }
