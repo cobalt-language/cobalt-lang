@@ -2650,7 +2650,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             }
                         }
                         project.set_dirs(".");
-                        (project, PathBuf::from("."))
+                        (project.try_into()?, PathBuf::from("."))
                     }
                     Some(path) => {
                         let mut path = path.to_string();
@@ -2663,18 +2663,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) =
-                            build::ProjectFragment::load(path, set_src, set_build, frag)?;
-                        track_project(proj.get_name()?, path.clone(), &mut vecs);
+                        let (proj, path) = build::Project::load(path, set_src, set_build, frag)?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
                     }
-                    None => build::ProjectFragment::load(
-                        std::env::current_dir()?,
-                        set_src,
-                        set_build,
-                        frag,
-                    )?,
+                    None => {
+                        let (proj, path) = build::Project::load(
+                            std::env::current_dir()?,
+                            set_src,
+                            set_build,
+                            frag,
+                        )?;
+                        let mut vecs = load_projects()?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
+                    }
                 };
                 if triple.is_some() {
                     Target::initialize_all(&INIT_NEEDED)
@@ -2688,7 +2693,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         .into_owned()
                 });
                 build::build(
-                    &project.try_into()?,
+                    &project,
                     if targets.is_empty() {
                         None
                     } else {
@@ -2747,7 +2752,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             }
                         }
                         project.set_dirs(".");
-                        (project, PathBuf::from("."))
+                        (project.try_into()?, PathBuf::from("."))
                     }
                     Some(path) => {
                         let mut path = path.to_string();
@@ -2760,18 +2765,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path = p
                             }
                         }
-                        let (proj, path) =
-                            build::ProjectFragment::load(path, set_src, set_build, frag)?;
-                        track_project(proj.get_name()?, path.clone(), &mut vecs);
+                        let (proj, path) = build::Project::load(path, set_src, set_build, frag)?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
                         save_projects(vecs)?;
                         (proj, path)
                     }
-                    None => build::ProjectFragment::load(
-                        std::env::current_dir()?,
-                        set_src,
-                        set_build,
-                        frag,
-                    )?,
+                    None => {
+                        let (proj, path) = build::Project::load(
+                            std::env::current_dir()?,
+                            set_src,
+                            set_build,
+                            frag,
+                        )?;
+                        let mut vecs = load_projects()?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
+                    }
                 };
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(
@@ -2806,7 +2816,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .as_str()
                     .to_string_lossy()
                     .into_owned();
-                let project = project.try_into()?;
                 build::build(
                     &project,
                     Some(vec![target.clone()]),
