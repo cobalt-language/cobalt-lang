@@ -416,19 +416,14 @@ impl<'src> Parser<'src> {
 
                         let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
-                        let to_return: u32;
-                        if parsed_hex.is_none() {
+                        parsed_hex.unwrap_or_else(|| {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "two hex digits",
                                 found: ParserFound::Str("something else".to_string()),
                                 loc: SourceSpan::from((span.offset() + offset, 1)),
                             });
-                            to_return = 0;
-                        } else {
-                            to_return = parsed_hex.unwrap();
-                        }
-
-                        to_return
+                            0
+                        })
                     }
                     Some((offset, 'u')) => match parse_unicode_literal(&mut char_indices) {
                         Ok(res) => res.explode().0,
@@ -515,19 +510,15 @@ impl<'src> Parser<'src> {
 
                             let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
-                            let to_return: CharBytesIterator;
-                            if parsed_hex.is_none() {
+                            let byte = parsed_hex.unwrap_or_else(|| {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
                                     loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
-                                to_return = CharBytesIterator::from_u8(0);
-                            } else {
-                                to_return = CharBytesIterator::from_u8(parsed_hex.unwrap() as u8);
-                            }
-
-                            to_return
+                                0
+                            });
+                            CharBytesIterator::from_u8(byte as _)
                         }
                         // This only differs from `\c` by ultimately calling `Cbi::raw` instead of `Cbi::from_u8`.
                         Some((offset, 'x')) => {
@@ -535,19 +526,15 @@ impl<'src> Parser<'src> {
 
                             let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
-                            let to_return: CharBytesIterator;
-                            if parsed_hex.is_none() {
+                            let byte = parsed_hex.unwrap_or_else(|| {
                                 errors.push(CobaltError::ExpectedFound {
                                     ex: "two hex digits",
                                     found: ParserFound::Str("something else".to_string()),
                                     loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
-                                to_return = CharBytesIterator::from_u8(0);
-                            } else {
-                                to_return = CharBytesIterator::raw(parsed_hex.unwrap() as u8);
-                            }
-
-                            to_return
+                                0
+                            });
+                            CharBytesIterator::raw(byte as _)
                         }
                         Some((offset, 'u')) => match parse_unicode_literal(&mut char_indices) {
                             Ok(res) => res,
@@ -594,13 +581,6 @@ impl<'src> Parser<'src> {
     }
 }
 
-fn is_hex_digit(c: char) -> bool {
-    match c {
-        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
-        _ => false,
-    }
-}
-
 /// Parse 2-6 hex digits as a unicode value, delimited by '{}'.
 fn parse_hex_literal(
     chars: &mut Peekable<CharIndices>,
@@ -609,30 +589,28 @@ fn parse_hex_literal(
 ) -> Option<u32> {
     assert!(min_num_digits >= 2 && max_num_digits <= 6 && min_num_digits <= max_num_digits);
 
-    let mut cbi_s = Vec::with_capacity((max_num_digits).into());
+    let mut out = 0u32;
+    let mut count = 0;
     for _ in 0..max_num_digits {
-        let next = chars.peek();
-        if next.is_none() {
+        let Some(&(_idx, ch)) = chars.peek() else {
             break;
-        }
-
-        let next_unwrapped = next.unwrap().to_owned();
-        if !is_hex_digit(next_unwrapped.1) {
+        };
+        let Some(x) = ch.to_digit(16) else {
             break;
-        }
+        };
+        out <<= 4;
+        out |= x;
 
         chars.next();
-        cbi_s.push(CharBytesIterator::from_char(next_unwrapped.1));
+        count += 1;
     }
 
-    if cbi_s.len() < min_num_digits.into() {
-        return None;
+    // monadic stuff may be slightly slower
+    if count < min_num_digits {
+        None
+    } else {
+        Some(out)
     }
-
-    let bytes: Vec<u8> = cbi_s.into_iter().flatten().collect();
-    let str_bytes = unsafe { std::str::from_utf8_unchecked(bytes.as_slice()) };
-
-    u32::from_str_radix(str_bytes, 16).ok()
 }
 
 enum ParseUnicodeLiteralError {

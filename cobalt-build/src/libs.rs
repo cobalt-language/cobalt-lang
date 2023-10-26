@@ -1,5 +1,4 @@
 use cobalt_ast::CompCtx;
-use cobalt_llvm::inkwell;
 use object::{write::Object, SectionKind};
 use os_str_bytes::OsStrBytes;
 use std::fmt;
@@ -17,8 +16,7 @@ impl fmt::Display for ConflictingDefs {
 impl std::error::Error for ConflictingDefs {}
 
 /// Create a new (write) Object for the given triple
-pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
-    let triple = triple.as_str().to_str().unwrap();
+pub fn new_object<'a>(triple: &str) -> Object<'a> {
     let components = triple.split('-').collect::<Vec<&str>>();
     use object::Architecture::*;
     use object::BinaryFormat::*;
@@ -73,8 +71,7 @@ pub fn new_object<'a>(triple: &inkwell::targets::TargetTriple) -> Object<'a> {
 /// - Apple formats to libname.dylib
 /// - Windows formats to name.dll
 /// - Anything else formats to libname.so
-pub fn format_lib(base: &str, triple: &inkwell::targets::TargetTriple, shared: bool) -> String {
-    let triple = triple.as_str().to_str().unwrap();
+pub fn format_lib(base: &str, triple: &str, shared: bool) -> String {
     let mut components = triple.split('-');
     if matches!(components.next(), Some("wasm" | "wasm32")) {
         format!("{base}.wasm")

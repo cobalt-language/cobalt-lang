@@ -58,7 +58,7 @@ impl<'src> SourceReader<'src> {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
-        while let Some(c) = self.peek().map(|c| c.clone()) {
+        while let Some(&c) = self.peek() {
             match c {
                 ' ' | '\n' | '\t' => {
                     self.next_char();
@@ -563,8 +563,7 @@ impl<'src> SourceReader<'src> {
     fn eat_ident(&mut self) -> Result<Token<'src>, CobaltError<'src>> {
         let start_idx = self.index;
 
-        let option_c = self.peek().map(|c| c.clone());
-        if let Some(c) = option_c {
+        if let Some(&c) = self.peek() {
             if !(is_xid_start(c) || c == '_') {
                 self.next_char();
                 let err = CobaltError::ExpectedFound {
@@ -609,13 +608,8 @@ impl<'src> SourceReader<'src> {
         assert!(self.next_char() == Some('#'));
 
         let mut multiline_level = 0;
-        loop {
-            match self.next_char() {
-                Some('=') => {
-                    multiline_level += 1;
-                }
-                _ => break,
-            }
+        while let Some('=') = self.next_char() {
+            multiline_level += 1;
         }
 
         if multiline_level == 0 {

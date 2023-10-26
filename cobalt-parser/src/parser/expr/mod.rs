@@ -103,7 +103,7 @@ impl<'src> Parser<'src> {
                     state |= can_be_postfixed;
                 }
             }
-            TokenKind::OpenDelimiter(p) if p == Delimiter::Paren => {
+            TokenKind::OpenDelimiter(Delimiter::Paren) => {
                 let (parsed_expr, parsed_errors) = self.parse_paren_expr();
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
@@ -113,7 +113,7 @@ impl<'src> Parser<'src> {
                 state |= can_be_indexed;
                 state |= can_be_postfixed;
             }
-            TokenKind::OpenDelimiter(b) if b == Delimiter::Brace => {
+            TokenKind::OpenDelimiter(Delimiter::Brace) => {
                 let (parsed_expr, parsed_errors) = self.parse_block_expr();
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
@@ -400,7 +400,7 @@ impl<'src> Parser<'src> {
                     );
                 }
             },
-            TokenKind::Keyword(kw) if kw == Keyword::Mut => "mut",
+            TokenKind::Keyword(Keyword::Mut) => "mut",
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "unary operator",
