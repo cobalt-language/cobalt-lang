@@ -417,9 +417,8 @@ impl<'src> Parser<'src> {
                         let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
                         parsed_hex.unwrap_or_else(|| {
-                            errors.push(CobaltError::ExpectedFound {
+                            errors.push(CobaltError::InvalidThing {
                                 ex: "two hex digits",
-                                found: ParserFound::Str("something else".to_string()),
                                 loc: SourceSpan::from((span.offset() + offset, 1)),
                             });
                             0
@@ -511,9 +510,8 @@ impl<'src> Parser<'src> {
                             let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
                             let byte = parsed_hex.unwrap_or_else(|| {
-                                errors.push(CobaltError::ExpectedFound {
+                                errors.push(CobaltError::InvalidThing {
                                     ex: "two hex digits",
-                                    found: ParserFound::Str("something else".to_string()),
                                     loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 0
@@ -527,9 +525,8 @@ impl<'src> Parser<'src> {
                             let parsed_hex = parse_hex_literal(&mut char_indices, 2, 2);
 
                             let byte = parsed_hex.unwrap_or_else(|| {
-                                errors.push(CobaltError::ExpectedFound {
+                                errors.push(CobaltError::InvalidThing {
                                     ex: "two hex digits",
-                                    found: ParserFound::Str("something else".to_string()),
                                     loc: SourceSpan::from((span.offset() + offset, 1)),
                                 });
                                 0

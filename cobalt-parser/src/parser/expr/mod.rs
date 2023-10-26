@@ -219,9 +219,8 @@ impl<'src> Parser<'src> {
         // ---
 
         if state & parsed_something == 0 {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "expression",
-                found: ParserFound::Str("something else".to_string()),
+            errors.push(CobaltError::InvalidThing {
+                ex: "primary expression",
                 loc: initial_span,
             });
             self.next();
