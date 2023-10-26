@@ -1,4 +1,6 @@
-#![allow(dead_code)]
+#[cfg(not(feature = "config-toml"))]
+compile_error!("TOML configuration is shown as optional as a placeholder. It's required to build.");
+
 use crate::*;
 use anyhow_std::*;
 use cobalt_errors::error;
@@ -7,9 +9,12 @@ use indexmap::IndexMap;
 use path_calculate::path_absolutize::Absolutize;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use wax::{Glob, Pattern};
+
 /// Information about a cloned repository
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
@@ -89,7 +94,7 @@ impl Release {
         name: &str,
         version: &Version,
         frozen: bool,
-    ) -> anyhow::Result<build::Project> {
+    ) -> anyhow::Result<build::Project<'static>> {
         let mut path = cobalt_dir()?;
         path.push("packages");
         path.push(name);
@@ -99,13 +104,17 @@ impl Release {
         }
         path.push("cobalt.toml");
         if path.exists() {
-            return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+            return Ok(build::Project::from_toml_static(
+                &path.read_to_string_anyhow()?,
+            )?);
         }
         path.pop();
         path.push("src");
         path.push("cobalt.toml");
         if path.exists() {
-            return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+            return Ok(build::Project::from_toml_static(
+                &path.read_to_string_anyhow()?,
+            )?);
         }
         path.pop();
         path.pop();
@@ -118,11 +127,15 @@ impl Release {
                 project.starts_with('/')
             } {
                 Path::new(project).copy_anyhow(&path)?;
-                return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+                return Ok(build::Project::from_toml_static(
+                    &path.read_to_string_anyhow()?,
+                )?);
             } else if !frozen {
                 let buf = ureq::get(project).call()?.into_string()?;
-                path.write_anyhow(&buf)?;
-                return Ok(toml::from_str(&buf)?);
+                path.write_anyhow(buf)?;
+                return Ok(build::Project::from_toml_static(
+                    &path.read_to_string_anyhow()?,
+                )?);
             }
         }
         path.pop();
@@ -130,7 +143,9 @@ impl Release {
         if !(frozen || path.exists()) {
             self.source.install(&path)?;
             path.push("cobalt.toml");
-            return Ok(toml::from_str(&path.read_to_string_anyhow()?)?);
+            return Ok(build::Project::from_toml_static(
+                &path.read_to_string_anyhow()?,
+            )?);
         }
         Err(InstallError::Frozen(name.to_string()).into())
     }
@@ -403,7 +418,9 @@ impl InstallSpec {
         Self {
             name,
             version: spec.version,
-            targets: spec.targets,
+            targets: spec
+                .targets
+                .map(|t| t.into_iter().map(Cow::into_owned).collect()),
         }
     }
 }
@@ -543,7 +560,7 @@ fn install_single(
             .find_map(|(os, t, url)| {
                 ((!opts.frozen || url.starts_with('/') || url.starts_with("file://"))
                     && t == tar
-                    && glob::Pattern::new(os).ok()?.matches(&opts.target))
+                    && Glob::new(os).ok()?.is_match(opts.target.as_str()))
                 .then_some(url.as_str())
             })
         {
@@ -584,7 +601,7 @@ fn install_single(
     build_path.push(version.to_string());
     build_path.push("build");
     let proj =
-        toml::from_str::<build::Project>(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
+        build::Project::from_toml_static(&src_path.join("cobalt.toml").read_to_string_anyhow()?)?;
     let target =
         proj.targets
             .get(tar)
@@ -596,16 +613,16 @@ fn install_single(
         version,
         plan,
         &build::BuildOptions {
-            source_dir: &src_path,
-            build_dir: &build_path,
             continue_comp: false,
             continue_build: false,
             rebuild: true,
-            profile: "default",
-            triple: &opts.target,
-            link_dirs: &[],
+            profile: "default".into(),
+            triple: opts.target.as_str().into(),
+            link_dirs: vec![],
             no_default_link: false,
         },
+        &src_path,
+        &build_path,
     )?;
     out.copy_anyhow(path)?;
     Ok(())

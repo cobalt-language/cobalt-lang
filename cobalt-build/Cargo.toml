@@ -17,7 +17,6 @@ cobalt-llvm = { path = "../cobalt-llvm" }
 serde = { version = "1.0", features = ["derive"] }
 semver = { version = "1.0", features = ["serde"] }
 either = { version = "1.8.1", features = ["serde"] }
-glob = "0.3.1"
 flate2 = "1.0.26"
 git2 = "0.18.0"
 zip-extract = "0.1"
@@ -36,14 +35,19 @@ llvm-sys = "160"
 lasso = { version = "0.7.2", features = ["multi-threaded"] }
 indexmap = "2.0.0"
 os_str_bytes = { version = "6.6.1", features = ["conversions"] }
-toml = "0.8.0"
+toml = { version = "0.8.0", optional = true }
 bstr = "1.5.0"
 hashbrown = { version = "0.14.0", features = ["serde"] }
 cc = { version = "1.0.83", optional = true }
 ar = "0.9.0"
 walkdir = "2.4.0"
+wax = "0.6.0"
+serde_json = { version = "1.0.107", optional = true }
 
 
 [features]
+config-toml = ["toml"]
+config-json = ["serde_json"]
+config-all = ["config-toml", "config-json"]
 cc-build = ["cc"]
-default = ["cc-build"]
+default = ["cc-build", "config-all"]
