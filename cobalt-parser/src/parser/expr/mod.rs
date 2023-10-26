@@ -389,6 +389,7 @@ impl<'src> Parser<'src> {
             TokenKind::UnOp(op) => match op {
                 UnOpToken::Not => "!",
                 UnOpToken::PlusPlus => "++",
+                UnOpToken::MinusMinus => "--",
                 _ => {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "unary operator",
@@ -952,7 +953,7 @@ impl<'src> Parser<'src> {
     /// target.
     ///
     /// ```text
-    /// postfix_expr := primary_expr [ '!' | '?' ]+
+    /// postfix_expr := primary_expr [ '!' | '?' | '++' | '--' ]+
     /// ```
     pub(crate) fn parse_postfix_expr(
         &mut self,
@@ -992,6 +993,16 @@ impl<'src> Parser<'src> {
                     working_ast = Box::new(PostfixAST::new(
                         self.current_token.unwrap().span,
                         "++",
+                        working_ast,
+                    ));
+                    self.next();
+                    continue;
+                }
+
+                if unop == UnOpToken::MinusMinus {
+                    working_ast = Box::new(PostfixAST::new(
+                        self.current_token.unwrap().span,
+                        "--",
                         working_ast,
                     ));
                     self.next();

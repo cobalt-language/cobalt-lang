@@ -313,10 +313,22 @@ impl<'src> SourceReader<'src> {
 
                 '-' => {
                     self.next_char();
-                    tokens.push(Token {
-                        kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Sub),
-                        span: self.source_span_backward(1),
-                    });
+                    match self.peek() {
+                        Some('-') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::UnOp(UnOpToken::MinusMinus),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Sub),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
                 }
 
                 '*' => {

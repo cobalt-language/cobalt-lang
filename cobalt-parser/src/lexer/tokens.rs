@@ -130,9 +130,10 @@ impl BinOpToken {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOpToken {
-    Not,      // !
-    Q,        // ?
-    PlusPlus, // ++
+    Not,        // !
+    Q,          // ?
+    PlusPlus,   // ++
+    MinusMinus, // --
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
