@@ -83,25 +83,14 @@ impl<'src> Parser<'src> {
                 state |= parsed_something;
             }
             TokenKind::Ident(_) => {
-                if self.check_fn_call() {
-                    let (parsed_fn_call, parsed_errors) = self.parse_fn_call();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_fn_call;
+                let (parsed_ident, parsed_errors) = self.parse_ident_expr();
+                errors.extend(parsed_errors);
+                working_ast = parsed_ident;
 
-                    state |= parsed_something;
-                    state |= can_be_dotted;
-                    state |= can_be_indexed;
-                    state |= can_be_postfixed;
-                } else {
-                    let (parsed_ident, parsed_errors) = self.parse_ident_expr();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_ident;
-
-                    state |= parsed_something;
-                    state |= can_be_dotted;
-                    state |= can_be_indexed;
-                    state |= can_be_postfixed;
-                }
+                state |= parsed_something;
+                state |= can_be_dotted;
+                state |= can_be_indexed;
+                state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(Delimiter::Paren) => {
                 let (parsed_expr, parsed_errors) = self.parse_paren_expr();
@@ -156,22 +145,11 @@ impl<'src> Parser<'src> {
                 }
             }
             TokenKind::At => {
-                if self.check_fn_call() {
-                    let (parsed_fn_call, parsed_errors) = self.parse_fn_call();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_fn_call;
+                let (parsed_expr, parsed_errors) = self.parse_intrinsic();
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
 
-                    state |= parsed_something;
-                    state |= can_be_dotted;
-                    state |= can_be_indexed;
-                    state |= can_be_postfixed;
-                } else {
-                    let (parsed_expr, parsed_errors) = self.parse_intrinsic();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_expr;
-
-                    state |= parsed_something;
-                }
+                state |= parsed_something;
             }
             _ => {}
         }
@@ -181,6 +159,13 @@ impl<'src> Parser<'src> {
         loop {
             if self.current_token.is_none() {
                 break;
+            }
+
+            if self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Paren) {
+                let (parsed_expr, parsed_errors) = self.parse_fn_call(working_ast);
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
+                continue;
             }
 
             if state & can_be_dotted != 0 && self.current_token.unwrap().kind == TokenKind::Dot {
@@ -719,79 +704,22 @@ impl<'src> Parser<'src> {
         (Box::new(IntrinsicAST::new(span, name)), errors)
     }
 
-    pub(crate) fn check_fn_call(&mut self) -> bool {
-        if self.current_token.is_none() {
-            return false;
-        }
-
-        let idx_on_entry = self.cursor.index;
-
-        match self.current_token.unwrap().kind {
-            TokenKind::Ident(_) => {
-                self.next();
-            }
-            TokenKind::At => {
-                self.parse_intrinsic();
-            }
-            _ => {
-                self.rewind_to_idx(idx_on_entry);
-                return false;
-            }
-        }
-
-        if self.current_token.is_none() {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        self.rewind_to_idx(idx_on_entry);
-        true
-    }
-
-    /// Going into this function, `current_token` is assumed to be an identifier.
+    /// Going into this function, `current_token` is assumed to be '('.
     ///
     /// ```text
-    /// fn_call := [ident | intrinsic] '(' [ expr [',' expr]*]? ')'
+    /// fn_call := expr '(' [ expr [',' expr]*]? ')'
     /// ```
-    pub(crate) fn parse_fn_call(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
+    pub(crate) fn parse_fn_call(
+        &mut self,
+        target: BoxedAST<'src>,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        assert_eq!(
+            self.current_token.unwrap().kind,
+            TokenKind::OpenDelimiter(Delimiter::Paren)
+        );
 
         let mut errors = vec![];
         let span = self.current_token.unwrap().span;
-
-        // ---
-
-        let name = match self.current_token.unwrap().kind {
-            TokenKind::Ident(s) => {
-                self.next();
-                Box::new(VarGetAST::new(
-                    self.current_token.unwrap().span,
-                    Cow::Borrowed(s),
-                    false,
-                ))
-            }
-            TokenKind::At => {
-                let (intrinsic, intrinsics_errors) = self.parse_intrinsic();
-                errors.extend(intrinsics_errors);
-                intrinsic
-            }
-            _ => {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "function arg",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
-                    loc: self.current_token.unwrap().span,
-                });
-                return (
-                    Box::new(ErrorAST::new(self.current_token.unwrap().span)),
-                    errors,
-                );
-            }
-        };
 
         // ---
 
@@ -834,7 +762,7 @@ impl<'src> Parser<'src> {
 
             self.next();
 
-            return (Box::new(CallAST::new(cparen_span, name, vec![])), errors);
+            return (Box::new(CallAST::new(cparen_span, target, vec![])), errors);
         }
 
         let start = 0;
@@ -881,7 +809,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        (Box::new(CallAST::new(cparen_span, name, args)), errors)
+        (Box::new(CallAST::new(cparen_span, target, args)), errors)
     }
 
     /// Going into this function, `current_token` is assumed to be an `[`.

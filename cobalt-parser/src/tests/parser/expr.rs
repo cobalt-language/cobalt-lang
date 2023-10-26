@@ -84,14 +84,26 @@ fn test_if_expr() {
 
 #[test]
 fn test_fn_call() {
-    test_parser_fn("foo()", true, |parser| parser.parse_fn_call());
+    test_parser_fn("foo()", true, |parser| parser.parse_expr());
 
-    test_parser_fn("foo(x, y + z)", true, |parser| parser.parse_fn_call());
+    test_parser_fn("foo(x, y + z)", true, |parser| parser.parse_expr());
 
     test_parser_fn(
         "@size(T)",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_call()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "(*fn_ptr)()",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "returns_fn()()",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
     );
 }
 
