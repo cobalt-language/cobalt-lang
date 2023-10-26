@@ -887,7 +887,7 @@ impl<'src> Parser<'src> {
 
         // Next has to be a double colon.
 
-        if self.current_token.unwrap().kind != TokenKind::Colon {
+        if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::ColonColon) {
             let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
@@ -914,43 +914,7 @@ impl<'src> Parser<'src> {
 
         self.next();
 
-        if self.current_token.is_none() {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "expression",
-                found: ParserFound::Eof,
-                loc: first_token_loc,
-            });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        }
-
-        if self.current_token.unwrap().kind != TokenKind::Colon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
-            let loc = self.current_token.unwrap().span;
-            errors.push(CobaltError::ExpectedFound {
-                ex: "expression",
-                found,
-                loc,
-            });
-
-            loop {
-                if self.current_token.is_none() {
-                    break;
-                }
-
-                if self.current_token.unwrap().kind == TokenKind::Semicolon {
-                    self.next();
-                    break;
-                }
-
-                self.next();
-            }
-
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
-        }
-
         // Next has to be a left brace.
-
-        self.next();
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {

@@ -406,17 +406,27 @@ impl<'src> SourceReader<'src> {
                 ':' => {
                     self.next_char();
 
-                    if self.peek() == Some(&'?') {
-                        self.next_char();
-                        tokens.push(Token {
-                            kind: TokenKind::BinOp(BinOpToken::Colonq),
-                            span: self.source_span_backward(2),
-                        });
-                    } else {
-                        tokens.push(Token {
-                            kind: TokenKind::Colon,
-                            span: self.source_span_backward(1),
-                        });
+                    match self.peek() {
+                        Some(&'?') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::Colonq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+                        Some(&':') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::ColonColon),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::Colon,
+                                span: self.source_span_backward(1),
+                            });
+                        }
                     }
                 }
 
@@ -605,7 +615,7 @@ impl<'src> SourceReader<'src> {
     }
 
     fn eat_comment(&mut self) -> Result<(), CobaltError<'src>> {
-        assert!(self.next_char() == Some('#'));
+        assert_eq!(self.next_char(), Some('#'));
 
         let mut multiline_level = 0;
         while let Some('=') = self.next_char() {
