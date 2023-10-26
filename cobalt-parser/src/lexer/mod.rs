@@ -9,7 +9,7 @@ pub struct SourceReader<'src> {
     pub source: &'src str,
     /// Calling `next()` will give us the index of the character returned, but
     /// since we actually want the index of the *next* character, this should
-    /// be one chracter ahead. This also means we don't need the iterator itself
+    /// be one character ahead. This also means we don't need the iterator itself
     /// to be peekable.
     iter: CharIndices<'src>,
     next_char: Option<char>,
@@ -54,11 +54,14 @@ impl<'src> SourceReader<'src> {
     ///
     /// ## Example
     /// ```
+    /// use cobalt_parser::lexer;
+    /// use lexer::SourceReader;
+    ///
     /// let source = "hello world";
     /// let mut reader = SourceReader::new(source);
-    /// reader.next();
-    /// reader.next();
-    /// reader.next();
+    /// reader.next_char();
+    /// reader.next_char();
+    /// reader.next_char();
     /// assert_eq!(reader.slice_backward(3), "hel");
     /// ```
     pub fn slice_backward(&self, offset: usize) -> &'src str {
