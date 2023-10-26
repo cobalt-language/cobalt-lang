@@ -383,6 +383,8 @@ impl<'src> Parser<'src> {
             TokenKind::UnOrBinOp(op) => match op {
                 UnOrBinOpToken::And => "&",
                 UnOrBinOpToken::Star => "*",
+                UnOrBinOpToken::Add => "+",
+                UnOrBinOpToken::Sub => "-",
             },
             TokenKind::UnOp(op) => match op {
                 UnOpToken::Not => "!",

@@ -96,8 +96,6 @@ pub enum BinOpToken {
     Colonq,     // :?
     ColonColon, // ::
 
-    Add, // +
-    Sub, // -
     Div, // /
     Mod, // %
     Shl, // <<
@@ -122,8 +120,6 @@ impl BinOpToken {
             BinOpToken::Colonq => ":?",
             BinOpToken::ColonColon => "::",
 
-            BinOpToken::Add => "+",
-            BinOpToken::Sub => "-",
             BinOpToken::Div => "/",
             BinOpToken::Mod => "%",
             BinOpToken::Shl => "<<",
@@ -143,6 +139,8 @@ pub enum UnOpToken {
 pub enum UnOrBinOpToken {
     Star, // *
     And,  // &
+    Add,  // +
+    Sub,  // -
 }
 
 impl UnOrBinOpToken {
@@ -150,6 +148,8 @@ impl UnOrBinOpToken {
         match self {
             UnOrBinOpToken::Star => "*",
             UnOrBinOpToken::And => "&",
+            UnOrBinOpToken::Add => "+",
+            UnOrBinOpToken::Sub => "-",
         }
     }
 }
@@ -192,9 +192,6 @@ impl<'src> TokenKind<'src> {
                 BinOpToken::Colonq => 10,
                 BinOpToken::ColonColon => 10,
 
-                BinOpToken::Sub => 20,
-                BinOpToken::Add => 25,
-
                 BinOpToken::Div => 30,
                 BinOpToken::Mod => 30,
 
@@ -205,7 +202,14 @@ impl<'src> TokenKind<'src> {
                 _ => 0,
             },
 
-            TokenKind::UnOrBinOp(UnOrBinOpToken::Star) => 35,
+            TokenKind::UnOrBinOp(unop) => match unop {
+                UnOrBinOpToken::Sub => 20,
+                UnOrBinOpToken::Add => 25,
+
+                UnOrBinOpToken::Star => 35,
+
+                _ => 0,
+            },
 
             _ => 0,
         }

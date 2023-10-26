@@ -304,7 +304,7 @@ impl<'src> SourceReader<'src> {
 
                         _ => {
                             tokens.push(Token {
-                                kind: TokenKind::BinOp(BinOpToken::Add),
+                                kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Add),
                                 span: self.source_span_backward(1),
                             });
                         }
@@ -314,7 +314,7 @@ impl<'src> SourceReader<'src> {
                 '-' => {
                     self.next_char();
                     tokens.push(Token {
-                        kind: TokenKind::BinOp(BinOpToken::Sub),
+                        kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Sub),
                         span: self.source_span_backward(1),
                     });
                 }

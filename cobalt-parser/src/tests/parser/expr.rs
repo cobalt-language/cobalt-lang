@@ -65,6 +65,10 @@ fn test_prefix_expr() {
     test_parser_fn("!&*a", true, |parser| parser.parse_primary_expr());
 
     test_parser_fn("++a", true, |parser| parser.parse_primary_expr());
+
+    test_parser_fn("+a", true, |parser| parser.parse_primary_expr());
+
+    test_parser_fn("-a", true, |parser| parser.parse_primary_expr());
 }
 
 #[test]
