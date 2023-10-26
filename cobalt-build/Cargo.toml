@@ -13,7 +13,7 @@ cobalt-parser = { path = "../cobalt-parser" }
 cobalt-ast = { path = "../cobalt-ast" }
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
-cobalt-llvm = { path = "../cobalt-llvm" }
+cobalt-llvm = { path = "../cobalt-llvm", default-features = false  }
 serde = { version = "1.0", features = ["derive"] }
 semver = { version = "1.0", features = ["serde"] }
 either = { version = "1.9.0", features = ["serde"] }
@@ -50,4 +50,5 @@ config-toml = ["toml"]
 config-json = ["serde_json"]
 config-all = ["config-toml", "config-json"]
 cc-build = ["cc"]
-default = ["cc-build", "config-all"]
+build-default = ["cc-build", "config-all"]
+default = ["build-default"]

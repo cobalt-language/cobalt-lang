@@ -11,10 +11,10 @@ documentation.workspace = true
 [dependencies]
 cobalt-parser = { path = "../cobalt-parser" }
 cobalt-ast = { path = "../cobalt-ast" }
-cobalt-build = { path = "../cobalt-build", features = ["config-toml"]}
+cobalt-build = { path = "../cobalt-build", default-features = false }
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
-cobalt-llvm = { path = "../cobalt-llvm" }
+cobalt-llvm = { path = "../cobalt-llvm", default-features = false  }
 inkwell = "0.2.0"
 toml = "0.8.4"
 temp-file = "0.1.7"

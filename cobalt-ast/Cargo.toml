@@ -10,7 +10,7 @@ documentation.workspace = true
 
 [dependencies]
 cobalt-errors = { path = "../cobalt-errors" }
-cobalt-llvm = { path = "../cobalt-llvm" }
+cobalt-llvm = { path = "../cobalt-llvm", default-features = false }
 cobalt-utils = { path = "../cobalt-utils" }
 bitvec = "1.0.1"
 either = "1.9.0"
