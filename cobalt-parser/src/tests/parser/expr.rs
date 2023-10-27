@@ -3,9 +3,53 @@ use super::*;
 mod literals;
 
 #[test]
-fn test_simple_add() {
+fn test_binop() {
     test_parser_fn(
         "a + b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a - b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a * b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a / b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    // --- In place operators.
+
+    test_parser_fn(
+        "a += b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a -= b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a *= b",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
+
+    test_parser_fn(
+        "a /= b",
         true,
         Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
     );

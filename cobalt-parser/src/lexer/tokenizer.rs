@@ -302,6 +302,14 @@ impl<'src> SourceReader<'src> {
                             });
                         }
 
+                        Some('=') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::PlusEq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
                         _ => {
                             tokens.push(Token {
                                 kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Add),
@@ -322,6 +330,14 @@ impl<'src> SourceReader<'src> {
                             });
                         }
 
+                        Some('=') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::MinusEq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
                         _ => {
                             tokens.push(Token {
                                 kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Sub),
@@ -333,18 +349,42 @@ impl<'src> SourceReader<'src> {
 
                 '*' => {
                     self.next_char();
-                    tokens.push(Token {
-                        kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
-                        span: self.source_span_backward(1),
-                    });
+                    match self.peek() {
+                        Some('=') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::TimesEq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
                 }
 
                 '/' => {
                     self.next_char();
-                    tokens.push(Token {
-                        kind: TokenKind::BinOp(BinOpToken::Div),
-                        span: self.source_span_backward(1),
-                    });
+                    match self.peek() {
+                        Some('=') => {
+                            self.next_char();
+                            tokens.push(Token {
+                                kind: TokenKind::BinOp(BinOpToken::DivEq),
+                                span: self.source_span_backward(2),
+                            });
+                        }
+
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
+                                span: self.source_span_backward(1),
+                            });
+                        }
+                    }
                 }
 
                 '%' => {

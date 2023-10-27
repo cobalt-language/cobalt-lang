@@ -81,9 +81,13 @@ pub enum Delimiter {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BinOpToken {
-    Eq,   // =
-    EqEq, // ==
-    Neq,  // !=
+    Eq,      // =
+    PlusEq,  // +=
+    MinusEq, // -=
+    TimesEq, // *=
+    DivEq,   // *=
+    EqEq,    // ==
+    Neq,     // !=
 
     Lt,         // <
     Leq,        // <=
@@ -106,6 +110,10 @@ impl BinOpToken {
     pub fn as_str(&self) -> &'static str {
         match self {
             BinOpToken::Eq => "=",
+            BinOpToken::PlusEq => "+=",
+            BinOpToken::MinusEq => "-=",
+            BinOpToken::TimesEq => "*=",
+            BinOpToken::DivEq => "/=",
             BinOpToken::EqEq => "==",
             BinOpToken::Neq => "!=",
 
@@ -197,6 +205,10 @@ impl<'src> TokenKind<'src> {
                 BinOpToken::Mod => 30,
 
                 BinOpToken::Eq => 100,
+                BinOpToken::PlusEq => 100,
+                BinOpToken::MinusEq => 100,
+                BinOpToken::TimesEq => 100,
+                BinOpToken::DivEq => 100,
                 BinOpToken::EqEq => 100,
                 BinOpToken::Neq => 100,
 
