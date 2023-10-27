@@ -750,16 +750,17 @@ impl<'src> Parser<'src> {
             });
 
             loop {
-                if self.current_token.is_none() {
-                    break;
-                }
+                if let Some(current) = self.current_token {
+                    if current.kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
 
-                if self.current_token.unwrap().kind == TokenKind::Semicolon {
                     self.next();
-                    break;
+                    continue;
                 }
 
-                self.next();
+                break;
             }
 
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
@@ -1357,22 +1358,20 @@ impl<'src> Parser<'src> {
             });
 
             loop {
-                if self.current_token.is_none() {
-                    break;
-                }
+                if let Some(current) = self.current_token {
+                    if current.kind == TokenKind::Semicolon {
+                        self.next();
+                        break;
+                    }
 
-                if self.current_token.unwrap().kind == TokenKind::Semicolon {
                     self.next();
-                    break;
+                    continue;
                 }
 
-                self.next();
+                break;
             }
 
-            return (
-                Box::new(ErrorAST::new(self.current_token.unwrap().span)),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
 
         self.next();
