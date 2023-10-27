@@ -21,7 +21,7 @@ use cobalt_ast::{
     ast::{ErrorAST, TopLevelAST},
     BoxedAST,
 };
-use cobalt_errors::{CobaltError, ParserFound};
+use cobalt_errors::CobaltError;
 
 use crate::lexer::{tokenizer::TokenStream, tokens::Token};
 
@@ -136,7 +136,7 @@ impl<'src> Parser<'src> {
         let span = self.current_token.unwrap().span;
         let errors = vec![CobaltError::ExpectedFound {
             ex: "function or type declaration",
-            found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+            found: Some(self.current_token.unwrap().kind.as_str().into()),
             loc: span,
         }];
 

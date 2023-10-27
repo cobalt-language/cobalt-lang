@@ -1,6 +1,5 @@
-use std::fmt::Display;
-
 use cobalt_errors::SourceSpan;
+use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Keyword {
@@ -153,6 +152,16 @@ pub enum UnOpToken {
     PlusPlus,   // ++
     MinusMinus, // --
 }
+impl UnOpToken {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UnOpToken::Not => "!",
+            UnOpToken::Q => "?",
+            UnOpToken::PlusPlus => "++",
+            UnOpToken::MinusMinus => "--",
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnOrBinOpToken {
@@ -177,10 +186,20 @@ impl UnOrBinOpToken {
 pub enum LiteralToken<'src> {
     Int(&'src str),
     Float(&'src str),
-    /// The slice is what's inside the double quotations.
+    /// The slice includes the double quotations.
     Str(&'src str),
-    /// The slice is what's inside the single quotes.
+    /// The slice includes the single quotes.
     Char(&'src str),
+}
+impl<'src> LiteralToken<'src> {
+    pub fn as_str(self) -> &'src str {
+        match self {
+            LiteralToken::Int(s)
+            | LiteralToken::Float(s)
+            | LiteralToken::Str(s)
+            | LiteralToken::Char(s) => s,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -246,11 +265,35 @@ impl<'src> TokenKind<'src> {
             _ => 0,
         }
     }
+    pub fn as_str(self) -> &'src str {
+        use Delimiter::*;
+        use TokenKind::*;
+        match self {
+            Keyword(kw) => kw.as_str(),
+            Ident(id) => id,
+            OpenDelimiter(Paren) => "(",
+            OpenDelimiter(Bracket) => "[",
+            OpenDelimiter(Brace) => "{",
+            CloseDelimiter(Paren) => ")",
+            CloseDelimiter(Bracket) => "]",
+            CloseDelimiter(Brace) => "}",
+            Semicolon => ";",
+            Colon => ":",
+            ColonColon => "::",
+            Comma => ",",
+            UnOp(op) => op.as_str(),
+            BinOp(op) => op.as_str(),
+            UnOrBinOp(op) => op.as_str(),
+            Literal(lit) => lit.as_str(),
+            At => "@",
+            Dot => ".",
+        }
+    }
 }
 
 impl<'src> Display for TokenKind<'src> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

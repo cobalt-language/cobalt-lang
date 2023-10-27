@@ -7,7 +7,7 @@ use super::{
     SourceReader,
 };
 
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_errors::{CobaltError, SourceSpan};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 #[derive(Debug, PartialEq)]
@@ -506,9 +506,8 @@ impl<'src> SourceReader<'src> {
 
                 // --- String literal.
                 '"' => {
-                    self.next_char();
-
                     let span_start = self.index;
+                    self.next_char();
 
                     let mut last_was_escape = false;
                     loop {
@@ -516,7 +515,7 @@ impl<'src> SourceReader<'src> {
                         if c.is_none() {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "rest of string literal",
-                                found: ParserFound::Eof,
+                                found: None,
                                 loc: SourceSpan::from((self.source.len(), 0)),
                             });
                             continue;
@@ -538,8 +537,8 @@ impl<'src> SourceReader<'src> {
                         self.next_char();
                     }
 
-                    let span_end = self.index;
                     self.next_char();
+                    let span_end = self.index;
 
                     tokens.push(Token {
                         kind: TokenKind::Literal(LiteralToken::Str(
@@ -551,9 +550,8 @@ impl<'src> SourceReader<'src> {
 
                 // --- Char literal
                 '\'' => {
-                    self.next_char();
-
                     let span_start = self.index;
+                    self.next_char();
 
                     let mut last_was_escape = false;
                     loop {
@@ -561,7 +559,7 @@ impl<'src> SourceReader<'src> {
                         if c.is_none() {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "rest of char literal",
-                                found: ParserFound::Eof,
+                                found: None,
                                 loc: SourceSpan::from((self.source.len(), 0)),
                             });
                             continue;
@@ -583,8 +581,8 @@ impl<'src> SourceReader<'src> {
                         self.next_char();
                     }
 
-                    let span_end = self.index;
                     self.next_char();
+                    let span_end = self.index;
 
                     tokens.push(Token {
                         kind: TokenKind::Literal(LiteralToken::Char(
@@ -630,7 +628,7 @@ impl<'src> SourceReader<'src> {
                 self.next_char();
                 let err = CobaltError::ExpectedFound {
                     ex: "xid_start or _",
-                    found: ParserFound::Char(c),
+                    found: Some(self.source[start_idx..(start_idx + c.len_utf8())].into()),
                     loc: SourceSpan::from((start_idx, self.index - start_idx)),
                 };
 

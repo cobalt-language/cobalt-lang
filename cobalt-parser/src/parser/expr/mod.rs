@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use cobalt_ast::{ast::*, BoxedAST};
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_errors::{CobaltError, SourceSpan};
 
 use crate::lexer::tokens::{Delimiter, Keyword, TokenKind, UnOpToken, UnOrBinOpToken};
 
@@ -223,7 +223,7 @@ impl<'src> Parser<'src> {
                     Box::new(ErrorAST::new(self.current_token.unwrap().span)),
                     vec![CobaltError::ExpectedFound {
                         ex: "identifier",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        found: Some(self.current_token.unwrap().kind.as_str().into()),
                         loc: span,
                     }],
                 );
@@ -251,7 +251,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: span,
                 });
                 return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -265,7 +265,7 @@ impl<'src> Parser<'src> {
             } else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: self.current_token.unwrap().span,
                 });
 
@@ -320,7 +320,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -331,7 +331,7 @@ impl<'src> Parser<'src> {
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: self.current_token.unwrap().span,
                 });
                 return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -370,7 +370,7 @@ impl<'src> Parser<'src> {
                 _ => {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "unary operator",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        found: Some(self.current_token.unwrap().kind.as_str().into()),
                         loc: self.current_token.unwrap().span,
                     });
                     return (
@@ -383,7 +383,7 @@ impl<'src> Parser<'src> {
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "unary operator",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: self.current_token.unwrap().span,
                 });
                 return (
@@ -398,7 +398,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "primary expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -425,7 +425,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'('",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -437,14 +437,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "')'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "')'",
@@ -497,7 +497,7 @@ impl<'src> Parser<'src> {
                     Box::new(ErrorAST::new(self.source.len().into())),
                     vec![CobaltError::ExpectedFound {
                         ex: "'}'",
-                        found: ParserFound::Eof,
+                        found: None,
                         loc: self.current_token.unwrap().span,
                     }],
                 );
@@ -571,7 +571,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "primary expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -583,7 +583,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "block expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -627,7 +627,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "block expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: self.current_token.unwrap().span,
             });
             return (
@@ -667,7 +667,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "name of intrinsic",
-                found: ParserFound::Eof,
+                found: None,
                 loc: self.current_token.unwrap().span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -679,7 +679,7 @@ impl<'src> Parser<'src> {
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "name of intrinsic",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: self.current_token.unwrap().span,
                 });
                 return (
@@ -718,7 +718,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'('",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -727,7 +727,7 @@ impl<'src> Parser<'src> {
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'('",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: self.current_token.unwrap().span,
             });
             return (
@@ -743,7 +743,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "')'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -767,7 +767,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "')'",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: span,
                 });
                 cparen_span = span;
@@ -783,7 +783,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.unwrap().kind != TokenKind::Comma {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        found: Some(self.current_token.unwrap().kind.as_str().into()),
                         loc: self.current_token.unwrap().span,
                     });
                 } else {
@@ -830,7 +830,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "]",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -839,7 +839,7 @@ impl<'src> Parser<'src> {
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {
             errors.push(CobaltError::ExpectedFound {
                 ex: "]",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: self.current_token.unwrap().span,
             });
             return (

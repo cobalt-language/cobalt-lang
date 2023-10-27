@@ -1,5 +1,5 @@
 use cobalt_ast::{ast::*, BoxedAST};
-use cobalt_errors::{CobaltError, ParserFound};
+use cobalt_errors::CobaltError;
 
 use crate::{
     lexer::tokens::{BinOpToken, TokenKind},
@@ -53,7 +53,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "expression",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: binop_token.span,
                 });
                 return (Box::new(ErrorAST::new(self.source.len().into())), errors);

@@ -4,7 +4,7 @@ use cobalt_ast::{
     ast::{ErrorAST, FnDefAST, NullAST, ParamType, Parameter, TypeDefAST, VarDefAST},
     BoxedAST, DottedName,
 };
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_errors::{CobaltError, SourceSpan};
 
 use crate::lexer::tokens::{BinOpToken, Delimiter, Keyword, TokenKind};
 
@@ -82,7 +82,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (None, errors);
@@ -95,7 +95,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (None, errors);
@@ -133,7 +133,7 @@ impl<'src> Parser<'src> {
             } else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: self.current_token.unwrap().span,
                 });
 
@@ -163,7 +163,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return (module_name, errors);
@@ -172,7 +172,7 @@ impl<'src> Parser<'src> {
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
 
@@ -226,7 +226,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return ((Cow::Borrowed("@"), None, span), errors);
@@ -238,7 +238,7 @@ impl<'src> Parser<'src> {
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: span,
                 });
                 return ((Cow::Borrowed("@"), None, span), errors);
@@ -269,7 +269,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return ((primary_ident, None, span), errors);
@@ -280,7 +280,7 @@ impl<'src> Parser<'src> {
         } else {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
 
@@ -309,7 +309,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "')'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: span,
             });
             return ((primary_ident, secondary_ident, span), errors);
@@ -319,7 +319,7 @@ impl<'src> Parser<'src> {
             if delim != Delimiter::Paren {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "')'",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: span,
                 });
 
@@ -344,7 +344,7 @@ impl<'src> Parser<'src> {
         } else {
             errors.push(CobaltError::ExpectedFound {
                 ex: "')'",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
 
@@ -399,7 +399,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -416,7 +416,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -429,7 +429,7 @@ impl<'src> Parser<'src> {
             )),
 
             _ => {
-                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let found = Some(self.current_token.unwrap().kind.as_str().into());
                 let loc = self.current_token.unwrap().span;
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
@@ -461,7 +461,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "':' or '='",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -481,7 +481,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';' or '='",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -492,7 +492,7 @@ impl<'src> Parser<'src> {
                 let loc = self.current_token.unwrap().span;
                 errors.push(CobaltError::ExpectedFound {
                     ex: "type",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc,
                 });
                 return (Box::new(ErrorAST::new(loc)), errors);
@@ -522,14 +522,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
@@ -560,7 +560,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -574,14 +574,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
@@ -717,7 +717,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.is_none() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "type definition",
-                        found: ParserFound::Eof,
+                        found: None,
                         loc: first_token_loc,
                     });
                     return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -734,14 +734,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'type'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'type'",
@@ -773,7 +773,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -786,7 +786,7 @@ impl<'src> Parser<'src> {
             ),
 
             _ => {
-                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let found = Some(self.current_token.unwrap().kind.as_str().into());
                 let loc = self.current_token.unwrap().span;
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
@@ -818,14 +818,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::Eq) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
@@ -856,7 +856,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -870,7 +870,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';' or '::'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -889,7 +889,7 @@ impl<'src> Parser<'src> {
         // Next has to be a double colon.
 
         if self.current_token.unwrap().kind != TokenKind::ColonColon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';' or '::'",
@@ -920,14 +920,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'{'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'{'",
@@ -972,14 +972,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'}'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'}'",
@@ -1010,14 +1010,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
@@ -1113,7 +1113,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.is_none() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "function definition",
-                        found: ParserFound::Eof,
+                        found: None,
                         loc: first_token_loc,
                     });
                     return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -1128,7 +1128,7 @@ impl<'src> Parser<'src> {
         // Next has to be 'fn'.
 
         if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "function definition",
@@ -1159,7 +1159,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -1172,7 +1172,7 @@ impl<'src> Parser<'src> {
             ),
 
             _ => {
-                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let found = Some(self.current_token.unwrap().kind.as_str().into());
                 let loc = self.current_token.unwrap().span;
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
@@ -1207,14 +1207,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'('",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'('",
@@ -1251,7 +1251,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "')'",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: first_token_loc,
                 });
                 return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -1265,7 +1265,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.unwrap().kind == TokenKind::Comma {
                     self.next();
                 } else {
-                    let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                    let found = Some(self.current_token.unwrap().kind.as_str().into());
                     let loc = self.current_token.unwrap().span;
                     errors.push(CobaltError::ExpectedFound {
                         ex: "','",
@@ -1277,7 +1277,7 @@ impl<'src> Parser<'src> {
                         if self.current_token.is_none() {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "')'",
-                                found: ParserFound::Eof,
+                                found: None,
                                 loc: self.source.len().into(),
                             });
                             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -1322,7 +1322,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';' or expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
@@ -1342,14 +1342,14 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         if self.current_token.unwrap().kind != TokenKind::Semicolon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
@@ -1420,7 +1420,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (
@@ -1439,7 +1439,7 @@ impl<'src> Parser<'src> {
             TokenKind::Ident(s) => s,
 
             _ => {
-                let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+                let found = Some(self.current_token.unwrap().kind.as_str().into());
                 let loc = self.current_token.unwrap().span;
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
@@ -1488,7 +1488,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "':'",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (
@@ -1504,7 +1504,7 @@ impl<'src> Parser<'src> {
         }
 
         if self.current_token.unwrap().kind != TokenKind::Colon {
-            let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
+            let found = Some(self.current_token.unwrap().kind.as_str().into());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "':'",
@@ -1550,7 +1550,7 @@ impl<'src> Parser<'src> {
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "expression",
-                found: ParserFound::Eof,
+                found: None,
                 loc: first_token_loc,
             });
             return (
@@ -1579,7 +1579,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "expression",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: first_token_loc,
                 });
 

@@ -2,11 +2,8 @@ use std::iter::Peekable;
 use std::{borrow::Cow, collections::HashMap, str::CharIndices};
 
 use cobalt_ast::ast::CharLiteralAST;
-use cobalt_ast::{
-    ast::{ErrorAST, IntLiteralAST, StringLiteralAST, StructLiteralAST},
-    BoxedAST,
-};
-use cobalt_errors::{CobaltError, ParserFound, SourceSpan};
+use cobalt_ast::{ast::*, BoxedAST};
+use cobalt_errors::{CobaltError, SourceSpan};
 
 use crate::{
     lexer::tokens::{Delimiter, LiteralToken, TokenKind},
@@ -50,7 +47,7 @@ impl<'src> Parser<'src> {
                 if parsed_int.is_err() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "integer literal",
-                        found: ParserFound::Str(s.to_string()),
+                        found: Some(s.into()),
                         loc: span,
                     });
                 }
@@ -80,7 +77,7 @@ impl<'src> Parser<'src> {
                 if parsed_float.is_err() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "float literal",
-                        found: ParserFound::Str(s.to_string()),
+                        found: Some(s.into()),
                         loc: span,
                     });
                 }
@@ -159,7 +156,7 @@ impl<'src> Parser<'src> {
 
         errors.push(CobaltError::ExpectedFound {
             ex: "literal",
-            found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+            found: Some(self.current_token.unwrap().kind.as_str().into()),
             loc: span,
         });
         self.next();
@@ -250,7 +247,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "'}'",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: span,
                 });
                 break;
@@ -266,7 +263,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.is_none() {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
-                        found: ParserFound::Eof,
+                        found: None,
                         loc: span,
                     });
                     break;
@@ -275,7 +272,7 @@ impl<'src> Parser<'src> {
                 if self.current_token.unwrap().kind != TokenKind::Comma {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
-                        found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                        found: Some(self.current_token.unwrap().kind.as_str().into()),
                         loc: span,
                     });
                     break;
@@ -303,7 +300,7 @@ impl<'src> Parser<'src> {
             } else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: span,
                 });
                 break;
@@ -325,7 +322,7 @@ impl<'src> Parser<'src> {
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
                     ex: ":",
-                    found: ParserFound::Eof,
+                    found: None,
                     loc: span,
                 });
                 break;
@@ -334,7 +331,7 @@ impl<'src> Parser<'src> {
             if self.current_token.unwrap().kind != TokenKind::Colon {
                 errors.push(CobaltError::ExpectedFound {
                     ex: ":",
-                    found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                    found: Some(self.current_token.unwrap().kind.as_str().into()),
                     loc: span,
                 });
                 break;
@@ -369,12 +366,12 @@ impl<'src> Parser<'src> {
 
         let mut char_indices: Peekable<CharIndices>;
         if let TokenKind::Literal(LiteralToken::Char(s)) = self.current_token.unwrap().kind {
-            char_indices = s.char_indices().peekable();
+            char_indices = s[1..(s.len() - 1)].char_indices().peekable();
         } else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
                 ex: "char literal",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
             return (None, errors);
@@ -388,7 +385,7 @@ impl<'src> Parser<'src> {
             None => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "a char",
-                    found: ParserFound::Str("nothing".to_string()),
+                    found: None,
                     loc: span,
                 });
                 0
@@ -398,7 +395,7 @@ impl<'src> Parser<'src> {
                     None => {
                         errors.push(CobaltError::ExpectedFound {
                             ex: "a char",
-                            found: ParserFound::Str("nothing".to_string()),
+                            found: None,
                             loc: span,
                         });
                         0
@@ -474,12 +471,12 @@ impl<'src> Parser<'src> {
 
         let mut char_indices: Peekable<CharIndices>;
         if let TokenKind::Literal(LiteralToken::Str(s)) = self.current_token.unwrap().kind {
-            char_indices = s.char_indices().peekable();
+            char_indices = s[1..(s.len() - 1)].char_indices().peekable();
         } else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
                 ex: "string literal",
-                found: ParserFound::Str(self.current_token.unwrap().kind.to_string()),
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
             return (None, errors);
