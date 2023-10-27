@@ -95,7 +95,9 @@ impl<'src> Parser<'src> {
 
                 if module.is_some() {
                     errs.push(CobaltError::RedefModule {
-                        loc: self.current_token.unwrap().span,
+                        loc: self
+                            .current_token
+                            .map_or(self.source.len().into(), |tok| tok.span),
                         prev: module_span.unwrap(),
                     });
                     continue;
@@ -103,7 +105,10 @@ impl<'src> Parser<'src> {
 
                 errs.extend(errs_parsed);
                 module = module_parsed;
-                module_span = Some(self.current_token.unwrap().span);
+                module_span = Some(
+                    self.current_token
+                        .map_or(self.source.len().into(), |tok| tok.span),
+                );
                 continue;
             }
 
@@ -133,10 +138,12 @@ impl<'src> Parser<'src> {
             return self.parse_fn_def(false);
         }
 
-        let span = self.current_token.unwrap().span;
+        let span = self
+            .current_token
+            .map_or(self.source.len().into(), |tok| tok.span);
         let errors = vec![CobaltError::ExpectedFound {
             ex: "function or type declaration",
-            found: Some(self.current_token.unwrap().kind.as_str().into()),
+            found: self.current_token.map(|tok| tok.kind.as_str().into()),
             loc: span,
         }];
 

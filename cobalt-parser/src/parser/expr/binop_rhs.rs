@@ -35,10 +35,11 @@ impl<'src> Parser<'src> {
         assert!(self.current_token.is_some());
 
         loop {
-            if self.current_token.is_none() {
+            let Some(current) = self.current_token else {
                 return (lhs, errors);
-            }
-            let curr_token_precedence = self.current_token.unwrap().kind.precedence_value();
+            };
+
+            let curr_token_precedence = current.kind.precedence_value();
 
             // Since non-binary operators have precedence 0, we will return having consumed
             // the last token of the binop expression.
@@ -47,7 +48,7 @@ impl<'src> Parser<'src> {
             }
 
             // If we are here, then we have a binary operator.
-            let binop_token = self.current_token.unwrap();
+            let binop_token = current;
 
             self.next();
             if self.current_token.is_none() {
@@ -67,13 +68,9 @@ impl<'src> Parser<'src> {
             }
 
             // Look ahead at the next binary operator.
-            let next_binop_precedence = {
-                if self.current_token.is_none() {
-                    0
-                } else {
-                    self.current_token.unwrap().kind.precedence_value()
-                }
-            };
+            let next_binop_precedence = self
+                .current_token
+                .map_or(0, |tok| tok.kind.precedence_value());
 
             if curr_token_precedence < next_binop_precedence {
                 (rhs, errors) = self.parse_binop_rhs(curr_token_precedence + 1, rhs, errors);

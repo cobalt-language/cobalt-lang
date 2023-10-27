@@ -6,7 +6,7 @@ use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{CobaltError, SourceSpan};
 
 use crate::{
-    lexer::tokens::{Delimiter, LiteralToken, TokenKind},
+    lexer::tokens::{Delimiter, LiteralToken, Token, TokenKind},
     parser::Parser,
     utils::CharBytesIterator,
 };
@@ -21,21 +21,21 @@ impl<'src> Parser<'src> {
     /// literal := LITERAL
     /// ```
     pub(crate) fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
+        let current = self.current_token.unwrap();
 
-        let span = self.current_token.unwrap().span;
+        let span = current.span;
         let mut suffix = None;
         let mut errors = vec![];
 
-        match self.current_token.unwrap().kind {
+        match current.kind {
             TokenKind::Literal(LiteralToken::Int(s)) => {
                 self.next();
 
                 // Check if the next token is a type hint.
 
-                if self.current_token.is_some() {
-                    if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-                        suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                if let Some(current) = self.current_token {
+                    if let TokenKind::Ident(ident) = current.kind {
+                        suffix = Some((Cow::from(ident), current.span));
                         self.next();
                     }
                 }
@@ -64,9 +64,9 @@ impl<'src> Parser<'src> {
 
                 // Check if the next token is a type hint.
 
-                if self.current_token.is_some() {
-                    if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
-                        suffix = Some((Cow::from(ident), self.current_token.unwrap().span));
+                if let Some(current) = self.current_token {
+                    if let TokenKind::Ident(ident) = current.kind {
+                        suffix = Some((Cow::from(ident), current.span));
                         self.next();
                     }
                 }
@@ -110,9 +110,11 @@ impl<'src> Parser<'src> {
 
                 let mut suffix: Option<(Cow<'src, str>, SourceSpan)> = None;
 
-                if let TokenKind::Ident(pf) = self.current_token.unwrap().kind {
-                    suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
-                    self.next();
+                if let Some(current) = self.current_token {
+                    if let TokenKind::Ident(ident) = current.kind {
+                        suffix = Some((Cow::from(ident), current.span));
+                        self.next();
+                    }
                 }
 
                 ast.suffix = suffix;
@@ -139,9 +141,11 @@ impl<'src> Parser<'src> {
 
                 let mut suffix: Option<(Cow<'src, str>, SourceSpan)> = None;
 
-                if let TokenKind::Ident(pf) = self.current_token.unwrap().kind {
-                    suffix = Some((Cow::Borrowed(pf), self.current_token.unwrap().span));
-                    self.next();
+                if let Some(current) = self.current_token {
+                    if let TokenKind::Ident(ident) = current.kind {
+                        suffix = Some((Cow::from(ident), current.span));
+                        self.next();
+                    }
                 }
 
                 ast.suffix = suffix;
@@ -156,7 +160,7 @@ impl<'src> Parser<'src> {
 
         errors.push(CobaltError::ExpectedFound {
             ex: "literal",
-            found: Some(self.current_token.unwrap().kind.as_str().into()),
+            found: self.current_token.map(|tok| tok.kind.as_str().into()),
             loc: span,
         });
         self.next();
@@ -185,13 +189,13 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        if self.current_token.is_none() {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        if let TokenKind::Ident(_) = self.current_token.unwrap().kind {
-        } else {
+        if !matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Ident(_),
+                ..
+            })
+        ) {
             self.rewind_to_idx(idx_on_entry);
             return false;
         }
@@ -200,17 +204,31 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        if self.current_token.is_none() {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        if self.current_token.unwrap().kind != TokenKind::Colon {
+        if !matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Colon,
+                ..
+            })
+        ) {
             self.rewind_to_idx(idx_on_entry);
             return false;
         }
 
         // ---
+
+        if !self.parse_expr().1.is_empty()
+            || !matches!(
+                self.current_token,
+                Some(Token {
+                    kind: TokenKind::Comma,
+                    ..
+                })
+            )
+        {
+            self.rewind_to_idx(idx_on_entry);
+            return false;
+        }
 
         self.rewind_to_idx(idx_on_entry);
         true
@@ -222,14 +240,15 @@ impl<'src> Parser<'src> {
     /// struct_literal := '{' [ident ':' expr] [',' ident ':' expr]* [',']? '}'
     /// ````
     pub(crate) fn parse_struct_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
-        assert_eq!(
-            self.current_token.unwrap().kind,
-            TokenKind::OpenDelimiter(Delimiter::Brace)
-        );
+        let Some(Token {
+            kind: TokenKind::OpenDelimiter(Delimiter::Brace),
+            span,
+        }) = self.current_token
+        else {
+            unreachable!()
+        };
 
         let mut errors = vec![];
-        let span = self.current_token.unwrap().span;
         self.next();
 
         // ---
@@ -244,32 +263,32 @@ impl<'src> Parser<'src> {
         loop {
             // Break conditions.
 
-            if self.current_token.is_none() {
+            let Some(current) = self.current_token else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "'}'",
                     found: None,
                     loc: span,
                 });
                 break;
-            }
+            };
 
-            if self.current_token.unwrap().kind == TokenKind::CloseDelimiter(Delimiter::Brace) {
+            if current.kind == TokenKind::CloseDelimiter(Delimiter::Brace) {
                 self.next();
                 break;
             }
 
             // If we just parsed a field, then a comma should separate it from the next field.
             if local_state == at_least_one_field {
-                if self.current_token.is_none() {
+                let Some(current) = self.current_token else {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
                         found: None,
                         loc: span,
                     });
                     break;
-                }
+                };
 
-                if self.current_token.unwrap().kind != TokenKind::Comma {
+                if current.kind != TokenKind::Comma {
                     errors.push(CobaltError::ExpectedFound {
                         ex: ",",
                         found: Some(self.current_token.unwrap().kind.as_str().into()),
@@ -294,13 +313,14 @@ impl<'src> Parser<'src> {
 
             let field_name: Cow<'_, str>;
             let field_name_span: SourceSpan;
-            if let TokenKind::Ident(ident) = self.current_token.unwrap().kind {
+            let current = self.current_token.unwrap();
+            if let TokenKind::Ident(ident) = current.kind {
                 field_name = Cow::Borrowed(ident);
-                field_name_span = self.current_token.unwrap().span;
+                field_name_span = current.span;
             } else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
-                    found: Some(self.current_token.unwrap().kind.as_str().into()),
+                    found: Some(current.kind.as_str().into()),
                     loc: span,
                 });
                 break;
@@ -309,7 +329,7 @@ impl<'src> Parser<'src> {
             if let Some(prev_span) = field_spans.get(&field_name) {
                 errors.push(CobaltError::RedefVariable {
                     name: field_name.to_string(),
-                    loc: self.current_token.unwrap().span,
+                    loc: current.span,
                     prev: Some(*prev_span),
                 });
                 break;
@@ -319,19 +339,19 @@ impl<'src> Parser<'src> {
 
             // Colon.
 
-            if self.current_token.is_none() {
+            let Some(current) = self.current_token else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: ":",
                     found: None,
                     loc: span,
                 });
                 break;
-            }
+            };
 
-            if self.current_token.unwrap().kind != TokenKind::Colon {
+            if current.kind != TokenKind::Colon {
                 errors.push(CobaltError::ExpectedFound {
                     ex: ":",
-                    found: Some(self.current_token.unwrap().kind.as_str().into()),
+                    found: Some(current.kind.as_str().into()),
                     loc: span,
                 });
                 break;
@@ -359,15 +379,12 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_char_literal(
         &mut self,
     ) -> (Option<CharLiteralAST<'src>>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
+        let current = self.current_token.unwrap();
 
-        let span = self.current_token.unwrap().span;
+        let span = current.span;
         let mut errors = vec![];
 
-        let mut char_indices: Peekable<CharIndices>;
-        if let TokenKind::Literal(LiteralToken::Char(s)) = self.current_token.unwrap().kind {
-            char_indices = s[1..(s.len() - 1)].char_indices().peekable();
-        } else {
+        let TokenKind::Literal(LiteralToken::Char(s)) = self.current_token.unwrap().kind else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
                 ex: "char literal",
@@ -375,7 +392,9 @@ impl<'src> Parser<'src> {
                 loc: span,
             });
             return (None, errors);
-        }
+        };
+
+        let mut char_indices = s[1..(s.len() - 1)].char_indices().peekable();
 
         self.next();
 
@@ -464,15 +483,12 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_string_literal(
         &mut self,
     ) -> (Option<StringLiteralAST<'src>>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
+        let current = self.current_token.unwrap();
 
-        let span = self.current_token.unwrap().span;
+        let span = current.span;
         let mut errors = vec![];
 
-        let mut char_indices: Peekable<CharIndices>;
-        if let TokenKind::Literal(LiteralToken::Str(s)) = self.current_token.unwrap().kind {
-            char_indices = s[1..(s.len() - 1)].char_indices().peekable();
-        } else {
+        let TokenKind::Literal(LiteralToken::Str(s)) = current.kind else {
             self.next();
             errors.push(CobaltError::ExpectedFound {
                 ex: "string literal",
@@ -480,13 +496,13 @@ impl<'src> Parser<'src> {
                 loc: span,
             });
             return (None, errors);
-        }
+        };
+        let mut char_indices = s[1..(s.len() - 1)].char_indices().peekable();
 
         self.next();
 
         // ---
-
-        let mut cbi_s: Vec<CharBytesIterator> = vec![];
+        let mut bytes = vec![];
         loop {
             let cbi = match char_indices.next() {
                 None => break,
@@ -565,11 +581,8 @@ impl<'src> Parser<'src> {
                 }
                 Some((_, c)) => CharBytesIterator::from_char(c),
             };
-
-            cbi_s.push(cbi);
+            bytes.extend(cbi);
         }
-
-        let bytes: Vec<u8> = cbi_s.into_iter().flatten().collect();
 
         (Some(StringLiteralAST::new(span, bytes, None)), errors)
     }
