@@ -54,7 +54,7 @@ impl<'src> Parser<'src> {
     /// Parse a primary expression. These are basically anything that can be (directly)
     /// on the left or right of a binary operator. For example:
     /// - Consider `a + b`. Both `a` and `b` are primary expressions.
-    /// - Consider `a + b + c`. `a`, 'b', and 'c' are primary expressions.
+    /// - Consider `a + b + c`. `a`, `b``, and `c`` are primary expressions.
     /// - Consider `(a + b) + c`. `(a + b)` and `c` are primary expressions. Note that
     /// `(a + b)` will be found to have primary expressions `a` and `b` upon being parsed
     /// recursively, but this is not the concern of the top level parsing.

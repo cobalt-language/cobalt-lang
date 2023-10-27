@@ -24,7 +24,7 @@ impl<'src> Parser<'src> {
     /// we are at the end of the input and the next run through the loop will break it.
     /// - So now let's look at the parse paren function.
     /// - After eating the '(', it calls the parse expr so as before we enter this
-    /// function, now with the lhs being 'b' with precedence 0 and again pointing to
+    /// function, now with the lhs being `b`` with precedence 0 and again pointing to
     /// a `+` token. We eat it, parse the `c` as a primary expression.
     pub(crate) fn parse_binop_rhs(
         &mut self,
