@@ -23,10 +23,13 @@ use cobalt_ast::{
 };
 use cobalt_errors::CobaltError;
 
-use crate::lexer::{tokenizer::TokenStream, tokens::Token};
+use crate::lexer::tokenizer::TokenStream;
+use crate::lexer::tokens::*;
 
 mod decl;
 mod expr;
+
+pub use decl::DeclLoc;
 
 /// This is what the parser uses to iterate over the tokens. Since the `TokenStream`
 /// is immutable, we need to keep track of the index of the next token to be returned.
@@ -91,7 +94,7 @@ impl<'src> Parser<'src> {
             }
 
             if self.check_module_decl() {
-                let (module_parsed, errs_parsed) = self.parse_module_decl();
+                let (module_parsed, errs_parsed) = self.parse_file_module_decl();
 
                 if module.is_some() {
                     errs.push(CobaltError::RedefModule {
@@ -127,38 +130,62 @@ impl<'src> Parser<'src> {
     ///    := type_decl
     ///    := fn_def
     /// ```
-    pub fn parse_top_level(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_top_level(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
-        if self.check_type_decl() {
-            return self.parse_type_decl();
-        }
-
-        if self.check_fn_def() {
-            return self.parse_fn_def(false);
-        }
-
-        let span = self
-            .current_token
-            .map_or(self.source.len().into(), |tok| tok.span);
-        let errors = vec![CobaltError::ExpectedFound {
-            ex: "function or type declaration",
-            found: self.current_token.map(|tok| tok.kind.as_str().into()),
-            loc: span,
-        }];
-
+        let start_idx = self.cursor.index;
         loop {
-            if self.current_token.is_none() {
-                break;
+            match self.current_token {
+                None => {
+                    self.rewind_to_idx(start_idx);
+                    break;
+                }
+                Some(Token {
+                    kind: TokenKind::At,
+                    ..
+                }) => {
+                    let _ = self.parse_annotation();
+                }
+                _ => break,
             }
-
-            if self.check_fn_def() || self.check_type_decl() {
-                break;
-            }
-
-            self.next();
         }
+        let tok = self.current_token;
+        self.rewind_to_idx(start_idx);
 
-        (Box::new(ErrorAST::new(span)), errors)
+        match tok {
+            None => (
+                Box::new(ErrorAST::new(self.source.len().into())) as _,
+                vec![CobaltError::ExpectedFound {
+                    ex: "top-level declaration",
+                    found: None,
+                    loc: self.source.len().into(),
+                }],
+            ),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Type),
+                ..
+            }) => self.parse_type_decl(true),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Let),
+                ..
+            }) => self.parse_let_decl(DeclLoc::Global),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Const),
+                ..
+            }) => self.parse_const_decl(true),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Fn),
+                ..
+            }) => self.parse_fn_def(DeclLoc::Global),
+
+            Some(tok) => (
+                Box::new(ErrorAST::new(tok.span)) as _,
+                vec![CobaltError::ExpectedFound {
+                    ex: "top-level declaration",
+                    found: Some(tok.kind.as_str().into()),
+                    loc: tok.span,
+                }],
+            ),
+        }
     }
 }

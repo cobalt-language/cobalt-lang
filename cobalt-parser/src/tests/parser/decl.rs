@@ -1,17 +1,18 @@
 use super::*;
+use crate::parser::DeclLoc;
 
 #[test]
 fn test_parse_let_decl() {
     test_parser_fn(
         "let x: i32 = 5i32;",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl(DeclLoc::Local)),
     );
 
     test_parser_fn(
         "let x: i32;",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_let_decl(DeclLoc::Local)),
     );
 }
 
@@ -47,7 +48,7 @@ fn test_parse_type_decl() {
     test_parser_fn(
         "type Foo = i32;",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_type_decl()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_type_decl(true)),
     );
 }
 
@@ -56,31 +57,31 @@ fn test_fn_def() {
     test_parser_fn(
         "fn foo(x: i32): i32 = 5i32;",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(DeclLoc::Global)),
     );
 
     test_parser_fn(
         "fn foo();",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(DeclLoc::Global)),
     );
 
     test_parser_fn(
         "@C(extern) fn puts(str: *u8);",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(DeclLoc::Global)),
     );
 
     test_parser_fn(
         "@C(extern) @inline fn foo();",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(DeclLoc::Global)),
     );
 
     test_parser_fn(
         "fn foo(): i32 = { let x = 3; x};",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(false)),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_fn_def(DeclLoc::Global)),
     );
 }
 
@@ -89,7 +90,7 @@ fn test_module() {
     test_parser_fn(
         "module foo;",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_module_decl()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_file_module_decl()),
     );
 }
 

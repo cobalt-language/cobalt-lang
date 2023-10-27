@@ -20,8 +20,108 @@ macro_rules! loop_until {
         }
     };
 }
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DeclLoc {
+    Local,
+    Struct,
+    Global,
+}
 impl<'src> Parser<'src> {
+    pub(crate) fn parse_id(
+        &mut self,
+        is_global: bool,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> DottedName<'src> {
+        let current = self.current_token.unwrap();
+        if is_global {
+            let is_global = if current.kind == TokenKind::Dot {
+                self.next();
+                true
+            } else {
+                false
+            };
+            let mut dotted_ids = vec![];
+
+            // Parse name.
+            let Some(current) = self.current_token else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: None,
+                    loc: self.source.len().into(),
+                });
+                return DottedName::new(
+                    vec![("<error>".into(), self.source.len().into())],
+                    is_global,
+                );
+            };
+
+            if let TokenKind::Ident(ident) = current.kind {
+                let span = current.span;
+                let id = std::borrow::Cow::Borrowed(ident);
+
+                dotted_ids.push((id, span));
+            }
+
+            self.next();
+
+            loop {
+                if !matches!(
+                    self.current_token,
+                    Some(Token {
+                        kind: TokenKind::Dot,
+                        ..
+                    })
+                ) {
+                    break;
+                }
+
+                self.next();
+
+                let Some(current) = self.current_token else {
+                    break;
+                };
+
+                if let TokenKind::Ident(ident) = current.kind {
+                    let span = current.span;
+                    let id = std::borrow::Cow::Borrowed(ident);
+
+                    dotted_ids.push((id, span));
+                } else {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "identifier",
+                        found: Some(current.kind.as_str().into()),
+                        loc: current.span,
+                    });
+
+                    loop_until!(self, TokenKind::Semicolon);
+
+                    return DottedName::new(dotted_ids, is_global);
+                }
+
+                self.next();
+            }
+            DottedName::new(dotted_ids, is_global)
+        } else {
+            let Some(Token {
+                kind: TokenKind::Ident(name),
+                span,
+            }) = self.current_token
+            else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: None,
+                    loc: self.source.len().into(),
+                });
+                return DottedName::new(
+                    vec![("<error>".into(), self.source.len().into())],
+                    is_global,
+                );
+            };
+            self.next();
+            DottedName::local((name.into(), span))
+        }
+    }
+
     /// Parses a declaration.
     ///
     /// Going into this function, the current token should be the first
@@ -31,36 +131,69 @@ impl<'src> Parser<'src> {
     /// decl
     ///    := let_decl
     ///    := type_decl
+    ///    := fn_decl
     /// ```
-    pub fn parse_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_decl(&mut self, loc: DeclLoc) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
-        let first_token = self.current_token.unwrap();
-        let mut errors = vec![];
-
-        let ast = match first_token.kind {
-            TokenKind::Keyword(Keyword::Let) => {
-                let (let_decl, let_decl_errors) = self.parse_let_decl();
-                errors.extend(let_decl_errors);
-                let_decl
+        let start_idx = self.cursor.index;
+        loop {
+            match self.current_token {
+                None => {
+                    self.rewind_to_idx(start_idx);
+                    break;
+                }
+                Some(Token {
+                    kind: TokenKind::At,
+                    ..
+                }) => {
+                    let _ = self.parse_annotation();
+                }
+                _ => break,
             }
+        }
+        let tok = self.current_token;
+        self.rewind_to_idx(start_idx);
 
-            TokenKind::Keyword(Keyword::Type) => {
-                let (type_decl, type_decl_errors) = self.parse_type_decl();
-                errors.extend(type_decl_errors);
-                type_decl
-            }
+        match tok {
+            None => (
+                Box::new(ErrorAST::new(self.source.len().into())) as _,
+                vec![CobaltError::ExpectedFound {
+                    ex: "top-level declaration",
+                    found: None,
+                    loc: self.source.len().into(),
+                }],
+            ),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Type),
+                ..
+            }) => self.parse_type_decl(loc == DeclLoc::Global),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Let),
+                ..
+            }) => self.parse_let_decl(loc),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Const),
+                ..
+            }) => self.parse_const_decl(loc == DeclLoc::Global),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Fn),
+                ..
+            }) => self.parse_fn_def(loc),
 
-            TokenKind::Keyword(Keyword::Fn) => {
-                let (fn_decl, fn_decl_errors) = self.parse_fn_def(false);
-                errors.extend(fn_decl_errors);
-                fn_decl
-            }
-
-            _ => todo!(),
-        };
-
-        (ast, errors)
+            Some(tok) => (
+                Box::new(ErrorAST::new(tok.span)) as _,
+                vec![CobaltError::ExpectedFound {
+                    ex: if loc == DeclLoc::Global {
+                        "top-level declaration"
+                    } else {
+                        "declaration"
+                    },
+                    found: Some(tok.kind.as_str().into()),
+                    loc: tok.span,
+                }],
+            ),
+        }
     }
 
     pub(crate) fn check_module_decl(&mut self) -> bool {
@@ -78,7 +211,7 @@ impl<'src> Parser<'src> {
     /// ```text
     /// module_decl := 'module' [ident | dotted_expr] ';'
     /// ```
-    pub(crate) fn parse_module_decl(
+    pub(crate) fn parse_file_module_decl(
         &mut self,
     ) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
         let Some(Token {
@@ -104,65 +237,7 @@ impl<'src> Parser<'src> {
             return (None, errors);
         }
 
-        let mut dotted_ids = vec![];
-
-        // Parse module name.
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: span,
-            });
-            return (None, errors);
-        };
-
-        if let TokenKind::Ident(ident) = current.kind {
-            let span = current.span;
-            let id = std::borrow::Cow::Borrowed(ident);
-
-            dotted_ids.push((id, span));
-        }
-
-        self.next();
-
-        loop {
-            if !matches!(
-                self.current_token,
-                Some(Token {
-                    kind: TokenKind::Dot,
-                    ..
-                })
-            ) {
-                break;
-            }
-
-            self.next();
-
-            let Some(current) = self.current_token else {
-                break;
-            };
-
-            if let TokenKind::Ident(ident) = current.kind {
-                let span = current.span;
-                let id = std::borrow::Cow::Borrowed(ident);
-
-                dotted_ids.push((id, span));
-            } else {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "identifier",
-                    found: Some(current.kind.as_str().into()),
-                    loc: current.span,
-                });
-
-                loop_until!(self, TokenKind::Semicolon);
-
-                return (Some(DottedName::new(dotted_ids, true)), errors);
-            }
-
-            self.next();
-        }
-
-        let module_name = Some(DottedName::new(dotted_ids, true));
+        let module_name = Some(self.parse_id(true, &mut errors));
 
         // Next must be semicolon.
 
@@ -336,35 +411,42 @@ impl<'src> Parser<'src> {
     ///   := 'let' ['mut']? IDENT [':' primary_expr]? '=' expr ';'
     ///   := 'let' ['mut']? IDENT [':' primary_expr] ';'
     /// ```
-    pub(crate) fn parse_let_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let Some(current) = self.current_token else {
-            panic!();
-        };
-        assert!(matches!(
-            current,
-            Token {
-                kind: TokenKind::Keyword(Keyword::Module),
-                ..
-            }
-        ));
-
-        let first_token_loc = current.span;
-        self.next();
-
+    pub(crate) fn parse_let_decl(
+        &mut self,
+        loc: DeclLoc,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let mut errors = vec![];
 
-        let is_global = false;
+        // Annotations.
 
-        // Check if the variable is mutable.
+        let mut anns = vec![];
+        while self.current_token.unwrap().kind == TokenKind::At {
+            let (ann, ann_errors) = self.parse_annotation();
+            errors.extend(ann_errors);
+            anns.push(ann);
 
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: first_token_loc,
-            });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        };
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "constant definition",
+                    found: None,
+                    loc: self.source.len().into(),
+                });
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            }
+        }
+
+        let current = self.current_token.unwrap();
+
+        let first_token_loc = current.span;
+        assert!(matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Let),
+                ..
+            })
+        ));
+
+        self.next();
 
         let mut is_mutable = false;
         if current.kind == TokenKind::Keyword(Keyword::Mut) {
@@ -374,31 +456,7 @@ impl<'src> Parser<'src> {
 
         // Get the name of the variable.
 
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: first_token_loc,
-            });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        };
-
-        let name = if let TokenKind::Ident(s) = current.kind {
-            DottedName::new(vec![(Cow::from(s), current.span)], is_global)
-        } else {
-            let found = Some(current.kind.as_str().into());
-            let loc = current.span;
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found,
-                loc,
-            });
-
-            loop_until!(self, TokenKind::Semicolon);
-
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
-        };
-        self.next();
+        let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
 
         // Get the (optional) type of the variable.
 
@@ -454,8 +512,8 @@ impl<'src> Parser<'src> {
                     0,
                 )))),
                 ty_expr,
-                vec![],
-                false,
+                anns,
+                loc != DeclLoc::Local,
                 is_mutable,
             ));
 
@@ -537,90 +595,198 @@ impl<'src> Parser<'src> {
             name,
             expr,
             ty_expr,
-            vec![],
-            false,
+            anns,
+            loc != DeclLoc::Local,
             is_mutable,
         ));
 
         (ast, errors)
     }
 
-    /// Checks if the current token starts a type declaration.
+    /// Parses a const declaration.
     ///
-    /// In particular, we check for this pattern:
+    /// Going into this function, the current token should be the first
+    /// token of this grammar.
+    ///
     /// ```text
-    /// annotation* 'type' ident '='
+    /// const_decl
+    ///   := 'const' IDENT [':' primary_expr]? '=' expr ';'
+    ///   := 'const' IDENT [':' primary_expr] ';'
     /// ```
-    pub(crate) fn check_type_decl(&mut self) -> bool {
-        assert!(self.current_token.is_some());
-        let token_on_entry = self.current_token;
+    pub(crate) fn parse_const_decl(
+        &mut self,
+        is_global: bool,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        let mut errors = vec![];
 
-        let idx_on_entry = self.cursor.index;
+        // Annotations.
 
-        // ---
+        let mut anns = vec![];
+        while self.current_token.unwrap().kind == TokenKind::At {
+            let (ann, ann_errors) = self.parse_annotation();
+            errors.extend(ann_errors);
+            anns.push(ann);
 
-        loop {
-            match self.current_token {
-                None => {
-                    self.rewind_to_idx(idx_on_entry);
-                    return false;
-                }
-                Some(Token {
-                    kind: TokenKind::At,
-                    ..
-                }) => break,
-                _ => {
-                    let _ = self.parse_annotation();
-                }
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "constant definition",
+                    found: None,
+                    loc: self.source.len().into(),
+                });
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
             }
         }
 
-        // ---
+        let current = self.current_token.unwrap();
 
-        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Type) {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        self.next();
-
-        // ---
-
-        match self.current_token {
-            None => {
-                self.rewind_to_idx(idx_on_entry);
-                return false;
-            }
-            Some(Token {
-                kind: TokenKind::Ident(_),
-                ..
-            }) => {}
-            Some(_) => {
-                self.rewind_to_idx(idx_on_entry);
-                return false;
-            }
-        }
-
-        self.next();
-
-        // ---
-
-        if !matches!(
+        let first_token_loc = current.span;
+        assert!(matches!(
             self.current_token,
             Some(Token {
-                kind: TokenKind::BinOp(BinOpToken::Eq),
+                kind: TokenKind::Keyword(Keyword::Const),
                 ..
             })
-        ) {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
+        ));
+
+        self.next();
+
+        // Get the name of the variable.
+
+        let name = self.parse_id(is_global, &mut errors);
+
+        // Get the (optional) type of the variable.
+
+        let mut ty_expr = None;
+        let Some(current) = self.current_token else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "':' or '='",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        };
+
+        if current.kind == TokenKind::Colon {
+            self.next();
+
+            let (ty, ty_errors) = self.parse_primary_expr();
+
+            errors.extend(ty_errors);
+            ty_expr = Some(ty);
         }
 
-        // ---
+        // If the next token is a semicolon, the value defaults to null.
 
-        self.rewind_to_idx(idx_on_entry);
-        assert!(self.current_token == token_on_entry);
-        true
+        let Some(current) = self.current_token else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';' or '='",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        };
+
+        if current.kind == TokenKind::Semicolon {
+            if ty_expr.is_none() {
+                let loc = current.span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "type",
+                    found: Some(current.kind.as_str().into()),
+                    loc,
+                });
+                return (Box::new(ErrorAST::new(loc)), errors);
+            }
+
+            let semicolon_span = current.span;
+            self.next();
+
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(NullAST::new(SourceSpan::from((
+                    semicolon_span.offset() - 1,
+                    0,
+                )))),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
+        }
+
+        // Next has to be an equals sign.
+
+        let Some(current) = self.current_token else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'='",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        };
+
+        if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
+            let found = Some(current.kind.as_str().into());
+            let loc = current.span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "'='",
+                found,
+                loc,
+            });
+
+            loop_until!(self, TokenKind::Semicolon);
+
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+        }
+
+        self.next();
+
+        // Next has to be an expression.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "expression",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        }
+
+        let (expr, expr_errors) = self.parse_expr();
+        errors.extend(expr_errors);
+
+        // Next has to be a semicolon.
+
+        let Some(current) = self.current_token else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+        };
+
+        if current.kind != TokenKind::Semicolon {
+            let found = Some(current.kind.as_str().into());
+            let loc = current.span;
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found,
+                loc,
+            });
+
+            loop_until!(self, TokenKind::Semicolon);
+
+            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+        }
+
+        self.next();
+
+        // Create the AST node.
+
+        let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
+
+        (ast, errors)
     }
 
     /// Parses a type declaration.
@@ -630,7 +796,10 @@ impl<'src> Parser<'src> {
     ///  := annotation* 'type' IDENT '=' expr ';'
     ///  := annotation* 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
     /// ```
-    pub(crate) fn parse_type_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_type_decl(
+        &mut self,
+        is_global: bool,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
 
         let mut errors = vec![];
@@ -683,41 +852,7 @@ impl<'src> Parser<'src> {
 
         // Next has to be an identifier, the name of the type.
 
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: first_token_loc,
-            });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        };
-
-        let name = if let TokenKind::Ident(s) = current.kind {
-            DottedName::new(vec![(Cow::from(s), current.span)], false)
-        } else {
-            let found = Some(current.kind.as_str().into());
-            let loc = current.span;
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found,
-                loc,
-            });
-
-            loop {
-                if self.current_token.is_none() {
-                    break;
-                }
-
-                if current.kind == TokenKind::Semicolon {
-                    self.next();
-                    break;
-                }
-
-                self.next();
-            }
-
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
-        };
+        let name = self.parse_id(is_global, &mut errors);
 
         // Next has to be an equals sign.
 
@@ -838,7 +973,7 @@ impl<'src> Parser<'src> {
                 break;
             }
 
-            let (func, func_errors) = self.parse_fn_def(true);
+            let (func, func_errors) = self.parse_fn_def(DeclLoc::Global);
             errors.extend(func_errors);
             methods.push(func);
         }
@@ -953,7 +1088,7 @@ impl<'src> Parser<'src> {
     /// ```
     pub(crate) fn parse_fn_def(
         &mut self,
-        in_struct: bool,
+        loc: DeclLoc,
     ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         assert!(self.current_token.is_some());
         let first_token_loc = self.current_token.unwrap().span;
@@ -1005,30 +1140,16 @@ impl<'src> Parser<'src> {
 
         // Next has to be an identifier.
 
-        let Some(current) = self.current_token else {
+        if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
                 ex: "identifier",
                 found: None,
                 loc: first_token_loc,
             });
             return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        };
+        }
 
-        let name = if let TokenKind::Ident(s) = current.kind {
-            DottedName::new(vec![(Cow::from(s), current.span)], false)
-        } else {
-            let found = Some(current.kind.as_str().into());
-            let loc = current.span;
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found,
-                loc,
-            });
-
-            loop_until!(self, TokenKind::Semicolon);
-
-            return (Box::new(ErrorAST::new(current.span)), errors);
-        };
+        let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
 
         // Next has to be an open paren.
 
@@ -1199,7 +1320,7 @@ impl<'src> Parser<'src> {
             params,
             body,
             anns,
-            in_struct,
+            loc == DeclLoc::Struct,
         ));
 
         (ast, errors)

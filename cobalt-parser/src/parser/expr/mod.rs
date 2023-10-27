@@ -1,11 +1,8 @@
-use std::borrow::Cow;
-
+use super::*;
+use crate::lexer::tokens::{Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken};
 use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{CobaltError, SourceSpan};
-
-use crate::lexer::tokens::{Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken};
-
-use super::Parser;
+use std::borrow::Cow;
 
 mod binop_rhs;
 mod literal;
@@ -228,9 +225,24 @@ impl<'src> Parser<'src> {
     /// ident_expr := ident ['.' ident]+
     /// ```
     pub(crate) fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let current = self.current_token.unwrap();
+        let mut current = self.current_token.unwrap();
 
         let mut errors = vec![];
+
+        let is_global = if current.kind == TokenKind::Dot {
+            let Some(c) = self.current_token else {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "identifier",
+                    found: None,
+                    loc: self.source.len().into(),
+                });
+                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            };
+            current = c;
+            true
+        } else {
+            false
+        };
 
         let span = current.span;
         let name = if let TokenKind::Ident(name) = current.kind {
@@ -245,7 +257,6 @@ impl<'src> Parser<'src> {
                 }],
             );
         };
-        let is_global = false;
 
         self.next();
 
@@ -529,7 +540,7 @@ impl<'src> Parser<'src> {
 
             if let TokenKind::Keyword(kw) = current.kind {
                 if kw == Keyword::Let || kw == Keyword::Type || kw == Keyword::Fn {
-                    let (decl, decl_errors) = self.parse_decl();
+                    let (decl, decl_errors) = self.parse_decl(DeclLoc::Local);
                     errors.extend(decl_errors);
                     vals.push(decl);
 
