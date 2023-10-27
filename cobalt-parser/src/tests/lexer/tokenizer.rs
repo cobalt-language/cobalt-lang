@@ -114,7 +114,7 @@ fn test_literals() {
     assert_eq!(
         tokens.0.as_ref(),
         &vec![Token {
-            kind: TokenKind::Literal(LiteralToken::Str("hello")),
+            kind: TokenKind::Literal(LiteralToken::Str("\"hello\"")),
             span: SourceSpan::from((0, 0))
         }]
     );
@@ -125,7 +125,7 @@ fn test_literals() {
     assert_eq!(
         tokens.0.as_ref(),
         &vec![Token {
-            kind: TokenKind::Literal(LiteralToken::Str("hello \\\"world\\\"")),
+            kind: TokenKind::Literal(LiteralToken::Str("\"hello \\\"world\\\"\"")),
             span: SourceSpan::from((0, 0))
         }]
     );
