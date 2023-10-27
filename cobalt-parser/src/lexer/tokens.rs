@@ -85,35 +85,46 @@ pub enum BinOpToken {
     PlusEq,  // +=
     MinusEq, // -=
     TimesEq, // *=
-    DivEq,   // *=
+    DivEq,   // /=
+    ModEq,   // %=
+    AndEq,   // &=
+    OrEq,    // |=
+    XorEq,   // ^=
+    ShlEq,   // <<=
+    ShrEq,   // >>=
     EqEq,    // ==
     Neq,     // !=
 
-    Lt,         // <
-    Leq,        // <=
-    Gt,         // >
-    Geq,        // >=
-    Andq,       // &?
-    Or,         // |
-    Orq,        // |?
-    Xor,        // ^
-    Colonq,     // :?
-    ColonColon, // ::
+    Lt,     // <
+    Leq,    // <=
+    Gt,     // >
+    Geq,    // >=
+    Andq,   // &?
+    Orq,    // |?
+    Colonq, // :?
 
     Div, // /
     Mod, // %
+    Or,  // |
+    Xor, // ^
     Shl, // <<
     Shr, // >>
 }
 
 impl BinOpToken {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             BinOpToken::Eq => "=",
             BinOpToken::PlusEq => "+=",
             BinOpToken::MinusEq => "-=",
             BinOpToken::TimesEq => "*=",
             BinOpToken::DivEq => "/=",
+            BinOpToken::ModEq => "%=",
+            BinOpToken::AndEq => "&=",
+            BinOpToken::OrEq => "|=",
+            BinOpToken::XorEq => "^=",
+            BinOpToken::ShlEq => "<<=",
+            BinOpToken::ShrEq => ">>=",
             BinOpToken::EqEq => "==",
             BinOpToken::Neq => "!=",
 
@@ -121,15 +132,14 @@ impl BinOpToken {
             BinOpToken::Leq => "<=",
             BinOpToken::Gt => ">",
             BinOpToken::Geq => ">=",
-            BinOpToken::Andq => "&&",
-            BinOpToken::Or => "|",
-            BinOpToken::Orq => "||",
-            BinOpToken::Xor => "^",
+            BinOpToken::Andq => "&?",
+            BinOpToken::Orq => "|?",
             BinOpToken::Colonq => ":?",
-            BinOpToken::ColonColon => "::",
 
             BinOpToken::Div => "/",
             BinOpToken::Mod => "%",
+            BinOpToken::Or => "|",
+            BinOpToken::Xor => "^",
             BinOpToken::Shl => "<<",
             BinOpToken::Shr => ">>",
         }
@@ -181,6 +191,7 @@ pub enum TokenKind<'src> {
     CloseDelimiter(Delimiter),
     Semicolon,
     Colon,
+    ColonColon,
     Comma,
     UnOp(UnOpToken),
     BinOp(BinOpToken),
@@ -191,38 +202,46 @@ pub enum TokenKind<'src> {
 }
 
 impl<'src> TokenKind<'src> {
-    pub fn precedence_value(&self) -> u8 {
+    pub fn precedence_value(self) -> u8 {
         match self {
             TokenKind::BinOp(bop) => match bop {
-                BinOpToken::Lt => 10,
-                BinOpToken::Leq => 10,
-                BinOpToken::Gt => 10,
-                BinOpToken::Geq => 10,
-                BinOpToken::Colonq => 10,
-                BinOpToken::ColonColon => 10,
+                BinOpToken::Eq
+                | BinOpToken::PlusEq
+                | BinOpToken::MinusEq
+                | BinOpToken::TimesEq
+                | BinOpToken::DivEq
+                | BinOpToken::ModEq
+                | BinOpToken::AndEq
+                | BinOpToken::OrEq
+                | BinOpToken::XorEq
+                | BinOpToken::ShlEq
+                | BinOpToken::ShrEq => 10,
 
-                BinOpToken::Div => 30,
-                BinOpToken::Mod => 30,
+                BinOpToken::Andq => 18,
+                BinOpToken::Orq => 22,
 
-                BinOpToken::Eq => 100,
-                BinOpToken::PlusEq => 100,
-                BinOpToken::MinusEq => 100,
-                BinOpToken::TimesEq => 100,
-                BinOpToken::DivEq => 100,
-                BinOpToken::EqEq => 100,
-                BinOpToken::Neq => 100,
+                BinOpToken::EqEq | BinOpToken::Neq => 30,
 
-                _ => 0,
+                BinOpToken::Lt | BinOpToken::Gt | BinOpToken::Leq | BinOpToken::Geq => 40,
+
+                BinOpToken::Colonq => 50,
+
+                BinOpToken::Shl | BinOpToken::Shr => 60,
+
+                BinOpToken::Or | BinOpToken::Xor => 70,
+
+                BinOpToken::Div | BinOpToken::Mod => 90,
             },
 
             TokenKind::UnOrBinOp(unop) => match unop {
-                UnOrBinOpToken::Sub => 20,
-                UnOrBinOpToken::Add => 25,
+                UnOrBinOpToken::And => 70,
 
-                UnOrBinOpToken::Star => 35,
+                UnOrBinOpToken::Add | UnOrBinOpToken::Sub => 80,
 
-                _ => 0,
+                UnOrBinOpToken::Star => 90,
             },
+
+            TokenKind::Colon => 50,
 
             _ => 0,
         }

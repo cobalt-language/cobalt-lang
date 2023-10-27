@@ -469,7 +469,7 @@ impl<'src> SourceReader<'src> {
                         Some(&':') => {
                             self.next_char();
                             tokens.push(Token {
-                                kind: TokenKind::BinOp(BinOpToken::ColonColon),
+                                kind: TokenKind::ColonColon,
                                 span: self.source_span_backward(2),
                             });
                         }

@@ -23,11 +23,10 @@ impl<'src> Parser<'src> {
         let lhs = self.parse_primary_expr();
 
         if let Some(next_tok) = self.current_token {
-            if let TokenKind::BinOp(_) = next_tok.kind {
-                return self.parse_binop_rhs(0, lhs.0, lhs.1);
-            }
-
-            if let TokenKind::UnOrBinOp(_) = next_tok.kind {
+            if matches!(
+                next_tok.kind,
+                TokenKind::BinOp(_) | TokenKind::UnOrBinOp(_) | TokenKind::Colon
+            ) {
                 return self.parse_binop_rhs(0, lhs.0, lhs.1);
             }
         }
@@ -157,18 +156,18 @@ impl<'src> Parser<'src> {
         // ---
 
         loop {
-            if self.current_token.is_none() {
+            let Some(tok) = self.current_token else {
                 break;
-            }
+            };
 
-            if self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Paren) {
+            if tok.kind == TokenKind::OpenDelimiter(Delimiter::Paren) {
                 let (parsed_expr, parsed_errors) = self.parse_fn_call(working_ast);
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
                 continue;
             }
 
-            if state & can_be_dotted != 0 && self.current_token.unwrap().kind == TokenKind::Dot {
+            if state & can_be_dotted != 0 && tok.kind == TokenKind::Dot {
                 let (parsed_expr, parsed_errors) = self.parse_dotted_expr(working_ast);
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
@@ -176,7 +175,7 @@ impl<'src> Parser<'src> {
             }
 
             if state & can_be_indexed != 0
-                && self.current_token.unwrap().kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
+                && tok.kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
             {
                 let (parsed_expr, parsed_errors) = self.parse_index_expr(working_ast);
                 errors.extend(parsed_errors);
@@ -189,13 +188,6 @@ impl<'src> Parser<'src> {
                 errors.extend(parsed_errors);
                 working_ast = parsed_expr;
                 continue;
-            }
-
-            if self.current_token.unwrap().kind == TokenKind::Colon {
-                let (parsed_expr, parsed_errors) = self.parse_cast_expr(working_ast);
-                errors.extend(parsed_errors);
-                working_ast = parsed_expr;
-                break;
             }
 
             break;
@@ -942,40 +934,5 @@ impl<'src> Parser<'src> {
         }
 
         (working_ast, vec![])
-    }
-
-    /// - `val` is the thing being casted.
-    ///
-    /// ```text
-    /// cast_expr := primary_expr ':' expr
-    /// ```
-    pub(crate) fn parse_cast_expr(
-        &mut self,
-        val: BoxedAST<'src>,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
-        assert!(self.current_token.unwrap().kind == TokenKind::Colon);
-
-        let span = self.current_token.unwrap().span;
-        let mut errors = vec![];
-        self.next();
-
-        // ---
-
-        if self.current_token.is_none() {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: ParserFound::Eof,
-                loc: span,
-            });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
-        }
-
-        let (expr, expr_errors) = self.parse_expr();
-        errors.extend(expr_errors);
-
-        // ---
-
-        (Box::new(CastAST::new(span, val, expr)), errors)
     }
 }

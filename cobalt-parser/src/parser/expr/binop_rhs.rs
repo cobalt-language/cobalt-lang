@@ -1,7 +1,4 @@
-use cobalt_ast::{
-    ast::{BinOpAST, BitCastAST, ErrorAST},
-    BoxedAST,
-};
+use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{CobaltError, ParserFound};
 
 use crate::{
@@ -87,16 +84,19 @@ impl<'src> Parser<'src> {
 
             // Merge rhs and lhs.
 
-            if binop_token.kind == TokenKind::BinOp(BinOpToken::Colonq) {
-                lhs = Box::new(BitCastAST::new(binop_token.span, lhs, rhs));
-            } else {
-                let binop_str = match binop_token.kind {
-                    TokenKind::BinOp(op) => op.as_str(),
-                    TokenKind::UnOrBinOp(op) => op.as_str(),
-                    _ => unreachable!(),
-                };
-                lhs = Box::new(BinOpAST::new(binop_token.span, binop_str, lhs, rhs));
-            }
+            lhs = match binop_token.kind {
+                TokenKind::Colon => Box::new(CastAST::new(binop_token.span, lhs, rhs)),
+                TokenKind::BinOp(BinOpToken::Colonq) => {
+                    Box::new(BitCastAST::new(binop_token.span, lhs, rhs))
+                }
+                TokenKind::BinOp(tok) => {
+                    Box::new(BinOpAST::new(binop_token.span, tok.as_str(), lhs, rhs))
+                }
+                TokenKind::UnOrBinOp(tok) => {
+                    Box::new(BinOpAST::new(binop_token.span, tok.as_str(), lhs, rhs))
+                }
+                _ => unreachable!(),
+            };
         }
     }
 }

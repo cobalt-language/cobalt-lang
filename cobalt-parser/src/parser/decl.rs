@@ -888,7 +888,7 @@ impl<'src> Parser<'src> {
 
         // Next has to be a double colon.
 
-        if self.current_token.unwrap().kind != TokenKind::BinOp(BinOpToken::ColonColon) {
+        if self.current_token.unwrap().kind != TokenKind::ColonColon {
             let found = ParserFound::Str(self.current_token.unwrap().kind.to_string());
             let loc = self.current_token.unwrap().span;
             errors.push(CobaltError::ExpectedFound {
