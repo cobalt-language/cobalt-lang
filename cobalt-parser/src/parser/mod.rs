@@ -17,10 +17,7 @@
 //! A common idiom is to use a `check_` function to see if a token starts a particular
 //! grammar, and subsequently use a `parse_` function to parse the the grammar.
 
-use cobalt_ast::{
-    ast::{ErrorAST, TopLevelAST},
-    BoxedAST,
-};
+use cobalt_ast::ast::{ErrorAST, TopLevelAST};
 use cobalt_errors::CobaltError;
 
 use crate::lexer::tokenizer::TokenStream;
@@ -115,77 +112,11 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
-            let (val, err) = self.parse_top_level();
+            let (val, err) = self.parse_decl(DeclLoc::Global);
             vals.push(val);
             errs.extend(err);
         }
 
         (Some(TopLevelAST::new(vals, module)), errs)
-    }
-
-    /// Parses a top level item.
-    ///
-    /// ```text
-    /// top_level
-    ///    := type_decl
-    ///    := fn_def
-    /// ```
-    pub(crate) fn parse_top_level(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
-
-        let start_idx = self.cursor.index;
-        loop {
-            match self.current_token {
-                None => {
-                    self.rewind_to_idx(start_idx);
-                    break;
-                }
-                Some(Token {
-                    kind: TokenKind::At,
-                    ..
-                }) => {
-                    let _ = self.parse_annotation();
-                }
-                _ => break,
-            }
-        }
-        let tok = self.current_token;
-        self.rewind_to_idx(start_idx);
-
-        match tok {
-            None => (
-                Box::new(ErrorAST::new(self.source.len().into())) as _,
-                vec![CobaltError::ExpectedFound {
-                    ex: "top-level declaration",
-                    found: None,
-                    loc: self.source.len().into(),
-                }],
-            ),
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Type),
-                ..
-            }) => self.parse_type_decl(true),
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Let),
-                ..
-            }) => self.parse_let_decl(DeclLoc::Global),
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Const),
-                ..
-            }) => self.parse_const_decl(true),
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Fn),
-                ..
-            }) => self.parse_fn_def(DeclLoc::Global),
-
-            Some(tok) => (
-                Box::new(ErrorAST::new(tok.span)) as _,
-                vec![CobaltError::ExpectedFound {
-                    ex: "top-level declaration",
-                    found: Some(tok.kind.as_str().into()),
-                    loc: tok.span,
-                }],
-            ),
-        }
     }
 }

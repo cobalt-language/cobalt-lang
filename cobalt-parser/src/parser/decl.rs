@@ -186,6 +186,7 @@ impl<'src> Parser<'src> {
                 _ => break,
             }
         }
+        let curr_idx = self.cursor.index;
         let tok = self.current_token;
         self.rewind_to_idx(start_idx);
 
@@ -193,7 +194,11 @@ impl<'src> Parser<'src> {
             None => (
                 Box::new(ErrorAST::new(self.source.len().into())) as _,
                 vec![CobaltError::ExpectedFound {
-                    ex: "top-level declaration",
+                    ex: if loc == DeclLoc::Global {
+                        "top-level declaration"
+                    } else {
+                        "declaration"
+                    },
                     found: None,
                     loc: self.source.len().into(),
                 }],
@@ -215,18 +220,22 @@ impl<'src> Parser<'src> {
                 ..
             }) => self.parse_fn_def(loc),
 
-            Some(tok) => (
-                Box::new(ErrorAST::new(tok.span)) as _,
-                vec![CobaltError::ExpectedFound {
-                    ex: if loc == DeclLoc::Global {
-                        "top-level declaration"
-                    } else {
-                        "declaration"
-                    },
-                    found: Some(tok.kind.as_str().into()),
-                    loc: tok.span,
-                }],
-            ),
+            Some(tok) => {
+                self.rewind_to_idx(curr_idx);
+                loop_until(self);
+                (
+                    Box::new(ErrorAST::new(tok.span)) as _,
+                    vec![CobaltError::ExpectedFound {
+                        ex: if loc == DeclLoc::Global {
+                            "top-level declaration"
+                        } else {
+                            "declaration"
+                        },
+                        found: Some(tok.kind.as_str().into()),
+                        loc: tok.span,
+                    }],
+                )
+            }
         }
     }
 
