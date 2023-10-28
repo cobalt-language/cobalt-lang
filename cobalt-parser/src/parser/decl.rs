@@ -5,13 +5,13 @@ use cobalt_errors::{CobaltError, SourceSpan};
 use std::borrow::Cow;
 
 macro_rules! loop_until {
-    ($this:expr, $pat:pat) => {
+    ($this:expr) => {
         loop {
             let Some(current) = $this.current_token else {
                 break;
             };
 
-            if matches!(current.kind, $pat) {
+            if current.kind == TokenKind::Semicolon {
                 $this.next();
                 break;
             }
@@ -19,6 +19,40 @@ macro_rules! loop_until {
             $this.next();
         }
     };
+    ($this:expr, $pat:pat) => {
+        loop {
+            let Some(current) = $this.current_token else {
+                break;
+            };
+
+            if current.kind == TokenKind::Semicolon {
+                $this.next();
+                break;
+            }
+
+            if matches!(current.kind, $pat) {
+                break;
+            }
+
+            $this.next();
+        }
+    };
+}
+#[inline(always)]
+fn loop_until(this: &mut Parser) {
+    loop {
+        let Some(current) = this.current_token else {
+            break;
+        };
+        match current.kind {
+            TokenKind::Semicolon => {
+                this.next();
+                break;
+            }
+            TokenKind::CloseDelimiter(Delimiter::Brace) => break,
+            _ => this.next(),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DeclLoc {
@@ -93,7 +127,7 @@ impl<'src> Parser<'src> {
                         loc: current.span,
                     });
 
-                    loop_until!(self, TokenKind::Semicolon);
+                    loop_until!(self);
 
                     return DottedName::new(dotted_ids, is_global);
                 }
@@ -257,7 +291,7 @@ impl<'src> Parser<'src> {
                 loc: span,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(self);
 
             return (module_name, errors);
         }
@@ -477,7 +511,18 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind == TokenKind::Colon {
@@ -497,7 +542,18 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind == TokenKind::Semicolon {
@@ -538,21 +594,41 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
             let found = Some(current.kind.as_str().into());
-            let loc = current.span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
                 found,
-                loc,
+                loc: current.span,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(current.span)),
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         }
 
         self.next();
@@ -565,7 +641,18 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -579,21 +666,44 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                expr,
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::Semicolon {
             let found = Some(current.kind.as_str().into());
-            let loc = current.span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
                 found,
-                loc,
+                loc: current.span,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(
+                self,
+                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Brace)
+            );
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(VarDefAST::new(
+                first_token_loc,
+                name,
+                expr,
+                ty_expr,
+                anns,
+                loc != DeclLoc::Local,
+                is_mutable,
+            ));
+
+            return (ast, errors);
         }
 
         self.next();
@@ -673,7 +783,16 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind == TokenKind::Colon {
@@ -693,7 +812,16 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind == TokenKind::Semicolon {
@@ -732,7 +860,16 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -744,9 +881,17 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(current.span)),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
         }
 
         self.next();
@@ -759,7 +904,16 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(ConstDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                ty_expr,
+                anns,
+            ));
+
+            return (ast, errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -773,7 +927,9 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -785,9 +941,14 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(
+                self,
+                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Brace)
+            );
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
+
+            return (ast, errors);
         }
 
         self.next();
@@ -804,7 +965,7 @@ impl<'src> Parser<'src> {
     /// ```text
     /// type_decl
     ///  := annotation* 'type' IDENT '=' expr ';'
-    ///  := annotation* 'type' IDENT '=' expr '::' '{' fn_def* '}' ';'
+    ///  := annotation* 'type' IDENT '=' expr '::' '{' decl* '}' ';'
     /// ```
     pub(crate) fn parse_type_decl(
         &mut self,
@@ -853,7 +1014,7 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
@@ -872,7 +1033,15 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            let ast = Box::new(TypeDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                anns,
+                vec![],
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -884,9 +1053,17 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(TypeDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorTypeAST::new(current.span)),
+                anns,
+                vec![],
+            ));
+
+            return (ast, errors);
         }
 
         // Next has to be an expression.
@@ -899,7 +1076,16 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(TypeDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                anns,
+                vec![],
+            ));
+
+            return (ast, errors);
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -937,9 +1123,15 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(
+                self,
+                TokenKind::OpenDelimiter(Delimiter::Brace)
+                    | TokenKind::CloseDelimiter(Delimiter::Brace)
+            );
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
+
+            return (ast, errors);
         }
 
         self.next();
@@ -965,9 +1157,11 @@ impl<'src> Parser<'src> {
             });
 
             loop_until!(self, TokenKind::CloseDelimiter(Delimiter::Brace));
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
+
+            return (ast, errors);
         }
 
         // Next is 0 or more function definitions.
@@ -977,13 +1171,19 @@ impl<'src> Parser<'src> {
         let mut methods = vec![];
 
         loop {
-            if !self.check_fn_def() {
+            if matches!(
+                self.current_token,
+                None | Some(Token {
+                    kind: TokenKind::CloseDelimiter(Delimiter::Brace),
+                    ..
+                })
+            ) {
                 break;
             }
 
-            let (func, func_errors) = self.parse_fn_def(DeclLoc::Global);
-            errors.extend(func_errors);
-            methods.push(func);
+            let (decl, decl_errors) = self.parse_decl(DeclLoc::Global);
+            errors.extend(decl_errors);
+            methods.push(decl);
         }
 
         // Next has to be a right brace.
@@ -994,7 +1194,9 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
@@ -1007,9 +1209,11 @@ impl<'src> Parser<'src> {
             });
 
             loop_until!(self, TokenKind::CloseDelimiter(Delimiter::Brace));
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
+
+            return (ast, errors);
         }
 
         // Next has to be a semicolon.
@@ -1034,9 +1238,14 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(
+                self,
+                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Brace)
+            );
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
+
+            return (ast, errors);
         }
 
         // Done.
@@ -1047,47 +1256,6 @@ impl<'src> Parser<'src> {
 
         (ast, errors)
     }
-
-    /// Checks if the current token starts a function definition.
-    ///
-    /// In particular, it checks for the following pattern:
-    /// ```text
-    /// annotation* 'fn'
-    /// ```
-    pub(crate) fn check_fn_def(&mut self) -> bool {
-        assert!(self.current_token.is_some());
-
-        let idx_on_entry = self.cursor.index;
-
-        // ---
-
-        loop {
-            match self.current_token {
-                None => {
-                    self.rewind_to_idx(idx_on_entry);
-                    return false;
-                }
-                Some(Token {
-                    kind: TokenKind::At,
-                    ..
-                }) => {
-                    let _ = self.parse_annotation();
-                }
-                _ => break,
-            }
-        }
-
-        // ---
-
-        if self.current_token.unwrap().kind != TokenKind::Keyword(Keyword::Fn) {
-            self.rewind_to_idx(idx_on_entry);
-            return false;
-        }
-
-        self.rewind_to_idx(idx_on_entry);
-        true
-    }
-
     /// Parses a function definition.
     ///
     /// ```text
@@ -1139,7 +1307,7 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
             return (Box::new(ErrorAST::new(first_token_loc)), errors);
         }
@@ -1167,7 +1335,18 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(FnDefAST::new(
+                first_token_loc,
+                name,
+                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                vec![],
+                Box::new(ErrorAST::new(self.source.len().into())),
+                anns,
+                loc == DeclLoc::Struct,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -1179,7 +1358,7 @@ impl<'src> Parser<'src> {
                 loc,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until(self);
 
             return (Box::new(ErrorAST::new(current.span)), errors);
         }
@@ -1278,7 +1457,18 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(FnDefAST::new(
+                first_token_loc,
+                name,
+                ret,
+                params,
+                Box::new(ErrorAST::new(self.source.len().into())),
+                anns,
+                loc == DeclLoc::Struct,
+            ));
+
+            return (ast, errors);
         };
 
         let mut body: BoxedAST = Box::new(NullAST::new(current.span));
@@ -1298,21 +1488,44 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+
+            let ast = Box::new(FnDefAST::new(
+                first_token_loc,
+                name,
+                ret,
+                params,
+                body,
+                anns,
+                loc == DeclLoc::Struct,
+            ));
+
+            return (ast, errors);
         };
 
         if current.kind != TokenKind::Semicolon {
             let found = Some(current.kind.as_str().into());
-            let loc = current.span;
             errors.push(CobaltError::ExpectedFound {
                 ex: "';'",
                 found,
-                loc,
+                loc: current.span,
             });
 
-            loop_until!(self, TokenKind::Semicolon);
+            loop_until!(
+                self,
+                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Brace)
+            );
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            let ast = Box::new(FnDefAST::new(
+                first_token_loc,
+                name,
+                ret,
+                params,
+                body,
+                anns,
+                loc == DeclLoc::Struct,
+            ));
+
+            return (ast, errors);
         }
 
         self.next();
