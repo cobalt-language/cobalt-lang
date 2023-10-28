@@ -92,6 +92,12 @@ fn test_module() {
         true,
         Box::new(|parser: &mut Parser<'static>| parser.parse_file_module_decl()),
     );
+
+    test_parser_fn(
+        "@ann module foo.bar :: { fn baz(): i32 = { let x = 3; x}; module kay :: {}; };",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_inline_module_decl()),
+    );
 }
 
 #[test]

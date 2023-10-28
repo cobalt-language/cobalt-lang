@@ -23,9 +23,12 @@ use cobalt_errors::CobaltError;
 use crate::lexer::tokenizer::TokenStream;
 use crate::lexer::tokens::*;
 
+mod annotations;
 mod decl;
 mod expr;
+mod top_level;
 
+use crate::parser::top_level::CheckModuleDeclResult;
 pub use decl::DeclLoc;
 
 /// This is what the parser uses to iterate over the tokens. Since the `TokenStream`
@@ -90,7 +93,7 @@ impl<'src> Parser<'src> {
                 break;
             }
 
-            if self.check_module_decl() {
+            if self.check_module_decl() == CheckModuleDeclResult::FileModuleDecl {
                 let (module_parsed, errs_parsed) = self.parse_file_module_decl();
 
                 if module.is_some() {
@@ -119,4 +122,22 @@ impl<'src> Parser<'src> {
 
         (Some(TopLevelAST::new(vals, module)), errs)
     }
+}
+
+#[macro_export]
+macro_rules! loop_until {
+    ($this:expr, $pat:pat) => {
+        loop {
+            let Some(current) = $this.current_token else {
+                break;
+            };
+
+            if matches!(current.kind, $pat) {
+                $this.next();
+                break;
+            }
+
+            $this.next();
+        }
+    };
 }

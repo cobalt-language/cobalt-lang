@@ -54,6 +54,7 @@ fn loop_until(this: &mut Parser) {
         }
     }
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DeclLoc {
     Local,
@@ -237,79 +238,6 @@ impl<'src> Parser<'src> {
                 )
             }
         }
-    }
-
-    pub(crate) fn check_module_decl(&mut self) -> bool {
-        matches!(
-            self.current_token,
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Module),
-                ..
-            })
-        )
-    }
-
-    /// Going into the function, the current token is assumed to be `module`.
-    ///
-    /// ```text
-    /// module_decl := 'module' [ident | dotted_expr] ';'
-    /// ```
-    pub(crate) fn parse_file_module_decl(
-        &mut self,
-    ) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
-        let Some(Token {
-            kind: TokenKind::Keyword(Keyword::Module),
-            span,
-        }) = self.current_token
-        else {
-            unreachable!()
-        };
-
-        let mut errors = vec![];
-
-        // Consume 'module'.
-
-        self.next();
-
-        if self.current_token.is_none() {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: span,
-            });
-            return (None, errors);
-        }
-
-        let module_name = Some(self.parse_id(true, &mut errors));
-
-        // Next must be semicolon.
-
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "';'",
-                found: None,
-                loc: span,
-            });
-            return (module_name, errors);
-        };
-
-        if current.kind != TokenKind::Semicolon {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "';'",
-                found: Some(current.kind.as_str().into()),
-                loc: span,
-            });
-
-            loop_until!(self);
-
-            return (module_name, errors);
-        }
-
-        self.next();
-
-        // ---
-
-        (module_name, errors)
     }
 
     /// Parses an annotation.
