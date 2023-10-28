@@ -8,8 +8,8 @@ macro_rules! loop_until {
     ($this:expr, $pat:pat) => {
         loop {
             let Some(current) = $this.current_token else {
-                break;
-            };
+                                                        break;
+                                                    };
 
             if matches!(current.kind, $pat) {
                 $this.next();
@@ -448,16 +448,21 @@ impl<'src> Parser<'src> {
 
         self.next();
 
+        // ---
+
         let mut is_mutable = false;
-        if matches!(
-            self.current_token,
-            Some(Token {
-                kind: TokenKind::Keyword(Keyword::Mut),
-                ..
-            })
-        ) {
-            is_mutable = true;
-            self.next();
+        if let Some(tok) = self.current_token {
+            if tok.kind == TokenKind::Keyword(Keyword::Mut) {
+                is_mutable = true;
+                self.next();
+            }
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "variable name or modifier",
+                found: None,
+                loc: first_token_loc,
+            });
+            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
         }
 
         // Get the name of the variable.
