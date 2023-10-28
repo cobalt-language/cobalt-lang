@@ -11,6 +11,10 @@ pub enum Keyword {
     If,
     Else,
     Module,
+    Trait,
+    Break,
+    Continue,
+    Yield,
 }
 
 impl Keyword {
@@ -26,6 +30,10 @@ impl Keyword {
             "if" => Some(Keyword::If),
             "else" => Some(Keyword::Else),
             "module" => Some(Keyword::Module),
+            "trait" => Some(Keyword::Trait),
+            "break" => Some(Keyword::Break),
+            "continue" => Some(Keyword::Continue),
+            "yield" => Some(Keyword::Yield),
             _ => None,
         }
     }
@@ -40,6 +48,10 @@ impl Keyword {
             Keyword::If => "if",
             Keyword::Else => "else",
             Keyword::Module => "module",
+            Keyword::Trait => "trait",
+            Keyword::Break => "break",
+            Keyword::Continue => "continue",
+            Keyword::Yield => "yield",
         }
     }
 
@@ -58,16 +70,7 @@ impl Keyword {
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Keyword::Let => write!(f, "let"),
-            Keyword::Mut => write!(f, "mut"),
-            Keyword::Const => write!(f, "const"),
-            Keyword::Type => write!(f, "type"),
-            Keyword::Fn => write!(f, "fn"),
-            Keyword::If => write!(f, "if"),
-            Keyword::Else => write!(f, "else"),
-            Keyword::Module => write!(f, "module"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
