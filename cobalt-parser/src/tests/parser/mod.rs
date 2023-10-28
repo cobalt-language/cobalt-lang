@@ -16,7 +16,7 @@ where
     let tokenize_result = reader.tokenize();
     errors.extend(tokenize_result.1);
 
-    let mut parser = Parser::new(src, tokenize_result.0);
+    let mut parser = Parser::new(tokenize_result.0);
     parser.next();
     let (ast_or_similar, parser_errors) = parse_fn(&mut parser);
     errors.extend(parser_errors);

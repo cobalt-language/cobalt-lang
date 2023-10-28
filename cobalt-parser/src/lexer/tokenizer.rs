@@ -51,7 +51,24 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
     }
 }
 
-pub struct TokenStream<'src>(pub Rc<Vec<Token<'src>>>);
+pub struct TokenStream<'src>(pub Rc<[Token<'src>]>, pub &'src str);
+impl<'src> TokenStream<'src> {
+    pub fn src_len(&self) -> usize {
+        self.1.len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn src_is_empty(&self) -> bool {
+        self.1.is_empty()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 impl<'src> SourceReader<'src> {
     pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<CobaltError<'src>>) {
@@ -604,7 +621,7 @@ impl<'src> SourceReader<'src> {
             }
         }
 
-        (TokenStream(Rc::new(tokens)), errors)
+        (TokenStream(tokens.into(), self.source), errors)
     }
 
     /// Parse an identifier.

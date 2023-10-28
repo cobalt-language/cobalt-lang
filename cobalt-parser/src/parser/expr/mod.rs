@@ -234,9 +234,12 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             };
             current = c;
             true
@@ -283,7 +286,10 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: span,
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             };
 
             if let TokenKind::Ident(name) = current.kind {
@@ -342,7 +348,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         let name = match current.kind {
@@ -353,7 +362,10 @@ impl<'src> Parser<'src> {
                     found: Some(current.kind.as_str().into()),
                     loc: current.span,
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             }
         };
 
@@ -414,7 +426,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         let (val, val_errors) = self.parse_primary_expr();
@@ -446,7 +461,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         let (expr, expr_errors) = self.parse_expr();
@@ -458,7 +476,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -514,11 +535,11 @@ impl<'src> Parser<'src> {
         loop {
             let Some(current) = self.current_token else {
                 return (
-                    Box::new(ErrorAST::new(self.source.len().into())),
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
                     vec![CobaltError::ExpectedFound {
                         ex: "'}'",
                         found: None,
-                        loc: self.source.len().into(),
+                        loc: self.cursor.src_len().into(),
                     }],
                 );
             };
@@ -597,7 +618,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         let (cond, cond_errors) = self.parse_primary_expr();
@@ -609,7 +633,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         let (if_true, if_true_errors) = self.parse_block_expr();
@@ -651,7 +678,7 @@ impl<'src> Parser<'src> {
             errors.push(CobaltError::ExpectedFound {
                 ex: "block expression",
                 found: None,
-                loc: self.source.len().into(),
+                loc: self.cursor.src_len().into(),
             });
             return (
                 Box::new(IfAST::new(
@@ -695,9 +722,12 @@ impl<'src> Parser<'src> {
             errors.push(CobaltError::ExpectedFound {
                 ex: "name of intrinsic",
                 found: None,
-                loc: self.source.len().into(),
+                loc: self.cursor.src_len().into(),
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         let name: Cow<'_, str> = match current.kind {
@@ -749,7 +779,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -840,7 +873,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {

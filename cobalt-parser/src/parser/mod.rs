@@ -49,20 +49,33 @@ impl<'src> TokenStreamCursor<'src> {
         self.index += 1;
         token
     }
+
+    pub fn src_len(&self) -> usize {
+        self.stream.1.len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.stream.0.len()
+    }
+
+    pub fn src_is_empty(&self) -> bool {
+        self.stream.1.is_empty()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stream.0.is_empty()
+    }
 }
 
 pub struct Parser<'src> {
-    #[allow(dead_code)]
-    source: &'src str,
     cursor: TokenStreamCursor<'src>,
     current_token: Option<Token<'src>>,
 }
 
 impl<'src> Parser<'src> {
-    pub fn new(source: &'src str, stream: TokenStream<'src>) -> Parser<'src> {
+    pub fn new(stream: TokenStream<'src>) -> Parser<'src> {
         let cursor = TokenStreamCursor::new(stream);
         Parser {
-            source,
             cursor,
             current_token: None,
         }
@@ -100,7 +113,7 @@ impl<'src> Parser<'src> {
                     errs.push(CobaltError::RedefModule {
                         loc: self
                             .current_token
-                            .map_or(self.source.len().into(), |tok| tok.span),
+                            .map_or(self.cursor.src_len().into(), |tok| tok.span),
                         prev: module_span.unwrap(),
                     });
                     continue;
@@ -110,7 +123,7 @@ impl<'src> Parser<'src> {
                 module = module_parsed;
                 module_span = Some(
                     self.current_token
-                        .map_or(self.source.len().into(), |tok| tok.span),
+                        .map_or(self.cursor.src_len().into(), |tok| tok.span),
                 );
                 continue;
             }

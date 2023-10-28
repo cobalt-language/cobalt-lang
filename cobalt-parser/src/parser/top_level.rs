@@ -48,11 +48,11 @@ impl<'src> Parser<'src> {
 
         match tok {
             None => (
-                Box::new(ErrorAST::new(self.source.len().into())) as _,
+                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _,
                 vec![CobaltError::ExpectedFound {
                     ex: "top-level declaration",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 }],
             ),
             Some(Token {
@@ -222,7 +222,7 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "}",
                     found: None,
-                    loc: SourceSpan::from((self.source.len(), 0)),
+                    loc: SourceSpan::from((self.cursor.src_len(), 0)),
                 });
                 working_result.vals = vals;
                 return (Box::new(working_result), errors);
@@ -263,7 +263,7 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: ";",
                     found: None,
-                    loc: SourceSpan::from((self.source.len(), 0)),
+                    loc: SourceSpan::from((self.cursor.src_len(), 0)),
                 });
             }
 

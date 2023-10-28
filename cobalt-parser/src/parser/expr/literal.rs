@@ -164,7 +164,10 @@ impl<'src> Parser<'src> {
             loc: span,
         });
         self.next();
-        (Box::new(ErrorAST::new(self.source.len().into())), errors)
+        (
+            Box::new(ErrorAST::new(self.cursor.src_len().into())),
+            errors,
+        )
     }
 
     /// Check if the current token begins a struct literal.

@@ -82,10 +82,10 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 });
                 return DottedName::new(
-                    vec![("<error>".into(), self.source.len().into())],
+                    vec![("<error>".into(), self.cursor.src_len().into())],
                     is_global,
                 );
             };
@@ -145,10 +145,10 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 });
                 return DottedName::new(
-                    vec![("<error>".into(), self.source.len().into())],
+                    vec![("<error>".into(), self.cursor.src_len().into())],
                     is_global,
                 );
             };
@@ -193,7 +193,7 @@ impl<'src> Parser<'src> {
 
         match tok {
             None => (
-                Box::new(ErrorAST::new(self.source.len().into())) as _,
+                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _,
                 vec![CobaltError::ExpectedFound {
                     ex: if loc == DeclLoc::Global {
                         "top-level declaration"
@@ -201,7 +201,7 @@ impl<'src> Parser<'src> {
                         "declaration"
                     },
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 }],
             ),
             Some(Token {
@@ -400,9 +400,12 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "variable definition",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             }
         }
 
@@ -433,7 +436,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         // Get the name of the variable.
@@ -452,7 +458,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(VarDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
                 loc != DeclLoc::Local,
@@ -483,7 +489,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(VarDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
                 loc != DeclLoc::Local,
@@ -535,7 +541,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(VarDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
                 loc != DeclLoc::Local,
@@ -582,7 +588,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(VarDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
                 loc != DeclLoc::Local,
@@ -688,9 +694,12 @@ impl<'src> Parser<'src> {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "constant definition",
                     found: None,
-                    loc: self.source.len().into(),
+                    loc: self.cursor.src_len().into(),
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             }
         }
 
@@ -724,7 +733,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(ConstDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
             ));
@@ -753,7 +762,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(ConstDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
             ));
@@ -801,7 +810,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(ConstDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
             ));
@@ -845,7 +854,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(ConstDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 ty_expr,
                 anns,
             ));
@@ -927,7 +936,10 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: first_token_loc,
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             }
         }
 
@@ -939,7 +951,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::Keyword(Keyword::Type) {
@@ -973,7 +988,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(TypeDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                Box::new(ErrorTypeAST::new(self.cursor.src_len().into())),
                 anns,
                 vec![],
             ));
@@ -1017,7 +1032,7 @@ impl<'src> Parser<'src> {
             let ast = Box::new(TypeDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                Box::new(ErrorTypeAST::new(self.cursor.src_len().into())),
                 anns,
                 vec![],
             ));
@@ -1036,7 +1051,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         // If it's a semicolon, we're done.
@@ -1081,7 +1099,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
@@ -1163,7 +1184,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -1221,7 +1245,10 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: first_token_loc,
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             }
         }
 
@@ -1232,7 +1259,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         };
 
         if current.kind != TokenKind::Keyword(Keyword::Fn) {
@@ -1259,7 +1289,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
         }
 
         let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
@@ -1276,9 +1309,9 @@ impl<'src> Parser<'src> {
             let ast = Box::new(FnDefAST::new(
                 first_token_loc,
                 name,
-                Box::new(ErrorTypeAST::new(self.source.len().into())),
+                Box::new(ErrorTypeAST::new(self.cursor.src_len().into())),
                 vec![],
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 anns,
                 loc == DeclLoc::Struct,
             ));
@@ -1313,7 +1346,10 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: first_token_loc,
                 });
-                return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
             };
 
             if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1337,9 +1373,12 @@ impl<'src> Parser<'src> {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "')'",
                                 found: None,
-                                loc: self.source.len().into(),
+                                loc: self.cursor.src_len().into(),
                             });
-                            return (Box::new(ErrorAST::new(self.source.len().into())), errors);
+                            return (
+                                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                                errors,
+                            );
                         };
 
                         if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1400,7 +1439,7 @@ impl<'src> Parser<'src> {
                 name,
                 ret,
                 params,
-                Box::new(ErrorAST::new(self.source.len().into())),
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 anns,
                 loc == DeclLoc::Struct,
             ));
