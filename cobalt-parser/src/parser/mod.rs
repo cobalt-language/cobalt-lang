@@ -115,7 +115,7 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
-            let (val, err) = self.parse_decl(DeclLoc::Global);
+            let (val, err) = self.parse_top_level();
             vals.push(val);
             errs.extend(err);
         }
