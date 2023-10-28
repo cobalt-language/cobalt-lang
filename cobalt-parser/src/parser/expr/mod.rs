@@ -11,8 +11,8 @@ macro_rules! loop_until {
     ($this:expr, $pat:pat) => {
         loop {
             let Some(current) = $this.current_token else {
-                break;
-            };
+                        break;
+                    };
 
             if matches!(current.kind, $pat) {
                 $this.next();
@@ -523,9 +523,10 @@ impl<'src> Parser<'src> {
                 );
             };
 
-            span_len += current.span.len();
+            span_len += (current.span.offset() + current.span.len()) - span_start;
 
             if current.kind == TokenKind::CloseDelimiter(Delimiter::Brace) {
+                self.next();
                 break;
             }
 
@@ -554,9 +555,6 @@ impl<'src> Parser<'src> {
             vals.push(expr);
             local_state = last_was_expr;
         }
-
-        // Eat the closing brace.
-        self.next();
 
         // If the last val was an expr followed by a semicolon, then making the last val a
         // null ast will indicate that the block should evaluate to null (and not the value
