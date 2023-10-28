@@ -427,7 +427,7 @@ impl<'src> Parser<'src> {
 
             if self.current_token.is_none() {
                 errors.push(CobaltError::ExpectedFound {
-                    ex: "constant definition",
+                    ex: "variable definition",
                     found: None,
                     loc: self.source.len().into(),
                 });
@@ -449,13 +449,18 @@ impl<'src> Parser<'src> {
         self.next();
 
         let mut is_mutable = false;
-        if current.kind == TokenKind::Keyword(Keyword::Mut) {
+        if matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Mut),
+                ..
+            })
+        ) {
             is_mutable = true;
             self.next();
         }
 
         // Get the name of the variable.
-
         let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
 
         // Get the (optional) type of the variable.
@@ -856,8 +861,6 @@ impl<'src> Parser<'src> {
 
         // Next has to be an equals sign.
 
-        self.next();
-
         let Some(current) = self.current_token else {
             errors.push(CobaltError::ExpectedFound {
                 ex: "'='",
@@ -1062,10 +1065,10 @@ impl<'src> Parser<'src> {
                 Some(Token {
                     kind: TokenKind::At,
                     ..
-                }) => break,
-                _ => {
+                }) => {
                     let _ = self.parse_annotation();
                 }
+                _ => break,
             }
         }
 
@@ -1152,8 +1155,6 @@ impl<'src> Parser<'src> {
         let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
 
         // Next has to be an open paren.
-
-        self.next();
 
         let Some(current) = self.current_token else {
             errors.push(CobaltError::ExpectedFound {

@@ -216,16 +216,14 @@ impl<'src> Parser<'src> {
         }
 
         // ---
-
-        if !self.parse_expr().1.is_empty()
-            || !matches!(
-                self.current_token,
-                Some(Token {
-                    kind: TokenKind::Comma,
-                    ..
-                })
-            )
-        {
+        let _ = self.parse_expr();
+        if !matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Comma,
+                ..
+            })
+        ) {
             self.rewind_to_idx(idx_on_entry);
             return false;
         }
