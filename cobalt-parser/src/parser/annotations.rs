@@ -9,16 +9,12 @@ impl<'src> Parser<'src> {
     /// Leaving this function, the current token will be the first token after
     /// the last annotation in the collection.
     pub fn eat_annotations(&mut self) {
-        loop {
-            match self.current_token {
-                Some(Token {
-                    kind: TokenKind::At,
-                    ..
-                }) => {
-                    let _ = self.parse_annotation();
-                }
-                _ => break,
-            }
+        while let Some(Token {
+            kind: TokenKind::At,
+            ..
+        }) = self.current_token
+        {
+            self.parse_annotation();
         }
     }
 

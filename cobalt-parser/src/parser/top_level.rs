@@ -7,10 +7,10 @@ use std::borrow::Cow;
 
 #[derive(PartialEq)]
 pub enum CheckModuleDeclResult {
-    NotAModuleDecl,
+    None,
 
-    FileModuleDecl,
-    InlineModuleDecl,
+    File,
+    Inline,
 }
 
 impl<'src> Parser<'src> {
@@ -73,7 +73,7 @@ impl<'src> Parser<'src> {
             }) => self.parse_fn_def(DeclLoc::Global),
 
             Some(tok) => match self.check_module_decl() {
-                CheckModuleDeclResult::NotAModuleDecl => (
+                CheckModuleDeclResult::None => (
                     Box::new(ErrorAST::new(tok.span)) as _,
                     vec![CobaltError::ExpectedFound {
                         ex: "top-level declaration",
@@ -81,8 +81,8 @@ impl<'src> Parser<'src> {
                         loc: tok.span,
                     }],
                 ),
-                CheckModuleDeclResult::InlineModuleDecl => self.parse_inline_module_decl(),
-                CheckModuleDeclResult::FileModuleDecl => (
+                CheckModuleDeclResult::Inline => self.parse_inline_module_decl(),
+                CheckModuleDeclResult::File => (
                     Box::new(ErrorAST::new(tok.span)),
                     vec![CobaltError::InvalidThing {
                         ex: "file module declaration",
@@ -108,7 +108,7 @@ impl<'src> Parser<'src> {
             })
         ) {
             self.rewind_to_idx(idx_on_entry);
-            return CheckModuleDeclResult::NotAModuleDecl;
+            return CheckModuleDeclResult::None;
         }
 
         self.next();
@@ -128,11 +128,11 @@ impl<'src> Parser<'src> {
             })
         ) {
             self.rewind_to_idx(idx_on_entry);
-            return CheckModuleDeclResult::FileModuleDecl;
+            return CheckModuleDeclResult::File;
         }
 
         self.rewind_to_idx(idx_on_entry);
-        return CheckModuleDeclResult::InlineModuleDecl;
+        CheckModuleDeclResult::Inline
     }
 
     /// Going into the function, the current token is assumed to be `module`.
@@ -218,9 +218,7 @@ impl<'src> Parser<'src> {
 
         let mut vals = vec![];
         loop {
-            let Some(Token {
-                kind,
-                .. }) = self.current_token else {
+            let Some(Token { kind, .. }) = self.current_token else {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "}",
                     found: None,
@@ -276,7 +274,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        return (Box::new(working_result), errors);
+        (Box::new(working_result), errors)
     }
 
     /// Going into the function, the current token is assumed to be `module`.
@@ -288,12 +286,12 @@ impl<'src> Parser<'src> {
         &mut self,
     ) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
         let Some(Token {
-                     kind: TokenKind::Keyword(Keyword::Module),
-                     span,
-                 }) = self.current_token
-            else {
-                unreachable!()
-            };
+            kind: TokenKind::Keyword(Keyword::Module),
+            span,
+        }) = self.current_token
+        else {
+            unreachable!()
+        };
 
         let mut errors = vec![];
 

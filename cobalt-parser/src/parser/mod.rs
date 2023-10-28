@@ -93,7 +93,7 @@ impl<'src> Parser<'src> {
                 break;
             }
 
-            if self.check_module_decl() == CheckModuleDeclResult::FileModuleDecl {
+            if self.check_module_decl() == CheckModuleDeclResult::File {
                 let (module_parsed, errs_parsed) = self.parse_file_module_decl();
 
                 if module.is_some() {
