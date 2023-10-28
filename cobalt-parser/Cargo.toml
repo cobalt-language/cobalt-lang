@@ -12,5 +12,5 @@ documentation.workspace = true
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
 cobalt-ast = { path = "../cobalt-ast" }
-unicode-ident = "1.0.9"
-either = "1.8.1"
+unicode-ident = "1.0.12"
+either = "1.9.0"

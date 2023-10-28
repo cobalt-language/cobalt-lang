@@ -2518,10 +2518,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if let Some(proj) = std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| toml::from_str::<build::Project>(&x).ok())
+                        .and_then(|x| build::ProjectFragment::from_toml_static(&x).ok())
                     {
                         let mut vecs = load_projects()?;
-                        track_project(&proj.name, cfg_path, &mut vecs);
+                        track_project(proj.get_name()?, cfg_path, &mut vecs);
                         save_projects(vecs)?;
                         break 'found;
                     }
@@ -2538,10 +2538,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         path.push("cobalt.toml");
                     }
                     track_project(
-                        &toml::from_str::<build::Project>(
+                        build::ProjectFragment::from_toml_static(
                             &Path::new(&path).read_to_string_anyhow()?,
                         )?
-                        .name,
+                        .get_name()?,
                         path,
                         &mut vec,
                     );
@@ -2556,7 +2556,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                     if std::fs::read_to_string(&cfg_path)
                         .ok()
-                        .and_then(|x| toml::from_str::<build::Project>(&x).ok())
+                        .and_then(|x| build::ProjectFragment::from_toml_static(&x).ok())
                         .is_some()
                     {
                         let mut vecs = load_projects()?;
@@ -2606,82 +2606,64 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 targets,
                 rebuild,
             } => {
-                let (project_data, project_dir) = match project_dir.as_deref() {
+                let set_src = source_dir.is_none();
+                let set_build = build_dir.is_none();
+                let frag = build::ProjectFragment {
+                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
+                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    ..Default::default()
+                };
+                let (project, _project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin()
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
-                        (
-                            toml::from_str::<build::Project>(cfg.as_str())
-                                .context("failed to parse project file")?,
-                            PathBuf::from("."),
-                        )
+                        let mut project = build::ProjectFragment::default();
+                        if_config_json! {
+                            if cfg.trim_start().starts_with('{') {
+                                project = build::ProjectFragment::from_json_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        if_config_toml! {
+                            if !(CONFIG_JSON && cfg.trim_start().starts_with('{')) {
+                                project = build::ProjectFragment::from_toml_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        project.set_dirs(".");
+                        (project.try_into()?, PathBuf::from("."))
                     }
-                    Some(x) => {
-                        let mut x = x.to_string();
+                    Some(path) => {
+                        let mut path = path.to_string();
                         let mut vecs = load_projects()?;
-                        if x.as_bytes()[0] == b':' {
+                        if path.starts_with(':') {
                             if let Some(p) = vecs
                                 .iter()
-                                .find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned())
+                                .find_map(|[n, p]| (n == &path[1..]).then_some(p).cloned())
                             {
-                                x = p
+                                path = p
                             }
                         }
-                        if Path::new(&x).metadata_anyhow()?.file_type().is_dir() {
-                            let mut path = std::path::PathBuf::from(&x);
-                            path.push("cobalt.toml");
-                            if !path.exists() {
-                                anyhow::bail!("failed to find cobalt.toml in {x}")
-                            }
-                            let cfg = path.read_to_string_anyhow()?;
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, path, &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, PathBuf::from(x))
-                        } else {
-                            let mut path = std::path::PathBuf::from(&x);
-                            let cfg = path.read_to_string_anyhow()?;
-                            path.pop();
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, x.into(), &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, path)
-                        }
+                        let (proj, path) = build::Project::load(path, set_src, set_build, frag)?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
                     }
                     None => {
-                        let mut path = std::env::current_dir()?;
-                        loop {
-                            path.push("cobalt.toml");
-                            if path.exists() {
-                                break;
-                            }
-                            path.pop();
-                            if !path.pop() {
-                                anyhow::bail!("couldn't find cobalt.toml in current directory")
-                            }
-                        }
-                        let cfg = Path::new(&path).read_to_string_anyhow()?;
-                        path.pop();
-                        (
-                            toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?,
-                            path,
-                        )
+                        let (proj, path) = build::Project::load(
+                            std::env::current_dir()?,
+                            set_src,
+                            set_build,
+                            frag,
+                        )?;
+                        let mut vecs = load_projects()?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
                     }
                 };
-                let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
-                let build_dir: PathBuf = build_dir.map_or_else(
-                    || {
-                        let mut dir = project_dir.clone();
-                        dir.push("build");
-                        dir
-                    },
-                    PathBuf::from,
-                );
                 if triple.is_some() {
                     Target::initialize_all(&INIT_NEEDED)
                 } else {
@@ -2694,22 +2676,24 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         .into_owned()
                 });
                 build::build(
-                    project_data,
+                    &project,
                     if targets.is_empty() {
                         None
                     } else {
                         Some(targets.into_iter().map(String::from).collect())
                     },
                     &build::BuildOptions {
-                        source_dir: &source_dir,
-                        build_dir: &build_dir,
-                        profile: profile.as_deref().unwrap_or("default"),
-                        triple: &triple,
+                        profile: profile.as_deref().unwrap_or("default").into(),
+                        triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
+                        link_dirs: link_dirs
+                            .iter()
+                            .map(Path::new)
+                            .map(From::from)
+                            .collect::<Vec<_>>(),
                     },
                 )?;
             }
@@ -2724,91 +2708,72 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 rebuild,
                 args,
             } => {
-                let (project_data, project_dir) = match project_dir.as_deref() {
+                let set_src = source_dir.is_none();
+                let set_build = build_dir.is_none();
+                let frag = build::ProjectFragment {
+                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
+                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    ..Default::default()
+                };
+                let (project, _project_dir) = match project_dir.as_deref() {
                     Some("-") => {
                         let mut cfg = String::new();
                         std::io::stdin()
                             .read_to_string(&mut cfg)
                             .context("failed to read project file")?;
-                        (
-                            toml::from_str::<build::Project>(cfg.as_str())
-                                .context("failed to parse project file")?,
-                            PathBuf::from("."),
-                        )
+                        let mut project = build::ProjectFragment::default();
+                        if_config_json! {
+                            if cfg.trim_start().starts_with('{') {
+                                project = build::ProjectFragment::from_json_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        if_config_toml! {
+                            if !(CONFIG_JSON && cfg.trim_start().starts_with('{')) {
+                                project = build::ProjectFragment::from_toml_static(cfg.as_str())
+                                    .context("failed to parse project file")?;
+                            }
+                        }
+                        project.set_dirs(".");
+                        (project.try_into()?, PathBuf::from("."))
                     }
-                    Some(x) => {
-                        let mut x = x.to_string();
+                    Some(path) => {
+                        let mut path = path.to_string();
                         let mut vecs = load_projects()?;
-                        if x.as_bytes()[0] == b':' {
+                        if path.starts_with(':') {
                             if let Some(p) = vecs
                                 .iter()
-                                .find_map(|[n, p]| (n == &x[1..]).then_some(p).cloned())
+                                .find_map(|[n, p]| (n == &path[1..]).then_some(p).cloned())
                             {
-                                x = p
+                                path = p
                             }
                         }
-                        if Path::new(&x).metadata_anyhow()?.file_type().is_dir() {
-                            let mut path = std::path::PathBuf::from(&x);
-                            path.push("cobalt.toml");
-                            if !path.exists() {
-                                anyhow::bail!("failed to find cobalt.toml in {x}")
-                            }
-                            let cfg = path.read_to_string_anyhow()?;
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, path, &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, PathBuf::from(x))
-                        } else {
-                            let mut path = std::path::PathBuf::from(&x);
-                            let cfg = path.read_to_string_anyhow()?;
-                            path.pop();
-                            let cfg = toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?;
-                            track_project(&cfg.name, x.into(), &mut vecs);
-                            save_projects(vecs)?;
-                            (cfg, path)
-                        }
+                        let (proj, path) = build::Project::load(path, set_src, set_build, frag)?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
                     }
                     None => {
-                        let mut path = std::env::current_dir()?;
-                        loop {
-                            path.push("cobalt.toml");
-                            if path.exists() {
-                                break;
-                            }
-                            path.pop();
-                            if !path.pop() {
-                                anyhow::bail!("couldn't find cobalt.toml in current directory")
-                            }
-                        }
-                        let cfg = Path::new(&path).read_to_string_anyhow()?;
-                        path.pop();
-                        (
-                            toml::from_str::<build::Project>(&cfg)
-                                .context("failed to parse project file")?,
-                            path,
-                        )
+                        let (proj, path) = build::Project::load(
+                            std::env::current_dir()?,
+                            set_src,
+                            set_build,
+                            frag,
+                        )?;
+                        let mut vecs = load_projects()?;
+                        track_project(&proj.name, path.clone(), &mut vecs);
+                        save_projects(vecs)?;
+                        (proj, path)
                     }
                 };
-                let source_dir: PathBuf = source_dir.map_or(project_dir.clone(), PathBuf::from);
-                let build_dir: PathBuf = build_dir.map_or_else(
-                    || {
-                        let mut dir = project_dir.clone();
-                        dir.push("build");
-                        dir
-                    },
-                    PathBuf::from,
-                );
                 Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
                 let mut target = target.map_or_else(
                     || {
-                        let exes = project_data
+                        let exes = project
                             .targets
                             .iter()
                             .filter_map(|(k, x)| {
-                                (x.target_type == build::TargetType::Executable)
-                                    .then_some(k.as_str())
+                                (x.target_type == build::TargetType::Executable).then_some(&**k)
                             })
                             .collect::<Vec<_>>();
                         match exes.len() {
@@ -2822,7 +2787,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         }
                     },
                     |t| {
-                        if project_data.targets.get(&t).map(|x| x.target_type)
+                        if project.targets.get(&*t).map(|x| x.target_type)
                             != Some(build::TargetType::Executable)
                         {
                             anyhow::bail!("target type must be an executable")
@@ -2835,21 +2800,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .to_string_lossy()
                     .into_owned();
                 build::build(
-                    project_data,
+                    &project,
                     Some(vec![target.clone()]),
                     &build::BuildOptions {
-                        source_dir: &source_dir,
-                        build_dir: &build_dir,
-                        profile: profile.as_deref().unwrap_or("default"),
-                        triple: &triple,
+                        profile: profile.as_deref().unwrap_or("default").into(),
+                        triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: &link_dirs.iter().map(Path::new).collect::<Vec<_>>(),
+                        link_dirs: link_dirs
+                            .iter()
+                            .map(Path::new)
+                            .map(From::from)
+                            .collect::<Vec<_>>(),
                     },
                 )?;
-                let mut exe_path = build_dir;
+                let mut exe_path = project.build_dir.into_owned();
                 if triple.contains("windows") {
                     target.push_str(".exe");
                 }

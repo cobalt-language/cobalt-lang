@@ -14,13 +14,14 @@ llvm-sys = "160"
 
 [build-dependencies]
 lazy_static = "1.4"
-regex = "1.8"
-const_format = "0.2.31"
+regex = "1.10"
+const_format = "0.2.32"
 semver = "1.0"
 
 # features passed to llvm-sys
 [features]
-default = ["strict-versioning", "prefer-dynamic"]
+default = ["llvm-default"]
+llvm-default = ["strict-versioning", "prefer-dynamic"]
 strict-versioning = ["llvm-sys/strict-versioning"]
 no-llvm-linking = ["llvm-sys/no-llvm-linking"]
 
