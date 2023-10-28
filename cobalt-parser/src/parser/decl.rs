@@ -8,8 +8,8 @@ macro_rules! loop_until {
     ($this:expr, $pat:pat) => {
         loop {
             let Some(current) = $this.current_token else {
-                                                                break;
-                                                            };
+                break;
+            };
 
             if matches!(current.kind, $pat) {
                 $this.next();
