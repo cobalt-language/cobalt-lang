@@ -39,7 +39,7 @@ macro_rules! loop_until {
     };
 }
 #[inline(always)]
-fn loop_until(this: &mut Parser) {
+pub(crate) fn loop_until(this: &mut Parser) {
     loop {
         let Some(current) = this.current_token else {
             break;

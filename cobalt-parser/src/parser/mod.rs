@@ -128,7 +128,11 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
+            let i = self.cursor.index;
             let (val, err) = self.parse_top_level();
+            if i == self.cursor.index {
+                decl::loop_until(self);
+            }
             vals.push(val);
             errs.extend(err);
         }
