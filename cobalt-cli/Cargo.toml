@@ -33,3 +33,6 @@ clio = { version = "0.3.4", features = ["clap-parse"] }
 [[bin]]
 name = "co"
 path = "src/main.rs"
+
+[features]
+http = ["clio/http-ureq"]
