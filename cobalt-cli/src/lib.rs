@@ -139,16 +139,16 @@ pub enum Cli {
     /// JIT compile and run a file
     Jit {
         /// input file to compile
-        input: String,
+        input: Input,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -171,16 +171,16 @@ pub enum Cli {
     /// Check a file for errors
     Check {
         /// input file to compile
-        input: String,
+        input: Input,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
@@ -269,16 +269,16 @@ pub enum MultiSubcommand {
     Jit {
         /// input files to compile
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -299,16 +299,16 @@ pub enum MultiSubcommand {
     Check {
         /// input files to compile
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
@@ -338,13 +338,13 @@ pub enum ProjSubcommand {
         project_dir: Option<String>,
         /// directory that source files are relative to
         #[arg(short, long = "source")]
-        source_dir: Option<String>,
+        source_dir: Option<PathBuf>,
         /// directory to output build artifacts
         #[arg(short, long = "build")]
-        build_dir: Option<String>,
+        build_dir: Option<PathBuf>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -368,13 +368,13 @@ pub enum ProjSubcommand {
         project_dir: Option<String>,
         /// directory that source files are relative to
         #[arg(short, long = "source")]
-        source_dir: Option<String>,
+        source_dir: Option<PathBuf>,
         /// directory to output build artifacts
         #[arg(short, long = "build")]
-        build_dir: Option<String>,
+        build_dir: Option<PathBuf>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -1033,7 +1033,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.finish();
         }
         Cli::Jit {
-            input,
+            mut input,
             linked,
             link_dirs,
             headers,
@@ -1153,15 +1153,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
+            let input_name = input.path().display().to_string();
             let code = {
                 let start = Instant::now();
-                let code = if input == "-" {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s)?;
-                    s
-                } else {
-                    Path::new(&input).read_to_string_anyhow()?
-                };
+                let code = read_file(&mut input, &input_name)?;
                 reporter.file_time = Some(start.elapsed());
                 reporter.file_len = code.len();
                 code
@@ -1176,7 +1171,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }),
             );
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = CompCtx::new(&ink_ctx, &input);
+            let mut ctx = CompCtx::new(&ink_ctx, &input_name);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let mut cc = cc::CompileCommand::new();
@@ -1197,7 +1192,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.into());
+            let file = FILES.add_file(0, input_name, code.into());
             let ((ast, errs), parse_time) =
                 timeit(|| parse_tl().parse(file.contents()).into_output_errors());
             let mut ast = ast.unwrap_or_default();
@@ -1273,7 +1268,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             }
         }
         Cli::Check {
-            input,
+            mut input,
             linked,
             link_dirs,
             headers,
@@ -1381,15 +1376,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
+            let input_name = input.path().display().to_string();
             let code = {
                 let start = Instant::now();
-                let code = if input == "-" {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s)?;
-                    s
-                } else {
-                    Path::new(&input).read_to_string_anyhow()?
-                };
+                let code = read_file(&mut input, &input_name)?;
                 reporter.file_time = Some(start.elapsed());
                 reporter.file_len = code.len();
                 code
@@ -1420,7 +1410,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
-            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
             let trip = TargetMachine::get_default_triple();
             let triple = trip.as_str().to_string_lossy();
             ctx.module.set_triple(&trip);
@@ -1442,7 +1432,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 reporter.libs_time = Some(start.elapsed());
             };
             let mut fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.into());
+            let file = FILES.add_file(0, input_name, code.into());
             let ((ast, errs), parse_time) =
                 timeit(|| parse_tl().parse(file.contents()).into_output_errors());
             let mut ast = ast.unwrap_or_default();
@@ -1912,7 +1902,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 reporter.finish();
             }
             MultiSubcommand::Jit {
-                inputs,
+                mut inputs,
                 linked,
                 link_dirs,
                 headers,
@@ -2052,16 +2042,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 let mut reporter = Reporter::new(timings);
                 let codes = inputs
-                    .iter()
+                    .iter_mut()
                     .map(|input| {
                         let start = Instant::now();
-                        let code = if input == "-" {
-                            let mut s = String::new();
-                            std::io::stdin().read_to_string(&mut s)?;
-                            s
-                        } else {
-                            Path::new(&input).read_to_string_anyhow()?
-                        };
+                        let code = read_file(input, &input.path().display().to_string())?;
                         reporter.file_time = Some(start.elapsed());
                         reporter.file_len = code.len();
                         anyhow::Ok(code)
@@ -2128,19 +2112,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone().into());
+                        let file = FILES.add_file(
+                            0,
+                            input.path().display().to_string(),
+                            code.clone().into(),
+                        );
                         let ((ast, errs), parse_time) =
                             timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
-                                fail = true;
                                 ec += 1;
+                                fail = true;
                             }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
@@ -2199,7 +2187,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             MultiSubcommand::Check {
-                inputs,
+                mut inputs,
                 linked,
                 link_dirs,
                 headers,
@@ -2345,16 +2333,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 let mut reporter = Reporter::new(timings);
                 let codes = inputs
-                    .iter()
+                    .iter_mut()
                     .map(|input| {
                         let start = Instant::now();
-                        let code = if input == "-" {
-                            let mut s = String::new();
-                            std::io::stdin().read_to_string(&mut s)?;
-                            s
-                        } else {
-                            Path::new(&input).read_to_string_anyhow()?
-                        };
+                        let code = read_file(input, &input.path().display().to_string())?;
                         reporter.file_time = Some(start.elapsed());
                         reporter.file_len = code.len();
                         anyhow::Ok(code)
@@ -2412,19 +2394,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone().into());
+                        let file = FILES.add_file(
+                            0,
+                            input.path().display().to_string(),
+                            code.clone().into(),
+                        );
                         let ((ast, errs), parse_time) =
                             timeit(|| parse_tl().parse(file.contents()).into_output_errors());
                         let mut ast = ast.unwrap_or_default();
                         let errs = errs.into_iter().flat_map(cvt_err);
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
-                                fail = true;
                                 ec += 1;
+                                fail = true;
                             }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
@@ -2551,8 +2537,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
                 let frag = build::ProjectFragment {
-                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
-                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    source_dir: source_dir.as_deref().map(From::from),
+                    build_dir: build_dir.as_deref().map(From::from),
                     ..Default::default()
                 };
                 let (project, _project_dir) = match project_dir.as_deref() {
@@ -2631,11 +2617,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs
-                            .iter()
-                            .map(Path::new)
-                            .map(From::from)
-                            .collect::<Vec<_>>(),
+                        link_dirs: link_dirs.iter().map(From::from).collect::<Vec<_>>(),
                     },
                 )?;
             }
@@ -2653,8 +2635,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
                 let frag = build::ProjectFragment {
-                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
-                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    source_dir: source_dir.as_deref().map(From::from),
+                    build_dir: build_dir.as_deref().map(From::from),
                     ..Default::default()
                 };
                 let (project, _project_dir) = match project_dir.as_deref() {
@@ -2751,11 +2733,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs
-                            .iter()
-                            .map(Path::new)
-                            .map(From::from)
-                            .collect::<Vec<_>>(),
+                        link_dirs: link_dirs.iter().map(From::from).collect::<Vec<_>>(),
                     },
                 )?;
                 let mut exe_path = project.build_dir.into_owned();
