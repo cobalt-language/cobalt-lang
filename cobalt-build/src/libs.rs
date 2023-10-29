@@ -66,6 +66,31 @@ pub fn new_object<'a>(triple: &str) -> Object<'a> {
     };
     Object::new(format, arch, endian)
 }
+/// Get format information for library -- whether the `lib` prefix is used, and the extension
+/// See [`format_lib`] for more information
+pub fn lib_format_info(triple: &str, shared: bool) -> (bool, &'static str) {
+    let mut components = triple.split('-');
+    if shared {
+        if matches!(components.next(), Some("wasm" | "wasm32")) {
+            (false, "wasm")
+        } else {
+            match components.next() {
+                Some("apple") => (true, "dylib"),
+                Some("linux") => (true, "so"),
+                _ => match components.next() {
+                    Some("apple" | "ios" | "darwin") => (true, "dylib"),
+                    Some("windows") => (false, "dll"),
+                    _ => (true, "so"),
+                },
+            }
+        }
+    } else {
+        (
+            components.next().and_then(|_| components.next()) != Some("windows"),
+            "a",
+        )
+    }
+}
 /// Format the library name for the given platform
 /// - WebAssembly formats to name.wasm
 /// - Apple formats to libname.dylib
@@ -73,17 +98,19 @@ pub fn new_object<'a>(triple: &str) -> Object<'a> {
 /// - Anything else formats to libname.so
 pub fn format_lib(base: &str, triple: &str, shared: bool) -> String {
     let mut components = triple.split('-');
-    if matches!(components.next(), Some("wasm" | "wasm32")) {
-        format!("{base}.wasm")
-    } else if shared {
-        match components.next() {
-            Some("apple") => format!("lib{base}.dylib"),
-            Some("linux") => format!("lib{base}.so"),
-            _ => match components.next() {
-                Some("apple" | "ios" | "darwin") => format!("lib{base}.dylib"),
-                Some("windows") => format!("{base}.dylib"),
-                _ => format!("lib{base}.so"),
-            },
+    if shared {
+        if matches!(components.next(), Some("wasm" | "wasm32")) {
+            format!("{base}.wasm")
+        } else {
+            match components.next() {
+                Some("apple") => format!("lib{base}.dylib"),
+                Some("linux") => format!("lib{base}.so"),
+                _ => match components.next() {
+                    Some("apple" | "ios" | "darwin") => format!("lib{base}.dylib"),
+                    Some("windows") => format!("{base}.dll"),
+                    _ => format!("lib{base}.so"),
+                },
+            }
         }
     } else {
         format!(
