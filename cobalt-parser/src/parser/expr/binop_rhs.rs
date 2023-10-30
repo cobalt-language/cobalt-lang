@@ -62,7 +62,7 @@ impl<'src> Parser<'src> {
                     errors,
                 );
             }
-            let (mut rhs, rhs_errors) = self.parse_primary_expr();
+            let (mut rhs, rhs_errors) = self.parse_primary_expr(false);
             if !rhs_errors.is_empty() {
                 return (
                     Box::new(ErrorAST::new(self.cursor.src_len().into())),

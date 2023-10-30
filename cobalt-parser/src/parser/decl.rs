@@ -471,7 +471,7 @@ impl<'src> Parser<'src> {
         if current.kind == TokenKind::Colon {
             self.next();
 
-            let (ty, mut ty_errors) = self.parse_primary_expr();
+            let (ty, mut ty_errors) = self.parse_primary_expr(false);
 
             errors.append(&mut ty_errors);
             ty_expr = Some(ty);
@@ -598,7 +598,7 @@ impl<'src> Parser<'src> {
             return (ast, errors);
         }
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(false);
         errors.append(&mut expr_errors);
 
         // Next has to be a semicolon.
@@ -744,7 +744,7 @@ impl<'src> Parser<'src> {
         if current.kind == TokenKind::Colon {
             self.next();
 
-            let (ty, mut ty_errors) = self.parse_primary_expr();
+            let (ty, mut ty_errors) = self.parse_primary_expr(false);
 
             errors.append(&mut ty_errors);
             ty_expr = Some(ty);
@@ -862,7 +862,7 @@ impl<'src> Parser<'src> {
             return (ast, errors);
         }
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(false);
         errors.append(&mut expr_errors);
 
         // Next has to be a semicolon.
@@ -1040,7 +1040,7 @@ impl<'src> Parser<'src> {
             return (ast, errors);
         }
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(false);
         errors.append(&mut expr_errors);
 
         // Next has to be a semicolon or a double colon.
@@ -1419,7 +1419,7 @@ impl<'src> Parser<'src> {
             })
         ) {
             self.next();
-            let (ret_type, mut ret_errors) = self.parse_primary_expr();
+            let (ret_type, mut ret_errors) = self.parse_primary_expr(false);
             errors.append(&mut ret_errors);
             ret = ret_type;
         }
@@ -1451,7 +1451,7 @@ impl<'src> Parser<'src> {
 
         if current.kind == TokenKind::BinOp(BinOpToken::Eq) {
             self.next();
-            let (expr, mut expr_errors) = self.parse_expr();
+            let (expr, mut expr_errors) = self.parse_expr(false);
             errors.append(&mut expr_errors);
             body = expr;
         }
@@ -1689,7 +1689,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(false);
         errors.append(&mut expr_errors);
 
         // Next is an optional '=' and expression.
@@ -1735,7 +1735,7 @@ impl<'src> Parser<'src> {
                 );
             }
 
-            let (default_expr, mut default_expr_errors) = self.parse_expr();
+            let (default_expr, mut default_expr_errors) = self.parse_expr(false);
             errors.append(&mut default_expr_errors);
 
             default = Some(default_expr);

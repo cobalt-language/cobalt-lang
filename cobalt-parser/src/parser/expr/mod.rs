@@ -31,12 +31,12 @@ impl<'src> Parser<'src> {
     /// expr
     ///    := primary_expr [BINOP primary_expr]*
     /// ```
-    pub fn parse_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_expr(&mut self, allow_empty: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         match self.current_token.unwrap().kind {
             TokenKind::Keyword(Keyword::If) => self.parse_if_expr(),
             TokenKind::Keyword(Keyword::While) => self.parse_while_expr(),
             _ => {
-                let lhs = self.parse_primary_expr();
+                let lhs = self.parse_primary_expr(allow_empty);
 
                 if let Some(next_tok) = self.current_token {
                     if matches!(
@@ -75,12 +75,15 @@ impl<'src> Parser<'src> {
     ///    := index_expr
     ///    := cast_expr
     /// ```
-    pub fn parse_primary_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_primary_expr(
+        &mut self,
+        allow_empty: bool,
+    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let current = self.current_token.unwrap();
 
         let initial_span = current.span;
         let mut errors = vec![];
-        let mut working_ast: BoxedAST = Box::new(NullAST::new(SourceSpan::from((0, 1))));
+        let mut working_ast: BoxedAST = Box::new(ErrorAST::new(current.span));
 
         let start = 0;
         let parsed_something = 1 << 0;
@@ -210,12 +213,11 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        if state == 0 && parsed_something == 0 {
+        if !allow_empty && state & parsed_something == 0 {
             errors.push(CobaltError::InvalidThing {
                 ex: "expression",
-                loc: initial_span,
+                loc: initial_span.offset().into(),
             });
-            self.next();
             return (working_ast, errors);
         }
 
@@ -433,7 +435,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (val, mut val_errors) = self.parse_primary_expr();
+        let (val, mut val_errors) = self.parse_primary_expr(false);
         errors.append(&mut val_errors);
 
         return (Box::new(PrefixAST::new(span, op, val)), errors);
@@ -452,23 +454,39 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
+        let start = span;
 
         let mut errors = vec![];
 
         self.next();
-        if self.current_token.is_none() {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "'('",
-                found: None,
-                loc: span,
-            });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+        match self.current_token {
+            None => {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "'('",
+                    found: None,
+                    loc: span,
+                });
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
+            }
+            Some(Token {
+                kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                span,
+            }) => {
+                return (
+                    Box::new(ParenAST::new(
+                        merge_spans(start, span),
+                        Box::new(NullAST::new(span.offset().into())),
+                    )),
+                    errors,
+                );
+            }
+            _ => {}
         }
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(false);
         errors.append(&mut expr_errors);
 
         let Some(current) = self.current_token else {
@@ -494,21 +512,29 @@ impl<'src> Parser<'src> {
             }
             TokenKind::Semicolon => {
                 let mut exprs = vec![expr];
-                let start = span;
                 let mut errored = 0u8;
                 self.next();
                 loop {
-                    if let Some(Token {
-                        kind: TokenKind::CloseDelimiter(Delimiter::Paren),
-                        span,
-                    }) = self.current_token
-                    {
-                        self.next();
-                        exprs.push(Box::new(NullAST::new(span.offset().into())));
-                        break;
+                    match self.current_token {
+                        Some(Token {
+                            kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                            span,
+                        }) => {
+                            self.next();
+                            exprs.push(Box::new(NullAST::new(span.offset().into())));
+                            break;
+                        }
+                        Some(Token {
+                            kind: TokenKind::Semicolon,
+                            ..
+                        }) => {
+                            self.next();
+                        }
+                        _ => {}
                     }
+
                     let start_idx = self.cursor.index;
-                    let (expr, mut expr_errors) = self.parse_expr();
+                    let (expr, mut expr_errors) = self.parse_expr(true);
                     let err = self.cursor.index == start_idx;
                     exprs.push(expr);
                     errors.append(&mut expr_errors);
@@ -564,7 +590,6 @@ impl<'src> Parser<'src> {
             }
             TokenKind::Comma => {
                 let mut exprs = vec![expr];
-                let start = span;
                 let mut errored = 0u8;
                 self.next();
                 loop {
@@ -579,7 +604,7 @@ impl<'src> Parser<'src> {
                         break;
                     }
                     let start_idx = self.cursor.index;
-                    let (expr, mut expr_errors) = self.parse_expr();
+                    let (expr, mut expr_errors) = self.parse_expr(false);
                     let err = self.cursor.index == start_idx;
                     exprs.push(expr);
                     errors.append(&mut expr_errors);
@@ -746,7 +771,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (expr, mut expr_errors) = self.parse_expr(); // TODO: statement?
+            let (expr, mut expr_errors) = self.parse_expr(false); // TODO: statement?
             errors.append(&mut expr_errors);
             vals.push(expr);
             local_state = last_was_expr;
@@ -756,7 +781,8 @@ impl<'src> Parser<'src> {
         // null ast will indicate that the block should evaluate to null (and not the value
         // of the last expr).
         if local_state == semicolon_trailing_expr || local_state == start {
-            vals.push(Box::new(NullAST::new(SourceSpan::from((0, 1)))));
+            let span = vals.last().map_or(span, |a| a.loc());
+            vals.push(Box::new(NullAST::new((span.offset() + span.len()).into())));
         }
 
         (
@@ -795,7 +821,7 @@ impl<'src> Parser<'src> {
                 break;
             }
             let start_idx = self.cursor.index;
-            let (expr, mut expr_errors) = self.parse_expr();
+            let (expr, mut expr_errors) = self.parse_expr(false);
             let err = self.cursor.index == start_idx;
             exprs.push(expr);
             errors.append(&mut expr_errors);
@@ -902,7 +928,7 @@ impl<'src> Parser<'src> {
             return (Box::new(ErrorAST::new(span)), errors);
         }
 
-        let (cond, mut cond_errors) = self.parse_primary_expr();
+        let (cond, mut cond_errors) = self.parse_primary_expr(false);
         errors.append(&mut cond_errors);
 
         if self.current_token.is_none() {
@@ -917,7 +943,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (if_true, mut if_true_errors) = self.parse_expr();
+        let (if_true, mut if_true_errors) = self.parse_expr(false);
         errors.append(&mut if_true_errors);
 
         // Return if there's no else.
@@ -967,7 +993,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (if_false, mut if_false_errors) = self.parse_expr();
+        let (if_false, mut if_false_errors) = self.parse_expr(false);
         errors.append(&mut if_false_errors);
 
         (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
@@ -1010,7 +1036,7 @@ impl<'src> Parser<'src> {
             return (Box::new(ErrorAST::new(span)), errors);
         }
 
-        let (cond, mut cond_errors) = self.parse_primary_expr();
+        let (cond, mut cond_errors) = self.parse_primary_expr(false);
         errors.append(&mut cond_errors);
 
         if self.current_token.is_none() {
@@ -1025,7 +1051,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (body, mut body_errors) = self.parse_expr();
+        let (body, mut body_errors) = self.parse_expr(false);
         errors.append(&mut body_errors);
 
         (Box::new(WhileAST::new(span, cond, body)), errors)
@@ -1161,7 +1187,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (arg, mut arg_errors) = self.parse_expr();
+            let (arg, mut arg_errors) = self.parse_expr(false);
             errors.append(&mut arg_errors);
             args.push(arg);
             local_state = atleast_one_arg;
@@ -1196,7 +1222,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        let (expr, mut expr_errors) = self.parse_expr();
+        let (expr, mut expr_errors) = self.parse_expr(true);
         errors.append(&mut expr_errors);
 
         // ---

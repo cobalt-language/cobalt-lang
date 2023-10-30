@@ -219,7 +219,7 @@ impl<'src> Parser<'src> {
         }
 
         // ---
-        let _ = self.parse_expr();
+        let _ = self.parse_expr(false);
         if !matches!(
             self.current_token,
             Some(Token {
@@ -362,7 +362,7 @@ impl<'src> Parser<'src> {
 
             // Expr.
 
-            let (expr, mut expr_errors) = self.parse_expr();
+            let (expr, mut expr_errors) = self.parse_expr(false);
             errors.append(&mut expr_errors);
 
             fields.insert(field_name.clone(), expr);
