@@ -362,8 +362,8 @@ impl<'src> Parser<'src> {
 
             // Expr.
 
-            let (expr, expr_errors) = self.parse_expr();
-            errors.extend(expr_errors);
+            let (expr, mut expr_errors) = self.parse_expr();
+            errors.append(&mut expr_errors);
 
             fields.insert(field_name.clone(), expr);
             field_spans.insert(field_name, field_name_span);

@@ -13,13 +13,13 @@ where
     let mut reader = SourceReader::new(src);
     let mut errors = vec![];
 
-    let tokenize_result = reader.tokenize();
-    errors.extend(tokenize_result.1);
+    let mut tokenize_result = reader.tokenize();
+    errors.append(&mut tokenize_result.1);
 
     let mut parser = Parser::new(tokenize_result.0);
     parser.next();
-    let (ast_or_similar, parser_errors) = parse_fn(&mut parser);
-    errors.extend(parser_errors);
+    let (ast_or_similar, mut parser_errors) = parse_fn(&mut parser);
+    errors.append(&mut parser_errors);
 
     if show_output {
         dbg!(ast_or_similar);

@@ -1,7 +1,7 @@
 use super::*;
 use crate::lexer::tokens::{Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken};
 use cobalt_ast::{ast::*, BoxedAST};
-use cobalt_errors::{CobaltError, SourceSpan};
+use cobalt_errors::{merge_spans, CobaltError, SourceSpan};
 use std::borrow::Cow;
 
 mod binop_rhs;
@@ -93,15 +93,15 @@ impl<'src> Parser<'src> {
 
         match current.kind {
             TokenKind::Literal(_) => {
-                let (parsed_literal, parsed_errors) = self.parse_literal();
-                errors.extend(parsed_errors);
+                let (parsed_literal, mut parsed_errors) = self.parse_literal();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_literal;
 
                 state |= parsed_something;
             }
             TokenKind::Ident(_) => {
-                let (parsed_ident, parsed_errors) = self.parse_ident_expr();
-                errors.extend(parsed_errors);
+                let (parsed_ident, mut parsed_errors) = self.parse_ident_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_ident;
 
                 state |= parsed_something;
@@ -110,8 +110,8 @@ impl<'src> Parser<'src> {
                 state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(Delimiter::Paren) => {
-                let (parsed_expr, parsed_errors) = self.parse_paren_expr();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_paren_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
@@ -120,15 +120,15 @@ impl<'src> Parser<'src> {
                 state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(Delimiter::Brace) => {
-                let (parsed_expr, parsed_errors) = self.parse_block_expr();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_block_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
             }
             TokenKind::UnOp(_) => {
-                let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
@@ -136,8 +136,8 @@ impl<'src> Parser<'src> {
                 state |= can_be_indexed;
             }
             TokenKind::UnOrBinOp(_) => {
-                let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
@@ -145,15 +145,15 @@ impl<'src> Parser<'src> {
                 state |= can_be_indexed;
             }
             TokenKind::Keyword(Keyword::Mut) => {
-                let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
             }
             TokenKind::At => {
-                let (parsed_expr, parsed_errors) = self.parse_intrinsic();
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_intrinsic();
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
 
                 state |= parsed_something;
@@ -169,15 +169,15 @@ impl<'src> Parser<'src> {
             };
 
             if tok.kind == TokenKind::OpenDelimiter(Delimiter::Paren) {
-                let (parsed_expr, parsed_errors) = self.parse_fn_call(working_ast);
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_fn_call(working_ast);
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
                 continue;
             }
 
             if state & can_be_dotted != 0 && tok.kind == TokenKind::Dot {
-                let (parsed_expr, parsed_errors) = self.parse_dotted_expr(working_ast);
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_dotted_expr(working_ast);
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
                 continue;
             }
@@ -185,15 +185,15 @@ impl<'src> Parser<'src> {
             if state & can_be_indexed != 0
                 && tok.kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
             {
-                let (parsed_expr, parsed_errors) = self.parse_index_expr(working_ast);
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_index_expr(working_ast);
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
                 continue;
             }
 
             if state & can_be_postfixed != 0 && self.check_postfix_expr() {
-                let (parsed_expr, parsed_errors) = self.parse_postfix_expr(working_ast);
-                errors.extend(parsed_errors);
+                let (parsed_expr, mut parsed_errors) = self.parse_postfix_expr(working_ast);
+                errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
                 continue;
             }
@@ -426,8 +426,8 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (val, val_errors) = self.parse_primary_expr();
-        errors.extend(val_errors);
+        let (val, mut val_errors) = self.parse_primary_expr();
+        errors.append(&mut val_errors);
 
         return (Box::new(PrefixAST::new(span, op, val)), errors);
     }
@@ -461,8 +461,8 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (expr, expr_errors) = self.parse_expr();
-        errors.extend(expr_errors);
+        let (expr, mut expr_errors) = self.parse_expr();
+        errors.append(&mut expr_errors);
 
         let Some(current) = self.current_token else {
             errors.push(CobaltError::ExpectedFound {
@@ -476,19 +476,187 @@ impl<'src> Parser<'src> {
             );
         };
 
-        if current.kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
-            let found = Some(current.kind.as_str().into());
-            let loc = current.span;
-            errors.push(CobaltError::ExpectedFound {
-                ex: "')'",
-                found,
-                loc,
-            });
-            return (Box::new(ErrorAST::new(current.span)), errors);
-        }
+        match current.kind {
+            TokenKind::CloseDelimiter(Delimiter::Paren) => {
+                self.next();
 
-        self.next();
-        (expr, errors)
+                (
+                    Box::new(ParenAST::new(merge_spans(span, current.span), expr)),
+                    errors,
+                )
+            }
+            TokenKind::Semicolon => {
+                let mut exprs = vec![expr];
+                let start = span;
+                let mut errored = 0u8;
+                self.next();
+                loop {
+                    if let Some(Token {
+                        kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                        span,
+                    }) = self.current_token
+                    {
+                        self.next();
+                        exprs.push(Box::new(NullAST::new(span.offset().into())));
+                        break;
+                    }
+                    let start_idx = self.cursor.index;
+                    let (expr, mut expr_errors) = self.parse_expr();
+                    let err = self.cursor.index == start_idx;
+                    exprs.push(expr);
+                    errors.append(&mut expr_errors);
+                    match self.current_token {
+                        None => {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')'",
+                                found: None,
+                                loc: self.cursor.src_len().into(),
+                            });
+                            return (
+                                Box::new(ParenAST::new(
+                                    merge_spans(span, self.cursor.src_len().into()),
+                                    Box::new(GroupAST::new(exprs)),
+                                )),
+                                errors,
+                            );
+                        }
+                        Some(Token {
+                            kind: TokenKind::Semicolon,
+                            ..
+                        }) => self.next(),
+                        Some(Token {
+                            kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                            ..
+                        }) => {
+                            self.next();
+                            break;
+                        }
+                        Some(Token { kind, span }) => {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')' or ';'",
+                                found: Some(kind.as_str().into()),
+                                loc: span,
+                            });
+                            loop_until!(self, TokenKind::CloseDelimiter(Delimiter::Paren));
+                            errored = 2;
+                        }
+                    }
+                    errored = errored.saturating_sub(1);
+                    if err {
+                        break;
+                    }
+                }
+                let current = self.current_token.unwrap();
+                (
+                    Box::new(ParenAST::new(
+                        merge_spans(start, current.span),
+                        Box::new(GroupAST::new(exprs)),
+                    )),
+                    errors,
+                )
+            }
+            TokenKind::Comma => {
+                let mut exprs = vec![expr];
+                let start = span;
+                let mut errored = 0u8;
+                self.next();
+                loop {
+                    if matches!(
+                        self.current_token,
+                        Some(Token {
+                            kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                            ..
+                        })
+                    ) {
+                        self.next();
+                        break;
+                    }
+                    let start_idx = self.cursor.index;
+                    let (expr, mut expr_errors) = self.parse_expr();
+                    let err = self.cursor.index == start_idx;
+                    exprs.push(expr);
+                    errors.append(&mut expr_errors);
+                    match self.current_token {
+                        None => {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')'",
+                                found: None,
+                                loc: self.cursor.src_len().into(),
+                            });
+                            return (
+                                Box::new(ParenAST::new(
+                                    merge_spans(span, self.cursor.src_len().into()),
+                                    Box::new(TupleLiteralAST::new(exprs)),
+                                )),
+                                errors,
+                            );
+                        }
+                        Some(Token {
+                            kind: TokenKind::Comma,
+                            ..
+                        }) => self.next(),
+                        Some(Token {
+                            kind: TokenKind::CloseDelimiter(Delimiter::Paren),
+                            ..
+                        }) => {
+                            self.next();
+                            break;
+                        }
+                        Some(Token {
+                            kind: TokenKind::Semicolon,
+                            span,
+                        }) => {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')' or ','",
+                                found: Some(";".into()),
+                                loc: span,
+                            });
+                            return (
+                                Box::new(ParenAST::new(
+                                    merge_spans(start, span),
+                                    Box::new(TupleLiteralAST::new(exprs)),
+                                )),
+                                errors,
+                            );
+                        }
+                        Some(Token { kind, span }) => {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "')' or ','",
+                                found: Some(kind.as_str().into()),
+                                loc: span,
+                            });
+                            loop_until!(self, TokenKind::CloseDelimiter(Delimiter::Paren));
+                            errored = 2;
+                        }
+                    }
+                    errored = errored.saturating_sub(1);
+                    if err {
+                        break;
+                    }
+                }
+                let current = self.current_token.unwrap();
+                (
+                    Box::new(ParenAST::new(
+                        merge_spans(start, current.span),
+                        Box::new(TupleLiteralAST::new(exprs)),
+                    )),
+                    errors,
+                )
+            }
+            _ => {
+                let found = Some(current.kind.as_str().into());
+                let loc = current.span;
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "')'",
+                    found,
+                    loc,
+                });
+                (
+                    Box::new(ParenAST::new(merge_spans(span, current.span), expr)),
+                    errors,
+                )
+            }
+        }
     }
 
     /// Going into this function, `current_token` is assumed to be a open brace.
@@ -556,8 +724,8 @@ impl<'src> Parser<'src> {
 
             if let TokenKind::Keyword(kw) = current.kind {
                 if kw == Keyword::Let || kw == Keyword::Type || kw == Keyword::Fn {
-                    let (decl, decl_errors) = self.parse_decl(DeclLoc::Local);
-                    errors.extend(decl_errors);
+                    let (decl, mut decl_errors) = self.parse_decl(DeclLoc::Local);
+                    errors.append(&mut decl_errors);
                     vals.push(decl);
 
                     local_state = last_was_decl;
@@ -565,8 +733,8 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (expr, expr_errors) = self.parse_expr(); // TODO: statement?
-            errors.extend(expr_errors);
+            let (expr, mut expr_errors) = self.parse_expr(); // TODO: statement?
+            errors.append(&mut expr_errors);
             vals.push(expr);
             local_state = last_was_expr;
         }
@@ -624,8 +792,8 @@ impl<'src> Parser<'src> {
             return (Box::new(ErrorAST::new(span)), errors);
         }
 
-        let (cond, cond_errors) = self.parse_primary_expr();
-        errors.extend(cond_errors);
+        let (cond, mut cond_errors) = self.parse_primary_expr();
+        errors.append(&mut cond_errors);
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -639,8 +807,8 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (if_true, if_true_errors) = self.parse_expr();
-        errors.extend(if_true_errors);
+        let (if_true, mut if_true_errors) = self.parse_expr();
+        errors.append(&mut if_true_errors);
 
         // Return if there's no else.
 
@@ -689,8 +857,8 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (if_false, if_false_errors) = self.parse_expr();
-        errors.extend(if_false_errors);
+        let (if_false, mut if_false_errors) = self.parse_expr();
+        errors.append(&mut if_false_errors);
 
         (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
     }
@@ -732,8 +900,8 @@ impl<'src> Parser<'src> {
             return (Box::new(ErrorAST::new(span)), errors);
         }
 
-        let (cond, cond_errors) = self.parse_primary_expr();
-        errors.extend(cond_errors);
+        let (cond, mut cond_errors) = self.parse_primary_expr();
+        errors.append(&mut cond_errors);
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -747,8 +915,8 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (body, body_errors) = self.parse_expr();
-        errors.extend(body_errors);
+        let (body, mut body_errors) = self.parse_expr();
+        errors.append(&mut body_errors);
 
         (Box::new(WhileAST::new(span, cond, body)), errors)
     }
@@ -883,8 +1051,8 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (arg, arg_errors) = self.parse_expr();
-            errors.extend(arg_errors);
+            let (arg, mut arg_errors) = self.parse_expr();
+            errors.append(&mut arg_errors);
             args.push(arg);
             local_state = atleast_one_arg;
         }
@@ -918,8 +1086,8 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        let (expr, expr_errors) = self.parse_expr();
-        errors.extend(expr_errors);
+        let (expr, mut expr_errors) = self.parse_expr();
+        errors.append(&mut expr_errors);
 
         // ---
 

@@ -146,8 +146,8 @@ impl<'src> Parser<'src> {
 
         // --- Annotations.
 
-        let (anns, anns_errs) = self.parse_annotations();
-        errors.extend(anns_errs);
+        let (anns, mut anns_errs) = self.parse_annotations();
+        errors.append(&mut anns_errs);
 
         // ---
 
@@ -235,9 +235,9 @@ impl<'src> Parser<'src> {
                 }
 
                 _ => {
-                    let (parsed_tl, parsed_errors) = self.parse_top_level();
+                    let (parsed_tl, mut parsed_errors) = self.parse_top_level();
                     vals.push(parsed_tl);
-                    errors.extend(parsed_errors);
+                    errors.append(&mut parsed_errors);
                 }
             }
         }

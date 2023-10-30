@@ -39,8 +39,8 @@ impl<'src> Parser<'src> {
                 ..
             })
         ) {
-            let (ann, ann_errors) = self.parse_annotation();
-            errs.extend(ann_errors);
+            let (ann, mut ann_errors) = self.parse_annotation();
+            errs.append(&mut ann_errors);
             anns.push(ann);
         }
 
