@@ -10,6 +10,7 @@ pub enum Keyword {
     Fn,
     If,
     Else,
+    While,
     Module,
     Trait,
     Break,
@@ -29,6 +30,7 @@ impl Keyword {
             "fn" => Some(Keyword::Fn),
             "if" => Some(Keyword::If),
             "else" => Some(Keyword::Else),
+            "while" => Some(Keyword::While),
             "module" => Some(Keyword::Module),
             "trait" => Some(Keyword::Trait),
             "break" => Some(Keyword::Break),
@@ -47,6 +49,7 @@ impl Keyword {
             Keyword::Fn => "fn",
             Keyword::If => "if",
             Keyword::Else => "else",
+            Keyword::While => "while",
             Keyword::Module => "module",
             Keyword::Trait => "trait",
             Keyword::Break => "break",
@@ -60,8 +63,8 @@ impl Keyword {
     ///
     /// This is useful for checking if an identifier is a keyword.
     pub(crate) fn from_token(token: &Token) -> Option<Keyword> {
-        match &token.kind {
-            TokenKind::Keyword(keyword) => Some(*keyword),
+        match token.kind {
+            TokenKind::Keyword(keyword) => Some(keyword),
             TokenKind::Ident(ident) => Keyword::from_str(ident),
             _ => None,
         }

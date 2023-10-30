@@ -32,20 +32,24 @@ impl<'src> Parser<'src> {
     ///    := primary_expr [BINOP primary_expr]*
     /// ```
     pub fn parse_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        assert!(self.current_token.is_some());
+        match self.current_token.unwrap().kind {
+            TokenKind::Keyword(Keyword::If) => self.parse_if_expr(),
+            TokenKind::Keyword(Keyword::While) => self.parse_while_expr(),
+            _ => {
+                let lhs = self.parse_primary_expr();
 
-        let lhs = self.parse_primary_expr();
+                if let Some(next_tok) = self.current_token {
+                    if matches!(
+                        next_tok.kind,
+                        TokenKind::BinOp(_) | TokenKind::UnOrBinOp(_) | TokenKind::Colon
+                    ) {
+                        return self.parse_binop_rhs(0, lhs.0, lhs.1);
+                    }
+                }
 
-        if let Some(next_tok) = self.current_token {
-            if matches!(
-                next_tok.kind,
-                TokenKind::BinOp(_) | TokenKind::UnOrBinOp(_) | TokenKind::Colon
-            ) {
-                return self.parse_binop_rhs(0, lhs.0, lhs.1);
+                lhs
             }
         }
-
-        lhs
     }
 
     /// Parse a primary expression. These are basically anything that can be (directly)
@@ -140,22 +144,12 @@ impl<'src> Parser<'src> {
                 state |= can_be_dotted;
                 state |= can_be_indexed;
             }
-            TokenKind::Keyword(kw) => {
-                if kw == Keyword::If {
-                    let (parsed_expr, parsed_errors) = self.parse_if_expr();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_expr;
+            TokenKind::Keyword(Keyword::Mut) => {
+                let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
+                errors.extend(parsed_errors);
+                working_ast = parsed_expr;
 
-                    state |= parsed_something;
-                }
-
-                if kw == Keyword::Mut {
-                    let (parsed_expr, parsed_errors) = self.parse_prefix_expr();
-                    errors.extend(parsed_errors);
-                    working_ast = parsed_expr;
-
-                    state |= parsed_something;
-                }
+                state |= parsed_something;
             }
             TokenKind::At => {
                 let (parsed_expr, parsed_errors) = self.parse_intrinsic();
@@ -211,7 +205,7 @@ impl<'src> Parser<'src> {
 
         if state == 0 && parsed_something == 0 {
             errors.push(CobaltError::InvalidThing {
-                ex: "primary expression",
+                ex: "expression",
                 loc: initial_span,
             });
             self.next();
@@ -597,7 +591,7 @@ impl<'src> Parser<'src> {
     ///
     /// ```text
     /// if_expr :=
-    ///    'if' primary_expr block_expr [ 'else' block_expr ]?
+    ///    'if' '(' expr ')' expr [ 'else' expr ]?
     /// ```
     pub(crate) fn parse_if_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let Some(Token {
@@ -612,16 +606,22 @@ impl<'src> Parser<'src> {
 
         // Eat the `if`.
         self.next();
-        if self.current_token.is_none() {
+        if !matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::OpenDelimiter(Delimiter::Paren | Delimiter::Brace),
+                ..
+            })
+        ) {
+            let span = self
+                .current_token
+                .map_or(self.cursor.src_len().into(), |tok| tok.span);
             errors.push(CobaltError::ExpectedFound {
-                ex: "primary expression",
+                ex: "if condition",
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return (Box::new(ErrorAST::new(span)), errors);
         }
 
         let (cond, cond_errors) = self.parse_primary_expr();
@@ -629,7 +629,7 @@ impl<'src> Parser<'src> {
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
-                ex: "block expression",
+                ex: "if true body",
                 found: None,
                 loc: span,
             });
@@ -639,7 +639,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        let (if_true, if_true_errors) = self.parse_block_expr();
+        let (if_true, if_true_errors) = self.parse_expr();
         errors.extend(if_true_errors);
 
         // Return if there's no else.
@@ -650,24 +650,22 @@ impl<'src> Parser<'src> {
                     span,
                     cond,
                     if_true,
-                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(NullAST::new(self.cursor.src_len().into())),
                 )),
                 errors,
             );
         };
 
-        if let TokenKind::Keyword(kw) = current.kind {
-            if kw != Keyword::Else {
-                return (
-                    Box::new(IfAST::new(
-                        span,
-                        cond,
-                        if_true,
-                        Box::new(NullAST::new(SourceSpan::from((0, 1)))),
-                    )),
-                    errors,
-                );
-            }
+        if current.kind != TokenKind::Keyword(Keyword::Else) {
+            return (
+                Box::new(IfAST::new(
+                    span,
+                    cond,
+                    if_true,
+                    Box::new(NullAST::new(current.span)),
+                )),
+                errors,
+            );
         }
 
         // Handle the else.
@@ -676,7 +674,7 @@ impl<'src> Parser<'src> {
         self.next();
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
-                ex: "block expression",
+                ex: "if false body",
                 found: None,
                 loc: self.cursor.src_len().into(),
             });
@@ -685,16 +683,74 @@ impl<'src> Parser<'src> {
                     span,
                     cond,
                     if_true,
-                    Box::new(NullAST::new(SourceSpan::from((0, 1)))),
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
                 )),
                 errors,
             );
         }
 
-        let (if_false, if_false_errors) = self.parse_block_expr();
+        let (if_false, if_false_errors) = self.parse_expr();
         errors.extend(if_false_errors);
 
         (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
+    }
+
+    /// Going into this function, `current_token` is assumed to be an `if` keyword.
+    ///
+    /// ```text
+    /// if_expr :=
+    ///    'while' '(' expr ')' _expr [ 'else' expr ]?
+    /// ```
+    pub(crate) fn parse_while_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        let Some(Token {
+            kind: TokenKind::Keyword(Keyword::While),
+            span,
+        }) = self.current_token
+        else {
+            unreachable!()
+        };
+
+        let mut errors = vec![];
+
+        // Eat the `while``.
+        self.next();
+        if !matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::OpenDelimiter(Delimiter::Paren | Delimiter::Brace),
+                ..
+            })
+        ) {
+            let span = self
+                .current_token
+                .map_or(self.cursor.src_len().into(), |tok| tok.span);
+            errors.push(CobaltError::ExpectedFound {
+                ex: "while condition",
+                found: None,
+                loc: span,
+            });
+            return (Box::new(ErrorAST::new(span)), errors);
+        }
+
+        let (cond, cond_errors) = self.parse_primary_expr();
+        errors.extend(cond_errors);
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "while loop body",
+                found: None,
+                loc: span,
+            });
+            return (
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                errors,
+            );
+        }
+
+        let (body, body_errors) = self.parse_expr();
+        errors.extend(body_errors);
+
+        (Box::new(WhileAST::new(span, cond, body)), errors)
     }
 
     /// Going into this function, `current_token` is assumed to be an `@`.
