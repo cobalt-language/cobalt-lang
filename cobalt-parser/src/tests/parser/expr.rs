@@ -118,11 +118,15 @@ fn test_prefix_expr() {
 }
 
 #[test]
-fn test_if_expr() {
-    test_parser_fn("if a { x = 4; }", true, |parser| parser.parse_if_expr());
+fn test_flow_expr() {
+    test_parser_fn("if (a) x = 4", true, |parser| parser.parse_if_expr());
 
-    test_parser_fn("if (x == 3) { x = 4; } else { y = 5; }", true, |parser| {
+    test_parser_fn("if (x == 3) x = 4 else y = 5", true, |parser| {
         parser.parse_if_expr()
+    });
+
+    test_parser_fn("while (x < 10) ++i", true, |parser| {
+        parser.parse_while_expr()
     });
 }
 
