@@ -126,6 +126,13 @@ impl<'src> Parser<'src> {
 
                 state |= parsed_something;
             }
+            TokenKind::OpenDelimiter(Delimiter::Bracket) => {
+                let (parsed_expr, mut parsed_errors) = self.parse_array_expr();
+                errors.append(&mut parsed_errors);
+                working_ast = parsed_expr;
+
+                state |= parsed_something;
+            }
             TokenKind::UnOp(_) => {
                 let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
                 errors.append(&mut parsed_errors);
@@ -625,7 +632,10 @@ impl<'src> Parser<'src> {
                                 found: Some(kind.as_str().into()),
                                 loc: span,
                             });
-                            loop_until!(self, TokenKind::CloseDelimiter(Delimiter::Paren));
+                            loop_until!(
+                                self,
+                                TokenKind::Comma | TokenKind::CloseDelimiter(Delimiter::Paren)
+                            );
                             errored = 2;
                         }
                     }
@@ -723,7 +733,10 @@ impl<'src> Parser<'src> {
             }
 
             if let TokenKind::Keyword(kw) = current.kind {
-                if kw == Keyword::Let || kw == Keyword::Type || kw == Keyword::Fn {
+                if matches!(
+                    kw,
+                    Keyword::Let | Keyword::Const | Keyword::Type | Keyword::Fn
+                ) {
                     let (decl, mut decl_errors) = self.parse_decl(DeclLoc::Local);
                     errors.append(&mut decl_errors);
                     vals.push(decl);
@@ -751,6 +764,103 @@ impl<'src> Parser<'src> {
                 SourceSpan::from((span_start, span_len)),
                 vals,
             )),
+            errors,
+        )
+    }
+
+    pub(crate) fn parse_array_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        let Some(Token {
+            kind: TokenKind::OpenDelimiter(Delimiter::Bracket),
+            span,
+        }) = self.current_token
+        else {
+            unreachable!()
+        };
+
+        let mut errors = vec![];
+
+        let mut exprs = vec![];
+        let start = span;
+        let mut errored = 0u8;
+        self.next();
+        loop {
+            if matches!(
+                self.current_token,
+                Some(Token {
+                    kind: TokenKind::CloseDelimiter(Delimiter::Bracket),
+                    ..
+                })
+            ) {
+                self.next();
+                break;
+            }
+            let start_idx = self.cursor.index;
+            let (expr, mut expr_errors) = self.parse_expr();
+            let err = self.cursor.index == start_idx;
+            exprs.push(expr);
+            errors.append(&mut expr_errors);
+            match self.current_token {
+                None => {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "']'",
+                        found: None,
+                        loc: self.cursor.src_len().into(),
+                    });
+                    return (
+                        Box::new(ArrayLiteralAST::new(
+                            start,
+                            self.cursor.src_len().into(),
+                            exprs,
+                        )),
+                        errors,
+                    );
+                }
+                Some(Token {
+                    kind: TokenKind::Comma,
+                    ..
+                }) => self.next(),
+                Some(Token {
+                    kind: TokenKind::CloseDelimiter(Delimiter::Bracket),
+                    ..
+                }) => {
+                    self.next();
+                    break;
+                }
+                Some(Token {
+                    kind: TokenKind::Semicolon,
+                    span,
+                }) => {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "']' or ','",
+                        found: Some(";".into()),
+                        loc: span,
+                    });
+                    return (
+                        Box::new(ArrayLiteralAST::new(start, span.offset().into(), exprs)),
+                        errors,
+                    );
+                }
+                Some(Token { kind, span }) => {
+                    errors.push(CobaltError::ExpectedFound {
+                        ex: "']' or ','",
+                        found: Some(kind.as_str().into()),
+                        loc: span,
+                    });
+                    loop_until!(
+                        self,
+                        TokenKind::Comma | TokenKind::CloseDelimiter(Delimiter::Bracket)
+                    );
+                    errored = 2;
+                }
+            }
+            errored = errored.saturating_sub(1);
+            if err {
+                break;
+            }
+        }
+        let current = self.current_token.unwrap();
+        (
+            Box::new(ArrayLiteralAST::new(start, current.span, exprs)),
             errors,
         )
     }
