@@ -59,7 +59,7 @@ fn test_binop() {
     test_parser_fn(
         "a += b += c += d",
         true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr(false)),
     );
 }
 
