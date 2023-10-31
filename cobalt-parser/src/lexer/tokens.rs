@@ -226,6 +226,7 @@ pub enum TokenKind<'src> {
     UnOrBinOp(UnOrBinOpToken),
     Literal(LiteralToken<'src>),
     At,
+    Annotation((&'src str, Option<&'src str>)),
     Dot,
 }
 
@@ -295,6 +296,7 @@ impl<'src> TokenKind<'src> {
             UnOrBinOp(op) => op.as_str(),
             Literal(lit) => lit.as_str(),
             At => "@",
+            Annotation(..) => "annotation",
             Dot => ".",
         }
     }

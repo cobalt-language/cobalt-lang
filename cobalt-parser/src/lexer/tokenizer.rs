@@ -27,6 +27,10 @@ pub fn is_ignored_char(c: char) -> bool {
     c.is_whitespace()
 }
 
+pub fn is_ident_start(c: char) -> bool {
+    is_xid_start(c) || c == '_'
+}
+
 /// Consume ignored characters until we hit a non-ignored character. We
 /// do not eat the first non-ignored character.
 pub fn eat_ignored(input: &mut Peekable<Chars>) {
@@ -91,7 +95,7 @@ impl<'src> SourceReader<'src> {
                 // Match an identifier.
                 // TODO: include check for underscore, but then there must be at least
                 // one xid_continue after the underscore.
-                c if is_xid_start(c) || c == '_' => {
+                c if is_ident_start(c) => {
                     let ident_parse_res = self.eat_ident();
 
                     if let Err(ident_parse_err) = ident_parse_res {
@@ -514,10 +518,87 @@ impl<'src> SourceReader<'src> {
                     });
                 }
                 '@' => {
+                    let span_start = self.index;
                     self.next_char();
+
+                    if let Some(&c) = self.peek() {
+                        if !is_ident_start(c) {
+                            errors.push(CobaltError::ExpectedFound {
+                                ex: "start of identifier",
+                                found: Some(c.to_string().into()),
+                                loc: SourceSpan::from((self.index, 1)),
+                            });
+                            self.next_char();
+                            continue;
+                        }
+                    } else {
+                        errors.push(CobaltError::ExpectedFound {
+                            ex: "name",
+                            found: None,
+                            loc: SourceSpan::from((self.index, 1)),
+                        });
+                        continue;
+                    }
+
+                    // --- Name.
+
+                    let ident_parse_res = self.eat_ident();
+
+                    if let Err(ident_parse_err) = ident_parse_res {
+                        errors.push(ident_parse_err);
+                        continue;
+                    }
+
+                    let ident_token = ident_parse_res.unwrap();
+                    let name = &self.source[ident_token.span.offset()
+                        ..ident_token.span.offset() + ident_token.span.len()];
+
+                    // --- Optional param.
+
+                    match self.peek() {
+                        Some(&'(') => {}
+                        _ => {
+                            tokens.push(Token {
+                                kind: TokenKind::Annotation((name, None)),
+                                span: SourceSpan::from((
+                                    span_start,
+                                    ident_token.span.offset() + ident_token.span.len(),
+                                )),
+                            });
+                            continue;
+                        }
+                    }
+
+                    // Eat the '('.
+                    assert_eq!(self.peek(), Some(&'('));
+                    self.next_char();
+
+                    let arg_span_start = self.index;
+
+                    let mut paren_depth = 1;
+                    loop {
+                        match self.peek().to_owned() {
+                            Some('(') => paren_depth += 1,
+                            Some(')') => {
+                                if paren_depth == 1 {
+                                    break;
+                                }
+                                paren_depth -= 1
+                            }
+                            _ => {}
+                        }
+                        self.next_char();
+                    }
+
+                    // Next will be the closing ')'.
+                    let arg_span_end = self.index;
+                    self.next_char();
+
+                    let arg = &self.source[arg_span_start..arg_span_end];
+
                     tokens.push(Token {
-                        kind: TokenKind::At,
-                        span: self.source_span_backward(1),
+                        kind: TokenKind::Annotation((name, Some(arg))),
+                        span: SourceSpan::from((span_start, arg_span_end)),
                     });
                 }
 

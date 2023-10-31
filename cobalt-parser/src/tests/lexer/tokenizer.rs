@@ -209,3 +209,36 @@ fn test_comments() {
         },]
     );
 }
+
+#[test]
+fn test_annotations_lexer() {
+    // ---
+
+    let src = "@ann";
+    let mut string_reader = SourceReader::new(src);
+
+    let (tokens, _errors) = string_reader.tokenize();
+    dbg!(&tokens.0);
+    dbg!(&_errors);
+    assert!(_errors.is_empty());
+
+    // ---
+
+    let src = "@ann(param)";
+    let mut string_reader = SourceReader::new(src);
+
+    let (tokens, _errors) = string_reader.tokenize();
+    dbg!(&tokens.0);
+    dbg!(&_errors);
+    assert!(_errors.is_empty());
+
+    // ---
+
+    let src = "@ann(some(nested(param)))";
+    let mut string_reader = SourceReader::new(src);
+
+    let (tokens, _errors) = string_reader.tokenize();
+    dbg!(&tokens.0);
+    dbg!(&_errors);
+    assert!(_errors.is_empty());
+}
