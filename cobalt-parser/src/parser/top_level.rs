@@ -5,12 +5,13 @@ use cobalt_ast::{ast::*, BoxedAST, DottedName};
 use cobalt_errors::SourceSpan;
 use std::borrow::Cow;
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CheckModuleDeclResult {
     None,
-
+    Invalid,
     File,
     Inline,
+    Alias,
 }
 
 impl<'src> Parser<'src> {
@@ -86,7 +87,8 @@ impl<'src> Parser<'src> {
                     }],
                 ),
                 CheckModuleDeclResult::Inline => self.parse_inline_module_decl(),
-                CheckModuleDeclResult::File => (
+                CheckModuleDeclResult::Alias => self.parse_alias_module_decl(),
+                CheckModuleDeclResult::File | CheckModuleDeclResult::Invalid => (
                     Box::new(ErrorAST::new(tok.span)),
                     vec![CobaltError::InvalidThing {
                         ex: "file module declaration",
@@ -124,19 +126,23 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        if matches!(
-            self.current_token,
+        let res = match self.current_token {
             Some(Token {
                 kind: TokenKind::Semicolon,
                 ..
-            })
-        ) {
-            self.rewind_to_idx(idx_on_entry);
-            return CheckModuleDeclResult::File;
-        }
-
+            }) => CheckModuleDeclResult::File,
+            Some(Token {
+                kind: TokenKind::ColonColon,
+                ..
+            }) => CheckModuleDeclResult::Inline,
+            Some(Token {
+                kind: TokenKind::BinOp(BinOpToken::Eq),
+                ..
+            }) => CheckModuleDeclResult::Alias,
+            _ => CheckModuleDeclResult::Invalid,
+        };
         self.rewind_to_idx(idx_on_entry);
-        CheckModuleDeclResult::Inline
+        res
     }
 
     /// Going into the function, the current token is assumed to be `module`.
@@ -342,5 +348,70 @@ impl<'src> Parser<'src> {
         // ---
 
         (module_name, errors)
+    }
+
+    /// Going into the function, the current token is assumed to be `module`.
+    ///
+    /// ```text
+    /// alias_module_decl := 'module' [ident | dotted_expr] '=' cdn ';'
+    /// ```
+    pub(crate) fn parse_alias_module_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        let mut errors = vec![];
+        let span = self.current_token.unwrap().span;
+
+        // --- Annotations.
+
+        let (anns, mut anns_errs) = self.parse_annotations();
+        errors.append(&mut anns_errs);
+
+        // ---
+
+        assert!(matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Module),
+                ..
+            })
+        ));
+
+        self.next();
+
+        // --- Module name.
+
+        if self.current_token.is_none() {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: None,
+                loc: span,
+            });
+            return (Box::new(ErrorAST::new(span)), errors);
+        }
+
+        let module_name = self.parse_id(true, &mut errors);
+
+        // ---
+
+        assert!(matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::BinOp(BinOpToken::Eq),
+                ..
+            })
+        ));
+
+        self.next();
+
+        let (glob, mut glob_errs) = self.parse_cdn();
+        errors.append(&mut glob_errs);
+
+        (
+            Box::new(ModuleAST::new(
+                span,
+                module_name,
+                vec![Box::new(ImportAST::new(span, glob, vec![]))],
+                anns,
+            )),
+            errors,
+        )
     }
 }
