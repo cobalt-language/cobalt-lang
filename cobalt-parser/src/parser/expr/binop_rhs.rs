@@ -75,8 +75,18 @@ impl<'src> Parser<'src> {
                 .current_token
                 .map_or(0, |tok| tok.kind.precedence_value());
 
-            if curr_token_precedence < next_binop_precedence {
-                (rhs, errors) = self.parse_binop_rhs(curr_token_precedence + 1, rhs, errors);
+            let (cond, recurse_lhs_precedence) =
+                if curr_token_precedence == 10 && next_binop_precedence == 10 {
+                    // This condition ensures right associativity for assignment operators.
+                    (true, curr_token_precedence - 1)
+                } else {
+                    (
+                        curr_token_precedence < next_binop_precedence,
+                        curr_token_precedence + 1,
+                    )
+                };
+            if cond {
+                (rhs, errors) = self.parse_binop_rhs(recurse_lhs_precedence, rhs, errors);
                 if !errors.is_empty() {
                     return (
                         Box::new(ErrorAST::new(self.cursor.src_len().into())),

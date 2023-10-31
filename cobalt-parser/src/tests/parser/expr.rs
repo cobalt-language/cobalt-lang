@@ -53,6 +53,14 @@ fn test_binop() {
         true,
         Box::new(|parser: &mut Parser<'static>| parser.parse_expr(false)),
     );
+
+    // --- Assignment operators should be right associative.
+
+    test_parser_fn(
+        "a += b += c += d",
+        true,
+        Box::new(|parser: &mut Parser<'static>| parser.parse_expr()),
+    );
 }
 
 #[test]
