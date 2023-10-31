@@ -99,18 +99,3 @@ fn test_module() {
         Box::new(|parser: &mut Parser<'static>| parser.parse_inline_module_decl()),
     );
 }
-
-#[test]
-fn test_annotation() {
-    test_parser_fn(
-        "@method",
-        true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
-    );
-
-    test_parser_fn(
-        "@C(extern)",
-        true,
-        Box::new(|parser: &mut Parser<'static>| parser.parse_annotation()),
-    );
-}

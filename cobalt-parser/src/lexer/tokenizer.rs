@@ -7,6 +7,7 @@ use super::{
     SourceReader,
 };
 
+use cobalt_ast::intrinsics::{FUNCTION_INTRINSICS, VALUE_INTRINSICS};
 use cobalt_errors::{CobaltError, SourceSpan};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -29,6 +30,10 @@ pub fn is_ignored_char(c: char) -> bool {
 
 pub fn is_ident_start(c: char) -> bool {
     is_xid_start(c) || c == '_'
+}
+
+pub fn is_intrinsic_name(name: &str) -> bool {
+    VALUE_INTRINSICS.pin().contains_key(name) || FUNCTION_INTRINSICS.pin().contains_key(name)
 }
 
 /// Consume ignored characters until we hit a non-ignored character. We
@@ -552,6 +557,16 @@ impl<'src> SourceReader<'src> {
                     let ident_token = ident_parse_res.unwrap();
                     let name = &self.source[ident_token.span.offset()
                         ..ident_token.span.offset() + ident_token.span.len()];
+
+                    // --- If intrinsic, end here.
+
+                    if is_intrinsic_name(name) {
+                        tokens.push(Token {
+                            kind: TokenKind::Intrinsic(name),
+                            span: SourceSpan::from((span_start, self.index)),
+                        });
+                        continue;
+                    }
 
                     // --- Optional param.
 

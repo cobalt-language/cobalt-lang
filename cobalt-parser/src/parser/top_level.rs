@@ -36,7 +36,7 @@ impl<'src> Parser<'src> {
                     break;
                 }
                 Some(Token {
-                    kind: TokenKind::At,
+                    kind: TokenKind::Annotation(..),
                     ..
                 }) => {
                     let _ = self.parse_annotation();

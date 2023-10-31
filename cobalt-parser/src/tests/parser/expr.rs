@@ -199,5 +199,5 @@ fn test_cast() {
 
 #[test]
 fn test_intrinsics() {
-    test_parser_fn("@const", true, |parser| parser.parse_intrinsic());
+    test_parser_fn("@align", true, |parser| parser.parse_intrinsic());
 }

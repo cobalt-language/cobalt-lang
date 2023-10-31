@@ -146,7 +146,7 @@ impl<'src> Parser<'src> {
                     break;
                 }
                 Some(Token {
-                    kind: TokenKind::At,
+                    kind: TokenKind::Annotation(..),
                     ..
                 }) => {
                     let _ = self.parse_annotation();
@@ -211,138 +211,6 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Parses an annotation.
-    ///
-    /// Going into this function, the current token should be the '@'.
-    ///
-    /// ```text
-    /// annotation := '@' ident ['(' ident ')']?
-    /// ```
-    pub(crate) fn parse_annotation(
-        &mut self,
-    ) -> (
-        (Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan),
-        Vec<CobaltError<'src>>,
-    ) {
-        let Some(Token {
-            kind: TokenKind::At,
-            span,
-        }) = self.current_token
-        else {
-            unreachable!()
-        };
-
-        let mut errors = vec![];
-        self.next();
-
-        let secondary_ident: Option<Cow<'src, str>>;
-
-        // Parse (first) identifier.
-
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: span,
-            });
-            return ((Cow::Borrowed(""), None, span), errors);
-        };
-
-        let primary_ident = match current.kind {
-            TokenKind::Ident(ident) => Cow::Borrowed(ident),
-            TokenKind::Keyword(kw) => Cow::Owned(kw.to_string()),
-            _ => {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "identifier",
-                    found: Some(current.kind.as_str().into()),
-                    loc: span,
-                });
-                return ((Cow::Borrowed(""), None, span), errors);
-            }
-        };
-
-        self.next();
-
-        // Optionally parse (second) identifier.
-        // First eat the '('.
-
-        let Some(current) = self.current_token else {
-            return ((primary_ident, None, span), errors);
-        };
-
-        if let TokenKind::OpenDelimiter(delim) = current.kind {
-            if delim != Delimiter::Paren {
-                return ((primary_ident, None, span), errors);
-            }
-        } else {
-            return ((primary_ident, None, span), errors);
-        }
-
-        self.next();
-
-        // Parse identifier.
-
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: None,
-                loc: span,
-            });
-            return ((primary_ident, None, span), errors);
-        };
-
-        if let TokenKind::Ident(ident) = current.kind {
-            secondary_ident = Some(Cow::Borrowed(ident));
-        } else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "identifier",
-                found: Some(current.kind.as_str().into()),
-                loc: span,
-            });
-
-            loop_until!(
-                self,
-                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Paren)
-            );
-
-            return ((primary_ident, None, span), errors);
-        }
-
-        self.next();
-
-        // Parse ')'.
-
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "')'",
-                found: None,
-                loc: span,
-            });
-            return ((primary_ident, secondary_ident, span), errors);
-        };
-
-        if current.kind != TokenKind::CloseDelimiter(Delimiter::Paren) {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "')'",
-                found: Some(current.kind.as_str().into()),
-                loc: span,
-            });
-
-            loop_until!(
-                self,
-                TokenKind::Semicolon | TokenKind::CloseDelimiter(Delimiter::Paren)
-            );
-
-            return ((primary_ident, secondary_ident, span), errors);
-        }
-
-        self.next();
-
-        // ---
-
-        ((primary_ident, secondary_ident, span), errors)
-    }
-
     /// Parses a let declaration.
     ///
     /// Going into this function, the current token should be the first
@@ -361,24 +229,8 @@ impl<'src> Parser<'src> {
 
         // Annotations.
 
-        let mut anns = vec![];
-        while self.current_token.unwrap().kind == TokenKind::At {
-            let (ann, mut ann_errors) = self.parse_annotation();
-            errors.append(&mut ann_errors);
-            anns.push(ann);
-
-            if self.current_token.is_none() {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "variable definition",
-                    found: None,
-                    loc: self.cursor.src_len().into(),
-                });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
-            }
-        }
+        let (anns, anns_errors) = self.parse_annotations();
+        errors.extend(anns_errors);
 
         let current = self.current_token.unwrap();
 
@@ -655,24 +507,8 @@ impl<'src> Parser<'src> {
 
         // Annotations.
 
-        let mut anns = vec![];
-        while self.current_token.unwrap().kind == TokenKind::At {
-            let (ann, mut ann_errors) = self.parse_annotation();
-            errors.append(&mut ann_errors);
-            anns.push(ann);
-
-            if self.current_token.is_none() {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "constant definition",
-                    found: None,
-                    loc: self.cursor.src_len().into(),
-                });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
-            }
-        }
+        let (anns, anns_errors) = self.parse_annotations();
+        errors.extend(anns_errors);
 
         let current = self.current_token.unwrap();
 
@@ -895,24 +731,8 @@ impl<'src> Parser<'src> {
 
         // Annotations.
 
-        let mut anns = vec![];
-        while self.current_token.unwrap().kind == TokenKind::At {
-            let (ann, mut ann_errors) = self.parse_annotation();
-            errors.append(&mut ann_errors);
-            anns.push(ann);
-
-            if self.current_token.is_none() {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "type definition",
-                    found: None,
-                    loc: first_token_loc,
-                });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
-            }
-        }
+        let (anns, anns_errors) = self.parse_annotations();
+        errors.extend(anns_errors);
 
         // ---
 
@@ -1204,24 +1024,8 @@ impl<'src> Parser<'src> {
 
         // Annotations.
 
-        let mut anns = vec![];
-        while self.current_token.unwrap().kind == TokenKind::At {
-            let (ann, mut ann_errors) = self.parse_annotation();
-            errors.append(&mut ann_errors);
-            anns.push(ann);
-
-            if self.current_token.is_none() {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "function definition",
-                    found: None,
-                    loc: first_token_loc,
-                });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
-            }
-        }
+        let (anns, mut ann_errors) = self.parse_annotations();
+        errors.append(&mut ann_errors);
 
         // Next has to be 'fn'.
         let Some(current) = self.current_token else {
@@ -1722,24 +1526,10 @@ impl<'src> Parser<'src> {
 
     pub(crate) fn parse_import(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let mut errors = vec![];
-        let mut anns = vec![];
-        while self.current_token.unwrap().kind == TokenKind::At {
-            let (ann, mut ann_errors) = self.parse_annotation();
-            errors.append(&mut ann_errors);
-            anns.push(ann);
 
-            if self.current_token.is_none() {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "variable definition",
-                    found: None,
-                    loc: self.cursor.src_len().into(),
-                });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
-            }
-        }
+        let (_anns, anns_errors) = self.parse_annotations();
+        errors.extend(anns_errors);
+
         let Some(Token {
             kind: TokenKind::Keyword(Keyword::Import),
             span,

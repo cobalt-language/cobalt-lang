@@ -145,7 +145,7 @@ impl<'src> Parser<'src> {
 
                 state |= parsed_something;
             }
-            TokenKind::At => {
+            TokenKind::Intrinsic(..) => {
                 let (parsed_expr, mut parsed_errors) = self.parse_intrinsic();
                 errors.append(&mut parsed_errors);
                 working_ast = parsed_expr;
@@ -1050,48 +1050,22 @@ impl<'src> Parser<'src> {
     /// ```
     pub(crate) fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
         let Some(Token {
-            kind: TokenKind::At,
+            kind: TokenKind::Intrinsic(name_src),
             span,
         }) = self.current_token
         else {
             unreachable!()
         };
 
-        let mut errors = vec![];
+        let errors = vec![];
         self.next();
 
         // ---
 
-        let Some(current) = self.current_token else {
-            errors.push(CobaltError::ExpectedFound {
-                ex: "name of intrinsic",
-                found: None,
-                loc: self.cursor.src_len().into(),
-            });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
-        };
-
-        let name: Cow<'_, str> = match current.kind {
-            TokenKind::Ident(ident) => Cow::Borrowed(ident),
-            TokenKind::Keyword(kw) => Cow::Borrowed(kw.as_str()),
-            _ => {
-                errors.push(CobaltError::ExpectedFound {
-                    ex: "name of intrinsic",
-                    found: Some(current.kind.as_str().into()),
-                    loc: current.span,
-                });
-                return (Box::new(ErrorAST::new(current.span)), errors);
-            }
-        };
-
-        self.next();
-
-        // ---
-
-        (Box::new(IntrinsicAST::new(span, name)), errors)
+        (
+            Box::new(IntrinsicAST::new(span, Cow::Borrowed(name_src))),
+            errors,
+        )
     }
 
     /// Going into this function, `current_token` is assumed to be '('.

@@ -242,3 +242,16 @@ fn test_annotations_lexer() {
     dbg!(&_errors);
     assert!(_errors.is_empty());
 }
+
+#[test]
+fn test_intrinsics_lexer() {
+    // ---
+
+    let src = "@size(T)";
+    let mut string_reader = SourceReader::new(src);
+
+    let (tokens, _errors) = string_reader.tokenize();
+    dbg!(&tokens.0);
+    dbg!(&_errors);
+    assert!(_errors.is_empty());
+}
