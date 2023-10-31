@@ -71,6 +71,10 @@ impl<'src> Parser<'src> {
                 kind: TokenKind::Keyword(Keyword::Fn),
                 ..
             }) => self.parse_fn_def(DeclLoc::Global),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Import),
+                ..
+            }) => self.parse_import(),
 
             Some(tok) => match self.check_module_decl() {
                 CheckModuleDeclResult::None => (

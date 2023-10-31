@@ -1,43 +1,10 @@
 use super::*;
 use crate::lexer::tokens::{BinOpToken, Delimiter, Keyword, Token, TokenKind};
+use crate::loop_until;
 use cobalt_ast::{ast::*, BoxedAST, DottedName};
 use cobalt_errors::{CobaltError, SourceSpan};
 use std::borrow::Cow;
 
-macro_rules! loop_until {
-    ($this:expr) => {
-        loop {
-            let Some(current) = $this.current_token else {
-                break;
-            };
-
-            if current.kind == TokenKind::Semicolon {
-                $this.next();
-                break;
-            }
-
-            $this.next();
-        }
-    };
-    ($this:expr, $pat:pat) => {
-        loop {
-            let Some(current) = $this.current_token else {
-                break;
-            };
-
-            if current.kind == TokenKind::Semicolon {
-                $this.next();
-                break;
-            }
-
-            if matches!(current.kind, $pat) {
-                break;
-            }
-
-            $this.next();
-        }
-    };
-}
 #[inline(always)]
 pub(crate) fn loop_until(this: &mut Parser) {
     loop {
@@ -220,6 +187,10 @@ impl<'src> Parser<'src> {
                 kind: TokenKind::Keyword(Keyword::Fn),
                 ..
             }) => self.parse_fn_def(loc),
+            Some(Token {
+                kind: TokenKind::Keyword(Keyword::Import),
+                ..
+            }) if loc != DeclLoc::Struct => self.parse_import(),
 
             Some(tok) => {
                 self.rewind_to_idx(curr_idx);
@@ -1747,5 +1718,56 @@ impl<'src> Parser<'src> {
             (first_token_loc, Cow::from(name), param_type, expr, default),
             errors,
         )
+    }
+
+    pub(crate) fn parse_import(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        let mut errors = vec![];
+        let mut anns = vec![];
+        while self.current_token.unwrap().kind == TokenKind::At {
+            let (ann, mut ann_errors) = self.parse_annotation();
+            errors.append(&mut ann_errors);
+            anns.push(ann);
+
+            if self.current_token.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "variable definition",
+                    found: None,
+                    loc: self.cursor.src_len().into(),
+                });
+                return (
+                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
+                    errors,
+                );
+            }
+        }
+        let Some(Token {
+            kind: TokenKind::Keyword(Keyword::Import),
+            span,
+        }) = self.current_token
+        else {
+            unreachable!()
+        };
+        self.next();
+        let (path, mut errs) = self.parse_cdn();
+        errors.append(&mut errs);
+        if matches!(
+            self.current_token,
+            Some(Token {
+                kind: TokenKind::Semicolon,
+                ..
+            })
+        ) {
+            self.next()
+        } else {
+            errors.push(CobaltError::ExpectedFound {
+                ex: "';'",
+                found: self.current_token.map(|tok| tok.kind.as_str().into()),
+                loc: self
+                    .current_token
+                    .map_or(self.cursor.src_len().into(), |tok| tok.span),
+            });
+            loop_until(self);
+        }
+        (Box::new(ImportAST::new(span, path, vec![])), errors)
     }
 }

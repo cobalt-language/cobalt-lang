@@ -24,6 +24,7 @@ use crate::lexer::tokenizer::TokenStream;
 use crate::lexer::tokens::*;
 
 mod annotations;
+mod cdn;
 mod decl;
 mod expr;
 mod top_level;
@@ -143,14 +144,50 @@ impl<'src> Parser<'src> {
 
 #[macro_export]
 macro_rules! loop_until {
+    ($this:expr) => {
+        loop {
+            let Some(current) = $this.current_token else {
+                break;
+            };
+
+            if current.kind == TokenKind::Semicolon {
+                $this.next();
+                break;
+            }
+
+            $this.next();
+        }
+    };
     ($this:expr, $pat:pat) => {
         loop {
             let Some(current) = $this.current_token else {
                 break;
             };
 
-            if matches!(current.kind, $pat) {
+            if current.kind == TokenKind::Semicolon {
                 $this.next();
+                break;
+            }
+
+            if matches!(current.kind, $pat) {
+                break;
+            }
+
+            $this.next();
+        }
+    };
+    ($this:expr, $pat:pat if $cond:expr) => {
+        loop {
+            let Some(current) = $this.current_token else {
+                break;
+            };
+
+            if current.kind == TokenKind::Semicolon {
+                $this.next();
+                break;
+            }
+
+            if matches!(current.kind, $pat) && $cond {
                 break;
             }
 

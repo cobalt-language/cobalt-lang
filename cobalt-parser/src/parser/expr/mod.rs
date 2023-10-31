@@ -1,28 +1,12 @@
 use super::*;
 use crate::lexer::tokens::{Delimiter, Keyword, Token, TokenKind, UnOpToken, UnOrBinOpToken};
+use crate::loop_until;
 use cobalt_ast::{ast::*, BoxedAST};
 use cobalt_errors::{merge_spans, CobaltError, SourceSpan};
 use std::borrow::Cow;
 
 mod binop_rhs;
 mod literal;
-
-macro_rules! loop_until {
-    ($this:expr, $pat:pat) => {
-        loop {
-            let Some(current) = $this.current_token else {
-                break;
-            };
-
-            if matches!(current.kind, $pat) {
-                $this.next();
-                break;
-            }
-
-            $this.next();
-        }
-    };
-}
 
 impl<'src> Parser<'src> {
     /// Parse an expression.
@@ -760,7 +744,7 @@ impl<'src> Parser<'src> {
             if let TokenKind::Keyword(kw) = current.kind {
                 if matches!(
                     kw,
-                    Keyword::Let | Keyword::Const | Keyword::Type | Keyword::Fn
+                    Keyword::Let | Keyword::Const | Keyword::Type | Keyword::Fn | Keyword::Import
                 ) {
                     let (decl, mut decl_errors) = self.parse_decl(DeclLoc::Local);
                     errors.append(&mut decl_errors);
