@@ -47,6 +47,10 @@ impl From<NoCobaltDir> for io::Error {
 #[error("couldn't find libraries: {}", .0.join(", "))]
 pub struct LibsNotFound(pub Vec<String>);
 
+#[derive(Debug, Clone, Copy, Error)]
+#[error("couldn't load source code because of invalid UTF-8")]
+pub struct InvalidSourceUTF8;
+
 pub fn cobalt_dir() -> Result<PathBuf, NoCobaltDir> {
     if let Ok(path) = std::env::var("COBALT_DIR") {
         Ok(path.into())
@@ -124,4 +128,31 @@ pub fn save_projects(vec: Vec<[String; 2]>) -> io::Result<()> {
     })?;
     let pos = file.stream_position()?;
     file.set_len(pos)
+}
+pub fn read_file<R: Read, P: AsRef<str>>(input: &mut R, name: P) -> anyhow::Result<String> {
+    use anyhow::Context;
+    use cobalt_errors::miette::{self, Diagnostic, NamedSource, Report, SourceSpan};
+    #[derive(Debug, Error, Diagnostic)]
+    #[error("invalid UTF-8 in source code")]
+    pub struct InvalidSource {
+        #[label]
+        loc: SourceSpan,
+        #[source_code]
+        name: NamedSource,
+    }
+
+    let mut buf = vec![];
+    input
+        .read_to_end(&mut buf)
+        .context(format!("couldn't read from {}", name.as_ref()))?;
+    String::from_utf8(buf).map_err(|e| {
+        println!(
+            "{:?}",
+            Report::from(InvalidSource {
+                loc: (e.utf8_error().valid_up_to(), 1).into(),
+                name: NamedSource::new(name, e.into_bytes())
+            })
+        );
+        anyhow::anyhow!(InvalidSourceUTF8)
+    })
 }
