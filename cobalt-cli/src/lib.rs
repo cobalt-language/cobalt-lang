@@ -1,7 +1,7 @@
-use ambassador::{delegatable_trait_remote, Delegate};
 use anyhow::Context;
 use anyhow_std::*;
 use clap::{Parser, Subcommand, ValueEnum};
+use clio::{ClioPath, Input, OutputPath};
 use cobalt_ast::{CompCtx, Flags, AST};
 use cobalt_build::*;
 use cobalt_errors::*;
@@ -11,6 +11,8 @@ use human_repr::*;
 use inkwell::execution_engine::FunctionLookupError;
 use inkwell::module::Module;
 use inkwell::targets::*;
+use os_str_bytes::OsStringBytes;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
@@ -85,34 +87,6 @@ pub static LONG_VERSION: &str = formatcp!(
         "disabled"
     }
 );
-#[delegatable_trait_remote]
-trait Write {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
-    fn flush(&mut self) -> std::io::Result<()>;
-    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
-    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()>;
-}
-#[derive(Debug, Delegate)]
-#[delegate(Write)]
-pub enum OutputStream {
-    Stdout(std::io::Stdout),
-    File(std::fs::File),
-}
-impl OutputStream {
-    pub fn stdout() -> Self {
-        Self::Stdout(std::io::stdout())
-    }
-    pub fn file(path: impl AsRef<Path>) -> std::io::Result<Self> {
-        std::fs::File::create(path).map(Self::File)
-    }
-    pub fn new(path: Option<impl AsRef<Path>>) -> std::io::Result<Self> {
-        if let Some(p) = path {
-            Self::file(p)
-        } else {
-            Ok(Self::stdout())
-        }
-    }
-}
 #[derive(Debug, Clone, Parser)]
 #[command(name = "co", author, long_version = LONG_VERSION)]
 pub enum Cli {
@@ -126,19 +100,19 @@ pub enum Cli {
     /// AOT compile a file
     Aot {
         /// input file to compile
-        input: String,
+        input: Input,
         /// output file
         #[arg(short, long)]
-        output: Option<String>,
+        output: Option<OutputPath>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// target triple to build
         #[arg(short, long)]
         triple: Option<String>,
@@ -164,16 +138,16 @@ pub enum Cli {
     /// JIT compile and run a file
     Jit {
         /// input file to compile
-        input: String,
+        input: Input,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -196,16 +170,16 @@ pub enum Cli {
     /// Check a file for errors
     Check {
         /// input file to compile
-        input: String,
+        input: Input,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
@@ -229,7 +203,7 @@ pub enum DbgSubcommand {
     /// Test parser
     Parse {
         /// input file to parse
-        files: Vec<String>,
+        files: Vec<Input>,
         /// raw string to parse
         #[arg(short)]
         code: Vec<String>,
@@ -240,7 +214,7 @@ pub enum DbgSubcommand {
     /// Test LLVM generation
     Llvm {
         /// input file to compile
-        input: String,
+        input: Input,
         /// print timings
         #[arg(long)]
         timings: bool,
@@ -249,7 +223,7 @@ pub enum DbgSubcommand {
     ParseHeader {
         /// header files to parse
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
     },
 }
 #[derive(Debug, Clone, Subcommand)]
@@ -258,19 +232,19 @@ pub enum MultiSubcommand {
     Aot {
         /// input files to compile
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
         /// output file
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<ClioPath>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// target triple to build
         #[arg(short, long)]
         triple: Option<String>,
@@ -294,16 +268,16 @@ pub enum MultiSubcommand {
     Jit {
         /// input files to compile
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -324,16 +298,16 @@ pub enum MultiSubcommand {
     Check {
         /// input files to compile
         #[arg(required = true)]
-        inputs: Vec<String>,
+        inputs: Vec<Input>,
         /// libraries to link
         #[arg(short = 'l')]
         linked: Vec<String>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// Cobalt headers to include
         #[arg(short = 'H')]
-        headers: Vec<String>,
+        headers: Vec<PathBuf>,
         /// don't search default directories for libraries
         #[arg(long)]
         no_default_link: bool,
@@ -363,13 +337,13 @@ pub enum ProjSubcommand {
         project_dir: Option<String>,
         /// directory that source files are relative to
         #[arg(short, long = "source")]
-        source_dir: Option<String>,
+        source_dir: Option<PathBuf>,
         /// directory to output build artifacts
         #[arg(short, long = "build")]
-        build_dir: Option<String>,
+        build_dir: Option<PathBuf>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -393,13 +367,13 @@ pub enum ProjSubcommand {
         project_dir: Option<String>,
         /// directory that source files are relative to
         #[arg(short, long = "source")]
-        source_dir: Option<String>,
+        source_dir: Option<PathBuf>,
         /// directory to output build artifacts
         #[arg(short, long = "build")]
-        build_dir: Option<String>,
+        build_dir: Option<PathBuf>,
         /// link directories to search
         #[arg(short = 'L')]
-        link_dirs: Vec<String>,
+        link_dirs: Vec<PathBuf>,
         /// optimization profile to use
         #[arg(short, long)]
         profile: Option<String>,
@@ -489,9 +463,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         print!("({} nodes)\n{ast}", ast.nodes())
                     }
                 }
-                for arg in files {
-                    let code = Path::new(&arg).read_to_string_anyhow()?;
-                    let file = FILES.add_file(0, arg.clone(), code.into());
+                for mut arg in files {
+                    let code = std::io::read_to_string(&mut arg)?;
+                    let file = FILES.add_file(0, arg.path().to_string(), code.into());
                     let (ast, errs) = parse_str(file.contents());
                     let mut ast = ast.unwrap_or_default();
                     ast.file = Some(file);
@@ -505,7 +479,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                 }
             }
-            DbgSubcommand::Llvm { input, timings } => {
+            DbgSubcommand::Llvm { mut input, timings } => {
                 struct Reporter {
                     timings: bool,
                     reported: bool,
@@ -591,15 +565,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     }
                 }
                 let mut reporter = Reporter::new(timings);
+                let input_name = input.path().display().to_string();
                 let code = {
                     let start = Instant::now();
-                    let code = if input == "-" {
-                        let mut s = String::new();
-                        std::io::stdin().read_to_string(&mut s)?;
-                        s
-                    } else {
-                        Path::new(&input).read_to_string_anyhow()?
-                    };
+                    let code = std::io::read_to_string(&mut input)?;
                     reporter.file_time = Some(start.elapsed());
                     reporter.file_len = code.len();
                     code
@@ -610,8 +579,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     ..Flags::default()
                 };
                 let ink_ctx = inkwell::context::Context::create();
-                let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
-                let file = FILES.add_file(0, input, code.into());
+                let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
+                let file = FILES.add_file(0, input_name, code.into());
                 let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                 let mut ast = ast.unwrap_or_default();
                 reporter.parse_time = Some(parse_time);
@@ -634,25 +603,19 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             }
             #[cfg(debug_assertions)]
             DbgSubcommand::ParseHeader { inputs } => {
-                for fname in inputs {
+                for mut input in inputs {
                     let ink_ctx = inkwell::context::Context::create();
                     let ctx = CompCtx::new(&ink_ctx, "<anon>");
-                    let mut file = BufReader::new(match std::fs::File::open(&fname) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            eprintln!("error opening {fname}: {e}");
-                            continue;
-                        }
-                    });
+                    let mut file = BufReader::new(&mut input);
                     match ctx.load(&mut file) {
                         Ok(_) => ctx.with_vars(|v| v.dump()),
-                        Err(e) => eprintln!("error loading {fname}: {e}"),
+                        Err(e) => eprintln!("error loading {}: {e}", input.path().display()),
                     }
                 }
             }
         },
         Cli::Aot {
-            input,
+            mut input,
             output,
             linked,
             link_dirs,
@@ -803,15 +766,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
+            let input_name = input.path().display().to_string();
             let code = {
                 let start = Instant::now();
-                let code = if input == "-" {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s)?;
-                    s
-                } else {
-                    Path::new(&input).read_to_string_anyhow()?
-                };
+                let code = read_file(&mut input, &input_name)?;
                 reporter.file_time = Some(start.elapsed());
                 reporter.file_len = code.len();
                 code
@@ -842,53 +800,39 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     inkwell::targets::CodeModel::Small,
                 )
                 .expect("failed to create target machine");
-            let mut output = output.map(String::from).or_else(|| {
-                (input != "-").then(|| match emit {
-                    OutputType::Executable => format!(
-                        "{}{}",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i]),
-                        if triple.contains("windows") {
-                            ".exe"
-                        } else {
-                            ""
+            let output = output.map(Ok).unwrap_or_else(|| {
+                if input.is_std() {
+                    Ok(OutputPath::std())
+                } else {
+                    let mut path = input.path().clone();
+                    match emit {
+                        OutputType::Executable => {
+                            path.set_extension(if triple.contains("windows") {
+                                "exe"
+                            } else {
+                                ""
+                            });
                         }
-                    ),
-                    OutputType::Library | OutputType::Archive => libs::format_lib(
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i]),
-                        &triple,
-                        emit == OutputType::Library,
-                    ),
-                    OutputType::RawObject => format!(
-                        "{}.raw.o",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::Object => format!(
-                        "{}.o",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::Assembly => format!(
-                        "{}.s",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::Llvm => format!(
-                        "{}.ll",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::Bitcode => format!(
-                        "{}.bc",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::Header => format!(
-                        "{}.coh",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                    OutputType::HeaderObj => format!(
-                        "{}.coh.o",
-                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                    ),
-                })
-            });
-            output = output.and_then(|v| (v != "-").then_some(v));
+                        OutputType::Library | OutputType::Archive => {
+                            let (prefix, suffix) =
+                                libs::lib_format_info(&triple, emit == OutputType::Library);
+                            if prefix {
+                                let mut name = OsString::from("lib");
+                                name.push(path.file_stem().unwrap_or(OsStr::new("")));
+                                if !suffix.is_empty() {
+                                    name.push(".");
+                                    name.push(suffix);
+                                }
+                                path.set_file_name(name);
+                            } else {
+                                path.set_extension(suffix);
+                            }
+                        }
+                        _ => todo!(),
+                    }
+                    OutputPath::new(path)
+                }
+            })?;
             let mut flags = Flags {
                 dbg_mangle: debug_mangle,
                 ..Flags::default()
@@ -901,7 +845,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
-            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
             ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
             cc.target(&triple);
@@ -972,7 +916,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 OutputType::Header => {
                     let mut buf = vec![];
                     reporter.cg_time = Some(try_timeit(|| ctx.save(&mut buf))?.1);
-                    OutputStream::new(output)?.write_all(&buf)?
+                    output.create_with_len(buf.len() as _)?.write_all(&buf)?
                 }
                 OutputType::HeaderObj => {
                     let mut obj = libs::new_object(&triple);
@@ -981,25 +925,21 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         obj.write()
                     })?;
                     reporter.cg_time = Some(cg_time);
-                    if let Some(path) = output {
-                        Path::new(&path).write_anyhow(vec)?
-                    } else {
-                        std::io::stdout().write_all(&vec)?
-                    }
+                    output.create_with_len(vec.len() as _)?.write_all(&vec)?
                 }
                 OutputType::Llvm => {
                     let (m, cg_time) = timeit(|| ctx.module.to_string());
                     reporter.cg_time = Some(cg_time);
-                    OutputStream::new(output)?.write_all(m.as_bytes())?
+                    output
+                        .create_with_len(m.len() as _)?
+                        .write_all(m.as_bytes())?
                 }
                 OutputType::Bitcode => {
                     let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                     reporter.cg_time = Some(cg_time);
-                    if let Some(path) = output {
-                        Path::new(&path).write_anyhow(m.as_slice())?
-                    } else {
-                        std::io::stdout().write_all(m.as_slice())?
-                    }
+                    output
+                        .create_with_len(m.get_size() as _)?
+                        .write_all(m.as_slice())?
                 }
                 OutputType::Assembly => {
                     let (m, cg_time) = timeit(|| {
@@ -1011,11 +951,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             .unwrap()
                     });
                     reporter.cg_time = Some(cg_time);
-                    if let Some(path) = output {
-                        Path::new(&path).write_anyhow(m.as_slice())?
-                    } else {
-                        std::io::stdout().write_all(m.as_slice())?
-                    }
+                    output
+                        .create_with_len(m.get_size() as _)?
+                        .write_all(m.as_slice())?
                 }
                 _ => {
                     let (mb, cg_time) = timeit(|| {
@@ -1026,42 +964,38 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     reporter.cg_time = Some(cg_time);
                     match emit {
                         OutputType::Executable => {
-                            if output.is_none() {
+                            if !output.is_local() {
                                 eprintln!("cannot output executable to stdout");
                                 Err(Exit(4))?;
                             }
                             let tmp = temp_file::with_contents(mb.as_slice());
                             cc.obj(tmp.path());
-                            cc.output(output.unwrap());
+                            cc.output(&**output.path());
                             let cmd_time = try_timeit(|| cc.run())?.1;
                             reporter.cmd_time = Some(cmd_time);
                         }
                         OutputType::Library => {
-                            if let Some(output) = output {
-                                let mut obj = libs::new_object(&triple);
-                                libs::populate_header(&mut obj, &ctx);
-                                let tmp1 = temp_file::with_contents(&obj.write()?);
-                                let tmp2 = temp_file::with_contents(mb.as_slice());
-                                cc.lib(true);
-                                cc.objs([tmp1.path(), tmp2.path()]);
-                                cc.output(&output);
-                                let cmd_time = try_timeit(|| cc.run())?.1;
-                                reporter.cmd_time = Some(cmd_time);
-                            } else {
-                                error!("cannot output library to stdout!");
-                                Err(Exit(4))?
+                            if !output.is_local() {
+                                eprintln!("cannot output executable to stdout");
+                                Err(Exit(4))?;
                             }
+                            let mut obj = libs::new_object(&triple);
+                            libs::populate_header(&mut obj, &ctx);
+                            let tmp1 = temp_file::with_contents(&obj.write()?);
+                            let tmp2 = temp_file::with_contents(mb.as_slice());
+                            cc.lib(true);
+                            cc.objs([tmp1.path(), tmp2.path()]);
+                            cc.output(&**output.path());
+                            let cmd_time = try_timeit(|| cc.run())?.1;
+                            reporter.cmd_time = Some(cmd_time);
                         }
                         OutputType::Archive => {
-                            let mut builder = ar::Builder::new(OutputStream::new(output)?);
+                            let mut builder = ar::Builder::new(output.create()?);
                             let slice = mb.as_slice();
+
                             builder.append(
                                 &ar::Header::new(
-                                    format!(
-                                        "{}.o",
-                                        input.rfind('.').map_or(input.as_str(), |i| &input[..i])
-                                    )
-                                    .into(),
+                                    input.path().with_extension("o").into_raw_vec(),
                                     slice.len() as _,
                                 ),
                                 slice,
@@ -1074,24 +1008,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 out.as_slice(),
                             )?;
                         }
-                        OutputType::RawObject => {
-                            if let Some(path) = output {
-                                Path::new(&path).write_anyhow(mb.as_slice())?
-                            } else {
-                                std::io::stdout().write_all(mb.as_slice())?
-                            }
-                        }
+                        OutputType::RawObject => output
+                            .create_with_len(mb.get_size() as _)?
+                            .write_all(mb.as_slice())?,
                         OutputType::Object => {
                             let parsed_llvm_object = object::read::File::parse(mb.as_slice())?;
                             let mut writeable_object =
                                 obj::get_writeable_object_from_file(parsed_llvm_object);
                             libs::populate_header(&mut writeable_object, &ctx);
                             let buf = writeable_object.write()?;
-                            if let Some(path) = output {
-                                Path::new(&path).write_anyhow(buf)?
-                            } else {
-                                std::io::stdout().write_all(&buf)?
-                            }
+                            output.create_with_len(buf.len() as _)?.write_all(&buf)?
                         }
                         x => unreachable!("{x:?} has already been handled"),
                     };
@@ -1100,7 +1026,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.finish();
         }
         Cli::Jit {
-            input,
+            mut input,
             linked,
             link_dirs,
             headers,
@@ -1220,15 +1146,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
+            let input_name = input.path().display().to_string();
             let code = {
                 let start = Instant::now();
-                let code = if input == "-" {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s)?;
-                    s
-                } else {
-                    Path::new(&input).read_to_string_anyhow()?
-                };
+                let code = read_file(&mut input, &input_name)?;
                 reporter.file_time = Some(start.elapsed());
                 reporter.file_len = code.len();
                 code
@@ -1243,7 +1164,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }),
             );
             let ink_ctx = inkwell::context::Context::create();
-            let mut ctx = CompCtx::new(&ink_ctx, &input);
+            let mut ctx = CompCtx::new(&ink_ctx, &input_name);
             ctx.flags.dbg_mangle = true;
             ctx.module.set_triple(&TargetMachine::get_default_triple());
             let mut cc = cc::CompileCommand::new();
@@ -1264,7 +1185,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             };
             let mut fail = false;
             let mut overall_fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.into());
+            let file = FILES.add_file(0, input_name, code.into());
             let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
             let mut ast = ast.unwrap_or_default();
             reporter.parse_time = Some(parse_time);
@@ -1338,7 +1259,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             }
         }
         Cli::Check {
-            input,
+            mut input,
             linked,
             link_dirs,
             headers,
@@ -1446,15 +1367,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             let mut reporter = Reporter::new(timings);
+            let input_name = input.path().display().to_string();
             let code = {
                 let start = Instant::now();
-                let code = if input == "-" {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s)?;
-                    s
-                } else {
-                    Path::new(&input).read_to_string_anyhow()?
-                };
+                let code = read_file(&mut input, &input_name)?;
                 reporter.file_time = Some(start.elapsed());
                 reporter.file_len = code.len();
                 code
@@ -1485,7 +1401,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
-            let ctx = CompCtx::with_flags(&ink_ctx, &input, flags);
+            let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
             let trip = TargetMachine::get_default_triple();
             let triple = trip.as_str().to_string_lossy();
             ctx.module.set_triple(&trip);
@@ -1507,7 +1423,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 reporter.libs_time = Some(start.elapsed());
             };
             let mut fail = false;
-            let file = FILES.add_file(0, input.to_string(), code.into());
+            let file = FILES.add_file(0, input_name, code.into());
             let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
             let mut ast = ast.unwrap_or_default();
             reporter.parse_time = Some(parse_time);
@@ -1537,7 +1453,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
         }
         Cli::Multi(cmd) => match cmd {
             MultiSubcommand::Aot {
-                inputs,
+                mut inputs,
                 output,
                 linked,
                 link_dirs,
@@ -1688,16 +1604,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 let mut reporter = Reporter::new(timings);
                 let codes = inputs
-                    .iter()
+                    .iter_mut()
                     .map(|input| {
                         let start = Instant::now();
-                        let code = if input == "-" {
-                            let mut s = String::new();
-                            std::io::stdin().read_to_string(&mut s)?;
-                            s
-                        } else {
-                            Path::new(&input).read_to_string_anyhow()?
-                        };
+                        let code = read_file(input, &input.path().display().to_string())?;
                         reporter.file_time = Some(start.elapsed());
                         reporter.file_len = code.len();
                         anyhow::Ok(code)
@@ -1768,10 +1678,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        if Path::new(input).is_absolute() {
-                            anyhow::bail!("cannot pass absolute paths to multi-file input")
-                        }
-                        let file = FILES.add_file(0, input.clone(), code.clone().into());
+                        let file = FILES.add_file(
+                            0,
+                            input.path().display().to_string(),
+                            code.clone().into(),
+                        );
                         let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
@@ -1796,7 +1707,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     Two(temp_file::TempFile, temp_file::TempFile),
                 }
                 let mut archive = (emit == OutputType::Archive)
-                    .then(|| OutputStream::new(output.as_deref()).map(ar::Builder::new))
+                    .then(|| output.clone().map(|o| o.create().map(ar::Builder::new)))
+                    .flatten()
                     .transpose()?;
                 let _tmps = asts
                     .iter()
@@ -1918,7 +1830,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         Two(tmp1, tmp2)
                                     }
                                     OutputType::Archive => {
-                                        use os_str_bytes::OsStringBytes;
                                         out.set_extension("o");
                                         archive.as_mut().unwrap().append(
                                             &ar::Header::new(
@@ -1963,10 +1874,14 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     )?;
                 } else if matches!(emit, OutputType::Executable | OutputType::Library) {
                     let is_lib = emit == OutputType::Library;
-                    cc.output(&output.ok_or(anyhow::anyhow!(
-                        "output file must be specified for multi-{}s",
-                        if is_lib { "lib" } else { "exe" }
-                    ))?);
+                    cc.output(
+                        output
+                            .ok_or(anyhow::anyhow!(
+                                "output file must be specified for multi-{}s",
+                                if is_lib { "lib" } else { "exe" }
+                            ))?
+                            .path(),
+                    );
                     cc.lib(is_lib);
                     let cmd_time = try_timeit(|| cc.run())?.1;
                     reporter.cmd_time = Some(cmd_time);
@@ -1974,7 +1889,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 reporter.finish();
             }
             MultiSubcommand::Jit {
-                inputs,
+                mut inputs,
                 linked,
                 link_dirs,
                 headers,
@@ -2114,16 +2029,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 let mut reporter = Reporter::new(timings);
                 let codes = inputs
-                    .iter()
+                    .iter_mut()
                     .map(|input| {
                         let start = Instant::now();
-                        let code = if input == "-" {
-                            let mut s = String::new();
-                            std::io::stdin().read_to_string(&mut s)?;
-                            s
-                        } else {
-                            Path::new(&input).read_to_string_anyhow()?
-                        };
+                        let code = read_file(input, &input.path().display().to_string())?;
                         reporter.file_time = Some(start.elapsed());
                         reporter.file_len = code.len();
                         anyhow::Ok(code)
@@ -2190,17 +2099,21 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone().into());
+                        let file = FILES.add_file(
+                            0,
+                            input.path().display().to_string(),
+                            code.clone().into(),
+                        );
                         let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
-                                fail = true;
                                 ec += 1;
+                                fail = true;
                             }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
@@ -2259,7 +2172,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
             }
             MultiSubcommand::Check {
-                inputs,
+                mut inputs,
                 linked,
                 link_dirs,
                 headers,
@@ -2405,16 +2318,10 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 let mut reporter = Reporter::new(timings);
                 let codes = inputs
-                    .iter()
+                    .iter_mut()
                     .map(|input| {
                         let start = Instant::now();
-                        let code = if input == "-" {
-                            let mut s = String::new();
-                            std::io::stdin().read_to_string(&mut s)?;
-                            s
-                        } else {
-                            Path::new(&input).read_to_string_anyhow()?
-                        };
+                        let code = read_file(input, &input.path().display().to_string())?;
                         reporter.file_time = Some(start.elapsed());
                         reporter.file_len = code.len();
                         anyhow::Ok(code)
@@ -2472,17 +2379,21 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .iter()
                     .zip(&codes)
                     .map(|(input, code)| {
-                        let file = FILES.add_file(0, input.clone(), code.clone().into());
+                        let file = FILES.add_file(
+                            0,
+                            input.path().display().to_string(),
+                            code.clone().into(),
+                        );
                         let ((ast, errs), parse_time) = timeit(|| parse_str(file.contents()));
                         let mut ast = ast.unwrap_or_default();
                         *reporter.parse_time.get_or_insert(Duration::ZERO) += parse_time;
-                        reporter.ast_nodes = ast.nodes();
+                        reporter.ast_nodes += ast.nodes();
                         ast.file = Some(file);
                         for err in errs {
                             let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
                             if is_err {
-                                fail = true;
                                 ec += 1;
+                                fail = true;
                             }
                             eprintln!("{:?}", Report::from(err).with_source_code(file));
                         }
@@ -2609,8 +2520,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
                 let frag = build::ProjectFragment {
-                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
-                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    source_dir: source_dir.as_deref().map(From::from),
+                    build_dir: build_dir.as_deref().map(From::from),
                     ..Default::default()
                 };
                 let (project, _project_dir) = match project_dir.as_deref() {
@@ -2689,11 +2600,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs
-                            .iter()
-                            .map(Path::new)
-                            .map(From::from)
-                            .collect::<Vec<_>>(),
+                        link_dirs: link_dirs.iter().map(From::from).collect::<Vec<_>>(),
                     },
                 )?;
             }
@@ -2711,8 +2618,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 let set_src = source_dir.is_none();
                 let set_build = build_dir.is_none();
                 let frag = build::ProjectFragment {
-                    source_dir: source_dir.as_deref().map(Path::new).map(From::from),
-                    build_dir: build_dir.as_deref().map(Path::new).map(From::from),
+                    source_dir: source_dir.as_deref().map(From::from),
+                    build_dir: build_dir.as_deref().map(From::from),
                     ..Default::default()
                 };
                 let (project, _project_dir) = match project_dir.as_deref() {
@@ -2809,11 +2716,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         continue_comp: false,
                         rebuild,
                         no_default_link,
-                        link_dirs: link_dirs
-                            .iter()
-                            .map(Path::new)
-                            .map(From::from)
-                            .collect::<Vec<_>>(),
+                        link_dirs: link_dirs.iter().map(From::from).collect::<Vec<_>>(),
                     },
                 )?;
                 let mut exe_path = project.build_dir.into_owned();
