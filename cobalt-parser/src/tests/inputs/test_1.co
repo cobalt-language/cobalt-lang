@@ -1,0 +1,6 @@
+module alloc;
+@transparent
+type layout = {size: u32, offset: u16} :: {
+  @const
+  fn new(size: u32, offset: u16): self_t = {size: size, offset: offset} :? self_t;
+};

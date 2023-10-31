@@ -1,13 +1,69 @@
 use crate::CobaltFile;
 use miette::{Diagnostic, SourceSpan};
 use std::borrow::Cow;
+use std::fmt::{self, Display, Formatter};
 use thiserror::Error;
 
+/// zero-copy printer for CobaltError::ExpectedFound
+struct FoundPrinter<'src>(Option<&'src str>);
+impl Display for FoundPrinter<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(m) = self.0 {
+            write!(f, "{m:?}")
+        } else {
+            f.write_str("end of file")
+        }
+    }
+}
+
+/// Unified Cobalt error enum
 #[derive(Debug, Clone, PartialEq, Eq, Error, Diagnostic)]
 pub enum CobaltError<'src> {
     #[error(transparent)]
     #[diagnostic(transparent)]
     OtherFile(Box<SourcedCobaltError<'src>>),
+
+    #[error("expected {ex}, found {}", FoundPrinter(.found.as_deref()))]
+    ExpectedFound {
+        ex: &'static str,
+        found: Option<Cow<'src, str>>,
+        #[label]
+        loc: SourceSpan,
+    },
+    #[error("expected {ex}")]
+    ExpectedHere {
+        ex: &'static str,
+        #[label("expected here")]
+        loc: SourceSpan,
+    },
+    #[error("invalid {ex}")]
+    InvalidThing {
+        ex: &'static str,
+        #[label]
+        loc: SourceSpan,
+    },
+    #[error("multiple module declarations")]
+    RedefModule {
+        #[label]
+        loc: SourceSpan,
+        #[label("previously defined here")]
+        prev: SourceSpan,
+    },
+
+    #[error("unexpected character {ch}")]
+    UnexpectedChar {
+        #[label]
+        loc: SourceSpan,
+        ch: char,
+    },
+    #[error("unexpected end of input")]
+    UnexpectedEndOfInput { loc: SourceSpan },
+
+    #[error("invalid unicode literal")]
+    InvalidUnicodeLiteral {
+        #[label]
+        loc: SourceSpan,
+    },
 
     // Operators
     #[error(r#"binary operator "{op}" is not defined for types `{lhs}` and `{rhs}`"#)]

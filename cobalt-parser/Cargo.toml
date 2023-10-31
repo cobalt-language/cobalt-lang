@@ -13,5 +13,3 @@ cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
 cobalt-ast = { path = "../cobalt-ast" }
 unicode-ident = "1.0.12"
-either = "1.9.0"
-chumsky = { version = "=1.0.0-alpha.4", features = ["label"] }

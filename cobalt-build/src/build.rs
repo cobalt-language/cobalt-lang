@@ -1,9 +1,8 @@
 use crate::*;
 use anyhow_std::*;
 use cobalt_ast::ast::*;
-use cobalt_errors::miette::Severity;
 use cobalt_errors::*;
-use cobalt_parser::prelude::*;
+use cobalt_parser::parse_str;
 use cobalt_utils::CellExt as Cell;
 use either::Either;
 use hashbrown::HashMap;
@@ -101,11 +100,10 @@ fn build_file_1(
     ctx.module.set_source_file_name(name);
     let code = path.as_absolute_path().unwrap().read_to_string_anyhow()?;
     let file = FILES.add_file(0, name.to_string(), code.into());
-    let (ast, errs) = parse_tl().parse(file.contents()).into_output_errors();
+    let (ast, errs) = parse_str(file.contents());
     let mut ast = ast.unwrap_or_default();
-    let errs = errs.into_iter().flat_map(cvt_err);
     for err in errs {
-        let is_err = err.severity.map_or(true, |e| e > Severity::Warning);
+        let is_err = true; // err.severity.map_or(true, |e| e > Severity::Warning);
         if is_err {
             *ec += 1;
             fail = true;
