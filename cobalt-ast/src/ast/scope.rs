@@ -235,8 +235,8 @@ impl<'src> AST<'src> for ModuleAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = Vec::<CobaltError>::new();
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
@@ -329,7 +329,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             }
         }
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
             Ok((m, i, _)) => Box::new(VarMap {
@@ -370,7 +370,9 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         //     }
         //     self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
         // }
-        errs.extend(self.vals.iter().flat_map(|val| val.codegen(ctx).1));
+        self.vals.iter().for_each(|val| {
+            val.codegen(ctx, errs);
+        });
         ctx.restore_scope(old_scope);
         if vis_spec.is_some() {
             ctx.export.set(old_vis)
@@ -378,7 +380,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
         ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name)))
             .unwrap();
-        (Value::null(), errs)
+        Value::null()
     }
     fn print_impl(
         &self,
@@ -434,19 +436,19 @@ impl<'src> AST<'src> for ImportAST<'src> {
         self.loc
     }
     fn varfwd_prepass(&self, ctx: &CompCtx<'src, '_>) {
-        self.codegen(ctx);
+        self.codegen(ctx, &mut vec![]);
     }
     fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, _needs_another: &mut bool) {
-        self.codegen(ctx);
+        self.codegen(ctx, &mut vec![]);
     }
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
-        self.codegen(ctx);
+        self.codegen(ctx, &mut vec![]);
     }
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut target_match = 2u8;
         let mut vis_spec = None;
         for (ann, arg, loc) in self.annotations.iter() {
@@ -539,7 +541,7 @@ impl<'src> AST<'src> for ImportAST<'src> {
             }
         }
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         ctx.with_vars(|v| {
             let vec = v.verify(&self.name);
@@ -552,7 +554,7 @@ impl<'src> AST<'src> for ImportAST<'src> {
                 vis_spec.map_or(ctx.export.get(), |(v, _)| v),
             ))
         });
-        (Value::null(), errs)
+        Value::null()
     }
     fn print_impl(
         &self,

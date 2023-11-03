@@ -43,7 +43,6 @@ impl<'src> AST<'src> for VarDefAST<'src> {
         self.val.nodes() + self.type_.as_ref().map_or(0, |x| x.nodes()) + 1
     }
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
-        let mut errs = vec![];
         let mut link_type = None;
         let mut linkas = None;
         let mut vis_spec = None;
@@ -136,11 +135,11 @@ impl<'src> AST<'src> for VarDefAST<'src> {
         if target_match == 0 {
             return;
         }
-        let t2 = self.val.const_codegen(ctx).0.data_type;
+        let t2 = self.val.const_codegen(ctx, &mut vec![]).data_type;
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
             let oic = ctx.is_const.replace(true);
             let t = t
-                .codegen_errs(ctx, &mut errs)
+                .codegen(ctx, &mut vec![])
                 .into_type(ctx)
                 .unwrap_or(types::Error::new());
             ctx.is_const.set(oic);
@@ -187,8 +186,8 @@ impl<'src> AST<'src> for VarDefAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut is_static = false;
         let mut link_type = None;
         let mut linkas = None;
@@ -398,20 +397,17 @@ impl<'src> AST<'src> for VarDefAST<'src> {
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         if self.global || is_static {
             if is_extern.is_some() {
-                let t2 = self.val.const_codegen_errs(ctx, &mut errs).data_type;
+                let t2 = self.val.const_codegen(ctx, errs).data_type;
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = t
-                        .codegen_errs(ctx, &mut errs)
-                        .into_type(ctx)
-                        .unwrap_or_else(|e| {
-                            errs.push(e);
-                            types::Error::new()
-                        });
+                    let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        types::Error::new()
+                    });
                     ctx.is_const.set(oic);
                     t
                 }) {
@@ -464,13 +460,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         ),
                     )
                 }) {
-                    Ok(x) => (x.0.clone(), errs),
+                    Ok(_) => Value::null(),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
                             name: self.name.start(x).to_string(),
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
@@ -478,20 +474,17 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             name: self.name.start(x).to_string(),
                             prev: d,
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                 }
             } else if self.val.is_const() && self.type_.is_none() {
-                let mut val = self.val.codegen_errs(ctx, &mut errs);
+                let mut val = self.val.codegen(ctx, errs);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
-                    let t = t
-                        .codegen_errs(ctx, &mut errs)
-                        .into_type(ctx)
-                        .unwrap_or_else(|e| {
-                            errs.push(e);
-                            types::Error::new()
-                        });
+                    let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        types::Error::new()
+                    });
                     ctx.is_const.set(oic);
                     t
                 }) {
@@ -554,13 +547,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         )
                     })
                 } {
-                    Ok(x) => (x.0.clone(), errs),
+                    Ok(_) => Value::null(),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
                             name: self.name.start(x).to_string(),
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
@@ -568,21 +561,18 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             name: self.name.start(x).to_string(),
                             prev: d,
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                 }
             } else {
                 let res = if ctx.is_const.get() {
-                    let val = self.val.codegen_errs(ctx, &mut errs);
+                    let val = self.val.codegen(ctx, errs);
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = t
-                            .codegen_errs(ctx, &mut errs)
-                            .into_type(ctx)
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                types::Error::new()
-                            });
+                        let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            types::Error::new()
+                        });
                         ctx.is_const.set(oic);
                         t
                     }) {
@@ -613,16 +603,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     let old_ip = ctx.builder.get_insert_block();
                     ctx.builder.position_at_end(entry);
                     let old_scope = ctx.push_scope(&self.name);
-                    let val = self.val.codegen_errs(ctx, &mut errs);
+                    let val = self.val.codegen(ctx, errs);
                     let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                         let oic = ctx.is_const.replace(true);
-                        let t = t
-                            .codegen_errs(ctx, &mut errs)
-                            .into_type(ctx)
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                types::Error::new()
-                            });
+                        let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            types::Error::new()
+                        });
                         ctx.is_const.set(oic);
                         t
                     }) {
@@ -736,16 +723,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                                 loc: self.type_.as_ref().unwrap_or(&self.val).loc(),
                             })
                         }
-                        let val = self.val.codegen_errs(ctx, &mut errs);
+                        let val = self.val.codegen(ctx, errs);
                         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                             let oic = ctx.is_const.replace(true);
-                            let t = t
-                                .codegen_errs(ctx, &mut errs)
-                                .into_type(ctx)
-                                .unwrap_or_else(|e| {
-                                    errs.push(e);
-                                    types::Error::new()
-                                });
+                            let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                                errs.push(e);
+                                types::Error::new()
+                            });
                             ctx.is_const.set(oic);
                             t
                         }) {
@@ -769,13 +753,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     }
                 };
                 match res {
-                    Ok(x) => (x.0.clone(), errs),
+                    Ok(_) => Value::null(),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
                             loc: self.name.ids[x].1,
                             name: self.name.start(x).to_string(),
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                     Err(RedefVariable::AlreadyExists(x, d, _)) => {
                         errs.push(CobaltError::RedefVariable {
@@ -783,7 +767,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             name: self.name.start(x).to_string(),
                             prev: d,
                         });
-                        (Value::error(), errs)
+                        Value::error()
                     }
                 }
             }
@@ -804,16 +788,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 });
             }
             let old_scope = ctx.push_scope(&self.name);
-            let val = self.val.codegen_errs(ctx, &mut errs);
+            let val = self.val.codegen(ctx, errs);
             let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                 let oic = ctx.is_const.replace(true);
-                let t = t
-                    .codegen_errs(ctx, &mut errs)
-                    .into_type(ctx)
-                    .unwrap_or_else(|e| {
-                        errs.push(e);
-                        types::Error::new()
-                    });
+                let t = t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                    errs.push(e);
+                    types::Error::new()
+                });
                 ctx.is_const.set(oic);
                 t
             }) {
@@ -898,13 +879,13 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                     )
                 })
             } {
-                Ok(x) => (x.0.clone(), errs),
+                Ok(_) => Value::null(),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(CobaltError::NotAModule {
                         loc: self.name.ids[x].1,
                         name: self.name.start(x).to_string(),
                     });
-                    (Value::error(), errs)
+                    Value::error()
                 }
                 Err(RedefVariable::AlreadyExists(x, d, _)) => {
                     errs.push(CobaltError::RedefVariable {
@@ -912,7 +893,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         name: self.name.start(x).to_string(),
                         prev: d,
                     });
-                    (Value::error(), errs)
+                    Value::error()
                 }
             }
         }
@@ -1049,7 +1030,9 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         }
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
-        for err in self.codegen(ctx).1 {
+        let mut errs = vec![];
+        self.codegen(ctx, &mut errs);
+        for err in errs {
             if let CobaltError::UninitializedGlobal { name, .. } = err {
                 missing.insert(name);
             }
@@ -1063,8 +1046,8 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         for (ann, arg, loc) in self.annotations.iter() {
@@ -1158,18 +1141,16 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         let old_is_const = ctx.is_const.replace(true);
         let old_scope = ctx.push_scope(&self.name);
-        let val = self.val.codegen_errs(ctx, &mut errs);
+        let val = self.val.codegen(ctx, errs);
         let dt = if let Some(t) = self.type_.as_ref().map(|t| {
-            t.codegen_errs(ctx, &mut errs)
-                .into_type(ctx)
-                .unwrap_or_else(|e| {
-                    errs.push(e);
-                    types::Error::new()
-                })
+            t.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                errs.push(e);
+                types::Error::new()
+            })
         }) {
             t
         } else {
@@ -1198,13 +1179,13 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
                 ),
             )
         }) {
-            Ok(x) => (x.0.clone(), errs),
+            Ok(_) => Value::null(),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(CobaltError::NotAModule {
                     loc: self.name.ids[x].1,
                     name: self.name.start(x).to_string(),
                 });
-                (Value::error(), errs)
+                Value::error()
             }
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
                 errs.push(CobaltError::RedefVariable {
@@ -1212,7 +1193,7 @@ impl<'src> AST<'src> for ConstDefAST<'src> {
                     name: self.name.start(x).to_string(),
                     prev: d,
                 });
-                (Value::error(), errs)
+                Value::error()
             }
         }
     }
@@ -1405,7 +1386,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         }
         let mut missing = HashSet::new();
         let pp = ctx.prepass.replace(true);
-        let (val, errs) = self.val.codegen(ctx);
+        let mut errs = vec![];
+        let val = self.val.codegen(ctx, &mut errs);
         for err in errs {
             if let CobaltError::UninitializedGlobal { name, .. } = err {
                 missing.insert(name);
@@ -1523,8 +1505,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         let self_t = types::Custom::create_ref(&mangled, ctx);
         let ty = self
             .val
-            .const_codegen(ctx)
-            .0
+            .const_codegen(ctx, &mut vec![])
             .into_type(ctx)
             .unwrap_or(types::Error::new());
         self_t.set_base(ty);
@@ -1573,8 +1554,8 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut vis_spec = None;
         let mut target_match = 2u8;
         let mut no_auto_drop = None;
@@ -1728,11 +1709,11 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         }
         let vs = vis_spec.map_or(ctx.export.get(), |(v, _)| v);
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         let ty = self
             .val
-            .codegen_errs(ctx, &mut errs)
+            .codegen(ctx, errs)
             .into_type(ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
@@ -1777,7 +1758,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
         });
         if !ctx.prepass.get() {
             self.methods.iter().for_each(|a| {
-                a.codegen_errs(ctx, &mut errs);
+                a.codegen(ctx, errs);
             });
         }
         ctx.restore_scope(old_scope);
@@ -1799,13 +1780,13 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                 ),
             )
         }) {
-            Ok(x) => (x.0.clone(), errs),
+            Ok(_) => Value::null(),
             Err(RedefVariable::NotAModule(x, _)) => {
                 errs.push(CobaltError::NotAModule {
                     loc: self.name.ids[x].1,
                     name: self.name.start(x).to_string(),
                 });
-                (Value::error(), errs)
+                Value::error()
             }
             Err(RedefVariable::AlreadyExists(x, d, _)) => {
                 errs.push(CobaltError::RedefVariable {
@@ -1813,7 +1794,7 @@ impl<'src> AST<'src> for TypeDefAST<'src> {
                     name: self.name.start(x).to_string(),
                     prev: d,
                 });
-                (Value::error(), errs)
+                Value::error()
             }
         }
     }
@@ -1871,28 +1852,27 @@ impl<'src> AST<'src> for VarGetAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match ctx.lookup(&self.name, self.global) {
-            Some(Symbol(x, d)) if d.scope.map_or(true, |x| x.get() == ctx.var_scope.get()) => (
-                x.clone(),
-                if d.init {
-                    vec![]
-                } else {
-                    vec![CobaltError::UninitializedGlobal {
+            Some(Symbol(x, d)) if d.scope.map_or(true, |x| x.get() == ctx.var_scope.get()) => {
+                if !d.init {
+                    errs.push(CobaltError::UninitializedGlobal {
                         name: self.name.clone(),
                         loc: self.loc,
-                    }]
-                },
-            ),
-            _ => (
-                Value::error(),
-                vec![CobaltError::VariableDoesNotExist {
+                    });
+                }
+                x.clone()
+            }
+            _ => {
+                errs.push(CobaltError::VariableDoesNotExist {
                     name: self.name.clone(),
                     module: Default::default(),
                     container: "",
                     loc: self.loc,
-                }],
-            ),
+                });
+                Value::error()
+            }
         }
     }
     fn print_impl(

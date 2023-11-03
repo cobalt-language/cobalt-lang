@@ -26,10 +26,11 @@ impl<'src> AST<'src> for BinOpAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match self.op {
             "&?" => {
-                let (lhs, mut errs) = self.lhs.codegen(ctx);
+                let lhs = self.lhs.codegen(ctx, errs);
                 let cond = lhs
                     .expl_convert((types::Int::bool(), None), ctx)
                     .unwrap_or_else(|e| {
@@ -43,7 +44,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(val, ab, mb);
                     ctx.builder.position_at_end(ab);
-                    let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
+                    let mut rhs = self.rhs.codegen(ctx, errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type.kind() == types::IntLiteral::KIND {
@@ -100,13 +101,13 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             }
                         }
                     };
-                    (Value::new(comp_val, inter_val, rdt), errs)
+                    Value::new(comp_val, inter_val, rdt)
                 } else {
-                    (Value::null(), errs)
+                    Value::null()
                 }
             }
             "|?" => {
-                let (lhs, mut errs) = self.lhs.codegen(ctx);
+                let lhs = self.lhs.codegen(ctx, errs);
                 let cond = lhs
                     .expl_convert((types::Int::bool(), None), ctx)
                     .unwrap_or_else(|e| {
@@ -120,7 +121,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let mb = ctx.context.append_basic_block(f, "merge");
                     ctx.builder.build_conditional_branch(val, mb, ab);
                     ctx.builder.position_at_end(ab);
-                    let mut rhs = self.rhs.codegen_errs(ctx, &mut errs);
+                    let mut rhs = self.rhs.codegen(ctx, errs);
                     ctx.builder.build_unconditional_branch(mb);
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type.kind() == types::IntLiteral::KIND {
@@ -177,24 +178,21 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             }
                         }
                     };
-                    (Value::new(comp_val, inter_val, rdt), errs)
+                    Value::new(comp_val, inter_val, rdt)
                 } else {
-                    (Value::null(), errs)
+                    Value::null()
                 }
             }
             x => {
-                let (lhs, mut errs) = self.lhs.codegen(ctx);
-                let rhs = self.rhs.codegen_errs(ctx, &mut errs);
+                let lhs = self.lhs.codegen(ctx, errs);
+                let rhs = self.rhs.codegen(ctx, errs);
                 if lhs.data_type == types::Error::new() || rhs.data_type == types::Error::new() {
-                    return (Value::error(), errs);
+                    return Value::error();
                 }
-                (
-                    lhs.bin_op((x, self.loc), rhs, ctx).unwrap_or_else(|e| {
-                        errs.push(e);
-                        Value::error().with_loc(merge_spans(self.lhs.loc(), self.rhs.loc()))
-                    }),
-                    errs,
-                )
+                lhs.bin_op((x, self.loc), rhs, ctx).unwrap_or_else(|e| {
+                    errs.push(e);
+                    Value::error().with_loc(merge_spans(self.lhs.loc(), self.rhs.loc()))
+                })
             }
         }
     }
@@ -230,18 +228,16 @@ impl<'src> AST<'src> for PostfixAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let (v, mut errs) = self.val.codegen(ctx);
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        let v = self.val.codegen(ctx, errs);
         if v.data_type == types::Error::new() {
-            return (Value::error(), errs);
+            return Value::error();
         }
-        (
-            v.post_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
-                errs.push(e);
-                Value::error()
-            }),
-            errs,
-        )
+        v.post_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        })
     }
     fn print_impl(
         &self,
@@ -274,33 +270,31 @@ impl<'src> AST<'src> for PrefixAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let (v, mut errs) = self.val.codegen(ctx);
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        let v = self.val.codegen(ctx, errs);
         if v.data_type == types::Error::new() {
-            return (Value::error(), errs);
+            return Value::error();
         }
-        (
-            if self.op == "&" {
-                if let Some(ty) = v.data_type.downcast::<types::Reference>() {
-                    Value {
-                        data_type: types::Pointer::new(ty.base()),
-                        ..v
-                    }
-                } else {
-                    Value::new(
-                        v.addr(ctx).map(From::from),
-                        None,
-                        v.data_type.add_ref(v.frozen.is_none()),
-                    )
+        if self.op == "&" {
+            if let Some(ty) = v.data_type.downcast::<types::Reference>() {
+                Value {
+                    data_type: types::Pointer::new(ty.base()),
+                    ..v
                 }
             } else {
-                v.pre_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
-                    errs.push(e);
-                    Value::error()
-                })
-            },
-            errs,
-        )
+                Value::new(
+                    v.addr(ctx).map(From::from),
+                    None,
+                    v.data_type.add_ref(v.frozen.is_none()),
+                )
+            }
+        } else {
+            v.pre_op((self.op, self.loc), ctx).unwrap_or_else(|e| {
+                errs.push(e);
+                Value::error()
+            })
+        }
     }
     fn print_impl(
         &self,
@@ -333,19 +327,17 @@ impl<'src> AST<'src> for SubAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let (target, mut errs) = self.target.codegen(ctx);
-        let index = self.index.codegen_errs(ctx, &mut errs);
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        let target = self.target.codegen(ctx, errs);
+        let index = self.index.codegen(ctx, errs);
         if target.data_type == types::Error::new() || index.data_type == types::Error::new() {
-            return (Value::error(), errs);
+            return Value::error();
         }
-        (
-            target.subscript(index, ctx).unwrap_or_else(|e| {
-                errs.push(e);
-                Value::error()
-            }),
-            errs,
-        )
+        target.subscript(index, ctx).unwrap_or_else(|e| {
+            errs.push(e);
+            Value::error()
+        })
     }
     fn print_impl(
         &self,
@@ -378,17 +370,17 @@ impl<'src> AST<'src> for DotAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let v = self
             .obj
-            .codegen_errs(ctx, &mut errs)
+            .codegen(ctx, errs)
             .attr(self.name.clone(), ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
                 Value::error()
             });
-        (v, errs)
+        v
     }
     fn print_impl(
         &self,

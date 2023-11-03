@@ -24,80 +24,68 @@ impl<'src> AST<'src> for IntLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match self.suffix.as_ref().map(|(x, y)| (&**x, y)) {
-            None | Some(("", _)) => (
-                Value::metaval(InterData::Int(self.val), types::IntLiteral::new()),
-                vec![],
-            ),
+            None | Some(("", _)) => {
+                Value::metaval(InterData::Int(self.val), types::IntLiteral::new())
+            }
             Some(("isize", _)) => {
                 let bits = ctx.flags.word_size * 8;
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(bits as _)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val),
-                        types::Int::signed(bits),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(bits as _)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val),
+                    types::Int::signed(bits),
                 )
             }
             Some((x, _)) if x.as_bytes()[0] == b'i' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(size as u32)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val),
-                        types::Int::signed(size),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(size as u32)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val),
+                    types::Int::signed(size),
                 )
             }
             Some(("usize", _)) => {
                 let bits = ctx.flags.word_size * 8;
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(bits as _)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val),
-                        types::Int::unsigned(bits),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(bits as _)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val),
+                    types::Int::unsigned(bits),
                 )
             }
             Some((x, _)) if x.as_bytes()[0] == b'u' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(size as u32)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val),
-                        types::Int::signed(size),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(size as u32)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val),
+                    types::Int::signed(size),
                 )
             }
-            Some((_, loc)) => (
-                Value::error(),
-                vec![CobaltError::UnknownLiteralSuffix {
+            Some((_, loc)) => {
+                errs.push(CobaltError::UnknownLiteralSuffix {
                     loc: *loc,
                     lit: "integer",
                     suf: self.suffix.clone().unwrap().0,
-                }],
-            ),
+                });
+                Value::error()
+            }
         }
     }
     fn print_impl(
@@ -135,48 +123,37 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match self.suffix.as_ref().map(|(x, y)| (&**x, y)) {
-            None | Some(("f64", _)) => (
-                Value::interpreted(
-                    FloatValue(ctx.context.f64_type().const_float(self.val)),
-                    InterData::Float(self.val),
-                    types::Float::f64(),
-                ),
-                vec![],
+            None | Some(("f64", _)) => Value::interpreted(
+                FloatValue(ctx.context.f64_type().const_float(self.val)),
+                InterData::Float(self.val),
+                types::Float::f64(),
             ),
-            Some(("f16", _)) => (
-                Value::interpreted(
-                    FloatValue(ctx.context.f16_type().const_float(self.val)),
-                    InterData::Float(self.val),
-                    types::Float::f16(),
-                ),
-                vec![],
+            Some(("f16", _)) => Value::interpreted(
+                FloatValue(ctx.context.f16_type().const_float(self.val)),
+                InterData::Float(self.val),
+                types::Float::f16(),
             ),
-            Some(("f32", _)) => (
-                Value::interpreted(
-                    FloatValue(ctx.context.f32_type().const_float(self.val)),
-                    InterData::Float(self.val),
-                    types::Float::f32(),
-                ),
-                vec![],
+            Some(("f32", _)) => Value::interpreted(
+                FloatValue(ctx.context.f32_type().const_float(self.val)),
+                InterData::Float(self.val),
+                types::Float::f32(),
             ),
-            Some(("f128", _)) => (
-                Value::interpreted(
-                    FloatValue(ctx.context.f128_type().const_float(self.val)),
-                    InterData::Float(self.val),
-                    types::Float::f128(),
-                ),
-                vec![],
+            Some(("f128", _)) => Value::interpreted(
+                FloatValue(ctx.context.f128_type().const_float(self.val)),
+                InterData::Float(self.val),
+                types::Float::f128(),
             ),
-            Some((_, loc)) => (
-                Value::error(),
-                vec![CobaltError::UnknownLiteralSuffix {
+            Some((_, loc)) => {
+                errs.push(CobaltError::UnknownLiteralSuffix {
                     loc: *loc,
                     lit: "floating-point",
                     suf: self.suffix.clone().unwrap().0,
-                }],
-            ),
+                });
+                Value::error()
+            }
         }
     }
     fn print_impl(
@@ -214,80 +191,69 @@ impl<'src> AST<'src> for CharLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match self.suffix.as_ref().map(|(x, y)| (&**x, y)) {
-            None | Some(("", _)) => (
-                Value::metaval(InterData::Int(self.val as _), types::Int::unsigned(32)),
-                vec![],
-            ),
+            None | Some(("", _)) => {
+                Value::metaval(InterData::Int(self.val as _), types::Int::unsigned(32))
+            }
+
             Some(("isize", _)) => {
                 let bits = ctx.flags.word_size * 8;
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(bits as _)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val as _),
-                        types::Int::signed(bits),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(bits as _)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val as _),
+                    types::Int::signed(bits),
                 )
             }
             Some((x, _)) if x.as_bytes()[0] == b'i' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(size as u32)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val as _),
-                        types::Int::signed(size),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(size as u32)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val as _),
+                    types::Int::signed(size),
                 )
             }
             Some(("usize", _)) => {
                 let bits = ctx.flags.word_size * 8;
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(bits as _)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val as _),
-                        types::Int::unsigned(bits),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(bits as _)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val as _),
+                    types::Int::unsigned(bits),
                 )
             }
             Some((x, _)) if x.as_bytes()[0] == b'u' && x[1..].chars().all(char::is_numeric) => {
                 let size: u16 = x[1..].parse().unwrap_or(0);
-                (
-                    Value::interpreted(
-                        IntValue(
-                            ctx.context
-                                .custom_width_int_type(size as u32)
-                                .const_int(self.val as u64, false),
-                        ),
-                        InterData::Int(self.val as _),
-                        types::Int::signed(size),
+                Value::interpreted(
+                    IntValue(
+                        ctx.context
+                            .custom_width_int_type(size as u32)
+                            .const_int(self.val as u64, false),
                     ),
-                    vec![],
+                    InterData::Int(self.val as _),
+                    types::Int::signed(size),
                 )
             }
-            Some((_, loc)) => (
-                Value::error(),
-                vec![CobaltError::UnknownLiteralSuffix {
+            Some((_, loc)) => {
+                errs.push(CobaltError::UnknownLiteralSuffix {
                     loc: *loc,
                     lit: "character",
                     suf: self.suffix.clone().unwrap().0,
-                }],
-            ),
+                });
+                Value::error()
+            }
         }
     }
     fn print_impl(
@@ -333,7 +299,8 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         match self.suffix.as_ref().map(|(s, l)| (&**s, *l)) {
             None | Some(("c" | "C", _)) => {
                 let cs = ctx.context.const_string(&self.val, true);
@@ -341,34 +308,31 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
                 gv.set_initializer(&cs);
                 gv.set_constant(true);
                 gv.set_linkage(inkwell::module::Linkage::Private);
-                (
-                    Value::interpreted(
-                        gv.as_pointer_value()
-                            .const_cast(ctx.context.i8_type().ptr_type(Default::default()))
-                            .into(),
-                        InterData::Array(
-                            self.val
-                                .iter()
-                                .map(|&c| InterData::Int(c as i128))
-                                .collect(),
-                        ),
-                        types::SizedArray::new(
-                            types::Int::unsigned(8),
-                            self.val.len() as u32 + self.suffix.is_some() as u32,
-                        )
-                        .add_ref(false),
+                Value::interpreted(
+                    gv.as_pointer_value()
+                        .const_cast(ctx.context.i8_type().ptr_type(Default::default()))
+                        .into(),
+                    InterData::Array(
+                        self.val
+                            .iter()
+                            .map(|&c| InterData::Int(c as i128))
+                            .collect(),
                     ),
-                    vec![],
+                    types::SizedArray::new(
+                        types::Int::unsigned(8),
+                        self.val.len() as u32 + self.suffix.is_some() as u32,
+                    )
+                    .add_ref(false),
                 )
             }
-            Some((_, loc)) => (
-                Value::error(),
-                vec![CobaltError::UnknownLiteralSuffix {
+            Some((_, loc)) => {
+                errs.push(CobaltError::UnknownLiteralSuffix {
                     loc,
                     lit: "string",
                     suf: self.suffix.clone().unwrap().0,
-                }],
-            ),
+                });
+                Value::error()
+            }
         }
     }
     fn print_impl(
@@ -406,16 +370,15 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut elems = vec![];
         let mut ty = types::Null::new() as _;
         let mut first = true;
         let mut elem_loc = unreachable_span();
-        let mut errs = vec![];
         for val in self.vals.iter() {
-            let (v, mut es) = val.codegen(ctx);
+            let v = val.codegen(ctx, errs);
             let dt = v.data_type.decay();
-            errs.append(&mut es);
             if first {
                 first = false;
                 elem_loc = val.loc();
@@ -451,30 +414,27 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
             })
             .collect::<Vec<_>>();
         let len = elems.len();
-        (
-            Value::new(
-                if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
-                    let arr_ty = llt.array_type(elems.len() as u32);
-                    elems
-                        .iter()
-                        .enumerate()
-                        .try_fold(arr_ty.get_undef(), |val, (n, v)| {
-                            ctx.builder
-                                .build_insert_value(val, v.comp_val?, n as _, "")
-                                .map(|v| v.into_array_value())
-                        })
-                        .map(Into::into)
-                } else {
-                    None
-                },
+        Value::new(
+            if let (Some(llt), false) = (ty.llvm_type(ctx), ctx.is_const.get()) {
+                let arr_ty = llt.array_type(elems.len() as u32);
                 elems
-                    .into_iter()
-                    .map(|v| v.inter_val)
-                    .collect::<Option<_>>()
-                    .map(InterData::Array),
-                types::SizedArray::new(ty, len as _),
-            ),
-            errs,
+                    .iter()
+                    .enumerate()
+                    .try_fold(arr_ty.get_undef(), |val, (n, v)| {
+                        ctx.builder
+                            .build_insert_value(val, v.comp_val?, n as _, "")
+                            .map(|v| v.into_array_value())
+                    })
+                    .map(Into::into)
+            } else {
+                None
+            },
+            elems
+                .into_iter()
+                .map(|v| v.inter_val)
+                .collect::<Option<_>>()
+                .map(InterData::Array),
+            types::SizedArray::new(ty, len as _),
         )
     }
     fn print_impl(
@@ -514,13 +474,13 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let (comps, (inters, types)): (Vec<_>, (Vec<_>, Vec<_>)) = self
             .vals
             .iter()
             .map(|x| {
-                let v = x.codegen_errs(ctx, &mut errs);
+                let v = x.codegen(ctx, errs);
                 let decayed = v.data_type.decay();
                 v.impl_convert((decayed, None), ctx).unwrap()
             })
@@ -553,7 +513,7 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
                 inters.into_iter().map(Option::unwrap).collect(),
             ));
         };
-        (val, errs)
+        val
     }
     fn print_impl(
         &self,
@@ -593,14 +553,13 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
-
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         // Codegen for each field and collect the errors.
         let mut vec = self
             .vals
             .iter()
-            .map(|(n, v)| (n, v.codegen_errs(ctx, &mut errs)))
+            .map(|(n, v)| (n, v.codegen(ctx, errs)))
             .collect::<Vec<_>>();
 
         // Sort fields to have optimal memory layout.
@@ -653,10 +612,7 @@ impl<'src> AST<'src> for StructLiteralAST<'src> {
             )
         };
 
-        (
-            Value::new(comp_val.map(From::from), inter_val, data_type),
-            errs,
-        )
+        Value::new(comp_val.map(From::from), inter_val, data_type)
     }
     fn print_impl(
         &self,

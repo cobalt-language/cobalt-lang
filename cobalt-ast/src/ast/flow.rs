@@ -31,13 +31,12 @@ impl<'src> AST<'src> for IfAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         if ctx.is_const.get() {
-            return (Value::null(), vec![]);
+            return Value::null();
         }
-        let mut errs = vec![];
-        let (cond, mut es) = self.cond.codegen(ctx);
-        errs.append(&mut es);
+        let cond = self.cond.codegen(ctx, errs);
         let cv = cond
             .impl_convert((types::Int::bool(), None), ctx)
             .unwrap_or_else(|e| {
@@ -48,77 +47,70 @@ impl<'src> AST<'src> for IfAST<'src> {
                 )
             });
         if let Some(inkwell::values::BasicValueEnum::IntValue(v)) = cv.value(ctx) {
-            (
-                {
-                    if let Some(f) = ctx
-                        .builder
-                        .get_insert_block()
-                        .and_then(|bb| bb.get_parent())
-                    {
-                        let itb = ctx.context.append_basic_block(f, "if_true");
-                        let ifb = ctx.context.append_basic_block(f, "if_false");
-                        let mb = ctx.context.append_basic_block(f, "merge");
-                        ctx.builder.build_conditional_branch(v, itb, ifb);
-                        ctx.builder.position_at_end(itb);
-                        let if_true = self.if_true.codegen_errs(ctx, &mut errs);
-                        ctx.builder.position_at_end(ifb);
-                        let if_false = self.if_false.codegen_errs(ctx, &mut errs);
-                        if let Some(ty) = if_true.data_type.common(if_false.data_type, ctx) {
-                            ctx.builder.position_at_end(itb);
-                            let if_true =
-                                if_true.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
-                                    errs.push(e);
-                                    Value::error().with_loc(self.if_true.loc())
-                                });
-                            ctx.builder.build_unconditional_branch(mb);
-                            ctx.builder.position_at_end(ifb);
-                            let if_false =
-                                if_false.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
-                                    errs.push(e);
-                                    Value::error().with_loc(self.if_false.loc())
-                                });
-                            ctx.builder.build_unconditional_branch(mb);
-                            ctx.builder.position_at_end(mb);
-                            Value::new(
-                                if let Some(llt) = ty.llvm_type(ctx) {
-                                    let phi = ctx.builder.build_phi(llt, "");
-                                    if let Some(v) = if_true.value(ctx) {
-                                        phi.add_incoming(&[(&v, itb)]);
-                                    }
-                                    if let Some(v) = if_false.value(ctx) {
-                                        phi.add_incoming(&[(&v, ifb)]);
-                                    }
-                                    Some(phi.as_basic_value())
-                                } else {
-                                    None
-                                },
-                                if let Some(InterData::Int(v)) = cv.inter_val {
-                                    if v == 0 {
-                                        if_false.inter_val
-                                    } else {
-                                        if_true.inter_val
-                                    }
-                                } else {
-                                    None
-                                },
-                                ty,
-                            )
+            if let Some(f) = ctx
+                .builder
+                .get_insert_block()
+                .and_then(|bb| bb.get_parent())
+            {
+                let itb = ctx.context.append_basic_block(f, "if_true");
+                let ifb = ctx.context.append_basic_block(f, "if_false");
+                let mb = ctx.context.append_basic_block(f, "merge");
+                ctx.builder.build_conditional_branch(v, itb, ifb);
+                ctx.builder.position_at_end(itb);
+                let if_true = self.if_true.codegen(ctx, errs);
+                ctx.builder.position_at_end(ifb);
+                let if_false = self.if_false.codegen(ctx, errs);
+                if let Some(ty) = if_true.data_type.common(if_false.data_type, ctx) {
+                    ctx.builder.position_at_end(itb);
+                    let if_true = if_true.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error().with_loc(self.if_true.loc())
+                    });
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(ifb);
+                    let if_false = if_false.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
+                        errs.push(e);
+                        Value::error().with_loc(self.if_false.loc())
+                    });
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
+                    Value::new(
+                        if let Some(llt) = ty.llvm_type(ctx) {
+                            let phi = ctx.builder.build_phi(llt, "");
+                            if let Some(v) = if_true.value(ctx) {
+                                phi.add_incoming(&[(&v, itb)]);
+                            }
+                            if let Some(v) = if_false.value(ctx) {
+                                phi.add_incoming(&[(&v, ifb)]);
+                            }
+                            Some(phi.as_basic_value())
                         } else {
-                            ctx.builder.position_at_end(itb);
-                            ctx.builder.build_unconditional_branch(mb);
-                            ctx.builder.position_at_end(ifb);
-                            ctx.builder.build_unconditional_branch(mb);
-                            ctx.builder.position_at_end(mb);
-                            Value::null()
-                        }
-                    } else {
-                        Value::error()
-                    }
-                },
-                errs,
-            )
+                            None
+                        },
+                        if let Some(InterData::Int(v)) = cv.inter_val {
+                            if v == 0 {
+                                if_false.inter_val
+                            } else {
+                                if_true.inter_val
+                            }
+                        } else {
+                            None
+                        },
+                        ty,
+                    )
+                } else {
+                    ctx.builder.position_at_end(itb);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(ifb);
+                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.position_at_end(mb);
+                    Value::null()
+                }
+            } else {
+                Value::error()
+            }
         } else {
-            (Value::error(), vec![])
+            Value::error()
         }
     }
     fn print_impl(
@@ -154,9 +146,10 @@ impl<'src> AST<'src> for WhileAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         if ctx.is_const.get() {
-            return (Value::null(), vec![]);
+            return Value::null();
         }
         if let Some(f) = ctx
             .builder
@@ -168,7 +161,7 @@ impl<'src> AST<'src> for WhileAST<'src> {
             let exit = ctx.context.append_basic_block(f, "exit");
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(cond);
-            let (c, mut errs) = self.cond.codegen(ctx);
+            let c = self.cond.codegen(ctx, errs);
             let val = c
                 .expl_convert((types::Int::bool(), None), ctx)
                 .unwrap_or_else(|e| {
@@ -183,13 +176,12 @@ impl<'src> AST<'src> for WhileAST<'src> {
             ctx.builder
                 .build_conditional_branch(val.into_int_value(), body, exit);
             ctx.builder.position_at_end(body);
-            let (_, mut es) = self.body.codegen(ctx);
-            errs.append(&mut es);
+            self.body.codegen(ctx, errs);
             ctx.builder.build_unconditional_branch(cond);
             ctx.builder.position_at_end(exit);
-            (Value::null(), errs)
+            Value::null()
         } else {
-            (Value::error(), vec![])
+            Value::error()
         }
     }
     fn print_impl(
