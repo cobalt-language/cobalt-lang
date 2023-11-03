@@ -590,7 +590,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     eprintln!("{:?}", Report::from(err).with_source_code(file));
                 }
                 ctx.module.set_triple(&TargetMachine::get_default_triple());
-                let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                let mut errs = vec![];
+                let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
                 reporter.comp_time = Some(comp_time);
                 for err in errs {
                     eprintln!("{:?}", Report::from(err).with_source_code(file));
@@ -886,7 +887,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             if fail && !continue_if_err {
                 anyhow::bail!(CompileErrors(ec))
             }
-            let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+            let mut errs = vec![];
+            let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
             reporter.comp_time = Some(comp_time);
             overall_fail |= fail;
             fail = false;
@@ -1205,7 +1207,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             if fail && !continue_if_err {
                 anyhow::bail!(CompileErrors(ec))
             }
-            let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+            let mut errs = vec![];
+            let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
             reporter.comp_time = Some(comp_time);
             overall_fail |= fail;
             fail = false;
@@ -1438,7 +1441,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 eprintln!("{:?}", Report::from(err).with_source_code(file));
             }
-            let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+            let mut errs = vec![];
+            let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
             reporter.comp_time = Some(comp_time);
             for err in errs {
                 fail |= err.is_err();
@@ -1716,7 +1720,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         let file = ast.file.unwrap();
                         ctx.module.set_name(file.name());
                         ctx.module.set_source_file_name(file.name());
-                        let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                        let mut errs = vec![];
+                        let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
                         *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
                         for err in errs {
                             fail |= err.is_err();
@@ -2121,10 +2126,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         anyhow::Ok(ast)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
+                let mut errs = vec![];
                 asts.iter().for_each(|ast| {
-                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
-                    for err in errs {
+                    for err in errs.drain(..) {
                         fail |= err.is_err();
                         ec += err.is_err() as usize;
                         eprintln!(
@@ -2401,10 +2407,11 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         anyhow::Ok(ast)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
+                let mut errs = vec![];
                 asts.iter().for_each(|ast| {
-                    let (errs, comp_time) = timeit(|| ast.codegen(&ctx).1);
+                    let (_, comp_time) = timeit(|| ast.codegen(&ctx, &mut errs));
                     *reporter.comp_time.get_or_insert(Duration::ZERO) += comp_time;
-                    for err in errs {
+                    for err in errs.drain(..) {
                         fail |= err.is_err();
                         ec += err.is_err() as usize;
                         eprintln!(

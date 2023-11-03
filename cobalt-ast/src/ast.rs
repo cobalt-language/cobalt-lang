@@ -57,47 +57,28 @@ pub trait AST<'src>: ASTClone<'src> + std::fmt::Debug {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>);
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx>;
     /// Generate code
     fn codegen<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let (mut val, errs) = self.codegen_impl(ctx);
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        let mut val = self.codegen_impl(ctx, errs);
         val.loc = self.loc();
-        (val, errs)
+        val
     }
     /// Generate code in a constant context
     fn const_codegen<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let old_is_const = ctx.is_const.replace(true);
-        let res = self.codegen(ctx);
+        let res = self.codegen(ctx, errs);
         ctx.is_const.set(old_is_const);
         res
-    }
-
-    /// Just calls `codegen()` and appends the errors to `errs`.
-    fn codegen_errs<'ctx>(
-        &self,
-        ctx: &CompCtx<'src, 'ctx>,
-        errs: &mut Vec<CobaltError<'src>>,
-    ) -> Value<'src, 'ctx> {
-        let (val, mut es) = self.codegen(ctx);
-        errs.append(&mut es);
-        val
-    }
-    fn const_codegen_errs<'ctx>(
-        &self,
-        ctx: &CompCtx<'src, 'ctx>,
-        errs: &mut Vec<CobaltError<'src>>,
-    ) -> Value<'src, 'ctx> {
-        let old_is_const = ctx.is_const.replace(true);
-        let (val, mut es) = self.codegen(ctx);
-        errs.append(&mut es);
-        ctx.is_const.set(old_is_const);
-        val
     }
 }
 impl Display for dyn AST<'_> {

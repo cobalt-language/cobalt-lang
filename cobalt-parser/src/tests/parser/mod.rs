@@ -8,18 +8,15 @@ mod general;
 fn test_parser_fn<T, F>(src: &'static str, show_output: bool, parse_fn: F)
 where
     T: std::fmt::Debug + 'static,
-    F: Fn(&mut Parser<'static>) -> (T, Vec<CobaltError<'static>>),
+    F: FnOnce(&mut Parser<'static>, &mut Vec<CobaltError<'static>>) -> T,
 {
     let mut reader = SourceReader::new(src);
-    let mut errors = vec![];
 
-    let mut tokenize_result = reader.tokenize();
-    errors.append(&mut tokenize_result.1);
+    let (tokens, mut errors) = reader.tokenize();
 
-    let mut parser = Parser::new(tokenize_result.0);
+    let mut parser = Parser::new(tokens);
     parser.next();
-    let (ast_or_similar, mut parser_errors) = parse_fn(&mut parser);
-    errors.append(&mut parser_errors);
+    let ast_or_similar = parse_fn(&mut parser, &mut errors);
 
     if show_output {
         dbg!(ast_or_similar);

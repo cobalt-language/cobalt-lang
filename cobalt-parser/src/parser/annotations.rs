@@ -47,12 +47,8 @@ impl<'src> Parser<'src> {
     /// the last annotation in the collection.
     pub fn parse_annotations(
         &mut self,
-    ) -> (
-        Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)>,
-        Vec<CobaltError<'src>>,
-    ) {
+    ) -> Vec<(Cow<'src, str>, Option<Cow<'src, str>>, SourceSpan)> {
         let mut anns = vec![];
-        let errs = vec![];
 
         while matches!(
             self.current_token,
@@ -64,6 +60,6 @@ impl<'src> Parser<'src> {
             anns.push(self.parse_annotation());
         }
 
-        (anns, errs)
+        anns
     }
 }

@@ -19,18 +19,18 @@ impl<'src> AST<'src> for BlockAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         ctx.map_vars(|v| Box::new(VarMap::new(Some(v))));
         ctx.lex_scope.incr();
         let mut out = Value::null();
-        let mut errs = vec![];
         let start = cfg::Location::current(ctx);
         self.vals.iter().for_each(|val| {
             ctx.to_drop.borrow_mut().push(Vec::new());
             if out.name.is_none() {
                 out.ins_dtor(ctx);
             }
-            out = val.codegen_errs(ctx, &mut errs);
+            out = val.codegen(ctx, errs);
             ctx.to_drop
                 .borrow_mut()
                 .pop()
@@ -70,7 +70,7 @@ impl<'src> AST<'src> for BlockAST<'src> {
         b.1.retain(|v| v.name.1 < ctx.lex_scope.get());
         ctx.lex_scope.decr();
         ctx.map_vars(|v| v.parent.unwrap());
-        (out, errs)
+        out
     }
     fn print_impl(
         &self,
@@ -107,14 +107,14 @@ impl<'src> AST<'src> for GroupAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let mut out = Value::null();
-        let mut errs = vec![];
         self.vals.iter().for_each(|val| {
             if out.name.is_none() {
                 out.ins_dtor(ctx);
             }
-            out = val.codegen_errs(ctx, &mut errs);
+            out = val.codegen(ctx, errs);
         });
         if let (Some(loc), Some(end)) = (
             self.vals.last().map(|a| a.loc()),
@@ -122,7 +122,7 @@ impl<'src> AST<'src> for GroupAST<'src> {
         ) {
             cfg::mark_move(&out, end, ctx, loc);
         }
-        (out, errs)
+        out
     }
     fn print_impl(
         &self,
@@ -155,8 +155,8 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let old_scope = if let Some(name) = &self.module {
             ctx.map_vars(|mut v| match v.lookup_mod(name) {
                 Ok((m, i, _)) => Box::new(VarMap {
@@ -195,15 +195,15 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
             }
             self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
         }
-        self.vals
-            .iter()
-            .for_each(|val| std::mem::drop(val.codegen_errs(ctx, &mut errs)));
+        self.vals.iter().for_each(|val| {
+            val.codegen(ctx, errs);
+        });
         if let Some(name) = &self.module {
             let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
             let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
             ctx.restore_scope(old_scope.unwrap());
         }
-        (Value::null(), errs)
+        Value::null()
     }
     fn print_impl(
         &self,

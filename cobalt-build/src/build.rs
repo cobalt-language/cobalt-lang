@@ -127,7 +127,8 @@ fn build_file_2(
     mut fail: bool,
     ec: &mut usize,
 ) -> anyhow::Result<bool> {
-    let (_, errs) = ast.codegen(ctx);
+    let mut errs = vec![];
+    ast.codegen(ctx, &mut errs);
     for err in errs {
         *ec += 1;
         fail = true;

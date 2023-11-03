@@ -15,19 +15,23 @@ impl<'src> Parser<'src> {
     /// expr
     ///    := primary_expr [BINOP primary_expr]*
     /// ```
-    pub fn parse_expr(&mut self, allow_empty: bool) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_expr(
+        &mut self,
+        allow_empty: bool,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         match self.current_token.unwrap().kind {
-            TokenKind::Keyword(Keyword::If) => self.parse_if_expr(),
-            TokenKind::Keyword(Keyword::While) => self.parse_while_expr(),
+            TokenKind::Keyword(Keyword::If) => self.parse_if_expr(errors),
+            TokenKind::Keyword(Keyword::While) => self.parse_while_expr(errors),
             _ => {
-                let lhs = self.parse_primary_expr(allow_empty);
+                let lhs = self.parse_primary_expr(allow_empty, errors);
 
                 if let Some(next_tok) = self.current_token {
                     if matches!(
                         next_tok.kind,
                         TokenKind::BinOp(_) | TokenKind::UnOrBinOp(_) | TokenKind::Colon
                     ) {
-                        return self.parse_binop_rhs(0, lhs.0, lhs.1);
+                        return self.parse_binop_rhs(0, lhs, errors);
                     }
                 }
 
@@ -62,11 +66,11 @@ impl<'src> Parser<'src> {
     pub fn parse_primary_expr(
         &mut self,
         allow_empty: bool,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let current = self.current_token.unwrap();
 
         let initial_span = current.span;
-        let mut errors = vec![];
         let mut working_ast: BoxedAST = Box::new(ErrorAST::new(current.span));
 
         let start = 0;
@@ -80,16 +84,12 @@ impl<'src> Parser<'src> {
 
         match current.kind {
             TokenKind::Literal(_) => {
-                let (parsed_literal, mut parsed_errors) = self.parse_literal();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_literal;
+                working_ast = self.parse_literal(errors);
 
                 state |= parsed_something;
             }
             TokenKind::Ident(_) => {
-                let (parsed_ident, mut parsed_errors) = self.parse_ident_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_ident;
+                working_ast = self.parse_ident_expr(errors);
 
                 state |= parsed_something;
                 state |= can_be_dotted;
@@ -97,9 +97,7 @@ impl<'src> Parser<'src> {
                 state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(Delimiter::Paren) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_paren_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_paren_expr(errors);
 
                 state |= parsed_something;
                 state |= can_be_dotted;
@@ -107,48 +105,36 @@ impl<'src> Parser<'src> {
                 state |= can_be_postfixed;
             }
             TokenKind::OpenDelimiter(Delimiter::Brace) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_block_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_block_expr(errors);
 
                 state |= parsed_something;
             }
             TokenKind::OpenDelimiter(Delimiter::Bracket) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_array_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_array_expr(errors);
 
                 state |= parsed_something;
             }
             TokenKind::UnOp(_) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_prefix_expr(errors);
 
                 state |= parsed_something;
                 state |= can_be_dotted;
                 state |= can_be_indexed;
             }
             TokenKind::UnOrBinOp(_) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_prefix_expr(errors);
 
                 state |= parsed_something;
                 state |= can_be_dotted;
                 state |= can_be_indexed;
             }
             TokenKind::Keyword(Keyword::Mut) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_prefix_expr();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_prefix_expr(errors);
 
                 state |= parsed_something;
             }
             TokenKind::Intrinsic(..) => {
-                let (parsed_expr, mut parsed_errors) = self.parse_intrinsic();
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_intrinsic();
 
                 state |= parsed_something;
             }
@@ -163,32 +149,24 @@ impl<'src> Parser<'src> {
             };
 
             if tok.kind == TokenKind::OpenDelimiter(Delimiter::Paren) {
-                let (parsed_expr, mut parsed_errors) = self.parse_fn_call(working_ast);
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_fn_call(working_ast, errors);
                 continue;
             }
 
             if state & can_be_dotted != 0 && tok.kind == TokenKind::Dot {
-                let (parsed_expr, mut parsed_errors) = self.parse_dotted_expr(working_ast);
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_dotted_expr(working_ast, errors);
                 continue;
             }
 
             if state & can_be_indexed != 0
                 && tok.kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
             {
-                let (parsed_expr, mut parsed_errors) = self.parse_index_expr(working_ast);
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_index_expr(working_ast, errors);
                 continue;
             }
 
             if state & can_be_postfixed != 0 && self.check_postfix_expr() {
-                let (parsed_expr, mut parsed_errors) = self.parse_postfix_expr(working_ast);
-                errors.append(&mut parsed_errors);
-                working_ast = parsed_expr;
+                working_ast = self.parse_postfix_expr(working_ast);
                 continue;
             }
 
@@ -202,19 +180,20 @@ impl<'src> Parser<'src> {
                 ex: "expression",
                 loc: initial_span.offset().into(),
             });
-            return (working_ast, errors);
+            return working_ast;
         }
 
-        (working_ast, errors)
+        working_ast
     }
 
     /// ```text
     /// ident_expr := ident ['.' ident]+
     /// ```
-    pub(crate) fn parse_ident_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_ident_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let mut current = self.current_token.unwrap();
-
-        let mut errors = vec![];
 
         let is_global = if current.kind == TokenKind::Dot {
             let Some(c) = self.current_token else {
@@ -223,10 +202,7 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: self.cursor.src_len().into(),
                 });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             };
             current = c;
             true
@@ -238,14 +214,12 @@ impl<'src> Parser<'src> {
         let name = if let TokenKind::Ident(name) = current.kind {
             Cow::from(name)
         } else {
-            return (
-                Box::new(ErrorAST::new(current.span)),
-                vec![CobaltError::ExpectedFound {
-                    ex: "identifier",
-                    found: Some(current.kind.as_str().into()),
-                    loc: span,
-                }],
-            );
+            errors.push(CobaltError::ExpectedFound {
+                ex: "identifier",
+                found: Some(current.kind.as_str().into()),
+                loc: span,
+            });
+            return Box::new(ErrorAST::new(current.span));
         };
 
         self.next();
@@ -273,10 +247,7 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             };
 
             if let TokenKind::Ident(name) = current.kind {
@@ -293,7 +264,7 @@ impl<'src> Parser<'src> {
 
                 loop_until!(self, TokenKind::Semicolon);
 
-                return (Box::new(ErrorAST::new(current.span)), errors);
+                return Box::new(ErrorAST::new(current.span));
             }
 
             self.next();
@@ -301,7 +272,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        (working_ast, errors)
+        working_ast
     }
 
     /// Going into this function, `current_token` is assumed to be a '.'.
@@ -314,7 +285,8 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_dotted_expr(
         &mut self,
         target: BoxedAST<'src>,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::Dot,
             span,
@@ -322,8 +294,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         self.next();
 
@@ -335,10 +305,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         let name = match current.kind {
@@ -349,10 +316,7 @@ impl<'src> Parser<'src> {
                     found: Some(current.kind.as_str().into()),
                     loc: current.span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             }
         };
 
@@ -360,7 +324,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        (Box::new(DotAST::new(target, (name, span))), errors)
+        Box::new(DotAST::new(target, (name, span)))
     }
 
     /// Going into this function, `current_token` is assumed to be a unary operator.
@@ -368,10 +332,12 @@ impl<'src> Parser<'src> {
     /// ```text
     /// prefix_expr := [UNOP | 'mut'] primary_expr
     /// ```
-    pub(crate) fn parse_prefix_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_prefix_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let current = self.current_token.unwrap();
 
-        let mut errors = vec![];
         let span = current.span;
 
         let op = match current.kind {
@@ -391,7 +357,7 @@ impl<'src> Parser<'src> {
                         found: Some(current.kind.as_str().into()),
                         loc: current.span,
                     });
-                    return (Box::new(ErrorAST::new(current.span)), errors);
+                    return Box::new(ErrorAST::new(current.span));
                 }
             },
             TokenKind::Keyword(Keyword::Mut) => "mut",
@@ -401,7 +367,7 @@ impl<'src> Parser<'src> {
                     found: Some(current.kind.as_str().into()),
                     loc: current.span,
                 });
-                return (Box::new(ErrorAST::new(current.span)), errors);
+                return Box::new(ErrorAST::new(current.span));
             }
         };
 
@@ -413,16 +379,12 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         }
 
-        let (val, mut val_errors) = self.parse_primary_expr(false);
-        errors.append(&mut val_errors);
+        let val = self.parse_primary_expr(false, errors);
 
-        return (Box::new(PrefixAST::new(span, op, val)), errors);
+        return Box::new(PrefixAST::new(span, op, val));
     }
 
     /// Going into this function, `current_token` is assumed to be an open paren.
@@ -430,7 +392,10 @@ impl<'src> Parser<'src> {
     /// ```text
     /// paren_expr := '(' expr ')'
     /// ```
-    pub(crate) fn parse_paren_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_paren_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Paren),
             span,
@@ -440,8 +405,6 @@ impl<'src> Parser<'src> {
         };
         let start = span;
 
-        let mut errors = vec![];
-
         self.next();
         match self.current_token {
             None => {
@@ -450,28 +413,21 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: span,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             }
             Some(Token {
                 kind: TokenKind::CloseDelimiter(Delimiter::Paren),
                 span,
             }) => {
-                return (
-                    Box::new(ParenAST::new(
-                        merge_spans(start, span),
-                        Box::new(NullAST::new(span.offset().into())),
-                    )),
-                    errors,
-                );
+                return Box::new(ParenAST::new(
+                    merge_spans(start, span),
+                    Box::new(NullAST::new(span.offset().into())),
+                ));
             }
             _ => {}
         }
 
-        let (expr, mut expr_errors) = self.parse_expr(false);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(false, errors);
 
         let Some(current) = self.current_token else {
             errors.push(CobaltError::ExpectedFound {
@@ -479,20 +435,14 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         match current.kind {
             TokenKind::CloseDelimiter(Delimiter::Paren) => {
                 self.next();
 
-                (
-                    Box::new(ParenAST::new(merge_spans(span, current.span), expr)),
-                    errors,
-                )
+                Box::new(ParenAST::new(merge_spans(span, current.span), expr))
             }
             TokenKind::Semicolon => {
                 let mut exprs = vec![expr];
@@ -518,10 +468,9 @@ impl<'src> Parser<'src> {
                     }
 
                     let start_idx = self.cursor.index;
-                    let (expr, mut expr_errors) = self.parse_expr(true);
+                    let expr = self.parse_expr(true, errors);
                     let err = self.cursor.index == start_idx;
                     exprs.push(expr);
-                    errors.append(&mut expr_errors);
                     match self.current_token {
                         None => {
                             errors.push(CobaltError::ExpectedFound {
@@ -529,13 +478,10 @@ impl<'src> Parser<'src> {
                                 found: None,
                                 loc: self.cursor.src_len().into(),
                             });
-                            return (
-                                Box::new(ParenAST::new(
-                                    merge_spans(span, self.cursor.src_len().into()),
-                                    Box::new(GroupAST::new(exprs)),
-                                )),
-                                errors,
-                            );
+                            return Box::new(ParenAST::new(
+                                merge_spans(span, self.cursor.src_len().into()),
+                                Box::new(GroupAST::new(exprs)),
+                            ));
                         }
                         Some(Token {
                             kind: TokenKind::Semicolon,
@@ -564,13 +510,10 @@ impl<'src> Parser<'src> {
                     }
                 }
                 let current = self.current_token.unwrap();
-                (
-                    Box::new(ParenAST::new(
-                        merge_spans(start, current.span),
-                        Box::new(GroupAST::new(exprs)),
-                    )),
-                    errors,
-                )
+                Box::new(ParenAST::new(
+                    merge_spans(start, current.span),
+                    Box::new(GroupAST::new(exprs)),
+                ))
             }
             TokenKind::Comma => {
                 let mut exprs = vec![expr];
@@ -588,10 +531,9 @@ impl<'src> Parser<'src> {
                         break;
                     }
                     let start_idx = self.cursor.index;
-                    let (expr, mut expr_errors) = self.parse_expr(false);
+                    let expr = self.parse_expr(false, errors);
                     let err = self.cursor.index == start_idx;
                     exprs.push(expr);
-                    errors.append(&mut expr_errors);
                     match self.current_token {
                         None => {
                             errors.push(CobaltError::ExpectedFound {
@@ -599,13 +541,10 @@ impl<'src> Parser<'src> {
                                 found: None,
                                 loc: self.cursor.src_len().into(),
                             });
-                            return (
-                                Box::new(ParenAST::new(
-                                    merge_spans(span, self.cursor.src_len().into()),
-                                    Box::new(TupleLiteralAST::new(exprs)),
-                                )),
-                                errors,
-                            );
+                            return Box::new(ParenAST::new(
+                                merge_spans(span, self.cursor.src_len().into()),
+                                Box::new(TupleLiteralAST::new(exprs)),
+                            ));
                         }
                         Some(Token {
                             kind: TokenKind::Comma,
@@ -627,13 +566,10 @@ impl<'src> Parser<'src> {
                                 found: Some(";".into()),
                                 loc: span,
                             });
-                            return (
-                                Box::new(ParenAST::new(
-                                    merge_spans(start, span),
-                                    Box::new(TupleLiteralAST::new(exprs)),
-                                )),
-                                errors,
-                            );
+                            return Box::new(ParenAST::new(
+                                merge_spans(start, span),
+                                Box::new(TupleLiteralAST::new(exprs)),
+                            ));
                         }
                         Some(Token { kind, span }) => {
                             errors.push(CobaltError::ExpectedFound {
@@ -654,13 +590,10 @@ impl<'src> Parser<'src> {
                     }
                 }
                 let current = self.current_token.unwrap();
-                (
-                    Box::new(ParenAST::new(
-                        merge_spans(start, current.span),
-                        Box::new(TupleLiteralAST::new(exprs)),
-                    )),
-                    errors,
-                )
+                Box::new(ParenAST::new(
+                    merge_spans(start, current.span),
+                    Box::new(TupleLiteralAST::new(exprs)),
+                ))
             }
             _ => {
                 let found = Some(current.kind.as_str().into());
@@ -670,10 +603,8 @@ impl<'src> Parser<'src> {
                     found,
                     loc,
                 });
-                (
-                    Box::new(ParenAST::new(merge_spans(span, current.span), expr)),
-                    errors,
-                )
+
+                Box::new(ParenAST::new(merge_spans(span, current.span), expr))
             }
         }
     }
@@ -685,7 +616,10 @@ impl<'src> Parser<'src> {
     ///     := '{' [ expr? ';' | decl ]* '}'
     ///     := struct_literal
     /// ```
-    pub(crate) fn parse_block_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_block_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Brace),
             span,
@@ -695,14 +629,12 @@ impl<'src> Parser<'src> {
         };
 
         if self.check_struct_literal() {
-            return self.parse_struct_literal();
+            return self.parse_struct_literal(errors);
         }
 
         let span_start = span.offset();
         let mut span_len = span.len();
         let mut vals: Vec<BoxedAST<'src>> = vec![];
-
-        let mut errors: Vec<CobaltError<'src>> = vec![];
 
         // Eat the opening brace.
         self.next();
@@ -715,14 +647,12 @@ impl<'src> Parser<'src> {
 
         loop {
             let Some(current) = self.current_token else {
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    vec![CobaltError::ExpectedFound {
-                        ex: "'}'",
-                        found: None,
-                        loc: self.cursor.src_len().into(),
-                    }],
-                );
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "'}'",
+                    found: None,
+                    loc: self.cursor.src_len().into(),
+                });
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             };
 
             span_len += (current.span.offset() + current.span.len()) - span_start;
@@ -746,8 +676,7 @@ impl<'src> Parser<'src> {
                     kw,
                     Keyword::Let | Keyword::Const | Keyword::Type | Keyword::Fn | Keyword::Import
                 ) {
-                    let (decl, mut decl_errors) = self.parse_decl(DeclLoc::Local);
-                    errors.append(&mut decl_errors);
+                    let decl = self.parse_decl(DeclLoc::Local, errors);
                     vals.push(decl);
 
                     local_state = last_was_decl;
@@ -755,8 +684,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (expr, mut expr_errors) = self.parse_expr(false); // TODO: statement?
-            errors.append(&mut expr_errors);
+            let expr = self.parse_expr(false, errors);
             vals.push(expr);
             local_state = last_was_expr;
         }
@@ -769,16 +697,16 @@ impl<'src> Parser<'src> {
             vals.push(Box::new(NullAST::new((span.offset() + span.len()).into())));
         }
 
-        (
-            Box::new(BlockAST::new(
-                SourceSpan::from((span_start, span_len)),
-                vals,
-            )),
-            errors,
-        )
+        Box::new(BlockAST::new(
+            SourceSpan::from((span_start, span_len)),
+            vals,
+        ))
     }
 
-    pub(crate) fn parse_array_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_array_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Bracket),
             span,
@@ -786,8 +714,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         let mut exprs = vec![];
         let start = span;
@@ -805,10 +731,9 @@ impl<'src> Parser<'src> {
                 break;
             }
             let start_idx = self.cursor.index;
-            let (expr, mut expr_errors) = self.parse_expr(false);
+            let expr = self.parse_expr(false, errors);
             let err = self.cursor.index == start_idx;
             exprs.push(expr);
-            errors.append(&mut expr_errors);
             match self.current_token {
                 None => {
                     errors.push(CobaltError::ExpectedFound {
@@ -816,14 +741,11 @@ impl<'src> Parser<'src> {
                         found: None,
                         loc: self.cursor.src_len().into(),
                     });
-                    return (
-                        Box::new(ArrayLiteralAST::new(
-                            start,
-                            self.cursor.src_len().into(),
-                            exprs,
-                        )),
-                        errors,
-                    );
+                    return Box::new(ArrayLiteralAST::new(
+                        start,
+                        self.cursor.src_len().into(),
+                        exprs,
+                    ));
                 }
                 Some(Token {
                     kind: TokenKind::Comma,
@@ -845,10 +767,7 @@ impl<'src> Parser<'src> {
                         found: Some(";".into()),
                         loc: span,
                     });
-                    return (
-                        Box::new(ArrayLiteralAST::new(start, span.offset().into(), exprs)),
-                        errors,
-                    );
+                    return Box::new(ArrayLiteralAST::new(start, span.offset().into(), exprs));
                 }
                 Some(Token { kind, span }) => {
                     errors.push(CobaltError::ExpectedFound {
@@ -869,10 +788,7 @@ impl<'src> Parser<'src> {
             }
         }
         let current = self.current_token.unwrap();
-        (
-            Box::new(ArrayLiteralAST::new(start, current.span, exprs)),
-            errors,
-        )
+        Box::new(ArrayLiteralAST::new(start, current.span, exprs))
     }
 
     /// Going into this function, `current_token` is assumed to be an `if` keyword.
@@ -881,7 +797,7 @@ impl<'src> Parser<'src> {
     /// if_expr :=
     ///    'if' '(' expr ')' expr [ 'else' expr ]?
     /// ```
-    pub(crate) fn parse_if_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_if_expr(&mut self, errors: &mut Vec<CobaltError<'src>>) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::Keyword(Keyword::If),
             span,
@@ -889,8 +805,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         // Eat the `if`.
         self.next();
@@ -909,11 +823,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(span)), errors);
+            return Box::new(ErrorAST::new(span));
         }
 
-        let (cond, mut cond_errors) = self.parse_primary_expr(false);
-        errors.append(&mut cond_errors);
+        let cond = self.parse_primary_expr(false, errors);
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -921,39 +834,29 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         }
 
-        let (if_true, mut if_true_errors) = self.parse_expr(false);
-        errors.append(&mut if_true_errors);
+        let if_true = self.parse_expr(false, errors);
 
         // Return if there's no else.
 
         let Some(current) = self.current_token else {
-            return (
-                Box::new(IfAST::new(
-                    span,
-                    cond,
-                    if_true,
-                    Box::new(NullAST::new(self.cursor.src_len().into())),
-                )),
-                errors,
-            );
+            return Box::new(IfAST::new(
+                span,
+                cond,
+                if_true,
+                Box::new(NullAST::new(self.cursor.src_len().into())),
+            ));
         };
 
         if current.kind != TokenKind::Keyword(Keyword::Else) {
-            return (
-                Box::new(IfAST::new(
-                    span,
-                    cond,
-                    if_true,
-                    Box::new(NullAST::new(current.span)),
-                )),
-                errors,
-            );
+            return Box::new(IfAST::new(
+                span,
+                cond,
+                if_true,
+                Box::new(NullAST::new(current.span)),
+            ));
         }
 
         // Handle the else.
@@ -966,21 +869,17 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: self.cursor.src_len().into(),
             });
-            return (
-                Box::new(IfAST::new(
-                    span,
-                    cond,
-                    if_true,
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                )),
-                errors,
-            );
+            return Box::new(IfAST::new(
+                span,
+                cond,
+                if_true,
+                Box::new(ErrorAST::new(self.cursor.src_len().into())),
+            ));
         }
 
-        let (if_false, mut if_false_errors) = self.parse_expr(false);
-        errors.append(&mut if_false_errors);
+        let if_false = self.parse_expr(false, errors);
 
-        (Box::new(IfAST::new(span, cond, if_true, if_false)), errors)
+        Box::new(IfAST::new(span, cond, if_true, if_false))
     }
 
     /// Going into this function, `current_token` is assumed to be an `if` keyword.
@@ -989,7 +888,10 @@ impl<'src> Parser<'src> {
     /// if_expr :=
     ///    'while' '(' expr ')' _expr [ 'else' expr ]?
     /// ```
-    pub(crate) fn parse_while_expr(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_while_expr(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::Keyword(Keyword::While),
             span,
@@ -997,8 +899,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         // Eat the `while``.
         self.next();
@@ -1017,11 +917,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(span)), errors);
+            return Box::new(ErrorAST::new(span));
         }
 
-        let (cond, mut cond_errors) = self.parse_primary_expr(false);
-        errors.append(&mut cond_errors);
+        let cond = self.parse_primary_expr(false, errors);
 
         if self.current_token.is_none() {
             errors.push(CobaltError::ExpectedFound {
@@ -1029,16 +928,12 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         }
 
-        let (body, mut body_errors) = self.parse_expr(false);
-        errors.append(&mut body_errors);
+        let body = self.parse_expr(false, errors);
 
-        (Box::new(WhileAST::new(span, cond, body)), errors)
+        Box::new(WhileAST::new(span, cond, body))
     }
 
     /// Going into this function, `current_token` is assumed to be an `@`.
@@ -1048,7 +943,7 @@ impl<'src> Parser<'src> {
     /// ```text
     /// instinsic := '@' [ident | keyword]
     /// ```
-    pub(crate) fn parse_intrinsic(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_intrinsic(&mut self) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::Intrinsic(name_src),
             span,
@@ -1057,15 +952,11 @@ impl<'src> Parser<'src> {
             unreachable!()
         };
 
-        let errors = vec![];
         self.next();
 
         // ---
 
-        (
-            Box::new(IntrinsicAST::new(span, Cow::Borrowed(name_src))),
-            errors,
-        )
+        Box::new(IntrinsicAST::new(span, Cow::Borrowed(name_src)))
     }
 
     /// Going into this function, `current_token` is assumed to be '('.
@@ -1076,7 +967,8 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_fn_call(
         &mut self,
         target: BoxedAST<'src>,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Paren),
             span,
@@ -1084,8 +976,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         self.next();
 
@@ -1097,10 +987,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1108,7 +995,7 @@ impl<'src> Parser<'src> {
 
             self.next();
 
-            return (Box::new(CallAST::new(cparen_span, target, vec![])), errors);
+            return Box::new(CallAST::new(cparen_span, target, vec![]));
         }
 
         let start = 0;
@@ -1145,8 +1032,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (arg, mut arg_errors) = self.parse_expr(false);
-            errors.append(&mut arg_errors);
+            let arg = self.parse_expr(false, errors);
             args.push(arg);
             local_state = atleast_one_arg;
         }
@@ -1155,7 +1041,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        (Box::new(CallAST::new(cparen_span, target, args)), errors)
+        Box::new(CallAST::new(cparen_span, target, args))
     }
 
     /// Going into this function, `current_token` is assumed to be an `[`.
@@ -1166,7 +1052,8 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_index_expr(
         &mut self,
         target: BoxedAST<'src>,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Bracket),
             span,
@@ -1175,13 +1062,11 @@ impl<'src> Parser<'src> {
             unreachable!()
         };
 
-        let mut errors = vec![];
         self.next();
 
         // ---
 
-        let (expr, mut expr_errors) = self.parse_expr(true);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(true, errors);
 
         // ---
 
@@ -1191,10 +1076,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind != TokenKind::CloseDelimiter(Delimiter::Bracket) {
@@ -1203,14 +1085,14 @@ impl<'src> Parser<'src> {
                 found: Some(current.kind.as_str().into()),
                 loc: current.span,
             });
-            return (Box::new(ErrorAST::new(current.span)), errors);
+            return Box::new(ErrorAST::new(current.span));
         }
 
         self.next();
 
         // ---
 
-        (Box::new(SubAST::new(span, target, expr)), errors)
+        Box::new(SubAST::new(span, target, expr))
     }
 
     fn check_postfix_expr(&mut self) -> bool {
@@ -1229,10 +1111,7 @@ impl<'src> Parser<'src> {
     /// ```text
     /// postfix_expr := primary_expr [ '!' | '?' | '++' | '--' ]+
     /// ```
-    pub(crate) fn parse_postfix_expr(
-        &mut self,
-        target: BoxedAST<'src>,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_postfix_expr(&mut self, target: BoxedAST<'src>) -> BoxedAST<'src> {
         assert!(self.current_token.is_some());
 
         let mut working_ast = target;
@@ -1259,6 +1138,6 @@ impl<'src> Parser<'src> {
             break;
         }
 
-        (working_ast, vec![])
+        working_ast
     }
 }

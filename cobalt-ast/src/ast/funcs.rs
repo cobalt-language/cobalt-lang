@@ -68,8 +68,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let oic = ctx.is_const.replace(true);
         let mut ret = self
             .ret
-            .codegen(ctx)
-            .0
+            .codegen(ctx, &mut vec![])
             .into_type(ctx)
             .unwrap_or(types::Error::new());
         while let Some(b) = ret.downcast::<types::Mut>() {
@@ -82,8 +81,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 (
                     {
                         let mut val = ty
-                            .codegen(ctx)
-                            .0
+                            .codegen(ctx, &mut vec![])
                             .into_type(ctx)
                             .unwrap_or(types::Error::new());
                         while let Some(b) = val.downcast::<types::Mut>() {
@@ -321,7 +319,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     .filter_map(|((_, _, _, _, d), (t, _))| {
                         d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
-                            let val = a.codegen(ctx).0;
+                            let val = a.codegen(ctx, &mut vec![]);
                             let val = val.impl_convert((t, None), ctx);
                             ctx.is_const.set(old_const);
                             val.ok()
@@ -416,7 +414,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     .filter_map(|((_, _, _, _, d), (t, _))| {
                         d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
-                            let val = a.codegen(ctx).0;
+                            let val = a.codegen(ctx, &mut vec![]);
                             let val = val.impl_convert((t, None), ctx);
                             ctx.is_const.set(old_const);
                             val.ok()
@@ -455,7 +453,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 .filter_map(|((_, _, _, _, d), (t, _))| {
                     d.as_ref().map(|a| {
                         let old_const = ctx.is_const.replace(true);
-                        let val = a.codegen(ctx).0;
+                        let val = a.codegen(ctx, &mut vec![]);
                         let val = val.impl_convert((t, None), ctx);
                         ctx.is_const.set(old_const);
                         val.ok()
@@ -489,12 +487,12 @@ impl<'src> AST<'src> for FnDefAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let mut errs = vec![];
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         let oic = ctx.is_const.replace(true);
         let mut ret = self
             .ret
-            .codegen_errs(ctx, &mut errs)
+            .codegen(ctx, errs)
             .into_type(ctx)
             .unwrap_or_else(|e| {
                 errs.push(e);
@@ -515,13 +513,10 @@ impl<'src> AST<'src> for FnDefAST<'src> {
             .map(|(_, _, pt, ty, _)| {
                 (
                     {
-                        let mut val = ty
-                            .codegen_errs(ctx, &mut errs)
-                            .into_type(ctx)
-                            .unwrap_or_else(|e| {
-                                errs.push(e);
-                                types::Error::new()
-                            });
+                        let mut val = ty.codegen(ctx, errs).into_type(ctx).unwrap_or_else(|e| {
+                            errs.push(e);
+                            types::Error::new()
+                        });
                         if let Some(b) = val.downcast::<types::Mut>() {
                             errs.push(CobaltError::ReturnCantBeMut { loc: ty.loc() });
                             val = b.base();
@@ -984,7 +979,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
         let cc = cconv.map_or(0, |(cc, _)| cc);
         let mt = fn_type.map_or(MethodType::Static, |v| v.0);
         if target_match == 0 {
-            return (Value::null(), errs);
+            return Value::null();
         }
         let old_ip = ctx.builder.get_insert_block();
         ctx.var_scope.incr();
@@ -1061,7 +1056,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .filter_map(|((_, _, _, p, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = a.codegen(ctx, errs);
                                 let val = val.impl_convert((t, Some(p.loc())), ctx);
                                 ctx.is_const.set(old_const);
                                 match val {
@@ -1081,25 +1076,23 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             })
                         })
                         .collect();
-                    let var = ctx
-                        .with_vars(|v| {
-                            v.insert(
-                                &self.name,
-                                Symbol(
-                                    Value::new(
-                                        Some(PointerValue(gv.as_pointer_value())),
-                                        Some(InterData::Function(FnData {
-                                            defaults,
-                                            cconv: cc,
-                                            mt,
-                                        })),
-                                        types::Function::new(ret, params.clone()).add_ref(false),
-                                    ),
-                                    VariableData::with_vis(self.loc, vs),
+                    let var = ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    Some(PointerValue(gv.as_pointer_value())),
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    types::Function::new(ret, params.clone()).add_ref(false),
                                 ),
-                            )
-                        })
-                        .clone();
+                                VariableData::with_vis(self.loc, vs),
+                            ),
+                        )
+                    });
                     if is_extern.is_none() {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
@@ -1158,7 +1151,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             }
                         }
                         ctx.to_drop.borrow_mut().push(Vec::new());
-                        let body = self.body.codegen_errs(ctx, &mut errs);
+                        let body = self.body.codegen(ctx, errs);
                         ctx.to_drop
                             .borrow_mut()
                             .pop()
@@ -1240,7 +1233,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .filter_map(|((_, _, _, p, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = a.codegen(ctx, errs);
                                 let val = val.impl_convert((t, Some(p.loc())), ctx);
                                 ctx.is_const.set(old_const);
                                 match val {
@@ -1277,7 +1270,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             ),
                         )
                     })
-                    .clone()
                 }
             } else if ret.size() == SizeType::Static(0) {
                 let mut good = true;
@@ -1351,7 +1343,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .filter_map(|((_, _, _, p, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = a.codegen(ctx, errs);
                                 let val = val.impl_convert((t, Some(p.loc())), ctx);
                                 ctx.is_const.set(old_const);
                                 match val {
@@ -1371,25 +1363,23 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             })
                         })
                         .collect();
-                    let var = ctx
-                        .with_vars(|v| {
-                            v.insert(
-                                &self.name,
-                                Symbol(
-                                    Value::new(
-                                        Some(PointerValue(gv.as_pointer_value())),
-                                        Some(InterData::Function(FnData {
-                                            defaults,
-                                            cconv: cc,
-                                            mt,
-                                        })),
-                                        types::Function::new(ret, params.clone()).add_ref(false),
-                                    ),
-                                    VariableData::with_vis(self.loc, vs),
+                    let var = ctx.with_vars(|v| {
+                        v.insert(
+                            &self.name,
+                            Symbol(
+                                Value::new(
+                                    Some(PointerValue(gv.as_pointer_value())),
+                                    Some(InterData::Function(FnData {
+                                        defaults,
+                                        cconv: cc,
+                                        mt,
+                                    })),
+                                    types::Function::new(ret, params.clone()).add_ref(false),
                                 ),
-                            )
-                        })
-                        .clone();
+                                VariableData::with_vis(self.loc, vs),
+                            ),
+                        )
+                    });
                     if is_extern.is_none() {
                         let entry = ctx.context.append_basic_block(f, "entry");
                         ctx.builder.position_at_end(entry);
@@ -1448,7 +1438,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             }
                         }
                         ctx.to_drop.borrow_mut().push(Vec::new());
-                        self.body.codegen_errs(ctx, &mut errs);
+                        self.body.codegen(ctx, errs);
                         ctx.to_drop
                             .borrow_mut()
                             .pop()
@@ -1523,7 +1513,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         .filter_map(|((_, _, _, p, d), (t, _))| {
                             d.as_ref().map(|a| {
                                 let old_const = ctx.is_const.replace(true);
-                                let val = a.codegen_errs(ctx, &mut errs);
+                                let val = a.codegen(ctx, errs);
                                 let val = val.impl_convert((t, Some(p.loc())), ctx);
                                 ctx.is_const.set(old_const);
                                 match val {
@@ -1560,7 +1550,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                             ),
                         )
                     })
-                    .clone()
                 }
             } else {
                 let cloned = params.clone(); // Rust doesn't like me using params in the following closure
@@ -1571,7 +1560,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                     .filter_map(|((_, _, _, p, d), (t, _))| {
                         d.as_ref().map(|a| {
                             let old_const = ctx.is_const.replace(true);
-                            let val = a.codegen_errs(ctx, &mut errs);
+                            let val = a.codegen(ctx, errs);
                             let val = val.impl_convert((t, Some(p.loc())), ctx);
                             ctx.is_const.set(old_const);
                             match val {
@@ -1608,7 +1597,6 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         ),
                     )
                 })
-                .clone()
             } {
                 Ok(x) => (x.0.clone(), errs),
                 Err(RedefVariable::NotAModule(x, _)) => {
@@ -1644,7 +1632,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                 .comp_val
                 .map(|v| unsafe { std::mem::transmute(v.as_value_ref()) }));
         }
-        val
+        Value::null()
     }
     fn print_impl(
         &self,
@@ -1737,23 +1725,18 @@ impl<'src> AST<'src> for CallAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
-        let (val, mut errs) = self.target.codegen(ctx);
-        (
-            val.call(
-                Some(self.cparen),
-                self.args
-                    .iter()
-                    .map(|a| a.codegen_errs(ctx, &mut errs))
-                    .collect(),
-                ctx,
-            )
-            .unwrap_or_else(|err| {
-                errs.push(err);
-                Value::error().with_loc(self.target.loc())
-            }),
-            errs,
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        let val = self.target.codegen(ctx, errs);
+        val.call(
+            Some(self.cparen),
+            self.args.iter().map(|a| a.codegen(ctx, errs)).collect(),
+            ctx,
         )
+        .unwrap_or_else(|err| {
+            errs.push(err);
+            Value::error().with_loc(self.target.loc())
+        })
     }
     fn print_impl(
         &self,
@@ -1788,24 +1771,20 @@ impl<'src> AST<'src> for IntrinsicAST<'src> {
     fn codegen_impl<'ctx>(
         &self,
         _ctx: &CompCtx<'src, 'ctx>,
-    ) -> (Value<'src, 'ctx>, Vec<CobaltError<'src>>) {
+        errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
         if intrinsics::FUNCTION_INTRINSICS
             .pin()
             .contains_key(&*self.name)
             || intrinsics::VALUE_INTRINSICS.pin().contains_key(&*self.name)
         {
-            (
-                Value::new(None, None, types::Intrinsic::new_ref(&self.name)),
-                vec![],
-            )
+            Value::new(None, None, types::Intrinsic::new_ref(&self.name))
         } else {
-            (
-                Value::error(),
-                vec![CobaltError::UnknownIntrinsic {
-                    name: self.name.clone(),
-                    loc: self.loc,
-                }],
-            )
+            errs.push(CobaltError::UnknownIntrinsic {
+                name: self.name.clone(),
+                loc: self.loc,
+            });
+            Value::error()
         }
     }
     fn print_impl(

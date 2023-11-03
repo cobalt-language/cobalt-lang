@@ -6,7 +6,8 @@ use cobalt_ast::dottedname::*;
 impl<'src> Parser<'src> {
     pub(crate) fn parse_cdns(
         &mut self,
-    ) -> Result<(CompoundDottedNameSegment<'src>, Vec<CobaltError<'src>>), CobaltError<'src>> {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Result<CompoundDottedNameSegment<'src>, CobaltError<'src>> {
         let res = match self.current_token {
             None => Err(CobaltError::ExpectedFound {
                 ex: "identifier or glob",
@@ -16,20 +17,16 @@ impl<'src> Parser<'src> {
             Some(Token {
                 kind: TokenKind::Ident(id),
                 span,
-            }) => Ok((
-                (CompoundDottedNameSegment::Identifier(id.into(), span)),
-                vec![],
-            )),
+            }) => Ok(CompoundDottedNameSegment::Identifier(id.into(), span)),
             Some(Token {
                 kind: TokenKind::UnOrBinOp(UnOrBinOpToken::Star),
                 span,
-            }) => Ok(((CompoundDottedNameSegment::Glob(span)), vec![])),
+            }) => Ok(CompoundDottedNameSegment::Glob(span)),
             Some(Token {
                 kind: TokenKind::OpenDelimiter(Delimiter::Brace),
                 ..
             }) => {
                 let mut opts = vec![];
-                let mut errors = vec![];
                 self.next();
                 loop {
                     match self.current_token {
@@ -46,8 +43,7 @@ impl<'src> Parser<'src> {
                             ..
                         }) => break,
                         _ => {
-                            let (opt, mut errs) = self.parse_cdn_list(true);
-                            errors.append(&mut errs);
+                            let opt = self.parse_cdn_list(true, errors);
                             opts.push(opt);
                             match self.current_token {
                                 None => {
@@ -85,7 +81,7 @@ impl<'src> Parser<'src> {
                         }
                     }
                 }
-                Ok((CompoundDottedNameSegment::Group(opts), errors))
+                Ok(CompoundDottedNameSegment::Group(opts))
             }
             Some(Token { kind, span }) => Err(CobaltError::ExpectedFound {
                 ex: "identifier or glob",
@@ -99,15 +95,12 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_cdn_list(
         &mut self,
         in_nested: bool,
-    ) -> (Vec<CompoundDottedNameSegment<'src>>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Vec<CompoundDottedNameSegment<'src>> {
         let mut out = vec![];
         loop {
-            match self.parse_cdns() {
-                Ok((seg, mut errs)) => {
-                    out.push(seg);
-                    errors.append(&mut errs)
-                }
+            match self.parse_cdns(errors) {
+                Ok(seg) => out.push(seg),
                 Err(err) => {
                     errors.push(err);
                     loop {
@@ -119,7 +112,7 @@ impl<'src> Parser<'src> {
                         }
                         if current.kind == TokenKind::Semicolon {
                             self.next();
-                            return (out, errors);
+                            return out;
                         }
                         if in_nested
                             && matches!(
@@ -127,7 +120,7 @@ impl<'src> Parser<'src> {
                                 TokenKind::Comma | TokenKind::CloseDelimiter(Delimiter::Brace)
                             )
                         {
-                            return (out, errors);
+                            return out;
                         }
                         self.next();
                     }
@@ -148,14 +141,13 @@ impl<'src> Parser<'src> {
                     ..
                 }) if in_nested => break,
                 Some(Token { kind, span }) => loop {
-                    if let Ok((seg, mut errs)) = self.parse_cdns() {
+                    if let Ok(seg) = self.parse_cdns(errors) {
                         errors.push(CobaltError::ExpectedFound {
                             ex: "'.'",
                             found: Some(kind.as_str().into()),
                             loc: span,
                         });
                         out.push(seg);
-                        errors.append(&mut errs);
                     } else {
                         self.next();
                         break;
@@ -163,10 +155,13 @@ impl<'src> Parser<'src> {
                 },
             }
         }
-        (out, errors)
+        out
     }
 
-    pub(crate) fn parse_cdn(&mut self) -> (CompoundDottedName<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_cdn(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> CompoundDottedName<'src> {
         let global = if matches!(
             self.current_token,
             Some(Token {
@@ -179,7 +174,7 @@ impl<'src> Parser<'src> {
         } else {
             false
         };
-        let (segs, errs) = self.parse_cdn_list(false);
-        (CompoundDottedName::new(segs, global), errs)
+        let segs = self.parse_cdn_list(false, errors);
+        CompoundDottedName::new(segs, global)
     }
 }
