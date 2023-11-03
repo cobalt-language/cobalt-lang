@@ -25,7 +25,10 @@ impl<'src> Parser<'src> {
     ///    := fn_def
     ///    := inline_module_decl
     /// ```
-    pub(crate) fn parse_top_level(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_top_level(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         assert!(self.current_token.is_some());
 
         let start_idx = self.cursor.index;
@@ -48,53 +51,53 @@ impl<'src> Parser<'src> {
         self.rewind_to_idx(start_idx);
 
         match tok {
-            None => (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _,
-                vec![CobaltError::ExpectedFound {
+            None => {
+                errors.push(CobaltError::ExpectedFound {
                     ex: "top-level declaration",
                     found: None,
                     loc: self.cursor.src_len().into(),
-                }],
-            ),
+                });
+                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _
+            }
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Type),
                 ..
-            }) => self.parse_type_decl(true),
+            }) => self.parse_type_decl(true, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Let),
                 ..
-            }) => self.parse_let_decl(DeclLoc::Global),
+            }) => self.parse_let_decl(DeclLoc::Global, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Const),
                 ..
-            }) => self.parse_const_decl(true),
+            }) => self.parse_const_decl(true, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Fn),
                 ..
-            }) => self.parse_fn_def(DeclLoc::Global),
+            }) => self.parse_fn_def(DeclLoc::Global, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Import),
                 ..
-            }) => self.parse_import(),
+            }) => self.parse_import(errors),
 
             Some(tok) => match self.check_module_decl() {
-                CheckModuleDeclResult::None => (
-                    Box::new(ErrorAST::new(tok.span)) as _,
-                    vec![CobaltError::ExpectedFound {
+                CheckModuleDeclResult::None => {
+                    errors.push(CobaltError::ExpectedFound {
                         ex: "top-level declaration",
                         found: Some(tok.kind.as_str().into()),
                         loc: tok.span,
-                    }],
-                ),
-                CheckModuleDeclResult::Inline => self.parse_inline_module_decl(),
-                CheckModuleDeclResult::Alias => self.parse_alias_module_decl(),
-                CheckModuleDeclResult::File | CheckModuleDeclResult::Invalid => (
-                    Box::new(ErrorAST::new(tok.span)),
-                    vec![CobaltError::InvalidThing {
-                        ex: "file module declaration",
+                    });
+                    Box::new(ErrorAST::new(tok.span)) as _
+                }
+                CheckModuleDeclResult::Inline => self.parse_inline_module_decl(errors),
+                CheckModuleDeclResult::Alias => self.parse_alias_module_decl(errors),
+                CheckModuleDeclResult::File | CheckModuleDeclResult::Invalid => {
+                    errors.push(CobaltError::InvalidThing {
+                        ex: "module declaration",
                         loc: tok.span,
-                    }],
-                ),
+                    });
+                    Box::new(ErrorAST::new(tok.span))
+                }
             },
         }
     }
@@ -150,14 +153,15 @@ impl<'src> Parser<'src> {
     /// ```text
     /// inline_module_decl := 'module' ID '::' '{' top_level* '}' ';'
     /// ```
-    pub(crate) fn parse_inline_module_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
+    pub(crate) fn parse_inline_module_decl(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let span = self.current_token.unwrap().span;
 
         // --- Annotations.
 
-        let (anns, mut anns_errs) = self.parse_annotations();
-        errors.append(&mut anns_errs);
+        let anns = self.parse_annotations();
 
         // ---
 
@@ -179,10 +183,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(span)), errors);
+            return Box::new(ErrorAST::new(span));
         }
 
-        let module_name = self.parse_id(true, &mut errors);
+        let module_name = self.parse_id(true, errors);
 
         let mut working_result = ModuleAST::new(span, module_name, vec![], anns);
 
@@ -200,7 +204,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(working_result), errors);
+            return Box::new(working_result);
         }
 
         self.next();
@@ -219,7 +223,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(working_result), errors);
+            return Box::new(working_result);
         }
 
         self.next();
@@ -235,7 +239,7 @@ impl<'src> Parser<'src> {
                     loc: SourceSpan::from((self.cursor.src_len(), 0)),
                 });
                 working_result.vals = vals;
-                return (Box::new(working_result), errors);
+                return Box::new(working_result);
             };
 
             match kind {
@@ -245,9 +249,8 @@ impl<'src> Parser<'src> {
                 }
 
                 _ => {
-                    let (parsed_tl, mut parsed_errors) = self.parse_top_level();
+                    let parsed_tl = self.parse_top_level(errors);
                     vals.push(parsed_tl);
-                    errors.append(&mut parsed_errors);
                 }
             }
         }
@@ -277,14 +280,14 @@ impl<'src> Parser<'src> {
                 });
             }
 
-            return (Box::new(working_result), errors);
+            return Box::new(working_result);
         }
 
         self.next();
 
         // ---
 
-        (Box::new(working_result), errors)
+        Box::new(working_result)
     }
 
     /// Going into the function, the current token is assumed to be `module`.
@@ -294,7 +297,8 @@ impl<'src> Parser<'src> {
     /// ```
     pub(crate) fn parse_file_module_decl(
         &mut self,
-    ) -> (Option<DottedName<'src>>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Option<DottedName<'src>> {
         let Some(Token {
             kind: TokenKind::Keyword(Keyword::Module),
             span,
@@ -302,8 +306,6 @@ impl<'src> Parser<'src> {
         else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         // Consume 'module'.
 
@@ -315,10 +317,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (None, errors);
+            return None;
         }
 
-        let module_name = Some(self.parse_id(true, &mut errors));
+        let module_name = Some(self.parse_id(true, errors));
 
         // Next must be semicolon.
 
@@ -328,7 +330,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (module_name, errors);
+            return module_name;
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -340,14 +342,14 @@ impl<'src> Parser<'src> {
 
             loop_until!(self, TokenKind::Semicolon);
 
-            return (module_name, errors);
+            return module_name;
         }
 
         self.next();
 
         // ---
 
-        (module_name, errors)
+        module_name
     }
 
     /// Going into the function, the current token is assumed to be `module`.
@@ -355,14 +357,15 @@ impl<'src> Parser<'src> {
     /// ```text
     /// alias_module_decl := 'module' [ident | dotted_expr] '=' cdn ';'
     /// ```
-    pub(crate) fn parse_alias_module_decl(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
+    pub(crate) fn parse_alias_module_decl(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let span = self.current_token.unwrap().span;
 
         // --- Annotations.
 
-        let (anns, mut anns_errs) = self.parse_annotations();
-        errors.append(&mut anns_errs);
+        let anns = self.parse_annotations();
 
         // ---
 
@@ -384,10 +387,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: span,
             });
-            return (Box::new(ErrorAST::new(span)), errors);
+            return Box::new(ErrorAST::new(span));
         }
 
-        let module_name = self.parse_id(true, &mut errors);
+        let module_name = self.parse_id(true, errors);
 
         // ---
 
@@ -401,17 +404,13 @@ impl<'src> Parser<'src> {
 
         self.next();
 
-        let (glob, mut glob_errs) = self.parse_cdn();
-        errors.append(&mut glob_errs);
+        let glob = self.parse_cdn(errors);
 
-        (
-            Box::new(ModuleAST::new(
-                span,
-                module_name,
-                vec![Box::new(ImportAST::new(span, glob, vec![]))],
-                anns,
-            )),
-            errors,
-        )
+        Box::new(ModuleAST::new(
+            span,
+            module_name,
+            vec![Box::new(ImportAST::new(span, glob, vec![]))],
+            anns,
+        ))
     }
 }

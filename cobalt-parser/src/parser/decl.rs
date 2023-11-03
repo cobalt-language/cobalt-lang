@@ -135,7 +135,11 @@ impl<'src> Parser<'src> {
     ///    := type_decl
     ///    := fn_decl
     /// ```
-    pub fn parse_decl(&mut self, loc: DeclLoc) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub fn parse_decl(
+        &mut self,
+        loc: DeclLoc,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         assert!(self.current_token.is_some());
 
         let start_idx = self.cursor.index;
@@ -159,9 +163,8 @@ impl<'src> Parser<'src> {
         self.rewind_to_idx(start_idx);
 
         match tok {
-            None => (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _,
-                vec![CobaltError::ExpectedFound {
+            None => {
+                errors.push(CobaltError::ExpectedFound {
                     ex: if loc == DeclLoc::Global {
                         "top-level declaration"
                     } else {
@@ -169,44 +172,43 @@ impl<'src> Parser<'src> {
                     },
                     found: None,
                     loc: self.cursor.src_len().into(),
-                }],
-            ),
+                });
+                Box::new(ErrorAST::new(self.cursor.src_len().into())) as _
+            }
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Type),
                 ..
-            }) => self.parse_type_decl(loc == DeclLoc::Global),
+            }) => self.parse_type_decl(loc == DeclLoc::Global, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Let),
                 ..
-            }) => self.parse_let_decl(loc),
+            }) => self.parse_let_decl(loc, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Const),
                 ..
-            }) => self.parse_const_decl(loc == DeclLoc::Global),
+            }) => self.parse_const_decl(loc == DeclLoc::Global, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Fn),
                 ..
-            }) => self.parse_fn_def(loc),
+            }) => self.parse_fn_def(loc, errors),
             Some(Token {
                 kind: TokenKind::Keyword(Keyword::Import),
                 ..
-            }) if loc != DeclLoc::Struct => self.parse_import(),
+            }) if loc != DeclLoc::Struct => self.parse_import(errors),
 
             Some(tok) => {
                 self.rewind_to_idx(curr_idx);
                 loop_until(self);
-                (
-                    Box::new(ErrorAST::new(tok.span)) as _,
-                    vec![CobaltError::ExpectedFound {
-                        ex: if loc == DeclLoc::Global {
-                            "top-level declaration"
-                        } else {
-                            "declaration"
-                        },
-                        found: Some(tok.kind.as_str().into()),
-                        loc: tok.span,
-                    }],
-                )
+                errors.push(CobaltError::ExpectedFound {
+                    ex: if loc == DeclLoc::Global {
+                        "top-level declaration"
+                    } else {
+                        "declaration"
+                    },
+                    found: Some(tok.kind.as_str().into()),
+                    loc: tok.span,
+                });
+                Box::new(ErrorAST::new(tok.span)) as _
             }
         }
     }
@@ -224,13 +226,11 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_let_decl(
         &mut self,
         loc: DeclLoc,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
-
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         // Annotations.
 
-        let (anns, anns_errors) = self.parse_annotations();
-        errors.extend(anns_errors);
+        let anns = self.parse_annotations();
 
         let current = self.current_token.unwrap();
 
@@ -259,14 +259,11 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         }
 
         // Get the name of the variable.
-        let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
+        let name = self.parse_id(loc == DeclLoc::Global, errors);
 
         // Get the (optional) type of the variable.
 
@@ -288,15 +285,14 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind == TokenKind::Colon {
             self.next();
 
-            let (ty, mut ty_errors) = self.parse_primary_expr(false);
+            let ty = self.parse_primary_expr(false, errors);
 
-            errors.append(&mut ty_errors);
             ty_expr = Some(ty);
         }
 
@@ -319,7 +315,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind == TokenKind::Semicolon {
@@ -330,7 +326,7 @@ impl<'src> Parser<'src> {
                     found: Some(current.kind.as_str().into()),
                     loc,
                 });
-                return (Box::new(ErrorAST::new(loc)), errors);
+                return Box::new(ErrorAST::new(loc));
             }
 
             let semicolon_span = current.span;
@@ -349,7 +345,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next has to be an equals sign.
@@ -371,7 +367,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -394,7 +390,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -418,11 +414,10 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
-        let (expr, mut expr_errors) = self.parse_expr(false);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(false, errors);
 
         // Next has to be a semicolon.
 
@@ -443,7 +438,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -469,7 +464,7 @@ impl<'src> Parser<'src> {
                 is_mutable,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -486,7 +481,7 @@ impl<'src> Parser<'src> {
             is_mutable,
         ));
 
-        (ast, errors)
+        ast
     }
 
     /// Parses a const declaration.
@@ -502,13 +497,11 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_const_decl(
         &mut self,
         is_global: bool,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
-
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         // Annotations.
 
-        let (anns, anns_errors) = self.parse_annotations();
-        errors.extend(anns_errors);
+        let anns = self.parse_annotations();
 
         let current = self.current_token.unwrap();
 
@@ -525,7 +518,7 @@ impl<'src> Parser<'src> {
 
         // Get the name of the variable.
 
-        let name = self.parse_id(is_global, &mut errors);
+        let name = self.parse_id(is_global, errors);
 
         // Get the (optional) type of the variable.
 
@@ -545,15 +538,14 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind == TokenKind::Colon {
             self.next();
 
-            let (ty, mut ty_errors) = self.parse_primary_expr(false);
+            let ty = self.parse_primary_expr(false, errors);
 
-            errors.append(&mut ty_errors);
             ty_expr = Some(ty);
         }
 
@@ -574,7 +566,7 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind == TokenKind::Semicolon {
@@ -585,7 +577,7 @@ impl<'src> Parser<'src> {
                     found: Some(current.kind.as_str().into()),
                     loc,
                 });
-                return (Box::new(ErrorAST::new(loc)), errors);
+                return Box::new(ErrorAST::new(loc));
             }
 
             let semicolon_span = current.span;
@@ -602,7 +594,7 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next has to be an equals sign.
@@ -622,7 +614,7 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -644,7 +636,7 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -666,11 +658,10 @@ impl<'src> Parser<'src> {
                 anns,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
-        let (expr, mut expr_errors) = self.parse_expr(false);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(false, errors);
 
         // Next has to be a semicolon.
 
@@ -682,7 +673,7 @@ impl<'src> Parser<'src> {
             });
             let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -701,7 +692,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -710,7 +701,7 @@ impl<'src> Parser<'src> {
 
         let ast = Box::new(ConstDefAST::new(first_token_loc, name, expr, ty_expr, anns));
 
-        (ast, errors)
+        ast
     }
 
     /// Parses a type declaration.
@@ -723,16 +714,15 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_type_decl(
         &mut self,
         is_global: bool,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         assert!(self.current_token.is_some());
 
-        let mut errors = vec![];
         let first_token_loc = self.current_token.unwrap().span;
 
         // Annotations.
 
-        let (anns, anns_errors) = self.parse_annotations();
-        errors.extend(anns_errors);
+        let anns = self.parse_annotations();
 
         // ---
 
@@ -742,10 +732,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind != TokenKind::Keyword(Keyword::Type) {
@@ -759,14 +746,14 @@ impl<'src> Parser<'src> {
 
             loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            return Box::new(ErrorAST::new(first_token_loc));
         }
 
         self.next();
 
         // Next has to be an identifier, the name of the type.
 
-        let name = self.parse_id(is_global, &mut errors);
+        let name = self.parse_id(is_global, errors);
 
         // Next has to be an equals sign.
 
@@ -784,7 +771,7 @@ impl<'src> Parser<'src> {
                 vec![],
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::BinOp(BinOpToken::Eq) {
@@ -806,7 +793,7 @@ impl<'src> Parser<'src> {
                 vec![],
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next has to be an expression.
@@ -828,11 +815,10 @@ impl<'src> Parser<'src> {
                 vec![],
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
-        let (expr, mut expr_errors) = self.parse_expr(false);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(false, errors);
 
         // Next has to be a semicolon or a double colon.
 
@@ -842,10 +828,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         // If it's a semicolon, we're done.
@@ -855,7 +838,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next has to be a double colon.
@@ -877,7 +860,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -890,10 +873,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind != TokenKind::OpenDelimiter(Delimiter::Brace) {
@@ -910,7 +890,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, vec![]));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next is 0 or more function definitions.
@@ -930,8 +910,7 @@ impl<'src> Parser<'src> {
                 break;
             }
 
-            let (decl, mut decl_errors) = self.parse_decl(DeclLoc::Global);
-            errors.append(&mut decl_errors);
+            let decl = self.parse_decl(DeclLoc::Struct, errors);
             methods.push(decl);
         }
 
@@ -945,7 +924,7 @@ impl<'src> Parser<'src> {
             });
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::CloseDelimiter(Delimiter::Brace) {
@@ -962,7 +941,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Next has to be a semicolon.
@@ -975,10 +954,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -997,7 +973,7 @@ impl<'src> Parser<'src> {
 
             let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
 
-            return (ast, errors);
+            return ast;
         }
 
         // Done.
@@ -1006,7 +982,7 @@ impl<'src> Parser<'src> {
 
         let ast = Box::new(TypeDefAST::new(first_token_loc, name, expr, anns, methods));
 
-        (ast, errors)
+        ast
     }
     /// Parses a function definition.
     ///
@@ -1017,15 +993,14 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_fn_def(
         &mut self,
         loc: DeclLoc,
-    ) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         assert!(self.current_token.is_some());
         let first_token_loc = self.current_token.unwrap().span;
-        let mut errors = vec![];
 
         // Annotations.
 
-        let (anns, mut ann_errors) = self.parse_annotations();
-        errors.append(&mut ann_errors);
+        let anns = self.parse_annotations();
 
         // Next has to be 'fn'.
         let Some(current) = self.current_token else {
@@ -1034,10 +1009,7 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
         if current.kind != TokenKind::Keyword(Keyword::Fn) {
@@ -1051,7 +1023,7 @@ impl<'src> Parser<'src> {
 
             loop_until(self);
 
-            return (Box::new(ErrorAST::new(first_token_loc)), errors);
+            return Box::new(ErrorAST::new(first_token_loc));
         }
 
         self.next();
@@ -1064,13 +1036,10 @@ impl<'src> Parser<'src> {
                 found: None,
                 loc: first_token_loc,
             });
-            return (
-                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                errors,
-            );
+            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         }
 
-        let name = self.parse_id(loc == DeclLoc::Global, &mut errors);
+        let name = self.parse_id(loc == DeclLoc::Global, errors);
 
         // Next has to be an open paren.
 
@@ -1091,7 +1060,7 @@ impl<'src> Parser<'src> {
                 loc == DeclLoc::Struct,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::OpenDelimiter(Delimiter::Paren) {
@@ -1105,7 +1074,7 @@ impl<'src> Parser<'src> {
 
             loop_until(self);
 
-            return (Box::new(ErrorAST::new(current.span)), errors);
+            return Box::new(ErrorAST::new(current.span));
         }
 
         // Next is 0 or more function parameters. After the first, each one has to be preceded by a
@@ -1121,10 +1090,7 @@ impl<'src> Parser<'src> {
                     found: None,
                     loc: first_token_loc,
                 });
-                return (
-                    Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                    errors,
-                );
+                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
             };
 
             if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1150,10 +1116,7 @@ impl<'src> Parser<'src> {
                                 found: None,
                                 loc: self.cursor.src_len().into(),
                             });
-                            return (
-                                Box::new(ErrorAST::new(self.cursor.src_len().into())),
-                                errors,
-                            );
+                            return Box::new(ErrorAST::new(self.cursor.src_len().into()));
                         };
 
                         if current.kind == TokenKind::CloseDelimiter(Delimiter::Paren) {
@@ -1167,8 +1130,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            let (param, mut param_errors) = self.parse_fn_param();
-            errors.append(&mut param_errors);
+            let param = self.parse_fn_param(errors);
             params.push(param);
         }
 
@@ -1194,9 +1156,7 @@ impl<'src> Parser<'src> {
             })
         ) {
             self.next();
-            let (ret_type, mut ret_errors) = self.parse_primary_expr(false);
-            errors.append(&mut ret_errors);
-            ret = ret_type;
+            ret = self.parse_primary_expr(false, errors);
         }
 
         // If next is a semicolon, we're done. Otherwise, next is an equals sign, and we have to
@@ -1219,16 +1179,14 @@ impl<'src> Parser<'src> {
                 loc == DeclLoc::Struct,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         let mut body: BoxedAST = Box::new(NullAST::new(current.span));
 
         if current.kind == TokenKind::BinOp(BinOpToken::Eq) {
             self.next();
-            let (expr, mut expr_errors) = self.parse_expr(false);
-            errors.append(&mut expr_errors);
-            body = expr;
+            body = self.parse_expr(false, errors);
         }
 
         // Next is a semicolon.
@@ -1250,7 +1208,7 @@ impl<'src> Parser<'src> {
                 loc == DeclLoc::Struct,
             ));
 
-            return (ast, errors);
+            return ast;
         };
 
         if current.kind != TokenKind::Semicolon {
@@ -1276,7 +1234,7 @@ impl<'src> Parser<'src> {
                 loc == DeclLoc::Struct,
             ));
 
-            return (ast, errors);
+            return ast;
         }
 
         self.next();
@@ -1293,7 +1251,7 @@ impl<'src> Parser<'src> {
             loc == DeclLoc::Struct,
         ));
 
-        (ast, errors)
+        ast
     }
 
     /// Parses a function parameter.
@@ -1302,12 +1260,13 @@ impl<'src> Parser<'src> {
     /// fn_param
     ///  := ['mut' | 'const'] IDENT ':' expr ['=' expr]
     /// ```
-    pub(crate) fn parse_fn_param(&mut self) -> (Parameter<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_fn_param(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Parameter<'src> {
         let Some(current) = self.current_token else {
             unreachable!()
         };
-
-        let mut errors = vec![];
 
         let first_token_loc = current.span;
 
@@ -1331,14 +1290,11 @@ impl<'src> Parser<'src> {
                 loc: first_token_loc,
             });
             return (
-                (
-                    first_token_loc,
-                    Cow::from(""),
-                    ParamType::Normal,
-                    Box::new(ErrorAST::new(first_token_loc)),
-                    None,
-                ),
-                errors,
+                first_token_loc,
+                Cow::from(""),
+                ParamType::Normal,
+                Box::new(ErrorAST::new(first_token_loc)),
+                None,
             );
         };
 
@@ -1371,14 +1327,11 @@ impl<'src> Parser<'src> {
             }
 
             return (
-                (
-                    first_token_loc,
-                    Cow::from(""),
-                    ParamType::Normal,
-                    Box::new(ErrorAST::new(first_token_loc)),
-                    None,
-                ),
-                errors,
+                first_token_loc,
+                Cow::from(""),
+                ParamType::Normal,
+                Box::new(ErrorAST::new(first_token_loc)),
+                None,
             );
         };
 
@@ -1393,14 +1346,11 @@ impl<'src> Parser<'src> {
                 loc: first_token_loc,
             });
             return (
-                (
-                    first_token_loc,
-                    Cow::from(""),
-                    ParamType::Normal,
-                    Box::new(ErrorAST::new(first_token_loc)),
-                    None,
-                ),
-                errors,
+                first_token_loc,
+                Cow::from(""),
+                ParamType::Normal,
+                Box::new(ErrorAST::new(first_token_loc)),
+                None,
             );
         };
 
@@ -1431,14 +1381,11 @@ impl<'src> Parser<'src> {
             }
 
             return (
-                (
-                    first_token_loc,
-                    Cow::from(""),
-                    ParamType::Normal,
-                    Box::new(ErrorAST::new(first_token_loc)),
-                    None,
-                ),
-                errors,
+                first_token_loc,
+                Cow::from(""),
+                ParamType::Normal,
+                Box::new(ErrorAST::new(first_token_loc)),
+                None,
             );
         }
 
@@ -1453,19 +1400,15 @@ impl<'src> Parser<'src> {
                 loc: first_token_loc,
             });
             return (
-                (
-                    first_token_loc,
-                    Cow::from(""),
-                    ParamType::Normal,
-                    Box::new(ErrorAST::new(first_token_loc)),
-                    None,
-                ),
-                errors,
+                first_token_loc,
+                Cow::from(""),
+                ParamType::Normal,
+                Box::new(ErrorAST::new(first_token_loc)),
+                None,
             );
         }
 
-        let (expr, mut expr_errors) = self.parse_expr(false);
-        errors.append(&mut expr_errors);
+        let expr = self.parse_expr(false, errors);
 
         // Next is an optional '=' and expression.
 
@@ -1499,36 +1442,26 @@ impl<'src> Parser<'src> {
                 }
 
                 return (
-                    (
-                        first_token_loc,
-                        Cow::from(""),
-                        ParamType::Normal,
-                        Box::new(ErrorAST::new(first_token_loc)),
-                        None,
-                    ),
-                    errors,
+                    first_token_loc,
+                    Cow::from(""),
+                    ParamType::Normal,
+                    Box::new(ErrorAST::new(first_token_loc)),
+                    None,
                 );
             }
 
-            let (default_expr, mut default_expr_errors) = self.parse_expr(false);
-            errors.append(&mut default_expr_errors);
+            let default_expr = self.parse_expr(false, errors);
 
             default = Some(default_expr);
         }
 
         // Done.
 
-        (
-            (first_token_loc, Cow::from(name), param_type, expr, default),
-            errors,
-        )
+        (first_token_loc, Cow::from(name), param_type, expr, default)
     }
 
-    pub(crate) fn parse_import(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
-        let mut errors = vec![];
-
-        let (_anns, anns_errors) = self.parse_annotations();
-        errors.extend(anns_errors);
+    pub(crate) fn parse_import(&mut self, errors: &mut Vec<CobaltError<'src>>) -> BoxedAST<'src> {
+        let anns = self.parse_annotations();
 
         let Some(Token {
             kind: TokenKind::Keyword(Keyword::Import),
@@ -1538,8 +1471,8 @@ impl<'src> Parser<'src> {
             unreachable!()
         };
         self.next();
-        let (path, mut errs) = self.parse_cdn();
-        errors.append(&mut errs);
+        let path = self.parse_cdn(errors);
+
         if matches!(
             self.current_token,
             Some(Token {
@@ -1558,6 +1491,6 @@ impl<'src> Parser<'src> {
             });
             loop_until(self);
         }
-        (Box::new(ImportAST::new(span, path, vec![])), errors)
+        Box::new(ImportAST::new(span, path, anns))
     }
 }

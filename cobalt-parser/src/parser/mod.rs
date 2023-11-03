@@ -92,13 +92,12 @@ impl<'src> Parser<'src> {
     }
 
     /// Main entry point for parsing.
-    pub fn parse(&mut self) -> (Option<TopLevelAST<'src>>, Vec<CobaltError<'src>>) {
+    pub fn parse(&mut self, errs: &mut Vec<CobaltError<'src>>) -> Option<TopLevelAST<'src>> {
         if self.current_token.is_none() {
-            return (None, vec![]);
+            return None;
         }
 
         let mut vals = vec![];
-        let mut errs = vec![];
         let mut module = None;
         let mut module_span = None;
 
@@ -108,7 +107,7 @@ impl<'src> Parser<'src> {
             }
 
             if self.check_module_decl() == CheckModuleDeclResult::File {
-                let (module_parsed, errs_parsed) = self.parse_file_module_decl();
+                let module_parsed = self.parse_file_module_decl(errs);
 
                 if module.is_some() {
                     errs.push(CobaltError::RedefModule {
@@ -120,7 +119,6 @@ impl<'src> Parser<'src> {
                     continue;
                 }
 
-                errs.extend(errs_parsed);
                 module = module_parsed;
                 module_span = Some(
                     self.current_token
@@ -130,15 +128,14 @@ impl<'src> Parser<'src> {
             }
 
             let i = self.cursor.index;
-            let (val, err) = self.parse_top_level();
+            let val = self.parse_top_level(errs);
             if i == self.cursor.index {
                 decl::loop_until(self);
             }
             vals.push(val);
-            errs.extend(err);
         }
 
-        (Some(TopLevelAST::new(vals, module)), errs)
+        Some(TopLevelAST::new(vals, module))
     }
 }
 

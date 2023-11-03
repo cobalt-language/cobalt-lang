@@ -20,12 +20,11 @@ impl<'src> Parser<'src> {
     /// ```text
     /// literal := LITERAL
     /// ```
-    pub(crate) fn parse_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_literal(&mut self, errors: &mut Vec<CobaltError<'src>>) -> BoxedAST<'src> {
         let current = self.current_token.unwrap();
 
         let span = current.span;
         let mut suffix = None;
-        let mut errors = vec![];
 
         match current.kind {
             TokenKind::Literal(LiteralToken::Int(s)) => {
@@ -53,10 +52,7 @@ impl<'src> Parser<'src> {
                 }
                 let parsed_int = parsed_int.unwrap();
 
-                return (
-                    Box::new(IntLiteralAST::new(span, parsed_int, suffix)),
-                    errors,
-                );
+                return Box::new(IntLiteralAST::new(span, parsed_int, suffix));
             }
 
             TokenKind::Literal(LiteralToken::Float(s)) => {
@@ -83,27 +79,23 @@ impl<'src> Parser<'src> {
                 }
                 let parsed_float = parsed_float.unwrap();
 
-                return (
-                    Box::new(cobalt_ast::ast::FloatLiteralAST::new(
-                        span,
-                        parsed_float,
-                        suffix,
-                    )),
-                    errors,
-                );
+                return Box::new(cobalt_ast::ast::FloatLiteralAST::new(
+                    span,
+                    parsed_float,
+                    suffix,
+                ));
             }
 
             TokenKind::Literal(LiteralToken::Char(_)) => {
-                let parsed_literal = self.parse_char_literal();
-                if parsed_literal.0.is_none() {
-                    return (Box::new(ErrorAST::new(span)), errors);
+                let parsed_literal = self.parse_char_literal(errors);
+                if parsed_literal.is_none() {
+                    return Box::new(ErrorAST::new(span));
                 }
 
-                let mut ast = parsed_literal.0.unwrap();
-                let errors = parsed_literal.1;
+                let mut ast = parsed_literal.unwrap();
 
                 if self.current_token.is_none() {
-                    return (Box::new(ast), errors);
+                    return Box::new(ast);
                 }
 
                 // --- Check for suffixes.
@@ -121,20 +113,19 @@ impl<'src> Parser<'src> {
 
                 // ---
 
-                return (Box::new(ast), errors);
+                return Box::new(ast);
             }
 
             TokenKind::Literal(LiteralToken::Str(_)) => {
-                let parsed_literal = self.parse_string_literal();
-                if parsed_literal.0.is_none() {
-                    return (Box::new(ErrorAST::new(span)), errors);
+                let parsed_literal = self.parse_string_literal(errors);
+                if parsed_literal.is_none() {
+                    return Box::new(ErrorAST::new(span));
                 }
 
-                let mut ast = parsed_literal.0.unwrap();
-                let errors = parsed_literal.1;
+                let mut ast = parsed_literal.unwrap();
 
                 if self.current_token.is_none() {
-                    return (Box::new(ast), errors);
+                    return Box::new(ast);
                 }
 
                 // --- Check for suffixes.
@@ -152,7 +143,7 @@ impl<'src> Parser<'src> {
 
                 // ---
 
-                return (Box::new(ast), errors);
+                return Box::new(ast);
             }
 
             _ => {}
@@ -164,10 +155,7 @@ impl<'src> Parser<'src> {
             loc: span,
         });
         self.next();
-        (
-            Box::new(ErrorAST::new(self.cursor.src_len().into())),
-            errors,
-        )
+        Box::new(ErrorAST::new(self.cursor.src_len().into()))
     }
 
     /// Check if the current token begins a struct literal.
@@ -219,7 +207,7 @@ impl<'src> Parser<'src> {
         }
 
         // ---
-        let _ = self.parse_expr(false);
+        let _ = self.parse_expr(false, &mut vec![]);
         if !matches!(
             self.current_token,
             Some(Token {
@@ -240,7 +228,10 @@ impl<'src> Parser<'src> {
     /// ```text
     /// struct_literal := '{' [ident ':' expr] [',' ident ':' expr]* [',']? '}'
     /// ````
-    pub(crate) fn parse_struct_literal(&mut self) -> (BoxedAST<'src>, Vec<CobaltError<'src>>) {
+    pub(crate) fn parse_struct_literal(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::OpenDelimiter(Delimiter::Brace),
             span,
@@ -249,7 +240,6 @@ impl<'src> Parser<'src> {
             unreachable!()
         };
 
-        let mut errors = vec![];
         self.next();
 
         // ---
@@ -362,8 +352,7 @@ impl<'src> Parser<'src> {
 
             // Expr.
 
-            let (expr, mut expr_errors) = self.parse_expr(false);
-            errors.append(&mut expr_errors);
+            let expr = self.parse_expr(false, errors);
 
             fields.insert(field_name.clone(), expr);
             field_spans.insert(field_name, field_name_span);
@@ -373,17 +362,17 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        (Box::new(StructLiteralAST::new(span, fields)), errors)
+        Box::new(StructLiteralAST::new(span, fields))
     }
 
     /// Going into this function, expect current token to be 'LiteralToken::Char'.
     pub(crate) fn parse_char_literal(
         &mut self,
-    ) -> (Option<CharLiteralAST<'src>>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Option<CharLiteralAST<'src>> {
         let current = self.current_token.unwrap();
 
         let span = current.span;
-        let mut errors = vec![];
 
         let TokenKind::Literal(LiteralToken::Char(s)) = self.current_token.unwrap().kind else {
             self.next();
@@ -392,7 +381,7 @@ impl<'src> Parser<'src> {
                 found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
-            return (None, errors);
+            return None;
         };
 
         let mut char_indices = s[1..(s.len() - 1)].char_indices().peekable();
@@ -477,17 +466,17 @@ impl<'src> Parser<'src> {
             Some((_, c)) => u32::from(c),
         };
 
-        (Some(CharLiteralAST::new(span, val, None)), errors)
+        Some(CharLiteralAST::new(span, val, None))
     }
 
     /// Going into this function, expect current token to be 'LiteralToken::Str'.
     pub(crate) fn parse_string_literal(
         &mut self,
-    ) -> (Option<StringLiteralAST<'src>>, Vec<CobaltError<'src>>) {
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Option<StringLiteralAST<'src>> {
         let current = self.current_token.unwrap();
 
         let span = current.span;
-        let mut errors = vec![];
 
         let TokenKind::Literal(LiteralToken::Str(s)) = current.kind else {
             self.next();
@@ -496,7 +485,7 @@ impl<'src> Parser<'src> {
                 found: Some(self.current_token.unwrap().kind.as_str().into()),
                 loc: span,
             });
-            return (None, errors);
+            return None;
         };
         let mut char_indices = s[1..(s.len() - 1)].char_indices().peekable();
 
@@ -585,7 +574,7 @@ impl<'src> Parser<'src> {
             bytes.extend(cbi);
         }
 
-        (Some(StringLiteralAST::new(span, bytes, None)), errors)
+        Some(StringLiteralAST::new(span, bytes, None))
     }
 }
 
