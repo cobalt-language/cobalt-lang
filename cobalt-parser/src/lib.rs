@@ -14,7 +14,7 @@ pub fn parse_str(src: &str) -> (Option<TopLevelAST>, Vec<CobaltError>) {
 
     let mut parser = Parser::new(tokens);
     parser.next();
-    let mut ast = parser.parse(&mut errors);
+    let ast = parser.parse(&mut errors);
 
     (ast, errors)
 }

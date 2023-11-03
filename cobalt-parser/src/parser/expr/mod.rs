@@ -134,7 +134,7 @@ impl<'src> Parser<'src> {
                 state |= parsed_something;
             }
             TokenKind::Intrinsic(..) => {
-                working_ast = self.parse_intrinsic(errors);
+                working_ast = self.parse_intrinsic();
 
                 state |= parsed_something;
             }
@@ -943,10 +943,7 @@ impl<'src> Parser<'src> {
     /// ```text
     /// instinsic := '@' [ident | keyword]
     /// ```
-    pub(crate) fn parse_intrinsic(
-        &mut self,
-        errors: &mut Vec<CobaltError<'src>>,
-    ) -> BoxedAST<'src> {
+    pub(crate) fn parse_intrinsic(&mut self) -> BoxedAST<'src> {
         let Some(Token {
             kind: TokenKind::Intrinsic(name_src),
             span,

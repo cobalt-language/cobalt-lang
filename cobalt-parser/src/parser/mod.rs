@@ -93,9 +93,7 @@ impl<'src> Parser<'src> {
 
     /// Main entry point for parsing.
     pub fn parse(&mut self, errs: &mut Vec<CobaltError<'src>>) -> Option<TopLevelAST<'src>> {
-        if self.current_token.is_none() {
-            return None;
-        }
+        self.current_token?;
 
         let mut vals = vec![];
         let mut module = None;
