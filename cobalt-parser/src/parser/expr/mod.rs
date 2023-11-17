@@ -410,6 +410,7 @@ impl<'src> Parser<'src> {
                 kind: TokenKind::CloseDelimiter(Delimiter::Paren),
                 span,
             }) => {
+                self.next();
                 return Box::new(ParenAST::new(
                     merge_spans(start, span),
                     Box::new(NullAST::new(span.offset().into())),
