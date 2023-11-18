@@ -1,4 +1,4 @@
-#![allow(unused_variables)]
+#![allow(unused_variables, ambiguous_glob_reexports)]
 use crate::*;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};

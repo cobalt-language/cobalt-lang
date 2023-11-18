@@ -1,4 +1,7 @@
 use super::*;
+use bstr::ByteSlice;
+use std::str::Utf8Error;
+
 #[derive(Debug, Display)]
 #[display(fmt = "type")]
 pub struct TypeData(());
@@ -109,6 +112,7 @@ impl Type for TypeData {
         Ok(Self::new())
     }
 }
+
 #[derive(Debug, Display)]
 #[display(fmt = "module")]
 pub struct Module(());
@@ -134,6 +138,7 @@ impl Type for Module {
         attr: (Cow<'src, str>, SourceSpan),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        use varmap::Symbol;
         if let Some(InterData::Module(s, i, n)) = &val.inter_val {
             ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &attr.0, v.root()))
                 .map_or_else(
@@ -172,6 +177,7 @@ impl Type for Module {
         Ok(Self::new())
     }
 }
+
 #[derive(Debug, Display)]
 #[display(fmt = "<error>")]
 pub struct Error(());
@@ -307,6 +313,7 @@ impl Type for Error {
         Ok(Self::new())
     }
 }
+
 #[derive(Debug, Display)]
 #[display(fmt = "null")]
 pub struct Null(());
@@ -424,4 +431,117 @@ impl Type for Null {
     }
 }
 
-submit_types!(TypeData, Module, Error, Null);
+#[derive(Debug, RefCastCustom)]
+#[repr(transparent)]
+pub struct Symbol(Box<[u8]>);
+impl Symbol {
+    #[ref_cast_custom]
+    #[allow(clippy::borrowed_box)]
+    fn from_ref(this: &Box<[u8]>) -> &Self;
+    pub fn new_ref<S: AsRef<[u8]>>(name: S) -> &'static Self {
+        Self::from_ref(SYMBOL_INTERN.intern_ref(name.as_ref()))
+    }
+    pub fn new<S: Into<Box<[u8]>>>(name: S) -> &'static Self {
+        Self::from_ref(SYMBOL_INTERN.intern(name.into()))
+    }
+    pub fn value(&self) -> &[u8] {
+        &self.0
+    }
+    pub fn value_str(&self) -> Result<&str, Utf8Error> {
+        std::str::from_utf8(&self.0)
+    }
+}
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("$")?;
+        if let Ok(s) = self.0.to_str() {
+            if s.chars().all(|c| c == '_' || c.is_alphanumeric()) {
+                f.write_str(s)?;
+                return Ok(());
+            }
+        }
+        Debug::fmt(self.0.as_bstr(), f)
+    }
+}
+impl ConcreteType for Symbol {
+    const KIND: NonZeroU64 = make_id(b"symbol");
+}
+impl Type for Symbol {
+    fn size(&'static self) -> SizeType {
+        SizeType::Static(0)
+    }
+    fn align(&'static self) -> u16 {
+        1
+    }
+    fn save(&'static self, out: &mut dyn Write) -> io::Result<()> {
+        out.write_all(&(self.0.len() as u64).to_be_bytes())?;
+        out.write_all(&self.0)
+    }
+    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
+    where
+        Self: ConcreteType,
+    {
+        let mut arr = [0; 8];
+        buf.read_exact(&mut arr)?;
+        let len = u64::from_be_bytes(arr);
+        let mut vec = vec![0; len as _];
+        buf.read_exact(&mut vec)?;
+        Ok(Self::new(vec))
+    }
+    fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
+        other.is_and::<types::Reference>(|r| {
+            r.base()
+                .is_and::<types::UnsizedArray>(|a| a.elem() == types::Int::unsigned(8))
+        }) || other.is_and::<types::Pointer>(|p| p.base() == types::Int::unsigned(8))
+    }
+    fn _iconv_to<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        target: (TypeRef, Option<SourceSpan>),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        if target.0.is_and::<types::Reference>(|r| {
+            r.base()
+                .is_and::<types::UnsizedArray>(|a| a.elem() == types::Int::unsigned(8))
+        }) {
+            let arr = ctx.context.const_string(self.value(), true);
+            let gv = ctx.module.add_global(arr.get_type(), None, "cobalt.str");
+            gv.set_initializer(&arr);
+            gv.set_linkage(inkwell::module::Linkage::Private);
+            let sv = ctx.context.const_struct(
+                &[
+                    gv.as_pointer_value().into(),
+                    ctx.context
+                        .i64_type()
+                        .const_int(self.value().len() as _, false)
+                        .into(),
+                ],
+                false,
+            );
+            Ok(Value::interpreted(
+                sv.into(),
+                InterData::Array(
+                    self.value()
+                        .iter()
+                        .map(|&v| InterData::Int(v as _))
+                        .collect(),
+                ),
+                target.0,
+            ))
+        } else if target
+            .0
+            .is_and::<types::Pointer>(|p| p.base() == types::Int::unsigned(8))
+        {
+            let arr = ctx.context.const_string(self.value(), true);
+            let gv = ctx.module.add_global(arr.get_type(), None, "cobalt.str");
+            gv.set_initializer(&arr);
+            gv.set_linkage(inkwell::module::Linkage::Private);
+            Ok(Value::compiled(gv.as_pointer_value().into(), target.0))
+        } else {
+            Err(cant_iconv(&val, target.0, target.1))
+        }
+    }
+}
+static SYMBOL_INTERN: Interner<Box<[u8]>> = Interner::new();
+
+submit_types!(TypeData, Module, Error, Null, Symbol);
