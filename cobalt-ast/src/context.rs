@@ -109,6 +109,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                         "usize",
                         Value::make_type(types::Int::unsigned(flags.word_size * 8)),
                     ),
+                    ("null", Value::null()),
                 ]
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))

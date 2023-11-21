@@ -73,12 +73,7 @@ impl<'src> Parser<'src> {
         let initial_span = current.span;
         let mut working_ast: BoxedAST = Box::new(ErrorAST::new(current.span));
 
-        let start = 0;
-        let parsed_something = 1 << 0;
-        let can_be_dotted = 1 << 1;
-        let can_be_indexed = 1 << 2;
-        let can_be_postfixed = 1 << 3;
-        let mut state = start;
+        let mut parsed_something = false;
 
         // ---
 
@@ -86,57 +81,55 @@ impl<'src> Parser<'src> {
             TokenKind::Literal(_) => {
                 working_ast = self.parse_literal(errors);
 
-                state |= parsed_something;
+                parsed_something = true;
             }
             TokenKind::Ident(_) => {
                 working_ast = self.parse_ident_expr(errors);
 
-                state |= parsed_something;
-                state |= can_be_dotted;
-                state |= can_be_indexed;
-                state |= can_be_postfixed;
+                parsed_something = true;
             }
+
+            TokenKind::Keyword(Keyword::Type) => {
+                working_ast = Box::new(TypeLiteralAST::new(current.span));
+                self.next();
+
+                parsed_something = true;
+            }
+
             TokenKind::OpenDelimiter(Delimiter::Paren) => {
                 working_ast = self.parse_paren_expr(errors);
 
-                state |= parsed_something;
-                state |= can_be_dotted;
-                state |= can_be_indexed;
-                state |= can_be_postfixed;
+                parsed_something = true;
             }
             TokenKind::OpenDelimiter(Delimiter::Brace) => {
                 working_ast = self.parse_block_expr(errors);
 
-                state |= parsed_something;
+                parsed_something = true;
             }
             TokenKind::OpenDelimiter(Delimiter::Bracket) => {
                 working_ast = self.parse_array_expr(errors);
 
-                state |= parsed_something;
+                parsed_something = true;
             }
             TokenKind::UnOp(_) => {
                 working_ast = self.parse_prefix_expr(errors);
 
-                state |= parsed_something;
-                state |= can_be_dotted;
-                state |= can_be_indexed;
+                parsed_something = true;
             }
             TokenKind::UnOrBinOp(_) => {
                 working_ast = self.parse_prefix_expr(errors);
 
-                state |= parsed_something;
-                state |= can_be_dotted;
-                state |= can_be_indexed;
+                parsed_something = true;
             }
             TokenKind::Keyword(Keyword::Mut) => {
                 working_ast = self.parse_prefix_expr(errors);
 
-                state |= parsed_something;
+                parsed_something = true;
             }
             TokenKind::Intrinsic(..) => {
                 working_ast = self.parse_intrinsic();
 
-                state |= parsed_something;
+                parsed_something = true;
             }
             _ => {}
         }
@@ -153,19 +146,17 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
-            if state & can_be_dotted != 0 && tok.kind == TokenKind::Dot {
+            if tok.kind == TokenKind::Dot {
                 working_ast = self.parse_dotted_expr(working_ast, errors);
                 continue;
             }
 
-            if state & can_be_indexed != 0
-                && tok.kind == TokenKind::OpenDelimiter(Delimiter::Bracket)
-            {
+            if tok.kind == TokenKind::OpenDelimiter(Delimiter::Bracket) {
                 working_ast = self.parse_index_expr(working_ast, errors);
                 continue;
             }
 
-            if state & can_be_postfixed != 0 && self.check_postfix_expr() {
+            if self.check_postfix_expr() {
                 working_ast = self.parse_postfix_expr(working_ast);
                 continue;
             }
@@ -175,7 +166,7 @@ impl<'src> Parser<'src> {
 
         // ---
 
-        if !allow_empty && state & parsed_something == 0 {
+        if !allow_empty && !parsed_something {
             errors.push(CobaltError::InvalidThing {
                 ex: "expression",
                 loc: initial_span.offset().into(),
@@ -419,6 +410,7 @@ impl<'src> Parser<'src> {
                 kind: TokenKind::CloseDelimiter(Delimiter::Paren),
                 span,
             }) => {
+                self.next();
                 return Box::new(ParenAST::new(
                     merge_spans(start, span),
                     Box::new(NullAST::new(span.offset().into())),
