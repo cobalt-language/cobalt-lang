@@ -776,6 +776,6 @@ pub use func::*;
 pub use int::*;
 pub use intrinsic::*;
 pub use mem::*;
-pub use meta::*;
+pub use meta::{Symbol, *};
 
 use ref_cast::*;

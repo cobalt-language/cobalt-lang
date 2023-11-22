@@ -321,3 +321,33 @@ impl<'src> AST<'src> for ParenAST<'src> {
         self.base.print_impl(f, pre, file)
     }
 }
+#[derive(Debug, Clone)]
+pub struct SymbolAST<'src> {
+    pub loc: SourceSpan,
+    pub val: Cow<'src, [u8]>,
+}
+impl<'src> SymbolAST<'src> {
+    pub fn new(loc: SourceSpan, val: Cow<'src, [u8]>) -> Self {
+        SymbolAST { loc, val }
+    }
+}
+impl<'src> AST<'src> for SymbolAST<'src> {
+    fn loc(&self) -> SourceSpan {
+        self.loc
+    }
+    fn codegen_impl<'ctx>(
+        &self,
+        _ctx: &CompCtx<'src, 'ctx>,
+        _errs: &mut Vec<CobaltError<'src>>,
+    ) -> Value<'src, 'ctx> {
+        Value::new(None, None, types::Symbol::new_ref(&self.val))
+    }
+    fn print_impl(
+        &self,
+        f: &mut std::fmt::Formatter,
+        _pre: &mut TreePrefix,
+        _file: Option<CobaltFile>,
+    ) -> std::fmt::Result {
+        write!(f, "symbol: {:?}", bstr::BStr::new(&self.val))
+    }
+}
