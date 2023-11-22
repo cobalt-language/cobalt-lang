@@ -57,3 +57,14 @@ fn test_parse_char_literal() {
         parser.parse_char_literal(errors)
     });
 }
+
+#[test]
+fn test_symbol_literal() {
+    test_parser_fn(r#"$abc"#, true, |parser, errors| {
+        parser.parse_literal(errors)
+    });
+
+    test_parser_fn(r#"$"abc\ndef""#, true, |parser, errors| {
+        parser.parse_literal(errors)
+    });
+}
