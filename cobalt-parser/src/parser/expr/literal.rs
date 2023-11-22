@@ -598,6 +598,8 @@ impl<'src> Parser<'src> {
 
         let bytes = Self::parse_string_bytes(s, span, errors)?;
 
+        self.next();
+
         Some(StringLiteralAST::new(span, bytes, None))
     }
 }
