@@ -1,4 +1,4 @@
-use std::{iter::Peekable, rc::Rc, str::Chars};
+use std::{iter::Peekable, ops::Range, rc::Rc, str::Chars};
 
 use super::{
     tokens::{
@@ -86,13 +86,78 @@ impl<'src> SourceReader<'src> {
 
         while let Some(&c) = self.peek() {
             match c {
-                ' ' | '\n' | '\t' => {
+                ' ' | '\r' | '\n' | '\t' => {
                     self.next_char();
                 }
 
                 '#' => {
                     if let Err(err) = self.eat_comment() {
                         errors.push(err);
+                    }
+                }
+
+                '$' => {
+                    let start = self.index;
+                    self.next_char();
+                    let mut add_err = true;
+                    loop {
+                        match self.peek() {
+                            None => {
+                                if add_err {
+                                    errors.push(CobaltError::ExpectedFound {
+                                        ex: "symbol name",
+                                        found: None,
+                                        loc: self.index.into(),
+                                    })
+                                }
+                            }
+                            Some('"') => {
+                                let mut span = self.eat_string(&mut errors);
+                                span.start -= 1;
+                                tokens.push(Token {
+                                    kind: TokenKind::Literal(LiteralToken::Symbol(
+                                        &self.source[span.clone()],
+                                    )),
+                                    span: span.into(),
+                                });
+                            }
+                            Some(' ' | '\r' | '\n' | '\t') => {
+                                self.next_char();
+                                if add_err {
+                                    add_err = false;
+                                    errors.push(CobaltError::ExpectedFound {
+                                        ex: "symbol name",
+                                        found: Some("whitespace".into()),
+                                        loc: self.index.into(),
+                                    });
+                                }
+                                continue;
+                            }
+                            Some(&c) => {
+                                if is_ident_start(c) {
+                                    loop {
+                                        self.next_char();
+                                        let Some(&c) = self.peek() else { break };
+                                        if !is_xid_continue(c) {
+                                            break;
+                                        }
+                                    }
+                                    tokens.push(Token {
+                                        kind: TokenKind::Literal(LiteralToken::Symbol(
+                                            &self.source[start..self.index],
+                                        )),
+                                        span: (start..self.index).into(),
+                                    });
+                                } else if add_err {
+                                    errors.push(CobaltError::ExpectedFound {
+                                        ex: "symbol name",
+                                        found: Some(format!("{c:?}").into()),
+                                        loc: self.index.into(),
+                                    });
+                                }
+                            }
+                        }
+                        break;
                     }
                 }
 
@@ -619,45 +684,10 @@ impl<'src> SourceReader<'src> {
 
                 // --- String literal.
                 '"' => {
-                    let span_start = self.index;
-                    self.next_char();
-
-                    let mut last_was_escape = false;
-                    loop {
-                        let c = self.peek();
-                        if c.is_none() {
-                            errors.push(CobaltError::ExpectedFound {
-                                ex: "rest of string literal",
-                                found: None,
-                                loc: SourceSpan::from((self.source.len(), 0)),
-                            });
-                            continue;
-                        }
-                        let c = c.unwrap();
-
-                        if c == &'\\' {
-                            last_was_escape = !last_was_escape;
-                            self.next_char();
-                            continue;
-                        }
-
-                        if c == &'"' && !last_was_escape {
-                            break;
-                        }
-
-                        last_was_escape = false;
-
-                        self.next_char();
-                    }
-
-                    self.next_char();
-                    let span_end = self.index;
-
+                    let Range { start, end } = self.eat_string(&mut errors);
                     tokens.push(Token {
-                        kind: TokenKind::Literal(LiteralToken::Str(
-                            &self.source[span_start..span_end],
-                        )),
-                        span: SourceSpan::from((span_start, span_end - span_start)),
+                        kind: TokenKind::Literal(LiteralToken::Str(&self.source[start..end])),
+                        span: SourceSpan::from((start, end - start)),
                     });
                 }
 
@@ -823,5 +853,42 @@ impl<'src> SourceReader<'src> {
                 }
             }
         }
+    }
+
+    fn eat_string(&mut self, errors: &mut Vec<CobaltError<'src>>) -> Range<usize> {
+        let span_start = self.index;
+        self.next_char();
+
+        let mut last_was_escape = false;
+        loop {
+            let c = self.peek();
+            if c.is_none() {
+                errors.push(CobaltError::ExpectedFound {
+                    ex: "rest of string literal",
+                    found: None,
+                    loc: SourceSpan::from((self.source.len(), 0)),
+                });
+                continue;
+            }
+            let c = c.unwrap();
+
+            if c == &'\\' {
+                last_was_escape = !last_was_escape;
+                self.next_char();
+                continue;
+            }
+
+            if c == &'"' && !last_was_escape {
+                break;
+            }
+
+            last_was_escape = false;
+
+            self.next_char();
+        }
+
+        self.next_char();
+
+        span_start..self.index
     }
 }

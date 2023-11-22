@@ -348,6 +348,6 @@ impl<'src> AST<'src> for SymbolAST<'src> {
         _pre: &mut TreePrefix,
         _file: Option<CobaltFile>,
     ) -> std::fmt::Result {
-        write!(f, "symbol: {:?}", bstr::BStr::new(&self.val))
+        writeln!(f, "symbol: {:?}", bstr::BStr::new(&self.val))
     }
 }
