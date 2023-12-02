@@ -199,6 +199,8 @@ pub enum LiteralToken<'src> {
     Str(&'src str),
     /// The slice includes the single quotes.
     Char(&'src str),
+    /// The slice included the `$` and possibly the quotes.
+    Symbol(&'src str),
 }
 impl<'src> LiteralToken<'src> {
     pub fn as_str(self) -> &'src str {
@@ -206,7 +208,8 @@ impl<'src> LiteralToken<'src> {
             LiteralToken::Int(s)
             | LiteralToken::Float(s)
             | LiteralToken::Str(s)
-            | LiteralToken::Char(s) => s,
+            | LiteralToken::Char(s)
+            | LiteralToken::Symbol(s) => s,
         }
     }
 }

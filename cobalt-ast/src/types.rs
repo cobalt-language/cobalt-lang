@@ -1,4 +1,4 @@
-#![allow(unused_variables)]
+#![allow(unused_variables, ambiguous_glob_reexports)]
 use crate::*;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
@@ -776,6 +776,6 @@ pub use func::*;
 pub use int::*;
 pub use intrinsic::*;
 pub use mem::*;
-pub use meta::*;
+pub use meta::{Symbol, *};
 
 use ref_cast::*;

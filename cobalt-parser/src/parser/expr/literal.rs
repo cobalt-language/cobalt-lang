@@ -146,6 +146,21 @@ impl<'src> Parser<'src> {
                 return Box::new(ast);
             }
 
+            TokenKind::Literal(LiteralToken::Symbol(s)) => {
+                let s = s[1..].trim_start();
+                let val = if s.as_bytes()[0] == b'"' {
+                    if let Some(bytes) = Self::parse_string_bytes(s, span, errors) {
+                        Cow::Owned(bytes)
+                    } else {
+                        return Box::new(ErrorAST::new(span));
+                    }
+                } else {
+                    Cow::Borrowed(s.as_bytes())
+                };
+                self.next();
+                return Box::new(SymbolAST::new(span, val));
+            }
+
             _ => {}
         }
 
@@ -469,27 +484,12 @@ impl<'src> Parser<'src> {
         Some(CharLiteralAST::new(span, val, None))
     }
 
-    /// Going into this function, expect current token to be 'LiteralToken::Str'.
-    pub(crate) fn parse_string_literal(
-        &mut self,
+    pub(crate) fn parse_string_bytes(
+        s: &'src str,
+        span: SourceSpan,
         errors: &mut Vec<CobaltError<'src>>,
-    ) -> Option<StringLiteralAST<'src>> {
-        let current = self.current_token.unwrap();
-
-        let span = current.span;
-
-        let TokenKind::Literal(LiteralToken::Str(s)) = current.kind else {
-            self.next();
-            errors.push(CobaltError::ExpectedFound {
-                ex: "string literal",
-                found: Some(self.current_token.unwrap().kind.as_str().into()),
-                loc: span,
-            });
-            return None;
-        };
+    ) -> Option<Vec<u8>> {
         let mut char_indices = s[1..(s.len() - 1)].char_indices().peekable();
-
-        self.next();
 
         // ---
         let mut bytes = vec![];
@@ -573,6 +573,32 @@ impl<'src> Parser<'src> {
             };
             bytes.extend(cbi);
         }
+
+        Some(bytes)
+    }
+
+    /// Going into this function, expect current token to be 'LiteralToken::Str'.
+    pub(crate) fn parse_string_literal(
+        &mut self,
+        errors: &mut Vec<CobaltError<'src>>,
+    ) -> Option<StringLiteralAST<'src>> {
+        let current = self.current_token.unwrap();
+
+        let span = current.span;
+
+        let TokenKind::Literal(LiteralToken::Str(s)) = current.kind else {
+            self.next();
+            errors.push(CobaltError::ExpectedFound {
+                ex: "string literal",
+                found: Some(self.current_token.unwrap().kind.as_str().into()),
+                loc: span,
+            });
+            return None;
+        };
+
+        let bytes = Self::parse_string_bytes(s, span, errors)?;
+
+        self.next();
 
         Some(StringLiteralAST::new(span, bytes, None))
     }
