@@ -1,7 +1,7 @@
 # cobalt-lang
 Cobalt is a compiled programming language, with goals similar to C++.
-Documentation is available at <https://matt-cornell.github.io/cobalt-docs>, but may not be up to date.
-Everything related to the language is accessible through subcommands on the `co` command ([documentation](https://matt-cornell.github.io/cobalt-docs/co_cli.html)).
+Documentation is available at <https://cobalt-language.github.io/>, but may not be up to date.
+Everything related to the language is accessible through subcommands on the `co` command ([documentation](https://cobalt-language.github.io/co_cli.html)).
 ## Getting Started
 Prebuilds for Linux x86\_64 and Apple arm64 are available for the all of the releases.
 To build from source, use:
