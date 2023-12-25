@@ -16,7 +16,7 @@ jobs:
         os:
         - runner: ubuntu-latest
           name: linux
-        - runner: darwin-latest
+        - runner: macos-latest
           name: apple
         llvm: [15, 16]
         link: [static, dynamic]
