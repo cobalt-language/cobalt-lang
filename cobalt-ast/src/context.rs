@@ -24,7 +24,6 @@ impl From<HeaderVersionError> for io::Error {
     }
 }
 
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
     pub word_size: u16,

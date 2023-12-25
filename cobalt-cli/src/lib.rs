@@ -1792,7 +1792,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 out.set_extension("bc");
                                 let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                out.create_with_len(m.get_size() as _)?.write_all(m.as_slice())?;
+                                out.create_with_len(m.get_size() as _)?
+                                    .write_all(m.as_slice())?;
                                 Zero
                             }
                             OutputType::Assembly => {
@@ -1806,7 +1807,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         .unwrap()
                                 });
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                out.create_with_len(m.get_size() as _)?.write_all(m.as_slice())?;
+                                out.create_with_len(m.get_size() as _)?
+                                    .write_all(m.as_slice())?;
                                 Zero
                             }
                             _ => {
@@ -1851,7 +1853,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                     }
                                     OutputType::RawObject => {
                                         out.set_extension("raw.o");
-                                        out.create_with_len(mb.get_size() as _)?.write_all(mb.as_slice())?;
+                                        out.create_with_len(mb.get_size() as _)?
+                                            .write_all(mb.as_slice())?;
                                         Zero
                                     }
                                     OutputType::Object => {
