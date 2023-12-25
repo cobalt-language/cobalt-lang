@@ -18,7 +18,13 @@ jobs:
           name: linux
         - runner: darwin-latest
           name: apple
-        llvm: [15, 16, 17]
+        llvm: [15, 16]
+        link: [static, dynamic]
+        profile:
+        - name: debug
+          profile: dev
+        - name: release
+          profile: release
     runs-on: "${{ matrix.os.runner }}"
     if: "${{ always() }}"
     steps:
@@ -38,23 +44,12 @@ jobs:
         path: |
           Cargo.lock
           target/
-    - name: Build Debug
-      run: |
-        cargo build
-        gzip -N9 target/debug/co
-    - name: Upload Debug
+    - name: Build
+      run: "cargo build --profile ${{ matrix.profile.profile }}"
+    - name: Compress
+      run: "gzip -fN9 'target/${{ matrix.profile.name }}/co'"
+    - name: Upload
       uses: actions/upload-artifact@v3
       with:
-        name: "co-debug-${{ matrix.os.name }}-${{ matrix.llvm }}.gz"
-        path: target/debug/co.gz
-    - name: Build Release
-      run: |
-        cargo build --release
-        gzip -N9 target/release/co
-    - name: Upload Debug
-      uses: actions/upload-artifact@v3
-      with:
-        name: "co-rel-${{ matrix.os.name }}-${{ matrix.llvm }}.gz"
-        path: target/release/co.gz
-
-
+        name: "co-${{ matrix.profile.name }}-${{ matrix.os.name }}-${{ matrix.link }}-${{ matrix.llvm }}.gz"
+        path: "target/${{ matrix.profile.name }}/co.gz"
