@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  LLVM_SYS_150_PREFIX: "${{ github.workspace }}/target/"
 
 jobs:
   build:
@@ -21,8 +22,8 @@ jobs:
         - runner: darwin-latest
           name: apple
         llvm: [15, 16, 17]
-    runs-on: ${{ matrix.os.runner }}
-    if: "${{ !cancelled() }}"
+    runs-on: "${{ matrix.os.runner }}"
+    if: "${{ always() }}"
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -40,6 +41,11 @@ jobs:
         path: |
           Cargo.lock
           target/
+    - name: Run Setup Commands
+      run: |
+        mkdir -p target/bin || true
+        ls "${{ env.LLVM_PATH }}/bin"
+        # cp "${{ env.LLVM_PATH }}/bin/llvm-config-${{ matrix.llvm }}" target/bin/llvm-config-15
     - name: Build Debug
       run: |
         cargo build
