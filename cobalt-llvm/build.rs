@@ -1,6 +1,8 @@
 // This file is the same as llvm-sys's, with some slight modifications to make it run as a submodule.
 // Notable changes:
-// - Linking method is prefer-dynamic by default
+// - LLVM version is chosen from features
+// - No linking is actually done here
+// - Cargo variables are set
 // - Small refactors have been made to satisfy Clippy
 
 use const_format::formatcp;
@@ -13,6 +15,9 @@ use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::process::Command;
 
+#[cfg(feature = "llvm-15")]
+const LLVM_MAJOR: u64 = 15;
+#[cfg(feature = "llvm-16")]
 const LLVM_MAJOR: u64 = 16;
 
 // Environment variables that can guide compilation

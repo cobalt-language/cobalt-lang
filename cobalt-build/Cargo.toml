@@ -31,7 +31,6 @@ object = { version = "0.32.1", features = ["write"] }
 anyhow = "1.0.75"
 anyhow-std = "0.1.4"
 thiserror = "1.0.50"
-llvm-sys = "160"
 lasso = { version = "0.7.2", features = ["multi-threaded"] }
 indexmap = "2.0.2"
 os_str_bytes = { version = "6.6.1", features = ["conversions"] }
