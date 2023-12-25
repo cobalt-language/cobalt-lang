@@ -20,11 +20,7 @@ jobs:
           name: apple
         llvm: [15, 16]
         link: [static, dynamic]
-        profile:
-        - name: debug
-          profile: dev
-        - name: release
-          profile: release
+        profile: [debug, release]
     runs-on: "${{ matrix.os.runner }}"
     if: "${{ !cancelled() }}"
     steps:
@@ -51,11 +47,11 @@ jobs:
           Cargo.lock
           target/
     - name: Build
-      run: "cargo build --profile ${{ matrix.profile.profile }}"
+      run: "cargo build --profile ${{ matrix.profile == 'debug' && 'dev' || matrix.profile }} --no-default-features -F build-default,llvm-${{ matrix.llvm }}"
     - name: Compress
-      run: "gzip -fN9 'target/${{ matrix.profile.name }}/co'"
+      run: "gzip -fN9 'target/${{ matrix.profile }}/co'"
     - name: Upload
       uses: actions/upload-artifact@v3
       with:
-        name: "co-${{ matrix.profile.name }}-${{ matrix.os.name }}-${{ matrix.link }}-${{ matrix.llvm }}.gz"
-        path: "target/${{ matrix.profile.name }}/co.gz"
+        name: "co-${{ matrix.profile }}-${{ matrix.os.name }}-${{ matrix.link }}-${{ matrix.llvm }}.gz"
+        path: "target/${{ matrix.profile }}/co.gz"
