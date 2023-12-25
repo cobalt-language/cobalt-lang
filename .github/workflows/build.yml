@@ -2,6 +2,9 @@ name: Build Artifacts
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+    - auto-builds
 
 env:
   CARGO_TERM_COLOR: always
