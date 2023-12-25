@@ -1,0 +1,58 @@
+name: Build Artifacts
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+        - runner: ubuntu-latest
+          name: linux
+        - runner: windows-latest
+          name: windows
+        - runner: darwin-latest
+          name: apple
+        llvm: [15, 16, 17]
+    runs-on: "${{ matrix.os.runner }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install LLVM
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "${{ matrix.llvm }}.0"
+    - name: Cache Build Outputs
+      uses: actions/cache@v3
+      with:
+        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+        restore-keys: |
+          test-${{ github.ref_name }}-
+          test-
+        path: |
+          Cargo.lock
+          target/
+    - name: Build Debug
+      run: |
+        cargo build
+        gzip -N9 target/debug/co
+    - name: Upload Debug
+      uses: actions/upload-artifact@v3
+      with:
+        name: "co-debug-${{ matrix.os.name }}-${{ matrix.llvm }}.gz"
+        path: target/debug/co.gz
+    - name: Build Release
+      run: |
+        cargo build --release
+        gzip -N9 target/release/co
+    - name: Upload Debug
+      uses: actions/upload-artifact@v3
+      with:
+        name: "co-rel-${{ matrix.os.name }}-${{ matrix.llvm }}.gz"
+        path: target/release/co.gz
+
+
