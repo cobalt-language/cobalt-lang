@@ -19,7 +19,6 @@ jobs:
         - runner: macos-latest
           name: apple
         llvm: [15, 16]
-        link: [static, dynamic]
         profile: [debug, release]
     runs-on: "${{ matrix.os.runner }}"
     if: "${{ !cancelled() }}"
@@ -47,7 +46,7 @@ jobs:
           Cargo.lock
           target/
     - name: Build
-      run: "cargo build --profile ${{ matrix.profile == 'debug' && 'dev' || matrix.profile }} --no-default-features -F build-default,force-${{ matrix.link }},llvm-${{ matrix.llvm }}"
+      run: "cargo build --profile ${{ matrix.profile == 'debug' && 'dev' || matrix.profile }} --no-default-features -F build-default,llvm-${{ matrix.llvm }}"
     - name: Compress
       run: "gzip -fN9 'target/${{ matrix.profile }}/co'"
     - name: Upload
