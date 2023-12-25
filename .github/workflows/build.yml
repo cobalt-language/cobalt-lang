@@ -20,7 +20,7 @@ jobs:
           name: windows
         - runner: darwin-latest
           name: apple
-        llvm: [15, 16, 17]
+        llvm: [16]
     runs-on: ${{ matrix.os.runner }}
     if: "${{ !cancelled() }}"
     steps:
