@@ -9,6 +9,22 @@ use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
+use thiserror::Error;
+
+type HeaderVersionType = u16;
+/// Simple number to check if a header is compatible for loading
+/// Bump this whenever a breaking change is made to the format
+const HEADER_FMT_VERSION: HeaderVersionType = 0;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("expected header version {HEADER_FMT_VERSION}, found version {0}")]
+pub struct HeaderVersionError(pub HeaderVersionType);
+impl From<HeaderVersionError> for io::Error {
+    fn from(value: HeaderVersionError) -> Self {
+        io::Error::new(io::ErrorKind::Other, value)
+    }
+}
+
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
     pub word_size: u16,
@@ -17,6 +33,7 @@ pub struct Flags {
     pub dbg_mangle: bool,
     pub all_move_metadata: bool,
     pub private_syms: bool,
+    pub skip_header_version_check: bool,
 }
 impl Default for Flags {
     fn default() -> Self {
@@ -27,9 +44,11 @@ impl Default for Flags {
             dbg_mangle: false,
             all_move_metadata: false,
             private_syms: true,
+            skip_header_version_check: false,
         }
     }
 }
+
 pub struct CompCtx<'src, 'ctx> {
     pub flags: Flags,
     pub context: &'ctx Context,
@@ -277,6 +296,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         Some(v)
     }
     pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_all(&HEADER_FMT_VERSION.to_be_bytes())?;
         for info in inventory::iter::<types::TypeLoader> {
             out.write_all(&info.kind.get().to_be_bytes())?;
             (info.save_header)(out)?;
@@ -285,6 +305,14 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         self.with_vars(|v| v.save(out))
     }
     pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<Cow<'src, str>>> {
+        {
+            let mut arr = [0; std::mem::size_of::<HeaderVersionType>()];
+            buf.read_exact(&mut arr)?;
+            let version = HeaderVersionType::from_be_bytes(arr);
+            if !(self.flags.skip_header_version_check || version == HEADER_FMT_VERSION) {
+                Err(HeaderVersionError(version))?;
+            }
+        }
         let mut out = vec![];
         while !buf.fill_buf()?.is_empty() {
             let mut bytes = [0u8; 8];

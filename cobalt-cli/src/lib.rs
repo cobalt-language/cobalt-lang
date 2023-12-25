@@ -1744,8 +1744,12 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         reporter.insts_after += insts(&ctx.module);
                         let input = PathBuf::from(file.name());
                         let mut out = match &output {
-                            None => input,
-                            Some(p) => p.join(input),
+                            None => ClioPath::new(input)?,
+                            Some(p) => {
+                                let mut p = p.clone();
+                                p.push(input);
+                                p
+                            }
                         };
                         if !matches!(
                             emit,
@@ -1763,7 +1767,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 let mut buf = vec![];
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) +=
                                     try_timeit(|| ctx.save(&mut buf))?.1;
-                                Path::new(&out).write_anyhow(buf)?;
+                                out.create_with_len(buf.len() as _)?.write_all(&buf)?;
                                 Zero
                             }
                             OutputType::HeaderObj => {
@@ -1774,21 +1778,21 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                     obj.write()
                                 })?;
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                Path::new(&out).write_anyhow(vec)?;
+                                out.create_with_len(vec.len() as _)?.write_all(&vec)?;
                                 Zero
                             }
                             OutputType::Llvm => {
                                 out.set_extension("ll");
                                 let (m, cg_time) = timeit(|| ctx.module.to_string());
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                Path::new(&out).write_anyhow(m)?;
+                                out.create_with_len(m.len() as _)?.write_all(m.as_bytes())?;
                                 Zero
                             }
                             OutputType::Bitcode => {
                                 out.set_extension("bc");
                                 let (m, cg_time) = timeit(|| ctx.module.write_bitcode_to_memory());
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                Path::new(&out).write_anyhow(m.as_slice())?;
+                                out.create_with_len(m.get_size() as _)?.write_all(m.as_slice())?;
                                 Zero
                             }
                             OutputType::Assembly => {
@@ -1802,7 +1806,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         .unwrap()
                                 });
                                 *reporter.cg_time.get_or_insert(Duration::ZERO) += cg_time;
-                                Path::new(&out).write_anyhow(m.as_slice())?;
+                                out.create_with_len(m.get_size() as _)?.write_all(m.as_slice())?;
                                 Zero
                             }
                             _ => {
@@ -1838,8 +1842,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                         out.set_extension("o");
                                         archive.as_mut().unwrap().append(
                                             &ar::Header::new(
-                                                out.into_raw_vec(),
-                                                mb.as_slice().len() as _,
+                                                out.to_os_string().into_raw_vec(),
+                                                mb.get_size() as _,
                                             ),
                                             mb.as_slice(),
                                         )?;
@@ -1847,7 +1851,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                     }
                                     OutputType::RawObject => {
                                         out.set_extension("raw.o");
-                                        std::fs::write(out, mb.as_slice())?;
+                                        out.create_with_len(mb.get_size() as _)?.write_all(mb.as_slice())?;
                                         Zero
                                     }
                                     OutputType::Object => {
@@ -1858,7 +1862,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                             obj::get_writeable_object_from_file(parsed_llvm_object);
                                         libs::populate_header(&mut writeable_object, &ctx);
                                         let buf = writeable_object.write()?;
-                                        Path::new(&out).write_anyhow(buf)?;
+                                        out.create_with_len(buf.len() as _)?.write_all(&buf)?;
                                         Zero
                                     }
                                     x => unreachable!("{x:?} has already been handled"),
