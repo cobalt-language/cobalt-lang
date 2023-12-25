@@ -39,10 +39,10 @@ jobs:
     - name: Cache Build Outputs
       uses: actions/cache@v3
       with:
-        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+        key: build-${{ matrix.os.runner }} -${{ github.ref_name }}-${{ hashFiles('**/src') }}
         restore-keys: |
-          test-${{ github.ref_name }}-
-          test-
+          build-${{ matrix.os.runner }}-${{ github.ref_name }}-
+          build-${{ matrix.os.runner }}
         path: |
           Cargo.lock
           target/
