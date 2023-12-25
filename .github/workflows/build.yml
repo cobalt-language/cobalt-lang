@@ -30,16 +30,16 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Install LLVM (Action)
-      if: matrix.os != 'macos-latest' || matrix.llvm <= 15
-      uses: KyleMayes/install-llvm-action@v1
-      with:
-        version: "${{ matrix.llvm }}.0"
     - name: Install LLVM (Homebrew)
-      if: matrix.os == 'macos-latest' && matrix.llvm >= 16
+      if: matrix.os.runner == 'macos-latest' && matrix.llvm >= 16
       run: |
         brew install llvm@${{ matrix.llvm }}
         echo /usr/local/opt/llvm@${{ matrix.llvm }}/bin >> $GITHUB_PATH
+    - name: Install LLVM (Action)
+      if: matrix.os.runner != 'macos-latest' || matrix.llvm <= 15
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "${{ matrix.llvm }}.0"
     - name: Cache Build Outputs
       uses: actions/cache@v3
       with:
