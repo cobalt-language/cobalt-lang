@@ -488,13 +488,13 @@ impl<'src> SourceReader<'src> {
                 // alt. base int. literals
                 '0' => {
                     let start = self.index;
-                    
+
                     self.next_char();
                     let (base, alt) = match self.peek() {
                         Some(&'x') => (16, true),
                         Some(&'o') => (8, true),
                         Some(&'b') => (2, true),
-                        _ => (10, false)
+                        _ => (10, false),
                     };
                     if alt {
                         self.next_char();
@@ -511,7 +511,7 @@ impl<'src> SourceReader<'src> {
                                 errors.push(CobaltError::InvalidCharInLiteral {
                                     ch,
                                     base,
-                                    loc: (self.index, 1).into()
+                                    loc: (self.index, 1).into(),
                                 });
                                 while self.peek().map_or(false, char::is_ascii_digit) {
                                     self.next_char();
@@ -529,9 +529,7 @@ impl<'src> SourceReader<'src> {
                     } else {
                         // Not a float.
                         tokens.push(Token {
-                            kind: TokenKind::Literal(LiteralToken::Int(
-                                &self.source[start..end],
-                            )),
+                            kind: TokenKind::Literal(LiteralToken::Int(&self.source[start..end])),
                             span: (start..end).into(),
                         });
                         continue;

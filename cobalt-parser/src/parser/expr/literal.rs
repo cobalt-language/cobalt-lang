@@ -1,6 +1,6 @@
-use std::iter::Peekable;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::iter::Peekable;
 use std::str::CharIndices;
 
 use cobalt_ast::ast::*;
@@ -46,7 +46,7 @@ impl<'src> Parser<'src> {
                     Some(&b'x') => i128::from_str_radix(&s[2..], 16),
                     Some(&b'o') => i128::from_str_radix(&s[2..], 8),
                     Some(&b'b') => i128::from_str_radix(&s[2..], 2),
-                    _ => s.parse::<i128>()
+                    _ => s.parse::<i128>(),
                 };
 
                 let parsed_int = parsed_int.unwrap_or_else(|_| {
@@ -84,11 +84,7 @@ impl<'src> Parser<'src> {
                     0.0
                 });
 
-                return Box::new(FloatLiteralAST::new(
-                    span,
-                    parsed_float,
-                    suffix,
-                ));
+                return Box::new(FloatLiteralAST::new(span, parsed_float, suffix));
             }
 
             TokenKind::Literal(LiteralToken::Char(_)) => {
