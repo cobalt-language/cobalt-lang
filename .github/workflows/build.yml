@@ -1,0 +1,53 @@
+name: Build Artifacts
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+        - runner: ubuntu-latest
+          name: linux
+        - runner: macos-latest
+          name: apple
+        llvm: [15, 16]
+        profile: [debug, release]
+    runs-on: "${{ matrix.os.runner }}"
+    if: "${{ !cancelled() }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install LLVM (Homebrew)
+      if: matrix.os.runner == 'macos-latest' && matrix.llvm >= 16
+      run: |
+        brew install llvm@${{ matrix.llvm }}
+        echo /usr/local/opt/llvm@${{ matrix.llvm }}/bin >> $GITHUB_PATH
+    - name: Install LLVM (Action)
+      if: matrix.os.runner != 'macos-latest' || matrix.llvm <= 15
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "${{ matrix.llvm }}.0"
+    - name: Cache Build Outputs
+      uses: actions/cache@v3
+      with:
+        key: build-${{ matrix.os.runner }} -${{ github.ref_name }}-${{ hashFiles('**/src') }}
+        restore-keys: |
+          build-${{ matrix.os.runner }}-${{ github.ref_name }}-
+          build-${{ matrix.os.runner }}
+        path: |
+          Cargo.lock
+          target/
+    - name: Build
+      run: "cargo build --profile ${{ matrix.profile == 'debug' && 'dev' || matrix.profile }} --no-default-features -F build-default,llvm-${{ matrix.llvm }}"
+    - name: Compress
+      run: "gzip -fN9 'target/${{ matrix.profile }}/co'"
+    - name: Upload
+      uses: actions/upload-artifact@v3
+      with:
+        name: "co-${{ matrix.profile }}-${{ matrix.os.name }}-${{ matrix.link }}-${{ matrix.llvm }}.gz"
+        path: "target/${{ matrix.profile }}/co.gz"
