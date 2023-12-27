@@ -49,8 +49,14 @@ pub enum CobaltError<'src> {
         #[label("previously defined here")]
         prev: SourceSpan,
     },
-
-    #[error("unexpected character {ch}")]
+    #[error("invalid character {ch:?} in base-{base} literal")]
+    InvalidCharInLiteral {
+        ch: char,
+        base: u8,
+        #[label]
+        loc: SourceSpan,
+    },
+    #[error("unexpected character {ch:?}")]
     UnexpectedChar {
         #[label]
         loc: SourceSpan,

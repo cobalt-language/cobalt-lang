@@ -487,7 +487,8 @@ impl<'src> SourceReader<'src> {
                 }
                 // alt. base int. literals
                 '0' => {
-                    let mut num_len = 1;
+                    let start = self.index;
+                    
                     self.next_char();
                     let (base, alt) = match self.peek() {
                         Some(&'x') => (16, true),
@@ -497,16 +498,25 @@ impl<'src> SourceReader<'src> {
                     };
                     if alt {
                         self.next_char();
-                        num_len += 1;
                     }
 
                     // Now pointing to the first digit.
-
-                    while let Some(c) = self.peek() {
-                        if c.is_digit(base) {
+                    let mut end = self.index;
+                    while let Some(&ch) = self.peek() {
+                        if ch.is_digit(base as _) {
                             self.next_char();
-                            num_len += 1;
+                            end += 1;
                         } else {
+                            if ch.is_ascii_digit() {
+                                errors.push(CobaltError::InvalidCharInLiteral {
+                                    ch,
+                                    base,
+                                    loc: (self.index, 1).into()
+                                });
+                                while self.peek().map_or(false, char::is_ascii_digit) {
+                                    self.next_char();
+                                }
+                            }
                             break;
                         }
                     }
@@ -515,14 +525,14 @@ impl<'src> SourceReader<'src> {
 
                     if !alt && self.peek() == Some(&'.') {
                         self.next_char();
-                        num_len += 1;
+                        end += 1;
                     } else {
                         // Not a float.
                         tokens.push(Token {
                             kind: TokenKind::Literal(LiteralToken::Int(
-                                self.slice_backward(num_len),
+                                &self.source[start..end],
                             )),
-                            span: self.source_span_backward(num_len),
+                            span: (start..end).into(),
                         });
                         continue;
                     }
@@ -532,7 +542,7 @@ impl<'src> SourceReader<'src> {
                     while let Some(c) = self.peek() {
                         if c.is_ascii_digit() {
                             self.next_char();
-                            num_len += 1;
+                            end += 1;
                         } else {
                             break;
                         }
@@ -541,8 +551,8 @@ impl<'src> SourceReader<'src> {
                     // Now pointing to the last digit of the float.
 
                     tokens.push(Token {
-                        kind: TokenKind::Literal(LiteralToken::Float(self.slice_backward(num_len))),
-                        span: self.source_span_backward(num_len),
+                        kind: TokenKind::Literal(LiteralToken::Float(&self.source[start..end])),
+                        span: (start..end).into(),
                     });
                 }
 
