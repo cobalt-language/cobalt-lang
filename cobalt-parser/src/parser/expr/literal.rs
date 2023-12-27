@@ -1,8 +1,9 @@
 use std::iter::Peekable;
-use std::{borrow::Cow, collections::HashMap, str::CharIndices};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::str::CharIndices;
 
-use cobalt_ast::ast::CharLiteralAST;
-use cobalt_ast::{ast::*, BoxedAST};
+use cobalt_ast::ast::*;
 use cobalt_errors::{CobaltError, SourceSpan};
 
 use crate::{
@@ -41,16 +42,21 @@ impl<'src> Parser<'src> {
 
                 // Now we want to parse the string `s` to an `i128`. If there is a suffix,
                 // we don't want to include this in the string we parse.
+                let parsed_int = match s.as_bytes().get(1) {
+                    Some(&b'x') => i128::from_str_radix(&s[2..], 16),
+                    Some(&b'o') => i128::from_str_radix(&s[2..], 8),
+                    Some(&b'b') => i128::from_str_radix(&s[2..], 2),
+                    _ => s.parse::<i128>()
+                };
 
-                let parsed_int = s.parse::<i128>();
-                if parsed_int.is_err() {
+                let parsed_int = parsed_int.unwrap_or_else(|_| {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "integer literal",
                         found: Some(s.into()),
                         loc: span,
                     });
-                }
-                let parsed_int = parsed_int.unwrap();
+                    0
+                });
 
                 return Box::new(IntLiteralAST::new(span, parsed_int, suffix));
             }
@@ -69,17 +75,16 @@ impl<'src> Parser<'src> {
 
                 // Now we want to parse the string `s` to an `f64`.
 
-                let parsed_float = s.parse::<f64>();
-                if parsed_float.is_err() {
+                let parsed_float = s.parse::<f64>().unwrap_or_else(|_| {
                     errors.push(CobaltError::ExpectedFound {
                         ex: "float literal",
                         found: Some(s.into()),
                         loc: span,
                     });
-                }
-                let parsed_float = parsed_float.unwrap();
+                    0.0
+                });
 
-                return Box::new(cobalt_ast::ast::FloatLiteralAST::new(
+                return Box::new(FloatLiteralAST::new(
                     span,
                     parsed_float,
                     suffix,
