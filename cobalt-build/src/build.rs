@@ -5,7 +5,7 @@ use cobalt_errors::*;
 use cobalt_parser::parse_str;
 use cobalt_utils::CellExt as Cell;
 use either::Either;
-use hashbrown::HashMap;
+use std::collections::HashMap;
 use indexmap::IndexMap;
 use inkwell::targets::{FileType, Target as InkwellTarget, TargetTriple};
 use os_str_bytes::OsStrBytes;

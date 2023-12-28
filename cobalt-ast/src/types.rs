@@ -605,6 +605,16 @@ impl Hash for dyn Type {
 }
 pub type TypeRef = &'static dyn Type;
 
+impl Serialize for TypeRef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        todo!()
+    }
+}
+impl<'de> Deserialize<'de> for TypeRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        todo!()
+    }
+}
 pub struct TypeLoader {
     pub kind: NonZeroU64,
     pub save_header: fn(&mut dyn Write) -> io::Result<()>,

@@ -1,5 +1,5 @@
 use crate::*;
-use hashbrown::hash_map::{Entry, HashMap};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::LinkedList;
 use std::io::{self, BufRead, Read, Write};
 use std::num::NonZeroUsize;
@@ -13,7 +13,8 @@ pub enum RedefVariable<'src, 'ctx> {
     NotAModule(usize, Symbol<'src, 'ctx>),
     AlreadyExists(usize, Option<SourceSpan>, Symbol<'src, 'ctx>),
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(crate = "serde_state")]
 pub struct VariableData {
     pub good: bool,
     pub export: bool,
@@ -81,8 +82,11 @@ impl<'src, 'ctx> From<Value<'src, 'ctx>> for Symbol<'src, 'ctx> {
         Symbol(val, VariableData::default())
     }
 }
-#[derive(Debug, Clone)]
-pub struct Symbol<'src, 'ctx>(pub Value<'src, 'ctx>, pub VariableData);
+#[derive(Debug, Clone, SerializeState, DeserializeState)]
+#[serde(crate = "serde_state")]
+#[serde(serialize_state = "()")]
+#[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
+pub struct Symbol<'src, 'ctx>(#[serde(deserialize_state)] pub Value<'src, 'ctx>, pub VariableData);
 impl<'src, 'ctx> Symbol<'src, 'ctx> {
     pub fn into_mod(
         self,
@@ -146,9 +150,20 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
         }
     }
 }
-#[derive(Debug, Clone, Default)]
+impl Serialize for Symbol<'_, '_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.serialize_state(serializer, &())
+    }
+}
+
+#[derive(Debug, Clone, Default, SerializeState, DeserializeState)]
+#[serde(crate = "serde_state")]
+#[serde(serialize_state = "()")]
+#[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 pub struct VarMap<'src, 'ctx> {
+    #[serde(deserialize_state)]
     pub parent: Option<Box<Self>>,
+    #[serde(deserialize_state)]
     pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
     pub imports: Vec<(CompoundDottedName<'src>, bool)>,
 }
@@ -632,6 +647,11 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         }
     }
 }
+impl Serialize for VarMap<'_, '_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.serialize_state(serializer, &())
+    }
+}
 impl<'src, 'ctx> From<HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>> for VarMap<'src, 'ctx> {
     fn from(symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>) -> Self {
         VarMap {
@@ -650,6 +670,7 @@ impl<'src, 'ctx> From<HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>> for Box<VarMa
         })
     }
 }
+
 fn merge<'src, 'ctx>(
     base: &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
     new: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,

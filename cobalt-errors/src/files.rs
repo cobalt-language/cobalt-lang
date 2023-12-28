@@ -22,6 +22,14 @@ impl FileRegistry {
         vec.push(InnerFile(name.into_boxed_str(), contents));
         CobaltFile(module, vec.len() - 1)
     }
+    pub fn lookup(&self, name: &str) -> Option<CobaltFile> {
+        let mod_idx = name.find("//").map_or(Some(0), |idx| {
+            (0..self.0.len()).find(|&i| &*self.0[i].0 == &name[..idx])
+        })?;
+        let vec = &self.0[mod_idx].1;
+        let file_idx = (0..self.0.len()).find(|&i| &*vec[i].1 == name)?;
+        Some(CobaltFile(mod_idx, file_idx))
+    }
 }
 /// Wrapper around a span to optionally add a name
 struct MaybeNamed<'a>(Box<dyn SpanContents<'a> + 'a>, Option<&'a str>);
@@ -92,6 +100,33 @@ impl SourceCode for CobaltFile {
         cla: usize,
     ) -> Result<Box<dyn SpanContents<'a> + 'a>, MietteError> {
         FILES.0[self.0].1[self.1].read_span(span, clb, cla)
+    }
+}
+#[cfg(feature = "serde")]
+impl serde::Serialize for CobaltFile {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CobaltFile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = CobaltFile;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a module path")
+            }
+            fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<CobaltFile, E> {
+                FILES.lookup(name).ok_or_else(|| {
+                    E::invalid_value(
+                        serde::de::Unexpected::Str(name),
+                        &"an already-defined module",
+                    )
+                })
+            }
+        }
+        deserializer.deserialize_str(Visitor)
     }
 }
 /// The actual registry. This is where all of the files are stored

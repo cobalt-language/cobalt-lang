@@ -131,7 +131,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                 ]
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
-                .collect::<HashMap<_, _>>()
+                .collect::<std::collections::HashMap<_, _>>()
                 .into(),
             ))))),
             name: Cell::new(MaybeUninit::new(".".to_string())),

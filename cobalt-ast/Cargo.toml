@@ -9,14 +9,14 @@ description.workspace = true
 documentation.workspace = true
 
 [dependencies]
-cobalt-errors = { path = "../cobalt-errors" }
+cobalt-errors = { path = "../cobalt-errors", features = ["serde"] }
 cobalt-llvm = { path = "../cobalt-llvm", default-features = false }
 cobalt-utils = { path = "../cobalt-utils" }
 bitvec = "1.0.1"
 either = "1.9.0"
 glob = "0.3.1"
 owned_chars = "0.3.2"
-bstr = { version = "1.7.0", default-features = false, features = ["std"] }
+bstr = { version = "1.7.0", default-features = false, features = ["std", "serde"] }
 derive_more = "0.99.17"
 ref-cast = "1.0.20"
 slab = "0.4.9"
@@ -25,5 +25,5 @@ once_cell = "1.18.0"
 hashbrown = "0.14.2"
 flurry = "0.4.0"
 thiserror = "1.0.51"
-serde = { version = "1.0.193", features = ["derive"] }
-serde_state = { version = "0.4.8", features = ["derive"] }
+serde_state = { version = "0.4.8", features = ["derive", "rc"] }
+serde_derive_state = "0.4.10"
