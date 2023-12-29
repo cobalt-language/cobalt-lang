@@ -2,7 +2,7 @@ use super::*;
 use inkwell::IntPredicate::*;
 use std::cell::Cell;
 use std::rc::Rc;
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
 pub struct Reference(TypeRef);
@@ -16,9 +16,6 @@ impl Reference {
     pub fn base(&self) -> TypeRef {
         self.0
     }
-}
-impl ConcreteType for Reference {
-    const KIND: NonZeroU64 = make_id(b"ref");
 }
 impl Type for Reference {
     fn size(&self) -> SizeType {
@@ -405,7 +402,7 @@ impl Type for Reference {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "*{}", _0)]
 #[repr(transparent)]
 pub struct Pointer(TypeRef);
@@ -419,9 +416,6 @@ impl Pointer {
     pub fn base(&self) -> TypeRef {
         self.0
     }
-}
-impl ConcreteType for Pointer {
-    const KIND: NonZeroU64 = make_id(b"ptr");
 }
 impl Type for Pointer {
     fn size(&self) -> SizeType {
@@ -899,7 +893,7 @@ impl Type for Pointer {
         load_type(buf).map(|t| Self::new(t) as _)
     }
 }
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "mut {}", _0)]
 #[repr(transparent)]
 pub struct Mut(TypeRef);
@@ -913,9 +907,6 @@ impl Mut {
     pub fn base(&self) -> TypeRef {
         self.0
     }
-}
-impl ConcreteType for Mut {
-    const KIND: NonZeroU64 = make_id(b"mut");
 }
 impl Type for Mut {
     fn size(&self) -> SizeType {

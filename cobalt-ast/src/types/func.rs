@@ -1,5 +1,5 @@
 use super::*;
-#[derive(Debug, RefCastCustom)]
+#[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct Function((TypeRef, Box<[(TypeRef, bool)]>));
 impl Function {
@@ -34,9 +34,6 @@ impl Display for Function {
         }
         write!(f, "): {}", self.ret())
     }
-}
-impl ConcreteType for Function {
-    const KIND: NonZeroU64 = make_id(b"function");
 }
 impl Type for Function {
     fn size(&self) -> SizeType {
@@ -248,7 +245,7 @@ impl Type for Function {
         Ok(Self::new(ret, params))
     }
 }
-#[derive(Debug, RefCastCustom)]
+#[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct BoundMethod((TypeRef, Box<[(TypeRef, bool)]>));
 impl BoundMethod {
@@ -302,9 +299,6 @@ impl Display for BoundMethod {
         }
         write!(f, "): {}", self.ret())
     }
-}
-impl ConcreteType for BoundMethod {
-    const KIND: NonZeroU64 = make_id(b"method");
 }
 impl Type for BoundMethod {
     fn size(&self) -> SizeType {

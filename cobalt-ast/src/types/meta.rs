@@ -2,7 +2,7 @@ use super::*;
 use bstr::ByteSlice;
 use std::str::Utf8Error;
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "type")]
 pub struct TypeData(());
 impl TypeData {
@@ -10,9 +10,6 @@ impl TypeData {
         static SELF: TypeData = Self(());
         &SELF
     }
-}
-impl ConcreteType for TypeData {
-    const KIND: NonZeroU64 = make_id(b"type");
 }
 impl Type for TypeData {
     fn size(&self) -> SizeType {
@@ -113,7 +110,7 @@ impl Type for TypeData {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "module")]
 pub struct Module(());
 impl Module {
@@ -121,9 +118,6 @@ impl Module {
         static SELF: Module = Self(());
         &SELF
     }
-}
-impl ConcreteType for Module {
-    const KIND: NonZeroU64 = make_id(b"module");
 }
 impl Type for Module {
     fn size(&self) -> SizeType {
@@ -178,7 +172,7 @@ impl Type for Module {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<error>")]
 pub struct Error(());
 impl Error {
@@ -186,9 +180,6 @@ impl Error {
         static SELF: Error = Self(());
         &SELF
     }
-}
-impl ConcreteType for Error {
-    const KIND: NonZeroU64 = make_id(b"error");
 }
 impl Type for Error {
     fn size(&self) -> SizeType {
@@ -314,7 +305,7 @@ impl Type for Error {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "null")]
 pub struct Null(());
 impl Null {
@@ -322,9 +313,6 @@ impl Null {
         static SELF: Null = Self(());
         &SELF
     }
-}
-impl ConcreteType for Null {
-    const KIND: NonZeroU64 = make_id(b"null");
 }
 impl Type for Null {
     fn size(&self) -> SizeType {
@@ -431,7 +419,7 @@ impl Type for Null {
     }
 }
 
-#[derive(Debug, RefCastCustom)]
+#[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct Symbol(Box<[u8]>);
 impl Symbol {
@@ -462,9 +450,6 @@ impl Display for Symbol {
         }
         Debug::fmt(self.0.as_bstr(), f)
     }
-}
-impl ConcreteType for Symbol {
-    const KIND: NonZeroU64 = make_id(b"symbol");
 }
 impl Type for Symbol {
     fn size(&'static self) -> SizeType {

@@ -1,6 +1,6 @@
 use super::*;
 use inkwell::IntPredicate::*;
-#[derive(Debug, PartialEq, Eq, Hash, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
 pub struct Int((u16, bool));
@@ -35,9 +35,6 @@ impl Int {
     pub fn is_unsigned(&self) -> bool {
         self.0 .1
     }
-}
-impl ConcreteType for Int {
-    const KIND: NonZeroU64 = make_id(b"int");
 }
 impl Type for Int {
     fn size(&self) -> SizeType {
@@ -1869,7 +1866,7 @@ impl Type for Int {
         Ok(Self::new(bits, arr[0] != 0))
     }
 }
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
 impl IntLiteral {
@@ -1877,9 +1874,6 @@ impl IntLiteral {
         static SELF: IntLiteral = Self(());
         &SELF
     }
-}
-impl ConcreteType for IntLiteral {
-    const KIND: NonZeroU64 = make_id(b"intlit");
 }
 impl Type for IntLiteral {
     fn size(&self) -> SizeType {

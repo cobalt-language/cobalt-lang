@@ -25,4 +25,4 @@ use std::borrow::Cow;
 pub use types::{ConcreteType as _, NominalInfo, SizeType, Type, TypeRef};
 pub use value::*;
 pub use varmap::*;
-extern crate serde_state as serde;
+use const_identify::{ConstIdentify, ConstId};

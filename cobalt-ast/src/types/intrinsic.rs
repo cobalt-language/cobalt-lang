@@ -1,6 +1,6 @@
 use super::*;
 static INTRINSIC_INTERN: Interner<Box<str>> = Interner::new();
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "@{_0}")]
 pub struct Intrinsic(Box<str>);
@@ -19,9 +19,6 @@ impl Intrinsic {
     pub fn name(&self) -> &str {
         &self.0
     }
-}
-impl ConcreteType for Intrinsic {
-    const KIND: NonZeroU64 = make_id(b"intrin");
 }
 impl Type for Intrinsic {
     fn size(&self) -> SizeType {
@@ -241,7 +238,7 @@ impl Type for Intrinsic {
     }
 }
 static ASM_INTERN: Interner<TypeRef> = Interner::new();
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "@asm({_0})")]
 pub struct InlineAsm(TypeRef);
@@ -252,9 +249,6 @@ impl InlineAsm {
     pub fn new(ret: TypeRef) -> &'static Self {
         Self::from_ref(ASM_INTERN.intern(ret))
     }
-}
-impl ConcreteType for InlineAsm {
-    const KIND: NonZeroU64 = make_id(b"asm");
 }
 impl Type for InlineAsm {
     fn size(&self) -> SizeType {

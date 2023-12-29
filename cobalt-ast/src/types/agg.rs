@@ -24,7 +24,7 @@ fn tuple_size(types: &[TypeRef]) -> SizeType {
 }
 
 static TUPLE_INTERN: Interner<Box<[TypeRef]>> = Interner::new();
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(
     fmt = "({})",
     r#"_0.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")"#
@@ -46,9 +46,6 @@ impl Tuple {
     pub fn types(&self) -> &[TypeRef] {
         &self.0
     }
-}
-impl ConcreteType for Tuple {
-    const KIND: NonZeroU64 = make_id(b"tuple");
 }
 impl Type for Tuple {
     fn align(&self) -> u16 {
@@ -126,7 +123,7 @@ impl Type for Tuple {
 }
 static STRUCT_INTERN: Interner<(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)> = Interner::new();
 
-#[derive(Debug, RefCastCustom)]
+#[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct Struct((Box<[TypeRef]>, BTreeMap<Box<str>, usize>));
 impl Struct {
@@ -196,9 +193,6 @@ impl Display for Struct {
         }
         f.write_str("}")
     }
-}
-impl ConcreteType for Struct {
-    const KIND: NonZeroU64 = make_id(b"struct");
 }
 impl Type for Struct {
     fn align(&self) -> u16 {
@@ -467,7 +461,7 @@ impl Type for Struct {
     }
 }
 
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "{_0}[]")]
 pub struct UnsizedArray(TypeRef);
@@ -482,9 +476,6 @@ impl UnsizedArray {
     pub fn elem(&self) -> TypeRef {
         self.0
     }
-}
-impl ConcreteType for UnsizedArray {
-    const KIND: NonZeroU64 = make_id(b"uarr");
 }
 impl Type for UnsizedArray {
     fn size(&self) -> SizeType {
@@ -585,7 +576,7 @@ impl Type for UnsizedArray {
         Ok(Self::new(load_type(buf)?))
     }
 }
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "{}[{}]", "_0.0", "_0.1")]
 pub struct SizedArray((TypeRef, u32));
@@ -604,9 +595,6 @@ impl SizedArray {
     pub fn len(&self) -> u32 {
         self.0 .1
     }
-}
-impl ConcreteType for SizedArray {
-    const KIND: NonZeroU64 = make_id(b"iarr");
 }
 impl Type for SizedArray {
     fn size(&self) -> SizeType {

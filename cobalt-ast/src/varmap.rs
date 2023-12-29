@@ -390,7 +390,7 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
                 Entry::Occupied(mut x) => {
                     let l = x.get_mut();
                     let r = Symbol::load(buf, ctx)?;
-                    const MOD: std::num::NonZeroU64 = types::Module::KIND;
+                    const MOD: u64 = types::Module::KIND;
                     if let (
                         MOD,
                         MOD,
@@ -681,7 +681,7 @@ fn merge<'src, 'ctx>(
             Entry::Occupied(mut e) => {
                 let l = e.get_mut();
                 let r = val;
-                const MOD: std::num::NonZeroU64 = types::Module::KIND;
+                const MOD: u64 = types::Module::KIND;
                 if let (
                     MOD,
                     MOD,

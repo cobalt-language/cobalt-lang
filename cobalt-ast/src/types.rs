@@ -67,24 +67,28 @@ impl<T: Type + Sized> AsTypeRef for T {
         self
     }
 }
+/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
+pub trait ConcreteType: Type + Sized {
+    const KIND: u64;
+}
+impl<T: Type + Sized + ConstIdentify> ConcreteType for T {
+    const KIND: u64 = Self::CONST_ID.raw_value();
+}
 /// TypeKind contains `self.kind()`, but it's moved to a separate trait so it can be auto-implemented
 pub trait TypeKind {
     /// get the kind ID of this type
-    fn kind(&self) -> NonZeroU64;
-}
-/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
-pub trait ConcreteType: Type + Sized {
-    const KIND: NonZeroU64;
+    fn kind(&self) -> u64;
 }
 impl<T: ConcreteType> TypeKind for T {
-    fn kind(&self) -> NonZeroU64 {
+    fn kind(&self) -> u64 {
         Self::KIND
     }
 }
 
 /// All values have types, and each kind of type implements `Type`.
 /// Methods with a leading underscore are customization points, and are not meant to be called directly.
-pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
+#[typetag::typetag(tag = "kind")]
+pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync + 'static {
     /// Get the size of the current type.
     fn size(&'static self) -> SizeType;
     /// Get the alignment of the current type. An alignment of 0 is used for non-runtime data.
@@ -516,28 +520,6 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Option<BasicValueEnum<'ctx>> {
         None
     }
-    /// Save global state at the start of a serialization record.
-    fn save_header(out: &mut dyn Write) -> io::Result<()>
-    where
-        Self: ConcreteType,
-    {
-        Ok(())
-    }
-    /// Load global state saved by [`save_header`].
-    fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
-    where
-        Self: ConcreteType,
-    {
-        Ok(())
-    }
-    /// Save the current type to the output.
-    /// Should not be called directly, use `save_type` instead.
-    fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
-    /// Load the current type from the input.
-    /// Should not be called directly, use `load_type` instead.
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: ConcreteType;
     /// Downcast from a type
     /// # Safety
     /// The casted from type must be the same as Self
@@ -616,7 +598,7 @@ impl<'de> Deserialize<'de> for TypeRef {
     }
 }
 pub struct TypeLoader {
-    pub kind: NonZeroU64,
+    pub kind: u64,
     pub save_header: fn(&mut dyn Write) -> io::Result<()>,
     pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
     pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
@@ -668,7 +650,7 @@ pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> =
     Lazy::new(|| inventory::iter::<TypeLoader>().map(LoadInfo::new).collect());
 /// save a type to the output buffer
 pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
-    buf.write_all(&ty.kind().get().to_be_bytes())?;
+    buf.write_all(&ty.kind().to_be_bytes())?;
     ty.save(buf)
 }
 /// load a type from the buffer
@@ -747,29 +729,6 @@ impl<'ctx> NominalInfo<'ctx> {
     }
 }
 
-#[inline(always)]
-const fn pad_bytes<const N: usize>(val: &[u8]) -> [u8; N] {
-    // I wish more stuff was const
-    let len = if val.len() < N { val.len() } else { N };
-    let mut out = [0u8; N];
-    let mut i = 0;
-    while i < len {
-        out[i] = val[i];
-        i += 1;
-    }
-    out
-}
-/// generate a type id from a byte string
-/// truncate or zero pad to 8 bytes
-#[inline(always)]
-pub const fn make_id(id: &[u8]) -> NonZeroU64 {
-    if let Some(id) = NonZeroU64::new(u64::from_be_bytes(pad_bytes(id))) {
-        id
-    } else {
-        panic!("ID string should not be empty (or all nulls)")
-    }
-}
-
 pub mod agg;
 pub mod custom;
 pub mod float;
@@ -787,5 +746,4 @@ pub use int::*;
 pub use intrinsic::*;
 pub use mem::*;
 pub use meta::{Symbol, *};
-
 use ref_cast::*;

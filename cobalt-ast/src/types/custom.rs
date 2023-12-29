@@ -6,7 +6,7 @@ static CUSTOM_DATA: Lazy<
     flurry::HashMap<&'static str, (TypeRef, bool, flurry::HashMap<Box<str>, usize>, usize)>,
 > = Lazy::new(flurry::HashMap::new);
 pub type ValueRef<'a, 'src, 'ctx> = Ref<'a, Value<'src, 'ctx>>;
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 pub struct Custom(Box<str>);
 impl Custom {
@@ -124,9 +124,6 @@ impl Custom {
                 ))
             });
     }
-}
-impl ConcreteType for Custom {
-    const KIND: NonZeroU64 = make_id(b"custom");
 }
 impl Type for Custom {
     fn size(&self) -> SizeType {

@@ -15,7 +15,7 @@ static F16: Float = Float(FPType::F16);
 static F32: Float = Float(FPType::F32);
 static F64: Float = Float(FPType::F64);
 static F128: Float = Float(FPType::F128);
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 pub struct Float(FPType);
 impl Float {
     pub fn new(val: FPType) -> &'static Self {
@@ -41,9 +41,6 @@ impl Float {
     pub fn kind(&self) -> FPType {
         self.0
     }
-}
-impl ConcreteType for Float {
-    const KIND: NonZeroU64 = make_id(b"float");
 }
 impl Type for Float {
     fn size(&self) -> SizeType {
