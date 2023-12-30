@@ -6,7 +6,6 @@ use once_cell::sync::Lazy;
 use serde_state::de::DeserializeOwned;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
-use std::io::{self, BufRead, Read, Write};
 use SizeType::*;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
@@ -784,56 +783,6 @@ impl LoadInfo {
 }
 pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<u64, LoadInfo>> =
     Lazy::new(|| inventory::iter::<TypeLoader>().map(LoadInfo::new).collect());
-
-#[derive(Debug, Clone, Default)]
-pub struct NominalInfo<'ctx> {
-    pub dtor: Option<FunctionValue<'ctx>>,
-    pub no_auto_drop: bool,
-    pub is_linear_type: bool,
-    pub transparent: bool,
-}
-
-impl<'ctx> NominalInfo<'ctx> {
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if let Some(fv) = self.dtor {
-            out.write_all(fv.get_name().to_bytes())?;
-        }
-        out.write_all(&[0])?;
-        out.write_all(&[u8::from(self.no_auto_drop) << 1 | u8::from(self.transparent)])
-    }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'_, 'ctx>) -> io::Result<Self> {
-        let mut vec = vec![];
-        buf.read_until(0, &mut vec)?;
-        if vec.last() == Some(&0) {
-            vec.pop();
-        }
-        let dtor = if vec.is_empty() {
-            None
-        } else {
-            let name = String::from_utf8(vec).expect("value should be valid UTF-8!");
-            let fv = ctx.module.get_function(&name);
-            Some(fv.unwrap_or_else(|| {
-                ctx.module.add_function(
-                    &name,
-                    ctx.context
-                        .void_type()
-                        .fn_type(&[ctx.null_type.ptr_type(Default::default()).into()], false),
-                    None,
-                )
-            }))
-        };
-        let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
-        let no_auto_drop = c & 1 != 0;
-        let transparent = c & 2 != 0;
-        Ok(Self {
-            dtor,
-            no_auto_drop,
-            transparent,
-            is_linear_type: false,
-        })
-    }
-}
 
 pub mod agg;
 pub mod custom;

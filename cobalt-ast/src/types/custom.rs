@@ -16,7 +16,6 @@ impl Custom {
     pub fn new(name: impl Into<Box<str>>) -> &'static Self {
         let this = CUSTOM_INTERN.intern(name.into());
         assert!(CUSTOM_DATA.pin().contains_key(&**this));
-
         Self::from_ref(this)
     }
     pub fn new_ref(name: &str) -> &'static Self {
@@ -136,7 +135,15 @@ impl Serialize for CustomHeader {
     where
         S: Serializer,
     {
-        CUSTOM_DATA.serialize(serializer)
+        use ser::*;
+        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe {
+            &*c.get()
+                .expect("type deserialization must be called with a context")
+        });
+        let cd = CUSTOM_DATA.pin();
+        let mut map = serializer.serialize_map(Some(cd.len()))?;
+
+        todo!()
     }
 }
 impl<'de> Deserialize<'de> for CustomHeader {
@@ -144,6 +151,10 @@ impl<'de> Deserialize<'de> for CustomHeader {
     where
         D: Deserializer<'de>,
     {
+        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe {
+            &*c.get()
+                .expect("type deserialization must be called with a context")
+        });
         todo!()
     }
 }
@@ -445,4 +456,97 @@ impl Type for Custom {
         }
     }
 }
+
+#[derive(Debug, Clone, Default)]
+pub struct NominalInfo<'ctx> {
+    pub dtor: Option<FunctionValue<'ctx>>,
+    pub no_auto_drop: bool,
+    pub is_linear_type: bool,
+    pub transparent: bool,
+}
+
+#[derive(Debug, Clone, Default, SerializeState, DeserializeState)]
+#[serde(serialize_state = "()")]
+#[serde(
+    de_parameters = "'a, 'b, 'c",
+    deserialize_state = "&'a CompCtx<'b, 'c>"
+)]
+pub struct NominalInfoShim<'d> {
+    #[serde(borrow)]
+    pub dtor: Option<&'d bstr::BStr>,
+    pub no_auto_drop: bool,
+    pub is_linear_type: bool,
+    pub transparent: bool,
+}
+impl Serialize for NominalInfo<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let NominalInfo {
+            dtor,
+            no_auto_drop,
+            is_linear_type,
+            transparent,
+        } = *self;
+        NominalInfoShim {
+            no_auto_drop,
+            is_linear_type,
+            transparent,
+            dtor: dtor.map(|d| unsafe { new_lifetime(d.get_name().to_bytes().into()) }),
+        }
+        .serialize_state(serializer, &())
+    }
+}
+impl<'de, 'ctx> DeserializeState<'de, &CompCtx<'_, 'ctx>> for NominalInfo<'ctx> {
+    fn deserialize_state<D>(
+        seed: &mut &CompCtx<'_, 'ctx>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use de::*;
+        NominalInfoShim::deserialize_state(seed, deserializer).and_then(
+            |NominalInfoShim {
+                 dtor,
+                 no_auto_drop,
+                 is_linear_type,
+                 transparent,
+             }| {
+                Ok(NominalInfo {
+                    no_auto_drop,
+                    is_linear_type,
+                    transparent,
+                    dtor: dtor
+                        .map(|n| {
+                            std::str::from_utf8(n)
+                                .map_err(|_| {
+                                    D::Error::invalid_value(
+                                        Unexpected::Bytes(n),
+                                        &"a valid UTF-8 string",
+                                    )
+                                })
+                                .map(|name| {
+                                    seed.module.add_function(
+                                        name,
+                                        seed.context.void_type().fn_type(
+                                            &[seed
+                                                .context
+                                                .i8_type()
+                                                .ptr_type(Default::default())
+                                                .into()],
+                                            false,
+                                        ),
+                                        Some(inkwell::module::Linkage::DLLImport),
+                                    )
+                                })
+                        })
+                        .transpose()?,
+                })
+            },
+        )
+    }
+}
+
 submit_types!(Custom);

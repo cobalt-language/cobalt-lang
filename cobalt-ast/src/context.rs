@@ -392,6 +392,14 @@ impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
         D: Deserializer<'de>,
     {
         use de::*;
+        #[allow(clippy::unnecessary_cast)]
+        SERIALIZATION_CONTEXT.with(|c| {
+            if let Some(ptr) = c.replace(Some(
+                self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
+            )) {
+                panic!("serialization context is already in use with an address of {ptr:p}");
+            }
+        });
         let proxy = ContextDeProxy::deserialize(deserializer)?;
         if proxy.version != HEADER_FMT_VERSION {
             return Err(D::Error::custom(format!("this header was saved with version {}, but version {HEADER_FMT_VERSION} is expected", proxy.version)));
@@ -402,6 +410,14 @@ impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
             &mut self,
             serde::__private::de::ContentDeserializer::new(proxy.vars),
         )?;
+        SERIALIZATION_CONTEXT.with(|c| {
+            c.replace(None)
+                .expect("serialization context is empty after serialization")
+        });
         Ok(self.with_vars(|v| varmap::merge(&mut v.symbols, vars.symbols)))
     }
+}
+thread_local! {
+    /// CompCtx, should only have a value during deserialization
+    pub static SERIALIZATION_CONTEXT: Cell<Option<*const CompCtx<'static, 'static>>> = const {Cell::new(None)};
 }
