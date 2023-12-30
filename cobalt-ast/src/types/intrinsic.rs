@@ -5,7 +5,6 @@ static INTRINSIC_INTERN: Interner<Box<str>> = Interner::new();
 #[display(fmt = "@{_0}")]
 pub struct Intrinsic(Box<str>);
 impl Intrinsic {
-    pub const KIND: NonZeroU64 = make_id(b"intrin");
     #[ref_cast_custom]
     #[inline(always)]
     #[allow(clippy::borrowed_box)]
@@ -13,12 +12,20 @@ impl Intrinsic {
     pub fn new(name: impl Into<Box<str>>) -> &'static Self {
         Self::from_ref(INTRINSIC_INTERN.intern(name.into()))
     }
-    pub fn new_ref(name: &str) -> &'static Self {
-        Self::from_ref(INTRINSIC_INTERN.intern_ref(name))
+    pub fn new_ref(name: impl AsRef<str>) -> &'static Self {
+        Self::from_ref(INTRINSIC_INTERN.intern_ref(name.as_ref()))
     }
     pub fn name(&self) -> &str {
         &self.0
     }
+}
+impl TypeSerde for Intrinsic {
+    no_type_header!();
+    impl_type_proxy!(
+        Cow<'static, str>,
+        |this: &'static Intrinsic| this.name().into(),
+        Self::new_ref
+    );
 }
 impl Type for Intrinsic {
     fn size(&self) -> SizeType {
@@ -230,12 +237,6 @@ impl Type for Intrinsic {
                 v.data_type.compiled(&v.inter_val?, ctx)
             })
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        serial_utils::save_str(out, self.name())
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        serial_utils::load_str(buf).map(|s| Self::new(s) as _)
-    }
 }
 static ASM_INTERN: Interner<TypeRef> = Interner::new();
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
@@ -249,6 +250,13 @@ impl InlineAsm {
     pub fn new(ret: TypeRef) -> &'static Self {
         Self::from_ref(ASM_INTERN.intern(ret))
     }
+    pub fn ret(&'static self) -> TypeRef {
+        self.0
+    }
+}
+impl TypeSerde for InlineAsm {
+    no_type_header!();
+    impl_type_proxy!(TypeRef, Self::ret, Self::new);
 }
 impl Type for InlineAsm {
     fn size(&self) -> SizeType {
@@ -332,11 +340,5 @@ impl Type for InlineAsm {
             Err(err)
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        types::save_type(out, self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        types::load_type(buf).map(|s| Self::new(s) as _)
-    }
 }
-submit_types!(Intrinsic);
+submit_types!(Intrinsic, InlineAsm);

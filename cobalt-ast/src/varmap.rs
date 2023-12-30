@@ -1,7 +1,6 @@
 use crate::*;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::LinkedList;
-use std::io::{self, BufRead, Read, Write};
 use std::num::NonZeroUsize;
 #[derive(Debug, Clone, Copy)]
 pub enum UndefVariable {
@@ -86,7 +85,10 @@ impl<'src, 'ctx> From<Value<'src, 'ctx>> for Symbol<'src, 'ctx> {
 #[serde(crate = "serde_state")]
 #[serde(serialize_state = "()")]
 #[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
-pub struct Symbol<'src, 'ctx>(#[serde(deserialize_state)] pub Value<'src, 'ctx>, pub VariableData);
+pub struct Symbol<'src, 'ctx>(
+    #[serde(deserialize_state)] pub Value<'src, 'ctx>,
+    pub VariableData,
+);
 impl<'src, 'ctx> Symbol<'src, 'ctx> {
     pub fn into_mod(
         self,
@@ -114,18 +116,6 @@ impl<'src, 'ctx> Symbol<'src, 'ctx> {
         &mut String,
     )> {
         self.0.as_mod_mut()
-    }
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        self.0.save(out)
-    }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
-        Ok(Symbol(
-            Value::load(buf, ctx)?,
-            VariableData {
-                export: false,
-                ..VariableData::default()
-            },
-        ))
     }
     pub fn dump(&self, depth: usize) {
         if let (types::Module::KIND, Some(InterData::Module(s, i, n))) =
@@ -352,100 +342,6 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
             Entry::Vacant(_) => Ok(Default::default()),
         }
     }
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for (name, sym) in self.symbols.iter() {
-            if sym.1.export {
-                out.write_all(name.as_bytes())?;
-                out.write_all(&[0])?;
-                sym.save(out)?;
-            }
-        }
-        out.write_all(&[0])?;
-        for import in self
-            .imports
-            .iter()
-            .filter_map(|(s, b)| if *b { Some(s) } else { None })
-        {
-            import.save(out)?;
-        }
-        out.write_all(&[0])
-    }
-    pub fn load<R: Read + BufRead>(
-        &mut self,
-        buf: &mut R,
-        ctx: &CompCtx<'src, 'ctx>,
-    ) -> io::Result<Vec<Cow<'src, str>>> {
-        let mut out = vec![];
-        loop {
-            let mut name = vec![];
-            buf.read_until(0, &mut name)?;
-            if name.last() == Some(&0) {
-                name.pop();
-            }
-            if name.is_empty() {
-                break;
-            }
-            let name = String::from_utf8(name).expect("Cobalt symbols should be valid UTF-8");
-            match self.symbols.entry(name.into()) {
-                Entry::Occupied(mut x) => {
-                    let l = x.get_mut();
-                    let r = Symbol::load(buf, ctx)?;
-                    const MOD: u64 = types::Module::KIND;
-                    if let (
-                        MOD,
-                        MOD,
-                        Some(InterData::Module(bs, bi, _)),
-                        Some(InterData::Module(ns, mut ni, _)),
-                    ) = (
-                        l.0.data_type.kind(),
-                        r.0.data_type.kind(),
-                        &mut l.0.inter_val,
-                        r.0.inter_val,
-                    ) {
-                        bi.append(&mut ni);
-                        out.append(&mut merge(bs, ns));
-                    } else {
-                        out.push(x.key().clone())
-                    }
-                }
-                Entry::Vacant(x) => {
-                    x.insert(Symbol::load(buf, ctx)?);
-                }
-            }
-        }
-        while let Some(val) = CompoundDottedName::load(buf)? {
-            self.imports.push((val, false));
-        }
-        Ok(out)
-    }
-    pub fn load_new<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
-        let mut out = HashMap::new();
-        let mut imports = vec![];
-        loop {
-            let mut name = vec![];
-            buf.read_until(0, &mut name)?;
-            if name.last() == Some(&0) {
-                name.pop();
-            }
-            if name.is_empty() {
-                break;
-            }
-            out.insert(
-                String::from_utf8(name)
-                    .expect("Cobalt symbols should be valid UTF-8")
-                    .into(),
-                Symbol::load(buf, ctx)?,
-            );
-        }
-        while let Some(val) = CompoundDottedName::load(buf)? {
-            imports.push((val, false));
-        }
-        Ok(VarMap {
-            parent: None,
-            symbols: out,
-            imports,
-        })
-    }
     pub fn dump(&self) {
         eprintln!("top level");
         self.imports
@@ -671,10 +567,10 @@ impl<'src, 'ctx> From<HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>> for Box<VarMa
     }
 }
 
-fn merge<'src, 'ctx>(
+pub(crate) fn merge<'src, 'ctx>(
     base: &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
     new: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-) -> Vec<Cow<'src, str>> {
+) -> Vec<String> {
     let mut out = vec![];
     for (key, val) in new {
         match base.entry(key) {
@@ -696,7 +592,7 @@ fn merge<'src, 'ctx>(
                     bi.append(&mut ni);
                     out.append(&mut merge(bs, ns));
                 } else {
-                    out.push(e.key().clone())
+                    out.push(e.key().clone().into_owned())
                 }
             }
             Entry::Vacant(e) => {

@@ -36,6 +36,14 @@ impl Int {
         self.0 .1
     }
 }
+impl TypeSerde for Int {
+    no_type_header!();
+    impl_type_proxy!(
+        deranged::RangedI32<{-(u16::MAX as i32)}, {u16::MAX as _}>,
+        this => ((this.bits() as i32) * if this.is_unsigned() {-1} else {1}).try_into().unwrap(),
+        this => Self::new(this.get().unsigned_abs() as _, this.get() < 0)
+    );
+}
 impl Type for Int {
     fn size(&self) -> SizeType {
         SizeType::Static(((self.0 .0 + 7) / 8) as _)
@@ -1854,17 +1862,6 @@ impl Type for Int {
             None
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(&self.0 .0.to_be_bytes())?;
-        out.write_all(std::slice::from_ref(&u8::from(self.0 .1)))
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let mut arr = [0u8; 2];
-        buf.read_exact(&mut arr)?;
-        let bits = u16::from_be_bytes(arr);
-        buf.read_exact(&mut arr[..1])?;
-        Ok(Self::new(bits, arr[0] != 0))
-    }
 }
 #[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<int literal>")]
@@ -1875,6 +1872,7 @@ impl IntLiteral {
         &SELF
     }
 }
+impl_null_type_with_new!(IntLiteral);
 impl Type for IntLiteral {
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -2201,12 +2199,6 @@ impl Type for IntLiteral {
             )),
             _ => Err(cant_iconv(&val, target.0, target.1)),
         }
-    }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
     }
 }
 submit_types!(Int, IntLiteral);

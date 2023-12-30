@@ -13,8 +13,8 @@ impl Custom {
     #[ref_cast_custom]
     #[allow(clippy::borrowed_box)]
     fn from_ref(name: &Box<str>) -> &Self;
-    pub fn new(name: Box<str>) -> &'static Self {
-        let this = CUSTOM_INTERN.intern(name);
+    pub fn new(name: impl Into<Box<str>>) -> &'static Self {
+        let this = CUSTOM_INTERN.intern(name.into());
         assert!(CUSTOM_DATA.pin().contains_key(&**this));
 
         Self::from_ref(this)
@@ -57,6 +57,9 @@ impl Custom {
             );
         }
         Self::from_ref(this)
+    }
+    pub fn name(&'static self) -> &'static str {
+        &self.0
     }
     pub fn nom_info<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> NominalInfo<'ctx> {
         ctx.nom_info.borrow()[CUSTOM_DATA.pin().get(&*self.0).unwrap().3].clone()
@@ -124,6 +127,37 @@ impl Custom {
                 ))
             });
     }
+}
+
+#[doc(hidden)]
+pub struct CustomHeader;
+impl Serialize for CustomHeader {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CUSTOM_DATA.serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for CustomHeader {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        todo!()
+    }
+}
+impl TypeSerde for Custom {
+    type Header = CustomHeader;
+    fn get_header() -> Self::Header {
+        CustomHeader
+    }
+    fn set_header(header: Self::Header) {}
+    impl_type_proxy!(
+        Cow<'static, str>,
+        |this: &'static Custom| this.name().into(),
+        Self::new
+    );
 }
 impl Type for Custom {
     fn size(&self) -> SizeType {
@@ -221,7 +255,7 @@ impl Type for Custom {
             MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
-                    .get(0)
+                    .first()
                     .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
                 let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
                 Ok(Value::new(
@@ -324,7 +358,7 @@ impl Type for Custom {
             MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
-                    .get(0)
+                    .first()
                     .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
                 let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
                 Ok(Value::new(
@@ -380,7 +414,7 @@ impl Type for Custom {
             MethodType::Method => {
                 let (self_t, sic) = *fty
                     .params()
-                    .get(0)
+                    .first()
                     .ok_or_else(|| invalid_attr(&val, attr.0, attr.1))?;
                 let this = val.impl_convert((self_t, Some(attr.1)), ctx)?;
                 Ok(Value::new(
@@ -409,71 +443,6 @@ impl Type for Custom {
         } else {
             self.attr(val, attr, ctx)
         }
-    }
-    fn save_header(out: &mut dyn Write) -> io::Result<()> {
-        let guard = CUSTOM_DATA.guard();
-        for (key, (ty, _export, methods, info)) in CUSTOM_DATA.iter(&guard) {
-            out.write_all(key.as_bytes())?;
-            out.write_all(&[0])?;
-            save_type(out, *ty)?;
-            let guard = methods.guard();
-            for (k, v) in methods.iter(&guard) {
-                serial_utils::save_str(out, k)?;
-                out.write_all(&v.to_be_bytes())?;
-            }
-            out.write_all(&[0])?;
-            out.write_all(&info.to_be_bytes())?;
-        }
-        out.write_all(&[0])?;
-        Ok(())
-    }
-    fn load_header(buf: &mut dyn BufRead) -> io::Result<()> {
-        let guard = CUSTOM_DATA.guard();
-        loop {
-            let key = serial_utils::load_str(buf)?;
-            if key.is_empty() {
-                break;
-            }
-            let ty = load_type(buf)?;
-            let mut arr = [0; std::mem::size_of::<usize>()];
-            let methods = {
-                let methods = flurry::HashMap::new();
-                let guard = methods.guard();
-                loop {
-                    let metd = serial_utils::load_str(buf)?;
-                    if metd.is_empty() {
-                        break;
-                    }
-                    buf.read_exact(&mut arr)?;
-                    methods.insert(metd.into(), usize::from_be_bytes(arr), &guard);
-                }
-                std::mem::drop(guard);
-                methods
-            };
-            buf.read_exact(&mut arr)?;
-            CUSTOM_DATA.insert(
-                CUSTOM_INTERN.intern(key.into()),
-                (ty, false, methods, usize::from_be_bytes(arr)),
-                &guard,
-            );
-        }
-        Ok(())
-    }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(self.0.as_bytes())?;
-        out.write_all(&[0])
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let mut vec = vec![];
-        buf.read_until(0, &mut vec)?;
-        if vec.last() == Some(&0) {
-            vec.pop();
-        }
-        Ok(Self::new(
-            String::from_utf8(vec)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                .into(),
-        ))
     }
 }
 submit_types!(Custom);

@@ -221,29 +221,6 @@ impl Type for Function {
             self.ret(),
         ))
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.ret())?;
-        self.params().iter().try_for_each(|&(ty, c)| {
-            save_type(out, ty)?;
-            out.write_all(&[u8::from(c)])
-        })
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let ret = load_type(buf)?;
-        let params = std::iter::from_fn(|| match load_type_opt(buf) {
-            Ok(None) => None,
-            Ok(Some(t)) => {
-                let mut c = 0u8;
-                if let Err(err) = buf.read_exact(std::slice::from_mut(&mut c)) {
-                    return Some(Err(err));
-                }
-                Some(Ok((t, c != 0)))
-            }
-            Err(err) => Some(Err(err)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self::new(ret, params))
-    }
 }
 #[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
@@ -383,28 +360,40 @@ impl Type for BoundMethod {
             .with_loc(val.loc)
             .call(cparen, a, ctx)
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.ret())?;
-        self.full_params().iter().try_for_each(|&(ty, c)| {
-            save_type(out, ty)?;
-            out.write_all(&[u8::from(c)])
-        })
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let ret = load_type(buf)?;
-        let params = std::iter::from_fn(|| match load_type_opt(buf) {
-            Ok(None) => None,
-            Ok(Some(t)) => {
-                let mut c = 0u8;
-                if let Err(err) = buf.read_exact(std::slice::from_mut(&mut c)) {
-                    return Some(Err(err));
-                }
-                Some(Ok((t, c != 0)))
-            }
-            Err(err) => Some(Err(err)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self::new(ret, params))
-    }
+}
+
+#[doc(hidden)]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ParamProxy(
+    #[serde(rename = "type")] TypeRef,
+    #[serde(rename = "const")] bool,
+);
+#[doc(hidden)]
+#[derive(Serialize, Deserialize)]
+pub struct FnProxy {
+    ret: TypeRef,
+    params: Cow<'static, [ParamProxy]>,
+}
+impl TypeSerde for Function {
+    no_type_header!();
+    impl_type_proxy!(
+        FnProxy,
+        this => FnProxy {
+            ret: this.ret(),
+            params: Cow::Borrowed(unsafe {std::mem::transmute(this.params())})
+        },
+        FnProxy { ret, params } => Self::new(ret, unsafe {std::mem::transmute::<_, &[(TypeRef, bool)]>(&*params)})
+    );
+}
+impl TypeSerde for BoundMethod {
+    no_type_header!();
+    impl_type_proxy!(
+        FnProxy,
+        this => FnProxy {
+            ret: this.ret(),
+            params: Cow::Borrowed(unsafe {std::mem::transmute(this.full_params())})
+        },
+        FnProxy { ret, params } => Self::new(ret, unsafe {std::mem::transmute::<_, &[(TypeRef, bool)]>(&*params)})
+    );
 }
 submit_types!(Function, BoundMethod);

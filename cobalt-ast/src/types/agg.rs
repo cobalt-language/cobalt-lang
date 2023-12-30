@@ -47,6 +47,14 @@ impl Tuple {
         &self.0
     }
 }
+impl TypeSerde for Tuple {
+    no_type_header!();
+    impl_type_proxy!(
+        Cow<'static, [TypeRef]>,
+        |this: &'static Self| this.types().into(),
+        Self::new
+    );
+}
 impl Type for Tuple {
     fn align(&self) -> u16 {
         self.0.iter().map(|v| v.align()).max().unwrap_or(1)
@@ -111,15 +119,6 @@ impl Type for Tuple {
             Err(cant_iconv(&val, target.0, target.1))
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        self.0.iter().try_for_each(|&ty| save_type(out, ty))?;
-        out.write_all(&[0])
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new(
-            std::iter::from_fn(|| load_type_opt(buf).transpose()).collect::<Result<Vec<_>, _>>()?,
-        ))
-    }
 }
 static STRUCT_INTERN: Interner<(Box<[TypeRef]>, BTreeMap<Box<str>, usize>)> = Interner::new();
 
@@ -160,6 +159,11 @@ impl Struct {
     pub fn fields(&self) -> &BTreeMap<Box<str>, usize> {
         &self.0 .1
     }
+    pub fn field_iterator(
+        &self,
+    ) -> impl Iterator<Item = (&str, TypeRef)> + DoubleEndedIterator + ExactSizeIterator {
+        self.fields().iter().map(|(k, n)| (&**k, self.types()[*n]))
+    }
     pub fn sort_fields((ln, lt): (&str, TypeRef), (rn, rt): (&str, TypeRef)) -> std::cmp::Ordering {
         use std::cmp::Ordering;
         match lt.align().cmp(&rt.align()) {
@@ -193,6 +197,14 @@ impl Display for Struct {
         }
         f.write_str("}")
     }
+}
+impl TypeSerde for Struct {
+    no_type_header!();
+    impl_type_proxy!(
+        hashbrown::HashMap<Cow<'static, str>, TypeRef>,
+        |this: &'static Struct| this.field_iterator().map(|(k, v)| (k.into(), v)).collect(),
+        Self::new
+    );
 }
 impl Type for Struct {
     fn align(&self) -> u16 {
@@ -431,34 +443,6 @@ impl Type for Struct {
             Err(invalid_attr(&val, attr.0, attr.1))
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(&self.types().len().to_be_bytes())?;
-        for &ty in self.types() {
-            save_type(out, ty)?;
-        }
-        let mut rev_lookup = ["<error>"].repeat(self.types().len());
-        for (name, idx) in &self.0 .1 {
-            rev_lookup[*idx] = name;
-        }
-        for key in rev_lookup {
-            serial_utils::save_str(out, key)?;
-        }
-        Ok(())
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let mut arr = [0u8; 8];
-        buf.read_exact(&mut arr)?;
-        let len = u64::from_be_bytes(arr);
-        let mut types = Vec::with_capacity(len as _);
-        for _ in 0..len {
-            types.push(load_type(buf)?);
-        }
-        let mut fields = BTreeMap::new();
-        for n in 0..len {
-            fields.insert(serial_utils::load_str(buf)?.into(), n as _);
-        }
-        unsafe { Ok(Self::new_arranged(types, fields)) }
-    }
 }
 
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
@@ -476,6 +460,10 @@ impl UnsizedArray {
     pub fn elem(&self) -> TypeRef {
         self.0
     }
+}
+impl TypeSerde for UnsizedArray {
+    no_type_header!();
+    impl_type_proxy!(TypeRef, Self::elem, Self::new);
 }
 impl Type for UnsizedArray {
     fn size(&self) -> SizeType {
@@ -569,12 +557,6 @@ impl Type for UnsizedArray {
             }),
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new(load_type(buf)?))
-    }
 }
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
@@ -595,6 +577,17 @@ impl SizedArray {
     pub fn len(&self) -> u32 {
         self.0 .1
     }
+}
+
+#[doc(hidden)]
+#[derive(Serialize, Deserialize)]
+pub struct SAProxy {
+    elem: TypeRef,
+    len: u32,
+}
+impl TypeSerde for SizedArray {
+    no_type_header!();
+    impl_type_proxy!(SAProxy, this => SAProxy { elem: this.elem(), len: this.len() }, SAProxy { elem, len } => Self::new(elem, len));
 }
 impl Type for SizedArray {
     fn size(&self) -> SizeType {
@@ -960,16 +953,6 @@ impl Type for SizedArray {
                 _ => return Err(invalid_sub(&val, &idx)),
             }
         }
-    }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.elem())?;
-        out.write_all(&self.len().to_be_bytes())
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let elem = load_type(buf)?;
-        let mut arr = [0u8; 4];
-        buf.read_exact(&mut arr)?;
-        Ok(Self::new(elem, u32::from_be_bytes(arr)))
     }
 }
 submit_types!(Tuple, Struct);

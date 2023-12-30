@@ -24,7 +24,7 @@ impl FileRegistry {
     }
     pub fn lookup(&self, name: &str) -> Option<CobaltFile> {
         let mod_idx = name.find("//").map_or(Some(0), |idx| {
-            (0..self.0.len()).find(|&i| &*self.0[i].0 == &name[..idx])
+            (0..self.0.len()).find(|&i| *self.0[i].0 == name[..idx])
         })?;
         let vec = &self.0[mod_idx].1;
         let file_idx = (0..self.0.len()).find(|&i| &*vec[i].1 == name)?;
