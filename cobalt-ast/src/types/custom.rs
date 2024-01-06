@@ -1,5 +1,7 @@
 use super::*;
 use once_cell::sync::Lazy;
+use serde::de::DeserializeSeed;
+use std::marker::PhantomData;
 use std::{cell::Ref, collections::HashMap};
 static CUSTOM_INTERN: Interner<Box<str>> = Interner::new();
 static CUSTOM_DATA: Lazy<
@@ -127,7 +129,65 @@ impl Custom {
             });
     }
 }
-
+#[derive(DeserializeState)]
+#[serde(de_parameters = "'a")]
+#[serde(deserialize_state = "&'a CompCtx<'src, 'ctx>")]
+struct CIProxy<'src, 'ctx> {
+    base: TypeRef,
+    #[serde(deserialize_state)]
+    info: NominalInfo<'ctx>,
+    #[serde(deserialize_state)]
+    fields: std::collections::HashMap<String, Value<'src, 'ctx>>,
+}
+struct CIProxySeed<'a, 's, 'c>(&'a CompCtx<'s, 'c>);
+struct SerCusInfo<'b, 'a, 's, 'c>(
+    &'b (TypeRef, bool, flurry::HashMap<Box<str>, usize>, usize),
+    &'a CompCtx<'s, 'c>,
+);
+struct DeCusInfo(TypeRef, bool, flurry::HashMap<Box<str>, usize>, usize);
+impl Serialize for SerCusInfo<'_, '_, '_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::*;
+        let mut map = serializer.serialize_struct("cus_info", 3)?;
+        map.serialize_field("base", &self.0 .0)?;
+        map.serialize_field("info", self.1.nom_info.borrow().get(self.0 .3).unwrap())?;
+        map.serialize_field(
+            "fields",
+            &self
+                .0
+                 .2
+                .pin()
+                .iter()
+                .map(|(k, v)| (k, unsafe { new_lifetime(&self.1.values.borrow()[*v]) }))
+                .collect::<hashbrown::HashMap<_, _>>(),
+        )?;
+        map.end()
+    }
+}
+impl<'de> DeserializeSeed<'de> for CIProxySeed<'_, '_, '_> {
+    type Value = DeCusInfo;
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        CIProxy::deserialize_state(&mut self.0, deserializer).map(
+            |CIProxy { base, info, fields }| {
+                DeCusInfo(
+                    base,
+                    false,
+                    fields
+                        .into_iter()
+                        .map(|(k, v)| (k.into_boxed_str(), self.0.values.borrow_mut().insert(v)))
+                        .collect(),
+                    self.0.nom_info.borrow_mut().insert(info),
+                )
+            },
+        )
+    }
+}
 #[doc(hidden)]
 pub struct CustomHeader;
 impl Serialize for CustomHeader {
@@ -142,8 +202,10 @@ impl Serialize for CustomHeader {
         });
         let cd = CUSTOM_DATA.pin();
         let mut map = serializer.serialize_map(Some(cd.len()))?;
-
-        todo!()
+        cd.iter()
+            .filter(|x| x.1 .1)
+            .try_for_each(|(k, v)| map.serialize_entry(k, &SerCusInfo(v, ctx)))?;
+        map.end()
     }
 }
 impl<'de> Deserialize<'de> for CustomHeader {
@@ -151,11 +213,38 @@ impl<'de> Deserialize<'de> for CustomHeader {
     where
         D: Deserializer<'de>,
     {
+        use de::*;
         let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe {
             &*c.get()
                 .expect("type deserialization must be called with a context")
         });
-        todo!()
+        struct CHVisitor<'de, 'b, 'a, 's, 'c>(
+            &'a CompCtx<'s, 'c>,
+            flurry::Guard<'b>,
+            PhantomData<&'de ()>,
+        );
+        impl<'de> Visitor<'de> for CHVisitor<'de, '_, '_, '_, '_> {
+            type Value = CustomHeader;
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("the custom types' header")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                while let Some(k) = map.next_key()? {
+                    let v = map.next_value_seed(CIProxySeed(self.0))?;
+                    assert!(
+                        CUSTOM_DATA
+                            .insert(CUSTOM_INTERN.intern(k), (v.0, v.1, v.2, v.3), &self.1)
+                            .is_none(),
+                        "duplicate custom header key"
+                    );
+                }
+                Ok(CustomHeader)
+            }
+        }
+        deserializer.deserialize_map(CHVisitor(ctx, CUSTOM_DATA.guard(), PhantomData))
     }
 }
 impl TypeSerde for Custom {
