@@ -369,10 +369,22 @@ impl Serialize for CompCtx<'_, '_> {
         S: Serializer,
     {
         use ser::*;
+        #[allow(clippy::unnecessary_cast)]
+        SERIALIZATION_CONTEXT.with(|c| {
+            if let Some(ptr) = c.replace(Some(
+                self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
+            )) {
+                panic!("serialization context is already in use with an address of {ptr:p}");
+            }
+        });
         let mut map = serializer.serialize_struct("Context", 3)?;
         map.serialize_field("version", &HEADER_FMT_VERSION)?;
         map.serialize_field("types", &CtxTypeSerde(self))?;
         self.with_vars(|v| map.serialize_field("vars", v))?;
+        SERIALIZATION_CONTEXT.with(|c| {
+            c.replace(None)
+                .expect("serialization context is empty after serialization")
+        });
         map.end()
     }
 }
