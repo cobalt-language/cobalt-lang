@@ -87,12 +87,18 @@ impl<T: ConcreteType> TypeKind for T {
 pub trait TypeSerde: Sized {
     type Header: Serialize + DeserializeOwned;
     type Proxy: Serialize + DeserializeOwned;
+    fn has_header() -> bool {
+        true
+    }
     fn get_header() -> Self::Header;
     fn set_header(header: Self::Header);
     fn get_proxy(&'static self) -> Self::Proxy;
     fn from_proxy(body: Self::Proxy) -> &'static Self;
 }
 pub trait TypeSerdeFns {
+    fn has_header() -> bool
+    where
+        Self: Sized;
     fn erased_header() -> Box<dyn erased_serde::Serialize>
     where
         Self: Sized;
@@ -109,6 +115,9 @@ pub trait TypeSerdeFns {
         Self: Sized;
 }
 impl<T: Type + TypeSerde> TypeSerdeFns for T {
+    fn has_header() -> bool {
+        <Self as TypeSerde>::has_header()
+    }
     fn erased_header() -> Box<dyn erased_serde::Serialize> {
         Box::new(Self::get_header())
     }
@@ -136,6 +145,9 @@ pub trait NullType: Type {
 impl<T: NullType> TypeSerde for T {
     type Header = ();
     type Proxy = ();
+    fn has_header() -> bool {
+        false
+    }
     fn get_header() -> Self::Header {}
     fn set_header(header: Self::Header) {}
     fn get_proxy(&'static self) -> Self::Proxy {}
@@ -146,6 +158,9 @@ impl<T: NullType> TypeSerde for T {
 macro_rules! no_type_header {
     () => {
         type Header = ();
+        fn has_header() -> bool {
+            false
+        }
         fn get_header() -> Self::Header {}
         fn set_header(header: Self::Header) {}
     };
@@ -732,6 +747,8 @@ impl<'de> Deserialize<'de> for TypeRef {
 }
 pub struct TypeLoader {
     pub kind: u64,
+    pub name: fn() -> &'static str,
+    pub has_header: fn() -> bool,
     pub erased_header: fn() -> Box<dyn erased_serde::Serialize>,
     pub load_header: fn(&mut dyn erased_serde::Deserializer) -> Result<(), erased_serde::Error>,
     pub load: fn(&mut dyn erased_serde::Deserializer) -> Result<TypeRef, erased_serde::Error>,
@@ -741,6 +758,11 @@ macro_rules! type_loader {
     ($T:ty) => {
         $crate::types::TypeLoader {
             kind: <$T as $crate::types::ConcreteType>::KIND,
+            name: || {
+                let s = ::std::any::type_name::<$T>();
+                s.rsplit_once("::").map_or(s, |x| x.1)
+            },
+            has_header: <$T as $crate::types::TypeSerdeFns>::has_header,
             erased_header: <$T as $crate::types::TypeSerdeFns>::erased_header,
             load_header: <$T as $crate::types::TypeSerdeFns>::load_header,
             load: <$T as $crate::types::TypeSerdeFns>::load,
@@ -758,23 +780,29 @@ macro_rules! submit_types {
 }
 inventory::collect!(TypeLoader);
 pub struct LoadInfo {
+    pub has_header: fn() -> bool,
     pub erased_header: fn() -> Box<dyn erased_serde::Serialize>,
     pub load_header: fn(&mut dyn erased_serde::Deserializer) -> Result<(), erased_serde::Error>,
     pub load: fn(&mut dyn erased_serde::Deserializer) -> Result<TypeRef, erased_serde::Error>,
+    pub name: &'static str,
 }
 impl LoadInfo {
     pub fn new(
         &TypeLoader {
             kind,
+            has_header,
             erased_header,
             load_header,
             load,
+            name,
             ..
         }: &'static TypeLoader,
     ) -> (u64, Self) {
         (
             kind,
             Self {
+                name: name(),
+                has_header,
                 erased_header,
                 load_header,
                 load,

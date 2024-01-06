@@ -26,6 +26,7 @@ pub struct Flags {
     pub all_move_metadata: bool,
     pub private_syms: bool,
     pub skip_header_version_check: bool,
+    pub add_type_map: bool,
 }
 impl Default for Flags {
     fn default() -> Self {
@@ -37,6 +38,7 @@ impl Default for Flags {
             all_move_metadata: false,
             private_syms: true,
             skip_header_version_check: false,
+            add_type_map: false,
         }
     }
 }
@@ -331,9 +333,13 @@ impl Serialize for CtxTypeSerde<'_, '_, '_> {
     {
         use ser::*;
         let tsr = TYPE_SERIAL_REGISTRY.pin();
-        let mut map = serializer.serialize_map(Some(tsr.len()))?;
+        let mut map = serializer.serialize_map(Some(
+            tsr.iter().filter(|(_, info)| (info.has_header)()).count(),
+        ))?;
         for (id, info) in &tsr {
-            map.serialize_entry(&HexArray(id.to_le_bytes()), &(info.erased_header)())?;
+            if (info.has_header)() {
+                map.serialize_entry(&HexArray(id.to_le_bytes()), &(info.erased_header)())?;
+            }
         }
         map.end()
     }
@@ -384,8 +390,19 @@ impl Serialize for CompCtx<'_, '_> {
                 }
             }
         });
-        let mut map = serializer.serialize_struct("Context", 3)?;
+        let mut map =
+            serializer.serialize_struct("Context", 3 + usize::from(self.flags.add_type_map))?;
         map.serialize_field("version", &HEADER_FMT_VERSION)?;
+        if self.flags.add_type_map {
+            map.serialize_field(
+                "names",
+                &TYPE_SERIAL_REGISTRY
+                    .pin()
+                    .iter()
+                    .map(|(k, v)| (hex::encode(k.to_le_bytes()), v.name))
+                    .collect::<hashbrown::HashMap<_, _>>(),
+            )?;
+        }
         map.serialize_field("types", &CtxTypeSerde(self))?;
         self.with_vars(|v| map.serialize_field("vars", v))?;
         SERIALIZATION_CONTEXT.with(|c| {
@@ -399,6 +416,8 @@ impl Serialize for CompCtx<'_, '_> {
 #[serde(bound = "'a: 'de")]
 struct ContextDeProxy<'a> {
     version: u16,
+    #[serde(rename = "names")]
+    _names: Option<serde::de::IgnoredAny>, // if it gets into the serialization, ignore it for deserialization - it should be stable
     #[serde(borrow = "'a")]
     types: serde::__private::de::Content<'a>,
     #[serde(borrow = "'a")]

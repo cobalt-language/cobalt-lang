@@ -243,6 +243,9 @@ impl<'de> Deserialize<'de> for CustomHeader {
 }
 impl TypeSerde for Custom {
     type Header = CustomHeader;
+    fn has_header() -> bool {
+        !CUSTOM_DATA.is_empty() // may return a false positive but much faster than iterating
+    }
     fn get_header() -> Self::Header {
         CustomHeader
     }

@@ -1393,6 +1393,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
+            flags.add_type_map = dump_header;
             let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
             let trip = TargetMachine::get_default_triple();
             let triple = trip.as_str().to_string_lossy();
@@ -2360,6 +2361,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
+                flags.add_type_map = dump_header;
                 let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
