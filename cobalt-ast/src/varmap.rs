@@ -145,13 +145,16 @@ impl Serialize for Symbol<'_, '_> {
         self.serialize_state(serializer, &())
     }
 }
+fn skip_serializing_parent(p: &Option<Box<VarMap>>) -> bool {
+    p.as_ref().map_or(true, |p| p.parent.is_none())
+}
 
 #[derive(Debug, Clone, Default, SerializeState, DeserializeState)]
 #[serde(crate = "serde_state")]
 #[serde(serialize_state = "()")]
 #[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 pub struct VarMap<'src, 'ctx> {
-    #[serde(deserialize_state)]
+    #[serde(deserialize_state, skip_serializing_if = "skip_serializing_parent")]
     pub parent: Option<Box<Self>>,
     #[serde(deserialize_state)]
     pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
@@ -188,6 +191,12 @@ impl<'src, 'ctx> VarMap<'src, 'ctx> {
         } else {
             self
         }
+    }
+    pub fn is_true_root(&self) -> bool {
+        self.parent.is_none()
+    }
+    pub fn is_root(&self) -> bool {
+        self.parent.as_ref().map_or(true, |p| p.parent.is_none())
     }
     pub fn insert(
         &mut self,
