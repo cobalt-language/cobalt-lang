@@ -372,12 +372,14 @@ impl Serialize for CompCtx<'_, '_> {
         S: Serializer,
     {
         use ser::*;
-        #[allow(clippy::unnecessary_cast)]
         SERIALIZATION_CONTEXT.with(|c| {
-            if let Some(ptr) = c.replace(Some(ContextPointer::new(
-                self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
-            ))) {
-                if *ptr != (self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>) {
+            let p = unsafe {
+                std::mem::transmute::<*const CompCtx<'_, '_>, *const CompCtx<'static, 'static>>(
+                    self as _,
+                )
+            };
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(p))) {
+                if *ptr != p {
                     panic!("serialization context is already in use with an address of {ptr:#?}");
                 }
             }
@@ -409,12 +411,14 @@ impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
         D: Deserializer<'de>,
     {
         use de::*;
-        #[allow(clippy::unnecessary_cast)]
         SERIALIZATION_CONTEXT.with(|c| {
-            if let Some(ptr) = c.replace(Some(ContextPointer::new(
-                self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
-            ))) {
-                if *ptr != (self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>) {
+            let p = unsafe {
+                std::mem::transmute::<*const CompCtx<'_, '_>, *const CompCtx<'static, 'static>>(
+                    self as _,
+                )
+            };
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(p))) {
+                if *ptr != p {
                     panic!("serialization context is already in use with an address of {ptr:#?}");
                 }
             }
@@ -484,7 +488,7 @@ pub unsafe fn get_ctx_ptr<'a, 's, 'c>(cell: &Cell<Option<ContextPointer>>) -> &'
     let ptr = cp.ptr;
     cell.set(Some(cp));
     #[allow(clippy::unnecessary_cast)]
-    &*(ptr as *const CompCtx<'s, 'c>)
+    &*std::mem::transmute::<*const CompCtx<'static, 'static>, *const CompCtx<'s, 'c>>(ptr)
 }
 thread_local! {
     /// CompCtx, should only have a value during de/serialization
