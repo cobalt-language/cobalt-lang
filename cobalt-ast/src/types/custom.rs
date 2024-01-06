@@ -196,10 +196,7 @@ impl Serialize for CustomHeader {
         S: Serializer,
     {
         use ser::*;
-        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe {
-            &*c.get()
-                .expect("type deserialization must be called with a context")
-        });
+        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe { get_ctx_ptr(c) });
         let cd = CUSTOM_DATA.pin();
         let mut map = serializer.serialize_map(Some(cd.len()))?;
         cd.iter()
@@ -214,10 +211,7 @@ impl<'de> Deserialize<'de> for CustomHeader {
         D: Deserializer<'de>,
     {
         use de::*;
-        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe {
-            &*c.get()
-                .expect("type deserialization must be called with a context")
-        });
+        let ctx = SERIALIZATION_CONTEXT.with(|c| unsafe { get_ctx_ptr(c) });
         struct CHVisitor<'de, 'b, 'a, 's, 'c>(
             &'a CompCtx<'s, 'c>,
             flurry::Guard<'b>,

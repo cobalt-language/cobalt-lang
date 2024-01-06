@@ -8,6 +8,7 @@ use inkwell::{builder::Builder, context::Context, module::Module};
 use owned_chars::OwnedCharsExt;
 use serde::de::DeserializeSeed;
 use std::cell::{Cell, RefCell};
+use std::fmt::{self, Debug, Formatter};
 use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
@@ -286,11 +287,11 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         }
         Some(v)
     }
-    pub fn save<W: Write>(&self, out: &mut W) -> serde_cbor::Result<()> {
-        serde_cbor::to_writer(out, self)
+    pub fn save<W: Write>(&self, buf: &mut W) -> serde_json::Result<()> {
+        serde_json::to_writer(buf, self)
     }
-    pub fn load<R: Read>(&self, buf: &mut R) -> serde_cbor::Result<Vec<String>> {
-        self.deserialize(&mut serde_cbor::Deserializer::from_reader(buf))
+    pub fn load<R: Read>(&self, buf: &mut R) -> serde_json::Result<Vec<String>> {
+        self.deserialize(&mut serde_json::Deserializer::from_reader(buf))
     }
 }
 impl Drop for CompCtx<'_, '_> {
@@ -319,7 +320,9 @@ impl<'de, T, F: FnOnce(&mut dyn erased_serde::Deserializer) -> Result<T, erased_
             .map_err(de::Error::custom)
     }
 }
-
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
+struct HexArray(#[serde(with = "hex::serde")] [u8; 8]);
 struct CtxTypeSerde<'a, 's, 'c>(&'a CompCtx<'s, 'c>);
 impl Serialize for CtxTypeSerde<'_, '_, '_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -330,7 +333,7 @@ impl Serialize for CtxTypeSerde<'_, '_, '_> {
         let tsr = TYPE_SERIAL_REGISTRY.pin();
         let mut map = serializer.serialize_map(Some(tsr.len()))?;
         for (id, info) in &tsr {
-            map.serialize_entry(id, &(info.erased_header)())?;
+            map.serialize_entry(&HexArray(id.to_le_bytes()), &(info.erased_header)())?;
         }
         map.end()
     }
@@ -345,8 +348,8 @@ impl<'de> de::Visitor<'de> for CtxTypeSerde<'_, '_, '_> {
         A: de::MapAccess<'de>,
     {
         let tsr = TYPE_SERIAL_REGISTRY.pin();
-        while let Some(id) = map.next_key::<u64>()? {
-            let Some(loader) = tsr.get(&id) else {
+        while let Some(id) = map.next_key::<HexArray>()? {
+            let Some(loader) = tsr.get(&u64::from_le_bytes(id.0)) else {
                 return Err(de::Error::custom("unknown type ID {:0>16x}"));
             };
             map.next_value_seed(FnDeserializer(loader.load_header))?;
@@ -371,10 +374,12 @@ impl Serialize for CompCtx<'_, '_> {
         use ser::*;
         #[allow(clippy::unnecessary_cast)]
         SERIALIZATION_CONTEXT.with(|c| {
-            if let Some(ptr) = c.replace(Some(
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(
                 self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
-            )) {
-                panic!("serialization context is already in use with an address of {ptr:p}");
+            ))) {
+                if *ptr != (self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>) {
+                    panic!("serialization context is already in use with an address of {ptr:#?}");
+                }
             }
         });
         let mut map = serializer.serialize_struct("Context", 3)?;
@@ -406,10 +411,12 @@ impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
         use de::*;
         #[allow(clippy::unnecessary_cast)]
         SERIALIZATION_CONTEXT.with(|c| {
-            if let Some(ptr) = c.replace(Some(
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(
                 self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>, // this intermediate cast is necessary
-            )) {
-                panic!("serialization context is already in use with an address of {ptr:p}");
+            ))) {
+                if *ptr != (self as *const CompCtx<'_, '_> as *const CompCtx<'static, 'static>) {
+                    panic!("serialization context is already in use with an address of {ptr:#?}");
+                }
             }
         });
         let proxy = ContextDeProxy::deserialize(deserializer)?;
@@ -429,7 +436,57 @@ impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
         Ok(self.with_vars(|v| varmap::merge(&mut v.symbols, vars.symbols)))
     }
 }
+
+/// Wrapper around a context pointer, maybe with a backtace
+pub struct ContextPointer {
+    ptr: *const CompCtx<'static, 'static>,
+    #[cfg(debug_assertions)]
+    trace: std::backtrace::Backtrace,
+}
+impl ContextPointer {
+    pub fn new(ptr: *const CompCtx<'static, 'static>) -> Self {
+        Self {
+            trace: std::backtrace::Backtrace::capture(),
+            ptr,
+        }
+    }
+}
+impl std::ops::Deref for ContextPointer {
+    type Target = *const CompCtx<'static, 'static>;
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+impl Debug for ContextPointer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:p}", self.ptr)?;
+        #[cfg(debug_assertions)]
+        {
+            if f.alternate() {
+                if self.trace.status() == std::backtrace::BacktraceStatus::Captured {
+                    write!(f, "at: \n{}", self.trace)?;
+                } else {
+                    f.write_str("without backtrace")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+/// Get the context pointer from a cell
+/// Super unsafe lmao
+///
+/// # Safety
+/// `SERIALIZATION_CONTEXT`` must be valid
+pub unsafe fn get_ctx_ptr<'a, 's, 'c>(cell: &Cell<Option<ContextPointer>>) -> &'a CompCtx<'s, 'c> {
+    let opt = cell.replace(None);
+    let cp = opt.expect("expected pointer in serialization context");
+    let ptr = cp.ptr;
+    cell.set(Some(cp));
+    #[allow(clippy::unnecessary_cast)]
+    &*(ptr as *const CompCtx<'s, 'c>)
+}
 thread_local! {
-    /// CompCtx, should only have a value during deserialization
-    pub static SERIALIZATION_CONTEXT: Cell<Option<*const CompCtx<'static, 'static>>> = const {Cell::new(None)};
+    /// CompCtx, should only have a value during de/serialization
+    pub static SERIALIZATION_CONTEXT: Cell<Option<ContextPointer>> = const {Cell::new(None)};
 }

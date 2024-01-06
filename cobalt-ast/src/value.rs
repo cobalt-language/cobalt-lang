@@ -399,9 +399,8 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
 #[serde(serialize_state = "()")]
 #[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 struct ValueShim<'b, 'src, 'ctx> {
-    pub loc: SourceSpan,
     #[serde(borrow)]
-    pub comp_val: Option<&'b bstr::BStr>,
+    pub comp_val: Option<Cow<'b, str>>,
     #[serde(deserialize_state)]
     pub inter_val: Option<Cow<'b, InterData<'src, 'ctx>>>,
     pub data_type: TypeRef,
@@ -410,7 +409,6 @@ struct ValueShim<'b, 'src, 'ctx> {
 impl<'src, 'ctx> Serialize for Value<'src, 'ctx> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let Value {
-            loc,
             comp_val,
             ref inter_val,
             data_type,
@@ -418,12 +416,13 @@ impl<'src, 'ctx> Serialize for Value<'src, 'ctx> {
             ..
         } = *self;
         ValueShim {
-            loc,
             data_type,
             frozen,
             inter_val: inter_val.as_ref().map(Cow::Borrowed),
             comp_val: comp_val.map(|v| unsafe {
-                new_lifetime(v.into_pointer_value().get_name().to_bytes().into())
+                std::mem::transmute::<Cow<str>, Cow<str>>(String::from_utf8_lossy(
+                    v.into_pointer_value().get_name().to_bytes(),
+                ))
             }),
         }
         .serialize_state(serializer, &())
@@ -435,27 +434,25 @@ impl<'de, 'a, 'src, 'ctx> DeserializeState<'de, &'a CompCtx<'src, 'ctx>> for Val
         deserializer: D,
     ) -> Result<Self, D::Error> {
         let ctx = *seed;
-        ValueShim::deserialize_state(seed, deserializer).and_then(
+        ValueShim::deserialize_state(seed, deserializer).map(
             |ValueShim {
-                 loc,
                  comp_val,
                  inter_val,
                  data_type,
                  frozen,
              }| {
-                use de::Error;
                 use inkwell::module::Linkage::DLLImport;
                 let mut var = Value {
-                    loc,
                     data_type,
                     frozen,
                     name: None,
                     comp_val: None,
+                    loc: unreachable_span(),
                     address: Default::default(),
                     inter_val: inter_val.map(|iv| iv.into_owned()),
                 };
                 let Some(comp_val) = comp_val else {
-                    return Ok(var);
+                    return var;
                 };
                 if let Some(ty) = var
                     .data_type
@@ -482,16 +479,7 @@ impl<'de, 'a, 'src, 'ctx> DeserializeState<'de, &'a CompCtx<'src, 'ctx>> for Val
                     if good {
                         if let Some(llt) = ty.ret().llvm_type(ctx) {
                             let ft = llt.fn_type(&ps, false);
-                            let fv = ctx.module.add_function(
-                                std::str::from_utf8(comp_val).map_err(|_| {
-                                    D::Error::invalid_value(
-                                        de::Unexpected::Bytes(comp_val),
-                                        &"a string",
-                                    )
-                                })?,
-                                ft,
-                                None,
-                            );
+                            let fv = ctx.module.add_function(&comp_val, ft, None);
                             if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
                                 fv.set_call_conventions(cconv)
                             }
@@ -500,16 +488,7 @@ impl<'de, 'a, 'src, 'ctx> DeserializeState<'de, &'a CompCtx<'src, 'ctx>> for Val
                             var.comp_val = Some(gv.as_pointer_value().into());
                         } else if ty.ret().size() == SizeType::Static(0) {
                             let ft = ctx.context.void_type().fn_type(&ps, false);
-                            let fv = ctx.module.add_function(
-                                std::str::from_utf8(comp_val).map_err(|_| {
-                                    D::Error::invalid_value(
-                                        de::Unexpected::Bytes(comp_val),
-                                        &"a string",
-                                    )
-                                })?,
-                                ft,
-                                None,
-                            );
+                            let fv = ctx.module.add_function(&comp_val, ft, None);
                             if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
                                 fv.set_call_conventions(cconv)
                             }
@@ -517,24 +496,18 @@ impl<'de, 'a, 'src, 'ctx> DeserializeState<'de, &'a CompCtx<'src, 'ctx>> for Val
                             gv.set_linkage(DLLImport);
                             var.comp_val = Some(gv.as_pointer_value().into());
                         }
-                        return Ok(var);
+                        return var;
                     }
                 } else if let Some(t) = var
                     .data_type
                     .downcast::<types::Reference>()
                     .and_then(|t| t.llvm_type(ctx))
                 {
-                    let gv = ctx.module.add_global(
-                        t,
-                        None,
-                        std::str::from_utf8(comp_val).map_err(|_| {
-                            D::Error::invalid_value(de::Unexpected::Bytes(comp_val), &"a string")
-                        })?,
-                    );
+                    let gv = ctx.module.add_global(t, None, &comp_val);
                     gv.set_linkage(DLLImport);
                     var.comp_val = Some(gv.as_pointer_value().into());
                 }
-                Ok(var)
+                var
             },
         )
     }

@@ -148,6 +148,12 @@ impl Serialize for Symbol<'_, '_> {
 fn skip_serializing_parent(p: &Option<Box<VarMap>>) -> bool {
     p.as_ref().map_or(true, |p| p.parent.is_none())
 }
+fn serialize_var_symbols<S: Serializer>(
+    syms: &HashMap<Cow<str>, Symbol>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_map(syms.iter().filter(|v| v.1 .1.export))
+}
 
 #[derive(Debug, Clone, Default, SerializeState, DeserializeState)]
 #[serde(crate = "serde_state")]
@@ -156,7 +162,7 @@ fn skip_serializing_parent(p: &Option<Box<VarMap>>) -> bool {
 pub struct VarMap<'src, 'ctx> {
     #[serde(deserialize_state, skip_serializing_if = "skip_serializing_parent")]
     pub parent: Option<Box<Self>>,
-    #[serde(deserialize_state)]
+    #[serde(deserialize_state, serialize_with = "serialize_var_symbols")]
     pub symbols: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
     pub imports: Vec<(CompoundDottedName<'src>, bool)>,
 }

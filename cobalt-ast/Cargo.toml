@@ -31,5 +31,6 @@ serde_derive_state = "0.4.10"
 const-identify = "0.1.1"
 erased-serde = "0.4.1"
 deranged = { version = "0.3.10", features = ["serde"] }
-serde-value = "0.7.0"
-serde_cbor = "0.11.2"
+serde_json = "1.0.111"
+hex = { version = "0.4.3", features = ["serde"] }
+serde_bytes = "0.11.14"

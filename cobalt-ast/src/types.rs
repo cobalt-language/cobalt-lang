@@ -703,7 +703,7 @@ impl Serialize for TypeRef {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use ser::*;
         let mut map = serializer.serialize_struct("Type", 3)?;
-        map.serialize_field("kind", &self.kind())?;
+        map.serialize_field("kind", &hex::encode(self.kind().to_le_bytes()))?;
         map.serialize_field("type", &self.erased_proxy())?;
         map.end()
     }
@@ -714,15 +714,16 @@ impl<'de> Deserialize<'de> for TypeRef {
         #[derive(Deserialize)]
         #[serde(bound = "'a: 'de")]
         struct Proxy<'a> {
-            kind: u64,
+            #[serde(with = "hex::serde")]
+            kind: [u8; 8],
             #[serde(borrow, rename = "type")]
             ty: serde::__private::de::Content<'a>,
         }
         let p = Proxy::deserialize(deserializer)?;
         (TYPE_SERIAL_REGISTRY
             .pin()
-            .get(&p.kind)
-            .ok_or_else(|| D::Error::custom(format!("unknown type id {}", p.kind)))?
+            .get(&u64::from_le_bytes(p.kind))
+            .ok_or_else(|| D::Error::custom(format!("unknown type id {}", hex::encode(p.kind))))?
             .load)(&mut <dyn erased_serde::Deserializer>::erase(
             serde::__private::de::ContentDeserializer::<'de, D::Error>::new(p.ty),
         ))
