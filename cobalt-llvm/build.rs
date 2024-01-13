@@ -110,10 +110,10 @@ fn llvm_config_binary_names() -> &'static [&'static str] {
         };
     }
 
-    static BASE_NAMES: &[&str; 32] = &array_concat::concat_arrays!(
-        name_list!("", 17, 16, 15),
+    static BASE_NAMES: &[&str; 22] = &array_concat::concat_arrays!(
+        name_list!("", 16, 15),
         ["llvm-config"],
-        name_list!(".exe", 17, 16, 15),
+        name_list!(".exe", 16, 15),
         ["llvm-config.exe"]
     );
     if target_os_is("windows") {
@@ -508,6 +508,7 @@ fn extract_library(s: &str, is_static: bool) -> Vec<String> {
             }
             .to_string()
         })
+        .filter(|s| !s.contains("Polly")) // polly isn't needed, and it's not included in APT packages
         .collect::<Vec<String>>()
 }
 

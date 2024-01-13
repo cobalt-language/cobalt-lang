@@ -10,7 +10,7 @@ documentation.workspace = true
 
 [dependencies]
 inkwell = { version = "0.2.0", features = ["llvm16-0"]}
-llvm-sys = { version = "*", features = ["no-llvm-linking", "disable-alltargets-init"]}
+llvm-sys = { version = "160", features = ["no-llvm-linking", "disable-alltargets-init"]}
 
 [build-dependencies]
 lazy_static = "1.4"
