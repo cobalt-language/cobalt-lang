@@ -2,7 +2,7 @@ use super::*;
 use inkwell::IntPredicate::*;
 use std::cell::Cell;
 use std::rc::Rc;
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
 pub struct Reference(TypeRef);
@@ -17,8 +17,9 @@ impl Reference {
         self.0
     }
 }
-impl ConcreteType for Reference {
-    const KIND: NonZeroU64 = make_id(b"ref");
+impl TypeSerde for Reference {
+    no_type_header!();
+    impl_type_proxy!(TypeRef, Self::base, Self::new);
 }
 impl Type for Reference {
     fn size(&self) -> SizeType {
@@ -398,14 +399,8 @@ impl Type for Reference {
         val.data_type = self.base();
         self.base().subscript(val, idx, ctx)
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        load_type(buf).map(|t| Self::new(t) as _)
-    }
 }
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "*{}", _0)]
 #[repr(transparent)]
 pub struct Pointer(TypeRef);
@@ -420,8 +415,9 @@ impl Pointer {
         self.0
     }
 }
-impl ConcreteType for Pointer {
-    const KIND: NonZeroU64 = make_id(b"ptr");
+impl TypeSerde for Pointer {
+    no_type_header!();
+    impl_type_proxy!(TypeRef, Self::base, Self::new);
 }
 impl Type for Pointer {
     fn size(&self) -> SizeType {
@@ -892,14 +888,8 @@ impl Type for Pointer {
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         self.base().ptr_type(ctx)
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        load_type(buf).map(|t| Self::new(t) as _)
-    }
 }
-#[derive(Debug, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "mut {}", _0)]
 #[repr(transparent)]
 pub struct Mut(TypeRef);
@@ -914,8 +904,9 @@ impl Mut {
         self.0
     }
 }
-impl ConcreteType for Mut {
-    const KIND: NonZeroU64 = make_id(b"mut");
+impl TypeSerde for Mut {
+    no_type_header!();
+    impl_type_proxy!(TypeRef, Self::base, Self::new);
 }
 impl Type for Mut {
     fn size(&self) -> SizeType {
@@ -1148,12 +1139,6 @@ impl Type for Mut {
     }
     fn _has_ref_attr(&'static self, attr: &str, ctx: &CompCtx) -> bool {
         self.base()._has_refmut_attr(attr, ctx)
-    }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        save_type(out, self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        load_type(buf).map(|t| Self::new(t) as _)
     }
 }
 submit_types!(Reference, Pointer, Mut);

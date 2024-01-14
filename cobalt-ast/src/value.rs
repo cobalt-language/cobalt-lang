@@ -1,213 +1,59 @@
 use crate::*;
-use hashbrown::HashMap;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum::*};
 use inkwell::values::{BasicValueEnum, PointerValue};
 use std::cell::Cell;
-use std::io::{self, BufRead, Read, Write};
+use std::collections::HashMap;
 use std::rc::Rc;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(crate = "serde_state")]
 pub enum MethodType {
     Static,
     Method,
     Getter,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeState, DeserializeState)]
+#[serde(crate = "serde_state")]
+#[serde(serialize_state = "()")]
+#[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 pub struct FnData<'src, 'ctx> {
+    #[serde(deserialize_state)]
     pub defaults: Vec<InterData<'src, 'ctx>>,
     pub cconv: u32,
     pub mt: MethodType,
 }
+impl Serialize for FnData<'_, '_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.serialize_state(serializer, &())
+    }
+}
 
 /// Used for compile-time constants.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeState, DeserializeState)]
+#[serde(crate = "serde_state")]
+#[serde(serialize_state = "()")]
+#[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 pub enum InterData<'src, 'ctx> {
     Null,
     Int(i128),
     Float(f64),
     /// Used for tuples, structs, arrays, and bound methods.
-    Array(Vec<Self>),
+    Array(#[serde(deserialize_state)] Vec<Self>),
     /// Used for default values of function parameters.
-    Function(FnData<'src, 'ctx>),
+    Function(#[serde(deserialize_state)] FnData<'src, 'ctx>),
     InlineAsm(String, String),
     Type(TypeRef),
     Module(
-        HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
+        #[serde(deserialize_state)] HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         Vec<(CompoundDottedName<'src>, bool)>,
         String,
     ),
 }
-impl<'src, 'ctx> InterData<'src, 'ctx> {
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        match self {
-            InterData::Null => out.write_all(&[1]),
-            InterData::Int(v) => out
-                .write_all(&[2])
-                .and_then(|_| out.write_all(&v.to_be_bytes())),
-            InterData::Float(v) => out
-                .write_all(&[3])
-                .and_then(|_| out.write_all(&v.to_be_bytes())),
-            InterData::Array(v) => {
-                out.write_all(&[5])?;
-                out.write_all(&(v.len() as u32).to_be_bytes())?; // length
-                for val in v.iter() {
-                    val.save(out)?;
-                } // InterData is self-puncatuating
-                Ok(())
-            }
-            InterData::Function(v) => {
-                // serialized the same as InterData::Array
-                out.write_all(&[6])?;
-                out.write_all(&(v.defaults.len() as u32).to_be_bytes())?;
-                for val in v.defaults.iter() {
-                    val.save(out)?;
-                }
-                out.write_all(&v.cconv.to_be_bytes())?;
-                out.write_all(std::slice::from_ref(&match v.mt {
-                    MethodType::Method => 1,
-                    MethodType::Static => 2,
-                    MethodType::Getter => 3,
-                }))
-            }
-            InterData::InlineAsm(c, b) => {
-                out.write_all(&[7])?;
-                out.write_all(c.as_bytes())?;
-                out.write_all(&[0])?;
-                out.write_all(b.as_bytes())?;
-                out.write_all(&[0])
-            }
-            InterData::Type(t) => {
-                out.write_all(&[8])?;
-                t.save(out)
-            }
-            InterData::Module(v, i, n) => {
-                out.write_all(&[9])?;
-                out.write_all(n.as_bytes())?;
-                out.write_all(&[0])?;
-                for (name, sym) in v.iter() {
-                    if sym.1.export {
-                        out.write_all(name.as_bytes())?; // name, null-terminated
-                        out.write_all(&[0])?;
-                        sym.save(out)?;
-                    }
-                }
-                out.write_all(&[0])?; // null terminator for symbol list
-                for import in i
-                    .iter()
-                    .filter_map(|(s, b)| if *b { Some(s) } else { None })
-                {
-                    import.save(out)?;
-                }
-                out.write_all(&[0])
-            }
-        }
-    }
-    pub fn load<R: Read + BufRead>(
-        buf: &mut R,
-        ctx: &CompCtx<'src, 'ctx>,
-    ) -> io::Result<Option<Self>> {
-        let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
-        Ok(match c {
-            0 => None,
-            1 => Some(InterData::Null),
-            2 => {
-                let mut bytes = [0; 16];
-                buf.read_exact(&mut bytes)?;
-                Some(InterData::Int(i128::from_be_bytes(bytes)))
-            }
-            3 => {
-                let mut bytes = [0; 8];
-                buf.read_exact(&mut bytes)?;
-                Some(InterData::Float(f64::from_be_bytes(bytes)))
-            }
-            5 => {
-                let mut bytes = [0; 4];
-                buf.read_exact(&mut bytes)?;
-                let len = u32::from_be_bytes(bytes);
-                let mut vec = Vec::with_capacity(len as usize);
-                for _ in 0..len {
-                    vec.push(
-                        Self::load(buf, ctx)?.expect(
-                            "# of unwrapped array elements doesn't match the prefixed count",
-                        ),
-                    )
-                }
-                Some(InterData::Array(vec))
-            }
-            6 => {
-                let mut bytes = [0; 4];
-                buf.read_exact(&mut bytes)?;
-                let len = u32::from_be_bytes(bytes);
-                let mut vec = Vec::with_capacity(len as usize);
-                for _ in 0..len {
-                    vec.push(Self::load(buf, ctx)?.expect(
-                        "# of unwrapped default parameters doesn't match the prefixed count",
-                    ))
-                }
-                buf.read_exact(&mut bytes)?;
-                let mut c = 0u8;
-                buf.read_exact(std::slice::from_mut(&mut c))?;
-                let mt = match c {
-                    1 => MethodType::Method,
-                    2 => MethodType::Static,
-                    3 => MethodType::Getter,
-                    x => panic!("Expected 1, 2, or 3 for method type, got {x}"),
-                };
-                Some(InterData::Function(FnData {
-                    defaults: vec,
-                    cconv: u32::from_be_bytes(bytes),
-                    mt,
-                }))
-            }
-            7 => {
-                let mut constraint = Vec::new();
-                let mut body = Vec::new();
-                buf.read_until(0, &mut constraint)?;
-                buf.read_until(0, &mut body)?;
-                Some(InterData::InlineAsm(
-                    String::from_utf8(constraint)
-                        .expect("Inline assmebly constraint should be valid UTF-8"),
-                    String::from_utf8(body).expect("Inline assembly should be valid UTF-8"),
-                ))
-            }
-            8 => Some(InterData::Type(types::load_type(buf)?)),
-            9 => {
-                let mut out = HashMap::new();
-                let mut imports = vec![];
-                let mut vec = Vec::new();
-                buf.read_until(0, &mut vec)?;
-                if vec.last() == Some(&0) {
-                    vec.pop();
-                }
-                loop {
-                    let mut name = vec![];
-                    buf.read_until(0, &mut name)?;
-                    if name.last() == Some(&0) {
-                        name.pop();
-                    }
-                    if name.is_empty() {
-                        break;
-                    }
-                    out.insert(
-                        String::from_utf8(name)
-                            .expect("Cobalt symbols should be valid UTF-8")
-                            .into(),
-                        Symbol::load(buf, ctx)?,
-                    );
-                }
-                while let Some(val) = CompoundDottedName::load(buf)? {
-                    imports.push((val, false));
-                }
-                Some(InterData::Module(
-                    out,
-                    imports,
-                    String::from_utf8(vec).expect("Module names should be valid UTF-8"),
-                ))
-            }
-            x => panic!("read interpreted data type expecting number in 1..=9, got {x}"),
-        })
+impl Serialize for InterData<'_, '_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.serialize_state(serializer, &())
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct Value<'src, 'ctx> {
     pub loc: SourceSpan,
@@ -547,102 +393,122 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         self.data_type.subscript(self, other, ctx)
     }
+}
 
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        out.write_all(
-            self.comp_val
-                .as_ref()
-                .map(|v| v.into_pointer_value().get_name().to_bytes().to_owned())
-                .unwrap_or_default()
-                .as_slice(),
-        )?; // LLVM symbol name, null-terminated
-        out.write_all(&[0])?;
-        if let Some(v) = self.inter_val.as_ref() {
-            v.save(out)?
-        } else {
-            out.write_all(&[0])?
-        } // Interpreted value, self-punctuating
-        types::save_type(out, self.data_type) // Type
+#[derive(SerializeState, DeserializeState)]
+#[serde(serialize_state = "()")]
+#[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
+struct ValueShim<'b, 'src, 'ctx> {
+    #[serde(borrow)]
+    pub comp_val: Option<Cow<'b, str>>,
+    #[serde(deserialize_state)]
+    pub inter_val: Option<Cow<'b, InterData<'src, 'ctx>>>,
+    pub data_type: TypeRef,
+    pub frozen: Option<SourceSpan>,
+}
+impl<'src, 'ctx> Serialize for Value<'src, 'ctx> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let Value {
+            comp_val,
+            ref inter_val,
+            data_type,
+            frozen,
+            ..
+        } = *self;
+        ValueShim {
+            data_type,
+            frozen,
+            inter_val: inter_val.as_ref().map(Cow::Borrowed),
+            comp_val: comp_val.map(|v| unsafe {
+                std::mem::transmute::<Cow<str>, Cow<str>>(String::from_utf8_lossy(
+                    v.into_pointer_value().get_name().to_bytes(),
+                ))
+            }),
+        }
+        .serialize_state(serializer, &())
     }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'src, 'ctx>) -> io::Result<Self> {
-        let mut var = Value::error();
-        let mut name = vec![];
-        buf.read_until(0, &mut name)?;
-        if name.last() == Some(&0) {
-            name.pop();
-        }
-        var.inter_val = InterData::load(buf, ctx)?;
-        var.data_type = types::load_type(buf)?;
-        if !name.is_empty() {
-            use inkwell::module::Linkage::DLLImport;
-            if let Some(ty) = var
-                .data_type
-                .downcast::<types::Reference>()
-                .and_then(|ty| ty.base().downcast::<types::Function>())
-            {
-                let mut good = true;
-                let ps = ty
-                    .params()
-                    .iter()
-                    .filter_map(|(x, c)| {
-                        if *c {
-                            None
-                        } else {
-                            Some(BasicMetadataTypeEnum::from(
-                                x.llvm_type(ctx).unwrap_or_else(|| {
-                                    good = false;
-                                    IntType(ctx.context.i8_type())
-                                }),
-                            ))
+}
+impl<'de, 'a, 'src, 'ctx> DeserializeState<'de, &'a CompCtx<'src, 'ctx>> for Value<'src, 'ctx> {
+    fn deserialize_state<D: Deserializer<'de>>(
+        seed: &mut &'a CompCtx<'src, 'ctx>,
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        let ctx = *seed;
+        ValueShim::deserialize_state(seed, deserializer).map(
+            |ValueShim {
+                 comp_val,
+                 inter_val,
+                 data_type,
+                 frozen,
+             }| {
+                use inkwell::module::Linkage::DLLImport;
+                let mut var = Value {
+                    data_type,
+                    frozen,
+                    name: None,
+                    comp_val: None,
+                    loc: unreachable_span(),
+                    address: Default::default(),
+                    inter_val: inter_val.map(|iv| iv.into_owned()),
+                };
+                let Some(comp_val) = comp_val else {
+                    return var;
+                };
+                if let Some(ty) = var
+                    .data_type
+                    .downcast::<types::Reference>()
+                    .and_then(|ty| ty.base().downcast::<types::Function>())
+                {
+                    let mut good = true;
+                    let ps = ty
+                        .params()
+                        .iter()
+                        .filter_map(|(x, c)| {
+                            if *c {
+                                None
+                            } else {
+                                Some(BasicMetadataTypeEnum::from(
+                                    x.llvm_type(ctx).unwrap_or_else(|| {
+                                        good = false;
+                                        IntType(ctx.context.i8_type())
+                                    }),
+                                ))
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    if good {
+                        if let Some(llt) = ty.ret().llvm_type(ctx) {
+                            let ft = llt.fn_type(&ps, false);
+                            let fv = ctx.module.add_function(&comp_val, ft, None);
+                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                                fv.set_call_conventions(cconv)
+                            }
+                            let gv = fv.as_global_value();
+                            gv.set_linkage(DLLImport);
+                            var.comp_val = Some(gv.as_pointer_value().into());
+                        } else if ty.ret().size() == SizeType::Static(0) {
+                            let ft = ctx.context.void_type().fn_type(&ps, false);
+                            let fv = ctx.module.add_function(&comp_val, ft, None);
+                            if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
+                                fv.set_call_conventions(cconv)
+                            }
+                            let gv = fv.as_global_value();
+                            gv.set_linkage(DLLImport);
+                            var.comp_val = Some(gv.as_pointer_value().into());
                         }
-                    })
-                    .collect::<Vec<_>>();
-                if good {
-                    if let Some(llt) = ty.ret().llvm_type(ctx) {
-                        let ft = llt.fn_type(&ps, false);
-                        let fv = ctx.module.add_function(
-                            std::str::from_utf8(&name)
-                                .expect("LLVM function names should be valid UTF-8"),
-                            ft,
-                            None,
-                        );
-                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                            fv.set_call_conventions(cconv)
-                        }
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(gv.as_pointer_value().into());
-                    } else if ty.ret().size() == SizeType::Static(0) {
-                        let ft = ctx.context.void_type().fn_type(&ps, false);
-                        let fv = ctx.module.add_function(
-                            std::str::from_utf8(&name)
-                                .expect("LLVM function names should be valid UTF-8"),
-                            ft,
-                            None,
-                        );
-                        if let Some(InterData::Function(FnData { cconv, .. })) = var.inter_val {
-                            fv.set_call_conventions(cconv)
-                        }
-                        let gv = fv.as_global_value();
-                        gv.set_linkage(DLLImport);
-                        var.comp_val = Some(gv.as_pointer_value().into());
+                        return var;
                     }
-                    return Ok(var);
+                } else if let Some(t) = var
+                    .data_type
+                    .downcast::<types::Reference>()
+                    .and_then(|t| t.llvm_type(ctx))
+                {
+                    let gv = ctx.module.add_global(t, None, &comp_val);
+                    gv.set_linkage(DLLImport);
+                    var.comp_val = Some(gv.as_pointer_value().into());
                 }
-            } else if let Some(t) = var
-                .data_type
-                .downcast::<types::Reference>()
-                .and_then(|t| t.llvm_type(ctx))
-            {
-                let gv = ctx.module.add_global(
-                    t,
-                    None,
-                    std::str::from_utf8(&name).expect("LLVM variable names should be valid UTF-8"),
-                ); // maybe do something with linkage/call convention?
-                gv.set_linkage(DLLImport);
-                var.comp_val = Some(gv.as_pointer_value().into());
-            }
-        }
-        Ok(var)
+                var
+            },
+        )
     }
 }

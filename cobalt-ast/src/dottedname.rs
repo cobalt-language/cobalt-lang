@@ -1,7 +1,8 @@
 use crate::*;
 use std::fmt::*;
 use std::io::{self, BufRead, Read, Write};
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(crate = "serde_state")]
 pub struct DottedName<'src> {
     pub ids: Vec<(Cow<'src, str>, SourceSpan)>,
     pub global: bool,
@@ -48,7 +49,8 @@ impl Display for DottedName<'_> {
         Ok(())
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(crate = "serde_state")]
 pub enum CompoundDottedNameSegment<'src> {
     Identifier(Cow<'src, str>, SourceSpan),
     Glob(SourceSpan),
@@ -154,7 +156,8 @@ impl Display for CompoundDottedNameSegment<'_> {
         }
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(crate = "serde_state")]
 pub struct CompoundDottedName<'src> {
     pub ids: Vec<CompoundDottedNameSegment<'src>>,
     pub global: bool,

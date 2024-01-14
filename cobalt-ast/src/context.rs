@@ -1,3 +1,4 @@
+use crate::types::TYPE_SERIAL_REGISTRY;
 use crate::*;
 use cobalt_utils::misc::new_lifetime_mut;
 use either::Either::{self, *};
@@ -5,24 +6,16 @@ use hashbrown::hash_map::{Entry, HashMap};
 use hashbrown::HashSet;
 use inkwell::{builder::Builder, context::Context, module::Module};
 use owned_chars::OwnedCharsExt;
+use serde::de::DeserializeSeed;
 use std::cell::{Cell, RefCell};
-use std::io::{self, BufRead, Read, Write};
+use std::fmt::{self, Debug, Formatter};
+use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-use thiserror::Error;
 
-type HeaderVersionType = u16;
 /// Simple number to check if a header is compatible for loading
 /// Bump this whenever a breaking change is made to the format
-const HEADER_FMT_VERSION: HeaderVersionType = 0;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-#[error("expected header version {HEADER_FMT_VERSION}, found version {0}")]
-pub struct HeaderVersionError(pub HeaderVersionType);
-impl From<HeaderVersionError> for io::Error {
-    fn from(value: HeaderVersionError) -> Self {
-        io::Error::new(io::ErrorKind::Other, value)
-    }
-}
+const HEADER_FMT_VERSION: u16 = 0;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Flags {
@@ -33,6 +26,7 @@ pub struct Flags {
     pub all_move_metadata: bool,
     pub private_syms: bool,
     pub skip_header_version_check: bool,
+    pub add_type_map: bool,
 }
 impl Default for Flags {
     fn default() -> Self {
@@ -44,6 +38,7 @@ impl Default for Flags {
             all_move_metadata: false,
             private_syms: true,
             skip_header_version_check: false,
+            add_type_map: false,
         }
     }
 }
@@ -131,7 +126,7 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
                 ]
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
-                .collect::<HashMap<_, _>>()
+                .collect::<std::collections::HashMap<_, _>>()
                 .into(),
             ))))),
             name: Cell::new(MaybeUninit::new(".".to_string())),
@@ -294,46 +289,11 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         }
         Some(v)
     }
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        out.write_all(&HEADER_FMT_VERSION.to_be_bytes())?;
-        for info in inventory::iter::<types::TypeLoader> {
-            out.write_all(&info.kind.get().to_be_bytes())?;
-            (info.save_header)(out)?;
-        }
-        out.write_all(&[0])?;
-        self.with_vars(|v| v.save(out))
+    pub fn save<W: Write>(&self, buf: &mut W) -> serde_json::Result<()> {
+        serde_json::to_writer(buf, self)
     }
-    pub fn load<R: Read + BufRead>(&self, buf: &mut R) -> io::Result<Vec<Cow<'src, str>>> {
-        {
-            let mut arr = [0; std::mem::size_of::<HeaderVersionType>()];
-            buf.read_exact(&mut arr)?;
-            let version = HeaderVersionType::from_be_bytes(arr);
-            if !(self.flags.skip_header_version_check || version == HEADER_FMT_VERSION) {
-                Err(HeaderVersionError(version))?;
-            }
-        }
-        let mut out = vec![];
-        while !buf.fill_buf()?.is_empty() {
-            let mut bytes = [0u8; 8];
-            loop {
-                buf.read_exact(&mut bytes)?;
-                let Some(kind) = std::num::NonZeroU64::new(u64::from_be_bytes(bytes)) else {
-                    break;
-                };
-                let guard = types::TYPE_SERIAL_REGISTRY.guard();
-                let info = types::TYPE_SERIAL_REGISTRY
-                    .get(&kind, &guard)
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("unknown type ID {kind:8>0X}"),
-                        )
-                    })?;
-                (info.load_header)(buf)?;
-            }
-            out.append(&mut self.with_vars(|v| v.load(buf, self))?);
-        }
-        Ok(out)
+    pub fn load<R: Read>(&self, buf: &mut R) -> serde_json::Result<Vec<String>> {
+        self.deserialize(&mut serde_json::Deserializer::from_reader(buf))
     }
 }
 impl Drop for CompCtx<'_, '_> {
@@ -345,4 +305,211 @@ impl Drop for CompCtx<'_, '_> {
                 .assume_init_drop();
         }
     }
+}
+struct FnDeserializer<
+    T,
+    F: FnOnce(&mut dyn erased_serde::Deserializer) -> Result<T, erased_serde::Error>,
+>(pub F);
+impl<'de, T, F: FnOnce(&mut dyn erased_serde::Deserializer) -> Result<T, erased_serde::Error>>
+    DeserializeSeed<'de> for FnDeserializer<T, F>
+{
+    type Value = T;
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        (self.0)(&mut <dyn erased_serde::Deserializer>::erase(deserializer))
+            .map_err(de::Error::custom)
+    }
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
+struct HexArray(#[serde(with = "hex::serde")] [u8; 8]);
+struct CtxTypeSerde<'a, 's, 'c>(&'a CompCtx<'s, 'c>);
+impl Serialize for CtxTypeSerde<'_, '_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::*;
+        let tsr = TYPE_SERIAL_REGISTRY.pin();
+        let mut map = serializer.serialize_map(Some(
+            tsr.iter().filter(|(_, info)| (info.has_header)()).count(),
+        ))?;
+        for (id, info) in &tsr {
+            if (info.has_header)() {
+                map.serialize_entry(&HexArray(id.to_le_bytes()), &(info.erased_header)())?;
+            }
+        }
+        map.end()
+    }
+}
+impl<'de> de::Visitor<'de> for CtxTypeSerde<'_, '_, '_> {
+    type Value = ();
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a map of type headers")
+    }
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        let tsr = TYPE_SERIAL_REGISTRY.pin();
+        while let Some(id) = map.next_key::<HexArray>()? {
+            let Some(loader) = tsr.get(&u64::from_le_bytes(id.0)) else {
+                return Err(de::Error::custom("unknown type ID {:0>16x}"));
+            };
+            map.next_value_seed(FnDeserializer(loader.load_header))?;
+        }
+        Ok(())
+    }
+}
+impl<'de> DeserializeSeed<'de> for CtxTypeSerde<'_, '_, '_> {
+    type Value = ();
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(self)
+    }
+}
+impl Serialize for CompCtx<'_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::*;
+        SERIALIZATION_CONTEXT.with(|c| {
+            let p = unsafe {
+                std::mem::transmute::<*const CompCtx<'_, '_>, *const CompCtx<'static, 'static>>(
+                    self as _,
+                )
+            };
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(p))) {
+                if *ptr != p {
+                    panic!("serialization context is already in use with an address of {ptr:#?}");
+                }
+            }
+        });
+        let mut map =
+            serializer.serialize_struct("Context", 3 + usize::from(self.flags.add_type_map))?;
+        map.serialize_field("version", &HEADER_FMT_VERSION)?;
+        if self.flags.add_type_map {
+            map.serialize_field(
+                "names",
+                &TYPE_SERIAL_REGISTRY
+                    .pin()
+                    .iter()
+                    .map(|(k, v)| (hex::encode(k.to_le_bytes()), v.name))
+                    .collect::<hashbrown::HashMap<_, _>>(),
+            )?;
+        }
+        map.serialize_field("types", &CtxTypeSerde(self))?;
+        self.with_vars(|v| map.serialize_field("vars", v))?;
+        SERIALIZATION_CONTEXT.with(|c| {
+            c.replace(None)
+                .expect("serialization context is empty after serialization")
+        });
+        map.end()
+    }
+}
+#[derive(Deserialize)]
+#[serde(bound = "'a: 'de")]
+struct ContextDeProxy<'a> {
+    version: u16,
+    #[serde(rename = "names")]
+    _names: Option<serde::de::IgnoredAny>, // if it gets into the serialization, ignore it for deserialization - it should be stable
+    #[serde(borrow = "'a")]
+    types: serde::__private::de::Content<'a>,
+    #[serde(borrow = "'a")]
+    vars: serde::__private::de::Content<'a>,
+}
+impl<'de> DeserializeSeed<'de> for &CompCtx<'_, '_> {
+    type Value = Vec<String>;
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use de::*;
+        SERIALIZATION_CONTEXT.with(|c| {
+            let p = unsafe {
+                std::mem::transmute::<*const CompCtx<'_, '_>, *const CompCtx<'static, 'static>>(
+                    self as _,
+                )
+            };
+            if let Some(ptr) = c.replace(Some(ContextPointer::new(p))) {
+                if *ptr != p {
+                    panic!("serialization context is already in use with an address of {ptr:#?}");
+                }
+            }
+        });
+        let proxy = ContextDeProxy::deserialize(deserializer)?;
+        if proxy.version != HEADER_FMT_VERSION {
+            return Err(D::Error::custom(format!("this header was saved with version {}, but version {HEADER_FMT_VERSION} is expected", proxy.version)));
+        }
+        CtxTypeSerde(self)
+            .deserialize(serde::__private::de::ContentDeserializer::new(proxy.types))?;
+        let vars = VarMap::deserialize_state(
+            &mut self,
+            serde::__private::de::ContentDeserializer::new(proxy.vars),
+        )?;
+        SERIALIZATION_CONTEXT.with(|c| {
+            c.replace(None)
+                .expect("serialization context is empty after serialization")
+        });
+        Ok(self.with_vars(|v| varmap::merge(&mut v.symbols, vars.symbols)))
+    }
+}
+
+/// Wrapper around a context pointer, maybe with a backtace
+pub struct ContextPointer {
+    ptr: *const CompCtx<'static, 'static>,
+    #[cfg(debug_assertions)]
+    trace: std::backtrace::Backtrace,
+}
+impl ContextPointer {
+    pub fn new(ptr: *const CompCtx<'static, 'static>) -> Self {
+        Self {
+            trace: std::backtrace::Backtrace::capture(),
+            ptr,
+        }
+    }
+}
+impl std::ops::Deref for ContextPointer {
+    type Target = *const CompCtx<'static, 'static>;
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+impl Debug for ContextPointer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:p}", self.ptr)?;
+        #[cfg(debug_assertions)]
+        {
+            if f.alternate() {
+                if self.trace.status() == std::backtrace::BacktraceStatus::Captured {
+                    write!(f, "at: \n{}", self.trace)?;
+                } else {
+                    f.write_str("without backtrace")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+/// Get the context pointer from a cell
+/// Super unsafe lmao
+///
+/// # Safety
+/// `SERIALIZATION_CONTEXT`` must be valid
+pub unsafe fn get_ctx_ptr<'a, 's, 'c>(cell: &Cell<Option<ContextPointer>>) -> &'a CompCtx<'s, 'c> {
+    let opt = cell.replace(None);
+    let cp = opt.expect("expected pointer in serialization context");
+    let ptr = cp.ptr;
+    cell.set(Some(cp));
+    #[allow(clippy::unnecessary_cast)]
+    &*std::mem::transmute::<*const CompCtx<'static, 'static>, *const CompCtx<'s, 'c>>(ptr)
+}
+thread_local! {
+    /// CompCtx, should only have a value during de/serialization
+    pub static SERIALIZATION_CONTEXT: Cell<Option<ContextPointer>> = const {Cell::new(None)};
 }

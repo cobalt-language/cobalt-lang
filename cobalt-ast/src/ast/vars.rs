@@ -819,7 +819,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
             val.name = self
                 .name
                 .ids
-                .get(0)
+                .first()
                 .map(|x| (x.0.clone(), ctx.lex_scope.get()));
             val.frozen = (!self.is_mut).then_some(self.loc);
             match if ctx.is_const.get() || !self.is_mut {
@@ -851,7 +851,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 val.name = self
                     .name
                     .ids
-                    .get(0)
+                    .first()
                     .map(|x| (x.0.clone(), ctx.lex_scope.get()));
                 ctx.with_vars(|v| {
                     v.insert(

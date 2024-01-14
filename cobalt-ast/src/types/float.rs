@@ -1,6 +1,8 @@
 use super::*;
 use inkwell::FloatPredicate::*;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Serialize, Deserialize,
+)]
 pub enum FPType {
     #[display(fmt = "f16")]
     F16,
@@ -15,7 +17,7 @@ static F16: Float = Float(FPType::F16);
 static F32: Float = Float(FPType::F32);
 static F64: Float = Float(FPType::F64);
 static F128: Float = Float(FPType::F128);
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 pub struct Float(FPType);
 impl Float {
     pub fn new(val: FPType) -> &'static Self {
@@ -42,8 +44,9 @@ impl Float {
         self.0
     }
 }
-impl ConcreteType for Float {
-    const KIND: NonZeroU64 = make_id(b"float");
+impl TypeSerde for Float {
+    no_type_header!();
+    impl_type_proxy!(FPType, Self::kind, Self::new);
 }
 impl Type for Float {
     fn size(&self) -> SizeType {
@@ -1340,30 +1343,6 @@ impl Type for Float {
             }
             _ => Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
         }
-    }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(std::slice::from_ref(&match self.0 {
-            FPType::F16 => 0,
-            FPType::F32 => 1,
-            FPType::F64 => 2,
-            FPType::F128 => 3,
-        }))
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
-        Ok(Self::new(match c {
-            0 => FPType::F16,
-            1 => FPType::F32,
-            2 => FPType::F64,
-            3 => FPType::F128,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("expected 0, 1, 2, or 3 for float type, got {c}"),
-                ))
-            }
-        }))
     }
 }
 submit_types!(Float);
