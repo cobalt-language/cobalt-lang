@@ -73,14 +73,9 @@ fn locate_llvm_config() -> Option<PathBuf> {
     for binary_name in llvm_config_binary_names() {
         let binary_name = prefix.join(binary_name);
         match llvm_version(&binary_name) {
-            Ok(ref version) if is_compatible_llvm(version) => {
+            Ok(ref version) => if is_compatible_llvm(version) {
                 // Compatible version found. Nice.
                 return Some(binary_name);
-            }
-            Ok(version) => {
-                // Version mismatch. Will try further searches, but warn that
-                // we're not using the system one.
-                println!("Found LLVM version {} on PATH, but need >= 15.", version);
             }
             Err(ref e) if e.kind() == ErrorKind::NotFound => {
                 // Looks like we failed to execute any llvm-config. Keep
@@ -171,12 +166,21 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
     let strict =
         env::var_os(ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
     if let Some(v) = env::var(ENV_STRICT_VERSIONING).ok().and_then(|v| Version::parse(&v).ok()) {
-        llvm_version == &v
+        llvm_version == &v || {
+            println!("Found LLVM {llvm_version}, but need exactly {v}");
+            false
+        }
     }
     else if strict {
-        llvm_version.major == 15 && llvm_version.minor == 0
+        (llvm_version.major == 16 && llvm_version.minor == 0) || {
+            println!("Found LLVM {llvm_version}, but need 16.0.x");
+            false
+        }
     } else {
-        llvm_version.major >= 15
+        llvm_version.major >= 15 || {
+            println!("Found LLVM {llvm_version}, but need at least LLVM 15");
+            false
+        }
     }
 }
 
