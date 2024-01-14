@@ -2,7 +2,7 @@ use super::*;
 use bstr::ByteSlice;
 use std::str::Utf8Error;
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "type")]
 pub struct TypeData(());
 impl TypeData {
@@ -11,9 +11,7 @@ impl TypeData {
         &SELF
     }
 }
-impl ConcreteType for TypeData {
-    const KIND: NonZeroU64 = make_id(b"type");
-}
+impl_null_type_with_new!(TypeData);
 impl Type for TypeData {
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -105,15 +103,9 @@ impl Type for TypeData {
             _ => Err(invalid_sub(&val, &idx)),
         }
     }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
-    }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "module")]
 pub struct Module(());
 impl Module {
@@ -122,9 +114,7 @@ impl Module {
         &SELF
     }
 }
-impl ConcreteType for Module {
-    const KIND: NonZeroU64 = make_id(b"module");
-}
+impl_null_type_with_new!(Module);
 impl Type for Module {
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -170,15 +160,9 @@ impl Type for Module {
             })
         }
     }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
-    }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<error>")]
 pub struct Error(());
 impl Error {
@@ -187,9 +171,7 @@ impl Error {
         &SELF
     }
 }
-impl ConcreteType for Error {
-    const KIND: NonZeroU64 = make_id(b"error");
-}
+impl_null_type_with_new!(Error);
 impl Type for Error {
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -306,15 +288,9 @@ impl Type for Error {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Ok(Value::error())
     }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
-    }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "null")]
 pub struct Null(());
 impl Null {
@@ -323,9 +299,7 @@ impl Null {
         &SELF
     }
 }
-impl ConcreteType for Null {
-    const KIND: NonZeroU64 = make_id(b"null");
-}
+impl_null_type_with_new!(Null);
 impl Type for Null {
     fn size(&self) -> SizeType {
         SizeType::Static(0)
@@ -423,15 +397,9 @@ impl Type for Null {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         Ok(Value::null())
     }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
-    }
 }
 
-#[derive(Debug, RefCastCustom)]
+#[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct Symbol(Box<[u8]>);
 impl Symbol {
@@ -463,8 +431,9 @@ impl Display for Symbol {
         Debug::fmt(self.0.as_bstr(), f)
     }
 }
-impl ConcreteType for Symbol {
-    const KIND: NonZeroU64 = make_id(b"symbol");
+impl TypeSerde for Symbol {
+    no_type_header!();
+    impl_type_proxy!(Box<bstr::BStr>, this => unsafe {std::mem::transmute::<_, Box<bstr::BStr>>(this.value())}, this => Self::new(this));
 }
 impl Type for Symbol {
     fn size(&'static self) -> SizeType {
@@ -472,21 +441,6 @@ impl Type for Symbol {
     }
     fn align(&'static self) -> u16 {
         1
-    }
-    fn save(&'static self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(&(self.0.len() as u64).to_be_bytes())?;
-        out.write_all(&self.0)
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: ConcreteType,
-    {
-        let mut arr = [0; 8];
-        buf.read_exact(&mut arr)?;
-        let len = u64::from_be_bytes(arr);
-        let mut vec = vec![0; len as _];
-        buf.read_exact(&mut vec)?;
-        Ok(Self::new(vec))
     }
     fn _can_iconv_to(&'static self, other: TypeRef, ctx: &CompCtx) -> bool {
         other.is_and::<types::Reference>(|r| {

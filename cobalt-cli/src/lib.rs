@@ -186,6 +186,9 @@ pub enum Cli {
         /// print timings
         #[arg(long)]
         timings: bool,
+        /// Print header as JSON
+        #[arg(long)]
+        dump_header: bool,
     },
     /// multi-file utilities
     #[command(subcommand)]
@@ -218,12 +221,6 @@ pub enum DbgSubcommand {
         /// print timings
         #[arg(long)]
         timings: bool,
-    },
-    /// Parse a Cobalt header
-    ParseHeader {
-        /// header files to parse
-        #[arg(required = true)]
-        inputs: Vec<Input>,
     },
 }
 #[derive(Debug, Clone, Subcommand)]
@@ -314,6 +311,9 @@ pub enum MultiSubcommand {
         /// print timings
         #[arg(long)]
         timings: bool,
+        /// Print header as JSON
+        #[arg(long)]
+        dump_header: bool,
     },
 }
 #[derive(Debug, Clone, Subcommand)]
@@ -601,18 +601,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 }
                 print!("{}", ctx.module.to_string());
                 reporter.finish();
-            }
-            #[cfg(debug_assertions)]
-            DbgSubcommand::ParseHeader { inputs } => {
-                for mut input in inputs {
-                    let ink_ctx = inkwell::context::Context::create();
-                    let ctx = CompCtx::new(&ink_ctx, "<anon>");
-                    let mut file = BufReader::new(&mut input);
-                    match ctx.load(&mut file) {
-                        Ok(_) => ctx.with_vars(|v| v.dump()),
-                        Err(e) => eprintln!("error loading {}: {e}", input.path().display()),
-                    }
-                }
             }
         },
         Cli::Aot {
@@ -1268,6 +1256,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             headers,
             no_default_link,
             timings,
+            dump_header,
         } => {
             struct Reporter {
                 timings: bool,
@@ -1404,6 +1393,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
+            flags.add_type_map = dump_header;
             let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
             let trip = TargetMachine::get_default_triple();
             let triple = trip.as_str().to_string_lossy();
@@ -1452,6 +1442,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             ctx.module.verify().map_err(LlvmVerifierError::from)?;
             if fail {
                 anyhow::bail!(CompileErrors(ec))
+            }
+            if dump_header {
+                serde_json::to_writer_pretty(std::io::stdout(), &ctx)?;
             }
             reporter.finish();
         }
@@ -2191,6 +2184,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 headers,
                 no_default_link,
                 timings,
+                dump_header,
             } => {
                 struct Reporter {
                     timings: bool,
@@ -2367,6 +2361,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
+                flags.add_type_map = dump_header;
                 let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
@@ -2430,6 +2425,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 ctx.module.verify().map_err(LlvmVerifierError::from)?;
                 if fail {
                     anyhow::bail!(CompileErrors(ec))
+                }
+                if dump_header {
+                    serde_json::to_writer_pretty(std::io::stdout(), &ctx)?;
                 }
                 reporter.finish();
             }

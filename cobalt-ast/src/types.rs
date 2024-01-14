@@ -3,10 +3,9 @@ use crate::*;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use once_cell::sync::Lazy;
+use serde_state::de::DeserializeOwned;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
-use std::io::{self, BufRead, Read, Write};
-use std::num::NonZeroU64;
 use SizeType::*;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub enum SizeType {
@@ -67,24 +66,156 @@ impl<T: Type + Sized> AsTypeRef for T {
         self
     }
 }
+/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
+pub trait ConcreteType: Type + Sized {
+    const KIND: u64;
+}
+impl<T: Type + Sized + ConstIdentify> ConcreteType for T {
+    const KIND: u64 = Self::CONST_ID.raw_value();
+}
 /// TypeKind contains `self.kind()`, but it's moved to a separate trait so it can be auto-implemented
 pub trait TypeKind {
     /// get the kind ID of this type
-    fn kind(&self) -> NonZeroU64;
-}
-/// A ConcreteType is not object-safe, and only holds the Self::KIND associated constant
-pub trait ConcreteType: Type + Sized {
-    const KIND: NonZeroU64;
+    fn kind(&self) -> u64;
 }
 impl<T: ConcreteType> TypeKind for T {
-    fn kind(&self) -> NonZeroU64 {
+    fn kind(&self) -> u64 {
         Self::KIND
     }
 }
 
+pub trait TypeSerde: Sized {
+    type Header: Serialize + DeserializeOwned;
+    type Proxy: Serialize + DeserializeOwned;
+    fn has_header() -> bool {
+        true
+    }
+    fn get_header() -> Self::Header;
+    fn set_header(header: Self::Header);
+    fn get_proxy(&'static self) -> Self::Proxy;
+    fn from_proxy(body: Self::Proxy) -> &'static Self;
+}
+pub trait TypeSerdeFns {
+    fn has_header() -> bool
+    where
+        Self: Sized;
+    fn erased_header() -> Box<dyn erased_serde::Serialize>
+    where
+        Self: Sized;
+    fn load_header(
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error>
+    where
+        Self: Sized;
+    fn erased_proxy(&'static self) -> Box<dyn erased_serde::Serialize>;
+    fn load(
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<TypeRef, erased_serde::Error>
+    where
+        Self: Sized;
+}
+impl<T: Type + TypeSerde> TypeSerdeFns for T {
+    fn has_header() -> bool {
+        <Self as TypeSerde>::has_header()
+    }
+    fn erased_header() -> Box<dyn erased_serde::Serialize> {
+        Box::new(Self::get_header())
+    }
+    fn load_header(
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error> {
+        erased_serde::deserialize(deserializer).map(Self::set_header)
+    }
+    fn erased_proxy(&'static self) -> Box<dyn erased_serde::Serialize> {
+        Box::new(self.get_proxy())
+    }
+    fn load(
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<TypeRef, erased_serde::Error>
+    where
+        Self: Sized,
+    {
+        Ok(Self::from_proxy(erased_serde::deserialize(deserializer)?) as _)
+    }
+}
+
+pub trait NullType: Type {
+    fn create_self() -> &'static Self;
+}
+impl<T: NullType> TypeSerde for T {
+    type Header = ();
+    type Proxy = ();
+    fn has_header() -> bool {
+        false
+    }
+    fn get_header() -> Self::Header {}
+    fn set_header(header: Self::Header) {}
+    fn get_proxy(&'static self) -> Self::Proxy {}
+    fn from_proxy(body: Self::Proxy) -> &'static Self {
+        Self::create_self()
+    }
+}
+macro_rules! no_type_header {
+    () => {
+        type Header = ();
+        fn has_header() -> bool {
+            false
+        }
+        fn get_header() -> Self::Header {}
+        fn set_header(header: Self::Header) {}
+    };
+}
+macro_rules! impl_null_type_with_new {
+    ($ty:ty) => {
+        impl NullType for $ty {
+            fn create_self() -> &'static Self {
+                Self::new()
+            }
+        }
+    };
+}
+macro_rules! impl_type_proxy {
+    ($proxy:ty, $gp:pat => $ge:expr, $sp:pat => $se:expr) => {
+        type Proxy = $proxy;
+        #[inline(always)]
+        fn get_proxy(&'static self) -> $proxy {
+            #[allow(irrefutable_let_patterns)]
+            let $gp = self
+            else {
+                panic!("{self} is in an invalid state!")
+            };
+            $ge
+        }
+        #[inline(always)]
+        fn from_proxy(proxy: $proxy) -> &'static Self {
+            #[allow(irrefutable_let_patterns)]
+            let $sp = proxy
+            else {
+                panic!();
+            };
+            $se
+        }
+    };
+    ($proxy:ty, $get:expr, $set:expr) => {
+        type Proxy = $proxy;
+        #[inline(always)]
+        #[allow(clippy::redundant_closure_call)]
+        fn get_proxy(&'static self) -> $proxy {
+            ($get)(self)
+        }
+        #[inline(always)]
+        #[allow(clippy::redundant_closure_call)]
+        fn from_proxy(proxy: $proxy) -> &'static Self {
+            ($set)(proxy)
+        }
+    };
+}
+
 /// All values have types, and each kind of type implements `Type`.
 /// Methods with a leading underscore are customization points, and are not meant to be called directly.
-pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
+pub trait Type:
+    AsTypeRef + TypeKind + TypeSerdeFns + Debug + Display + Send + Sync + 'static
+{
     /// Get the size of the current type.
     fn size(&'static self) -> SizeType;
     /// Get the alignment of the current type. An alignment of 0 is used for non-runtime data.
@@ -516,28 +647,6 @@ pub trait Type: AsTypeRef + TypeKind + Debug + Display + Send + Sync {
     ) -> Option<BasicValueEnum<'ctx>> {
         None
     }
-    /// Save global state at the start of a serialization record.
-    fn save_header(out: &mut dyn Write) -> io::Result<()>
-    where
-        Self: ConcreteType,
-    {
-        Ok(())
-    }
-    /// Load global state saved by [`save_header`].
-    fn load_header(buf: &mut dyn BufRead) -> io::Result<()>
-    where
-        Self: ConcreteType,
-    {
-        Ok(())
-    }
-    /// Save the current type to the output.
-    /// Should not be called directly, use `save_type` instead.
-    fn save(&'static self, out: &mut dyn Write) -> io::Result<()>;
-    /// Load the current type from the input.
-    /// Should not be called directly, use `load_type` instead.
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef>
-    where
-        Self: ConcreteType;
     /// Downcast from a type
     /// # Safety
     /// The casted from type must be the same as Self
@@ -605,20 +714,58 @@ impl Hash for dyn Type {
 }
 pub type TypeRef = &'static dyn Type;
 
+impl Serialize for TypeRef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use ser::*;
+        let mut map = serializer.serialize_struct("Type", 3)?;
+        map.serialize_field("kind", &hex::encode(self.kind().to_le_bytes()))?;
+        map.serialize_field("type", &self.erased_proxy())?;
+        map.end()
+    }
+}
+impl<'de> Deserialize<'de> for TypeRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use de::Error;
+        #[derive(Deserialize)]
+        #[serde(bound = "'a: 'de")]
+        struct Proxy<'a> {
+            #[serde(with = "hex::serde")]
+            kind: [u8; 8],
+            #[serde(borrow, rename = "type")]
+            ty: serde::__private::de::Content<'a>,
+        }
+        let p = Proxy::deserialize(deserializer)?;
+        (TYPE_SERIAL_REGISTRY
+            .pin()
+            .get(&u64::from_le_bytes(p.kind))
+            .ok_or_else(|| D::Error::custom(format!("unknown type id {}", hex::encode(p.kind))))?
+            .load)(&mut <dyn erased_serde::Deserializer>::erase(
+            serde::__private::de::ContentDeserializer::<'de, D::Error>::new(p.ty),
+        ))
+        .map_err(D::Error::custom)
+    }
+}
 pub struct TypeLoader {
-    pub kind: NonZeroU64,
-    pub save_header: fn(&mut dyn Write) -> io::Result<()>,
-    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
-    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+    pub kind: u64,
+    pub name: fn() -> &'static str,
+    pub has_header: fn() -> bool,
+    pub erased_header: fn() -> Box<dyn erased_serde::Serialize>,
+    pub load_header: fn(&mut dyn erased_serde::Deserializer) -> Result<(), erased_serde::Error>,
+    pub load: fn(&mut dyn erased_serde::Deserializer) -> Result<TypeRef, erased_serde::Error>,
 }
 #[macro_export]
 macro_rules! type_loader {
     ($T:ty) => {
         $crate::types::TypeLoader {
             kind: <$T as $crate::types::ConcreteType>::KIND,
-            save_header: <$T as $crate::types::Type>::save_header,
-            load_header: <$T as $crate::types::Type>::load_header,
-            load_type: <$T as $crate::types::Type>::load,
+            name: || {
+                let s = ::std::any::type_name::<$T>();
+                s.rsplit_once("::").map_or(s, |x| x.1)
+            },
+            has_header: <$T as $crate::types::TypeSerdeFns>::has_header,
+            erased_header: <$T as $crate::types::TypeSerdeFns>::erased_header,
+            load_header: <$T as $crate::types::TypeSerdeFns>::load_header,
+            load: <$T as $crate::types::TypeSerdeFns>::load,
         }
     };
 }
@@ -633,132 +780,38 @@ macro_rules! submit_types {
 }
 inventory::collect!(TypeLoader);
 pub struct LoadInfo {
-    pub load_header: fn(&mut dyn BufRead) -> io::Result<()>,
-    pub load_type: fn(&mut dyn BufRead) -> io::Result<TypeRef>,
+    pub has_header: fn() -> bool,
+    pub erased_header: fn() -> Box<dyn erased_serde::Serialize>,
+    pub load_header: fn(&mut dyn erased_serde::Deserializer) -> Result<(), erased_serde::Error>,
+    pub load: fn(&mut dyn erased_serde::Deserializer) -> Result<TypeRef, erased_serde::Error>,
+    pub name: &'static str,
 }
 impl LoadInfo {
     pub fn new(
         &TypeLoader {
             kind,
+            has_header,
+            erased_header,
             load_header,
-            load_type,
+            load,
+            name,
             ..
         }: &'static TypeLoader,
-    ) -> (NonZeroU64, Self) {
+    ) -> (u64, Self) {
         (
             kind,
             Self {
+                name: name(),
+                has_header,
+                erased_header,
                 load_header,
-                load_type,
+                load,
             },
         )
     }
 }
-pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<NonZeroU64, LoadInfo>> =
+pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<u64, LoadInfo>> =
     Lazy::new(|| inventory::iter::<TypeLoader>().map(LoadInfo::new).collect());
-/// save a type to the output buffer
-pub fn save_type(buf: &mut dyn Write, ty: TypeRef) -> io::Result<()> {
-    buf.write_all(&ty.kind().get().to_be_bytes())?;
-    ty.save(buf)
-}
-/// load a type from the buffer
-pub fn load_type(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-    load_type_opt(buf).and_then(|v| {
-        v.ok_or(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "unexpected end of input",
-        ))
-    })
-}
-/// type ids are NonZeroU64, so if it reads a 0 it returns None
-pub fn load_type_opt(buf: &mut dyn BufRead) -> io::Result<Option<TypeRef>> {
-    let mut bytes = [0u8; 8];
-    buf.read_exact(&mut bytes)?;
-    if let Some(kind) = NonZeroU64::new(u64::from_be_bytes(bytes)) {
-        let guard = TYPE_SERIAL_REGISTRY.guard();
-        let info = TYPE_SERIAL_REGISTRY.get(&kind, &guard).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("unknown type ID {kind:8>0X}"),
-            )
-        })?;
-        (info.load_type)(buf).map(Some)
-    } else {
-        Ok(None)
-    }
-}
-#[derive(Debug, Clone, Default)]
-pub struct NominalInfo<'ctx> {
-    pub dtor: Option<FunctionValue<'ctx>>,
-    pub no_auto_drop: bool,
-    pub is_linear_type: bool,
-    pub transparent: bool,
-}
-
-impl<'ctx> NominalInfo<'ctx> {
-    pub fn save<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if let Some(fv) = self.dtor {
-            out.write_all(fv.get_name().to_bytes())?;
-        }
-        out.write_all(&[0])?;
-        out.write_all(&[u8::from(self.no_auto_drop) << 1 | u8::from(self.transparent)])
-    }
-    pub fn load<R: Read + BufRead>(buf: &mut R, ctx: &CompCtx<'_, 'ctx>) -> io::Result<Self> {
-        let mut vec = vec![];
-        buf.read_until(0, &mut vec)?;
-        if vec.last() == Some(&0) {
-            vec.pop();
-        }
-        let dtor = if vec.is_empty() {
-            None
-        } else {
-            let name = String::from_utf8(vec).expect("value should be valid UTF-8!");
-            let fv = ctx.module.get_function(&name);
-            Some(fv.unwrap_or_else(|| {
-                ctx.module.add_function(
-                    &name,
-                    ctx.context
-                        .void_type()
-                        .fn_type(&[ctx.null_type.ptr_type(Default::default()).into()], false),
-                    None,
-                )
-            }))
-        };
-        let mut c = 0u8;
-        buf.read_exact(std::slice::from_mut(&mut c))?;
-        let no_auto_drop = c & 1 != 0;
-        let transparent = c & 2 != 0;
-        Ok(Self {
-            dtor,
-            no_auto_drop,
-            transparent,
-            is_linear_type: false,
-        })
-    }
-}
-
-#[inline(always)]
-const fn pad_bytes<const N: usize>(val: &[u8]) -> [u8; N] {
-    // I wish more stuff was const
-    let len = if val.len() < N { val.len() } else { N };
-    let mut out = [0u8; N];
-    let mut i = 0;
-    while i < len {
-        out[i] = val[i];
-        i += 1;
-    }
-    out
-}
-/// generate a type id from a byte string
-/// truncate or zero pad to 8 bytes
-#[inline(always)]
-pub const fn make_id(id: &[u8]) -> NonZeroU64 {
-    if let Some(id) = NonZeroU64::new(u64::from_be_bytes(pad_bytes(id))) {
-        id
-    } else {
-        panic!("ID string should not be empty (or all nulls)")
-    }
-}
 
 pub mod agg;
 pub mod custom;
@@ -777,5 +830,4 @@ pub use int::*;
 pub use intrinsic::*;
 pub use mem::*;
 pub use meta::{Symbol, *};
-
 use ref_cast::*;

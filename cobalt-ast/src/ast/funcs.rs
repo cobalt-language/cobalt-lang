@@ -1188,7 +1188,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         std::mem::drop(graph);
                         if dtor.is_some() {
                             if let Some(ty) = params
-                                .get(0)
+                                .first()
                                 .and_then(|ty| ty.0.downcast::<types::Reference>())
                                 .and_then(|ty| {
                                     ty.base()
@@ -1475,7 +1475,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                         std::mem::drop(graph);
                         if dtor.is_some() {
                             if let Some(ty) = params
-                                .get(0)
+                                .first()
                                 .and_then(|ty| ty.0.downcast::<types::Reference>())
                                 .and_then(|ty| {
                                     ty.base()

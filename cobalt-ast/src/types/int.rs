@@ -1,6 +1,6 @@
 use super::*;
 use inkwell::IntPredicate::*;
-#[derive(Debug, PartialEq, Eq, Hash, Display, RefCastCustom)]
+#[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
 pub struct Int((u16, bool));
@@ -36,8 +36,13 @@ impl Int {
         self.0 .1
     }
 }
-impl ConcreteType for Int {
-    const KIND: NonZeroU64 = make_id(b"int");
+impl TypeSerde for Int {
+    no_type_header!();
+    impl_type_proxy!(
+        deranged::RangedI32<{-(u16::MAX as i32)}, {u16::MAX as _}>,
+        this => ((this.bits() as i32) * if this.is_unsigned() {-1} else {1}).try_into().unwrap(),
+        this => Self::new(this.get().unsigned_abs() as _, this.get() < 0)
+    );
 }
 impl Type for Int {
     fn size(&self) -> SizeType {
@@ -1857,19 +1862,8 @@ impl Type for Int {
             None
         }
     }
-    fn save(&self, out: &mut dyn Write) -> io::Result<()> {
-        out.write_all(&self.0 .0.to_be_bytes())?;
-        out.write_all(std::slice::from_ref(&u8::from(self.0 .1)))
-    }
-    fn load(buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        let mut arr = [0u8; 2];
-        buf.read_exact(&mut arr)?;
-        let bits = u16::from_be_bytes(arr);
-        buf.read_exact(&mut arr[..1])?;
-        Ok(Self::new(bits, arr[0] != 0))
-    }
 }
-#[derive(Debug, Display)]
+#[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
 impl IntLiteral {
@@ -1878,9 +1872,7 @@ impl IntLiteral {
         &SELF
     }
 }
-impl ConcreteType for IntLiteral {
-    const KIND: NonZeroU64 = make_id(b"intlit");
-}
+impl_null_type_with_new!(IntLiteral);
 impl Type for IntLiteral {
     fn size(&self) -> SizeType {
         SizeType::Meta
@@ -2207,12 +2199,6 @@ impl Type for IntLiteral {
             )),
             _ => Err(cant_iconv(&val, target.0, target.1)),
         }
-    }
-    fn save(&self, _out: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-    fn load(_buf: &mut dyn BufRead) -> io::Result<TypeRef> {
-        Ok(Self::new())
     }
 }
 submit_types!(Int, IntLiteral);
