@@ -38,6 +38,9 @@ lazy_static! {
 
     /// LLVM major version
     static ref LLVM_MAJOR: Option<u64> = LLVM_VERSION.as_ref().map(|v| Version::parse(v).expect("LLVM version should be valid semver!").major);
+
+    /// LLVM prefix
+    static ref LLVM_PREFIX: Option<PathBuf> = env::var_os(ENV_LLVM_PREFIX).map(PathBuf::from);
 }
 
 fn target_env_is(name: &str) -> bool {
@@ -63,8 +66,9 @@ fn target_os_is(name: &str) -> bool {
 ///
 /// Returns None on failure.
 fn locate_llvm_config() -> Option<PathBuf> {
-    let prefix = env::var_os(ENV_LLVM_PREFIX)
-        .map(|p| PathBuf::from(p).join("bin"))
+    let prefix = LLVM_PREFIX
+        .as_ref()
+        .map(|p| p.join("bin"))
         .unwrap_or_default();
     for binary_name in llvm_config_binary_names() {
         let binary_name = prefix.join(binary_name);
@@ -167,7 +171,7 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
     let strict =
         env::var_os(ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
     if strict {
-        llvm_version.major == 15 && llvm_version.minor == 15
+        llvm_version.major == 15 && llvm_version.minor == 0
     } else {
         llvm_version.major >= 15
     }
@@ -422,7 +426,7 @@ fn get_link_libraries(preferences: &LinkingPreferences) -> (LibraryKind, Vec<Str
         } else if let Some(major) = *LLVM_MAJOR {
             Ok(format!("LLVM-{major}"))
         } else {
-            println!("cargo-rustc-warning=LLVM libraries were not set, defaulting to libLLVM");
+            println!("cargo:warning=LLVM libraries were not set, defaulting to libLLVM");
             Ok("LLVM".to_string())
         }
     }
@@ -554,6 +558,8 @@ fn get_llvm_cflags() -> String {
         llvm_config("--cflags")
     } else if let Some(major) = *LLVM_MAJOR {
         format!("-I/usr/lib/llvm-{major}/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS")
+    } else if let Some(prefix) = LLVM_PREFIX.as_ref() {
+        format!("-I{prefix:?}/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS")
     } else {
         "-I/usr/lib/llvm-17/include -I/usr/lib/llvm-16/include -I/usr/lib/llvm-15/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS".to_string()
     }; // TODO: add for non-linux platforms?
@@ -613,7 +619,7 @@ fn main() {
     }
 
     if LLVM_CONFIG_PATH.is_none() {
-        println!("cargo:rustc-warning=couldn't find llvm-config, proceeding with best gueses");
+        println!("cargo:warning=couldn't find llvm-config, proceeding with best gueses");
     }
 
     #[cfg(not(feature = "no-llvm-linking"))]
@@ -622,8 +628,10 @@ fn main() {
             dirs
         } else if LLVM_CONFIG_PATH.is_some() {
             llvm_config("--libdir")
+        } else if let Some(prefix) = LLVM_PREFIX.as_ref() {
+            prefix.join("lib").to_string_lossy().into_owned()
         } else {
-            println!("cargo:rustc-warning=LLVM_LIBDIR is not set!");
+            println!("cargo:warning=LLVM_LIBDIR is not set!");
             String::new()
         };
         for libdir in dirs.split(['\n']).filter(|s| !s.is_empty()) {
