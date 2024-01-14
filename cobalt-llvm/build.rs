@@ -431,10 +431,10 @@ fn get_link_libraries(preferences: &LinkingPreferences) -> (LibraryKind, Vec<Str
         } else if is_static {
             Ok(include_str!("build-stuff/static-libs.txt").to_string())
         } else if let Some(major) = *LLVM_MAJOR {
-            Ok(format!("LLVM-{major}"))
+            Ok(format!("libLLVM-{major}.so"))
         } else {
             println!("cargo:warning=LLVM libraries were not set, defaulting to libLLVM");
-            Ok("LLVM".to_string())
+            Ok("libLLVM.so".to_string())
         }
     }
 
