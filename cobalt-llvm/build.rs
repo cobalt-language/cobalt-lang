@@ -170,7 +170,10 @@ fn is_compatible_llvm(llvm_version: &Version) -> bool {
 
     let strict =
         env::var_os(ENV_STRICT_VERSIONING).is_some() || cfg!(feature = "strict-versioning");
-    if strict {
+    if let Some(v) = env::var(ENV_STRICT_VERSIONING).ok().and_then(|v| Version::parse(&v).ok()) {
+        llvm_version == &v
+    }
+    else if strict {
         llvm_version.major == 15 && llvm_version.minor == 0
     } else {
         llvm_version.major >= 15
