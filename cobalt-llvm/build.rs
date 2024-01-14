@@ -632,17 +632,17 @@ fn main() {
         } else if LLVM_CONFIG_PATH.is_some() {
             llvm_config("--libdir")
         } else if let Some(prefix) = LLVM_PREFIX.as_ref() {
+            // Export information to other crates
+            println!(
+                "cargo:config_path={}",
+                LLVM_CONFIG_PATH.clone().unwrap().display()
+            ); // will be DEP_LLVM_CONFIG_PATH
             prefix.join("lib").to_string_lossy().into_owned()
         } else {
             println!("cargo:warning=LLVM_LIBDIR is not set!");
             String::new()
         };
         for libdir in dirs.split(['\n']).filter(|s| !s.is_empty()) {
-            // Export information to other crates
-            println!(
-                "cargo:config_path={}",
-                LLVM_CONFIG_PATH.clone().unwrap().display()
-            ); // will be DEP_LLVM_CONFIG_PATH
             println!("cargo:libdir={}", libdir); // DEP_LLVM_LIBDIR
 
             // Link LLVM libraries
