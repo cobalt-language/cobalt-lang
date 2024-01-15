@@ -10,6 +10,7 @@ use const_format::{formatcp, str_index};
 use human_repr::*;
 use inkwell::execution_engine::FunctionLookupError;
 use inkwell::module::Module;
+use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::*;
 use os_str_bytes::OsStringBytes;
 use std::ffi::{OsStr, OsString};
@@ -186,6 +187,9 @@ pub enum Cli {
         /// print timings
         #[arg(long)]
         timings: bool,
+        /// Print header as JSON
+        #[arg(long)]
+        dump_header: bool,
     },
     /// multi-file utilities
     #[command(subcommand)]
@@ -218,12 +222,6 @@ pub enum DbgSubcommand {
         /// print timings
         #[arg(long)]
         timings: bool,
-    },
-    /// Parse a Cobalt header
-    ParseHeader {
-        /// header files to parse
-        #[arg(required = true)]
-        inputs: Vec<Input>,
     },
 }
 #[derive(Debug, Clone, Subcommand)]
@@ -314,6 +312,9 @@ pub enum MultiSubcommand {
         /// print timings
         #[arg(long)]
         timings: bool,
+        /// Print header as JSON
+        #[arg(long)]
+        dump_header: bool,
     },
 }
 #[derive(Debug, Clone, Subcommand)]
@@ -608,18 +609,6 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 print!("{}", ctx.module.to_string());
                 reporter.finish();
             }
-            #[cfg(debug_assertions)]
-            DbgSubcommand::ParseHeader { inputs } => {
-                for mut input in inputs {
-                    let ink_ctx = inkwell::context::Context::create();
-                    let ctx = CompCtx::new(&ink_ctx, "<anon>");
-                    let mut file = BufReader::new(&mut input);
-                    match ctx.load(&mut file) {
-                        Ok(_) => ctx.with_vars(|v| v.dump()),
-                        Err(e) => eprintln!("error loading {}: {e}", input.path().display()),
-                    }
-                }
-            }
         },
         Cli::Aot {
             mut input,
@@ -819,6 +808,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             } else {
                                 ""
                             });
+                            false
                         }
                         OutputType::Library | OutputType::Archive => {
                             let (prefix, suffix) =
@@ -834,9 +824,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             } else {
                                 path.set_extension(suffix);
                             }
+                            false
                         }
-                        _ => todo!(),
-                    }
+                        OutputType::Llvm => path.set_extension("ll"),
+                        OutputType::Bitcode => path.set_extension("bc"),
+                        OutputType::Assembly => path.set_extension("s"),
+                        OutputType::Object => path.set_extension("o"),
+                        OutputType::RawObject => path.set_extension("raw.o"),
+                        OutputType::HeaderObj => path.set_extension("coh.o"),
+                        OutputType::Header => path.set_extension("coh"),
+                    };
                     OutputPath::new(path)
                 }
             })?;
@@ -912,11 +909,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             }
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
-                timeit(|| {
-                    let pm = inkwell::passes::PassManager::create(());
-                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                    pm.run_on(&ctx.module);
-                })
+                try_timeit(|| {
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
+                    anyhow::Ok(())
+                })?
                 .1,
             );
             reporter.insts_after = insts(&ctx.module);
@@ -1171,10 +1173,23 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         + " jit"
                 }),
             );
+            Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
+            let trip = TargetMachine::get_default_triple();
+            let target_machine = Target::from_triple(&trip)
+                .unwrap()
+                .create_target_machine(
+                    &trip,
+                    "",
+                    "",
+                    inkwell::OptimizationLevel::None,
+                    inkwell::targets::RelocMode::PIC,
+                    inkwell::targets::CodeModel::Small,
+                )
+                .expect("failed to create target machine");
             let ink_ctx = inkwell::context::Context::create();
             let mut ctx = CompCtx::new(&ink_ctx, &input_name);
             ctx.flags.dbg_mangle = true;
-            ctx.module.set_triple(&TargetMachine::get_default_triple());
+            ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
             cc.link_dirs(link_dirs);
             cc.no_default_link = no_default_link;
@@ -1235,11 +1250,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             }
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
-                timeit(|| {
-                    let pm = inkwell::passes::PassManager::create(());
-                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                    pm.run_on(&ctx.module);
-                })
+                try_timeit(|| {
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
+                    anyhow::Ok(())
+                })?
                 .1,
             );
             let ee = ctx
@@ -1274,6 +1294,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             headers,
             no_default_link,
             timings,
+            dump_header,
         } => {
             struct Reporter {
                 timings: bool,
@@ -1386,7 +1407,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             };
             Target::initialize_native(&INIT_NEEDED).map_err(anyhow::Error::msg)?;
             let trip = TargetMachine::get_default_triple();
-            trip.as_str().to_string_lossy().into_owned();
+            let triple = trip.as_str().to_string_lossy();
             let target_machine = Target::from_triple(&trip)
                 .unwrap()
                 .create_target_machine(
@@ -1410,9 +1431,8 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             {
                 flags.word_size = size as u16;
             }
+            flags.add_type_map = dump_header;
             let ctx = CompCtx::with_flags(&ink_ctx, &input_name, flags);
-            let trip = TargetMachine::get_default_triple();
-            let triple = trip.as_str().to_string_lossy();
             ctx.module.set_triple(&trip);
             let mut cc = cc::CompileCommand::new();
             cc.target(&*triple);
@@ -1458,6 +1478,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             ctx.module.verify().map_err(LlvmVerifierError::from)?;
             if fail {
                 anyhow::bail!(CompileErrors(ec))
+            }
+            if dump_header {
+                serde_json::to_writer_pretty(std::io::stdout(), &ctx)?;
             }
             reporter.finish();
         }
@@ -1720,6 +1743,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     .then(|| output.clone().map(|o| o.create().map(ar::Builder::new)))
                     .flatten()
                     .transpose()?;
+                let pass_str = opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?;
                 let _tmps = asts
                     .iter()
                     .map(|ast| {
@@ -1741,11 +1765,16 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                             anyhow::bail!(CompileErrors(ec))
                         }
                         reporter.insts_before += insts(&ctx.module);
-                        *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
-                            let pm = inkwell::passes::PassManager::create(());
-                            opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                            pm.run_on(&ctx.module);
-                        })
+                        *reporter.opt_time.get_or_insert(Duration::ZERO) += try_timeit(|| {
+                            ctx.module
+                                .run_passes(
+                                    &pass_str,
+                                    &target_machine,
+                                    PassBuilderOptions::create(),
+                                )
+                                .map_err(opt::PassError::from_llvm)?;
+                            anyhow::Ok(())
+                        })?
                         .1;
                         reporter.insts_after += insts(&ctx.module);
                         let input = PathBuf::from(file.name());
@@ -2154,12 +2183,17 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 });
                 ctx.module.verify().map_err(LlvmVerifierError::from)?;
                 reporter.insts_before = insts(&ctx.module);
-                *reporter.opt_time.get_or_insert(Duration::ZERO) += timeit(|| {
+                *reporter.opt_time.get_or_insert(Duration::ZERO) += try_timeit(|| {
                     reporter.insts_before += insts(&ctx.module);
-                    let pm = inkwell::passes::PassManager::create(());
-                    opt::load_profile(profile.as_deref().unwrap_or("default"), &pm);
-                    pm.run_on(&ctx.module);
-                })
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
+                    anyhow::Ok(())
+                })?
                 .1;
                 let ee = ctx
                     .module
@@ -2197,6 +2231,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 headers,
                 no_default_link,
                 timings,
+                dump_header,
             } => {
                 struct Reporter {
                     timings: bool,
@@ -2373,6 +2408,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 {
                     flags.word_size = size as u16;
                 }
+                flags.add_type_map = dump_header;
                 let ctx = CompCtx::with_flags(&ink_ctx, "multi-check", flags);
                 ctx.module.set_triple(&trip);
                 let mut cc = cc::CompileCommand::new();
@@ -2436,6 +2472,9 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 ctx.module.verify().map_err(LlvmVerifierError::from)?;
                 if fail {
                     anyhow::bail!(CompileErrors(ec))
+                }
+                if dump_header {
+                    serde_json::to_writer_pretty(std::io::stdout(), &ctx)?;
                 }
                 reporter.finish();
             }
@@ -2614,7 +2653,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         Some(targets.into_iter().map(String::from).collect())
                     },
                     &build::BuildOptions {
-                        profile: profile.as_deref().unwrap_or("default").into(),
+                        profile: profile.as_deref().unwrap_or("@default").into(),
                         triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,
@@ -2730,7 +2769,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     &project,
                     Some(vec![target.clone()]),
                     &build::BuildOptions {
-                        profile: profile.as_deref().unwrap_or("default").into(),
+                        profile: profile.as_deref().unwrap_or("@default").into(),
                         triple: triple.as_str().into(),
                         continue_build: false,
                         continue_comp: false,

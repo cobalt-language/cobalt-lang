@@ -157,8 +157,7 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
                         .section_by_name(".colib")
                         .and_then(|v| v.uncompressed_data().ok())
                     {
-                        conflicts
-                            .extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+                        conflicts.extend(ctx.load(&mut &*colib)?);
                     }
                 }
             }
@@ -168,7 +167,7 @@ pub fn load_lib(path: &Path, ctx: &CompCtx) -> anyhow::Result<Vec<String>> {
                 .section_by_name(".colib")
                 .and_then(|v| v.uncompressed_data().ok())
             {
-                conflicts.extend(ctx.load(&mut &*colib)?.into_iter().map(|x| x.into_owned()));
+                conflicts.extend(ctx.load(&mut &*colib)?);
             }
         }
         Ok(conflicts)
