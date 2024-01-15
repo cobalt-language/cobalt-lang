@@ -65,10 +65,9 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             return;
         }
         ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
-            Ok((m, i, _)) => Box::new(VarMap {
+            Ok((m, _)) => Box::new(VarMap {
                 parent: Some(v),
                 symbols: m,
-                imports: i,
             }),
             Err(_) => Box::new(VarMap::new(Some(v))),
         });
@@ -83,7 +82,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         if vis_spec.is_some() {
             ctx.export.set(old_vis)
         }
-        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
     }
     fn constinit_prepass(&self, ctx: &CompCtx<'src, '_>, needs_another: &mut bool) {
@@ -137,10 +136,9 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             return;
         }
         ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
-            Ok((m, i, _)) => Box::new(VarMap {
+            Ok((m, _)) => Box::new(VarMap {
                 parent: Some(v),
                 symbols: m,
-                imports: i,
             }),
             Err(_) => Box::new(VarMap::new(Some(v))),
         });
@@ -157,7 +155,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         if vis_spec.is_some() {
             ctx.export.set(old_vis)
         }
-        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
     }
     fn fwddef_prepass(&self, ctx: &CompCtx<'src, '_>) {
@@ -211,10 +209,9 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             return;
         }
         ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
-            Ok((m, i, _)) => Box::new(VarMap {
+            Ok((m, _)) => Box::new(VarMap {
                 parent: Some(v),
                 symbols: m,
-                imports: i,
             }),
             Err(_) => Box::new(VarMap::new(Some(v))),
         });
@@ -229,7 +226,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         if vis_spec.is_some() {
             ctx.export.set(old_vis)
         }
-        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
         std::mem::drop(ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name))));
     }
     fn codegen_impl<'ctx>(
@@ -332,10 +329,9 @@ impl<'src> AST<'src> for ModuleAST<'src> {
             return Value::null();
         }
         ctx.map_vars(|mut v| match v.lookup_mod(&self.name) {
-            Ok((m, i, _)) => Box::new(VarMap {
+            Ok((m, _)) => Box::new(VarMap {
                 parent: Some(v),
                 symbols: m,
-                imports: i,
             }),
             Err(UndefVariable::NotAModule(x)) => {
                 errs.push(CobaltError::NotAModule {
@@ -377,7 +373,7 @@ impl<'src> AST<'src> for ModuleAST<'src> {
         if vis_spec.is_some() {
             ctx.export.set(old_vis)
         }
-        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+        let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
         ctx.with_vars(|v| v.insert_mod(&self.name, syms, ctx.mangle(&self.name)))
             .unwrap();
         Value::null()
@@ -543,18 +539,7 @@ impl<'src> AST<'src> for ImportAST<'src> {
         if target_match == 0 {
             return Value::null();
         }
-        ctx.with_vars(|v| {
-            let vec = v.verify(&self.name);
-            errs.extend(
-                vec.into_iter()
-                    .map(|loc| CobaltError::UselessImport { loc }),
-            );
-            v.imports.push((
-                self.name.clone(),
-                vis_spec.map_or(ctx.export.get(), |(v, _)| v),
-            ))
-        });
-        Value::null()
+        todo!("re-implement imports")
     }
     fn print_impl(
         &self,

@@ -129,28 +129,27 @@ impl Type for Module {
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         use varmap::Symbol;
-        if let Some(InterData::Module(s, i, n)) = &val.inter_val {
-            ctx.with_vars(|v| VarMap::lookup_in_mod((s, i), &attr.0, v.root()))
-                .map_or_else(
-                    || {
-                        Err(CobaltError::VariableDoesNotExist {
+        if let Some(InterData::Module(s, n)) = &val.inter_val {
+            s.get(&attr.0).map_or_else(
+                || {
+                    Err(CobaltError::VariableDoesNotExist {
+                        name: attr.0.clone(),
+                        module: n.clone(),
+                        container: "module",
+                        loc: attr.1,
+                    })
+                },
+                |Symbol(x, d)| {
+                    if d.init {
+                        Ok(x.clone())
+                    } else {
+                        Err(CobaltError::UninitializedGlobal {
                             name: attr.0.clone(),
-                            module: n.clone(),
-                            container: "module",
                             loc: attr.1,
                         })
-                    },
-                    |Symbol(x, d)| {
-                        if d.init {
-                            Ok(x.clone())
-                        } else {
-                            Err(CobaltError::UninitializedGlobal {
-                                name: attr.0.clone(),
-                                loc: attr.1,
-                            })
-                        }
-                    },
-                )
+                    }
+                },
+            )
         } else {
             Err(CobaltError::AttrNotDefined {
                 val: "module".to_string(),

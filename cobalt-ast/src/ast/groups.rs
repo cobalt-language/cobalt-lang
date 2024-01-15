@@ -159,10 +159,9 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
     ) -> Value<'src, 'ctx> {
         let old_scope = if let Some(name) = &self.module {
             ctx.map_vars(|mut v| match v.lookup_mod(name) {
-                Ok((m, i, _)) => Box::new(VarMap {
+                Ok((m, _)) => Box::new(VarMap {
                     parent: Some(v),
                     symbols: m,
-                    imports: i,
                 }),
                 Err(UndefVariable::NotAModule(x)) => {
                     errs.push(CobaltError::NotAModule {
@@ -199,7 +198,7 @@ impl<'src> AST<'src> for TopLevelAST<'src> {
             val.codegen(ctx, errs);
         });
         if let Some(name) = &self.module {
-            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
             let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
             ctx.restore_scope(old_scope.unwrap());
         }
@@ -240,10 +239,9 @@ impl<'src> TopLevelAST<'src> {
     pub fn run_passes(&self, ctx: &CompCtx<'src, '_>) {
         let old_scope = if let Some(name) = &self.module {
             ctx.map_vars(|mut v| match v.lookup_mod(name) {
-                Ok((m, i, _)) => Box::new(VarMap {
+                Ok((m, _)) => Box::new(VarMap {
                     parent: Some(v),
                     symbols: m,
-                    imports: i,
                 }),
                 Err(_) => Box::new(VarMap::new(Some(v))),
             });
@@ -261,7 +259,7 @@ impl<'src> TopLevelAST<'src> {
         }
         self.vals.iter().for_each(|val| val.fwddef_prepass(ctx));
         if let Some(name) = &self.module {
-            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), (v.symbols, v.imports)));
+            let syms = ctx.map_split_vars(|v| (v.parent.unwrap(), v.symbols));
             let _ = ctx.with_vars(|v| v.insert_mod(name, syms, ctx.mangle(name)));
             ctx.restore_scope(old_scope.unwrap());
         }

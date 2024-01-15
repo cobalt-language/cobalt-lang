@@ -5,7 +5,6 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(crate = "serde_state")]
 pub enum MethodType {
     Static,
     Method,
@@ -29,7 +28,6 @@ impl Serialize for FnData<'_, '_> {
 
 /// Used for compile-time constants.
 #[derive(Debug, Clone, SerializeState, DeserializeState)]
-#[serde(crate = "serde_state")]
 #[serde(serialize_state = "()")]
 #[serde(de_parameters = "'a", deserialize_state = "&'a CompCtx<'src, 'ctx>")]
 pub enum InterData<'src, 'ctx> {
@@ -44,7 +42,6 @@ pub enum InterData<'src, 'ctx> {
     Type(TypeRef),
     Module(
         #[serde(deserialize_state)] HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-        Vec<(CompoundDottedName<'src>, bool)>,
         String,
     ),
 }
@@ -170,22 +167,18 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         Value {
             loc: unreachable_span(),
             comp_val: None,
-            inter_val: Some(InterData::Module(HashMap::new(), vec![], name)),
+            inter_val: Some(InterData::Module(HashMap::new(), name)),
             data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
             frozen: None,
         }
     }
-    pub fn make_mod(
-        syms: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-        imps: Vec<(CompoundDottedName<'src>, bool)>,
-        name: String,
-    ) -> Self {
+    pub fn make_mod(syms: HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>, name: String) -> Self {
         Value {
             loc: unreachable_span(),
             comp_val: None,
-            inter_val: Some(InterData::Module(syms, imps, name)),
+            inter_val: Some(InterData::Module(syms, name)),
             data_type: types::Module::new(),
             address: Rc::default(),
             name: None,
@@ -250,32 +243,20 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         self.impl_convert((types::TypeData::new(), Some(loc)), ctx)
             .map(|v| v.as_type().unwrap_or(types::Error::new()))
     }
-    pub fn into_mod(
-        self,
-    ) -> Option<(
-        HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-        Vec<(CompoundDottedName<'src>, bool)>,
-        String,
-    )> {
-        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+    pub fn into_mod(self) -> Option<(HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>, String)> {
+        if let (types::Module::KIND, Some(InterData::Module(s, n))) =
             (self.data_type.kind(), self.inter_val)
         {
-            Some((s, m, n))
+            Some((s, n))
         } else {
             None
         }
     }
-    pub fn as_mod(
-        &self,
-    ) -> Option<(
-        &HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-        &Vec<(CompoundDottedName<'src>, bool)>,
-        &String,
-    )> {
-        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+    pub fn as_mod(&self) -> Option<(&HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>, &String)> {
+        if let (types::Module::KIND, Some(InterData::Module(s, n))) =
             (self.data_type.kind(), &self.inter_val)
         {
-            Some((s, m, n))
+            Some((s, n))
         } else {
             None
         }
@@ -284,13 +265,12 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         &mut self,
     ) -> Option<(
         &mut HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
-        &mut Vec<(CompoundDottedName<'src>, bool)>,
         &mut String,
     )> {
-        if let (types::Module::KIND, Some(InterData::Module(s, m, n))) =
+        if let (types::Module::KIND, Some(InterData::Module(s, n))) =
             (self.data_type.kind(), &mut self.inter_val)
         {
-            Some((s, m, n))
+            Some((s, n))
         } else {
             None
         }

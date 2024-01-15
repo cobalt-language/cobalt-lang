@@ -269,8 +269,8 @@ impl<'src, 'ctx> CompCtx<'src, 'ctx> {
         for name in name.ids[1..].iter() {
             v = match v.data_type.kind() {
                 types::Module::KIND => {
-                    if let Some(InterData::Module(s, i, _)) = v.inter_val {
-                        self.with_vars(|v| VarMap::lookup_in_mod((&s, &i), &name.0, v))
+                    if let Some(InterData::Module(s, _)) = v.inter_val {
+                        s.get(&name.0)
                             .and_then(|Symbol(v, d)| if d.init { Some(v) } else { None })?
                             .clone()
                     } else {
