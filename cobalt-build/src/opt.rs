@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use anyhow_std::*;
 use std::env::var_os;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// A profile wasn't found in any of the searched paths
@@ -57,8 +57,9 @@ fn expand_profile_name(name: &str) -> anyhow::Result<String> {
         "less" | "1" => "default<O1>",
         "some" | "2" | "default" => "default<O2>",
         "aggr" | "3" => "default<O3>",
-        _ => Err(MissingProfile(name.to_string()))?
-    }.to_string())
+        _ => Err(MissingProfile(name.to_string()))?,
+    }
+    .to_string())
 }
 
 fn non_ident(ch: char) -> bool {

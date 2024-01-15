@@ -819,7 +819,7 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                                 path.set_extension(suffix);
                             }
                             false
-                        },
+                        }
                         OutputType::Llvm => path.set_extension("ll"),
                         OutputType::Bitcode => path.set_extension("bc"),
                         OutputType::Assembly => path.set_extension("s"),
@@ -904,11 +904,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
                 try_timeit(|| {
-                    ctx.module.run_passes(
-                        &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
-                        &target_machine,
-                        PassBuilderOptions::create(),
-                    ).map_err(opt::PassError::from_llvm)?;
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
                     anyhow::Ok(())
                 })?
                 .1,
@@ -1243,11 +1245,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
             reporter.insts_before = insts(&ctx.module);
             reporter.opt_time = Some(
                 try_timeit(|| {
-                    ctx.module.run_passes(
-                        &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
-                        &target_machine,
-                        PassBuilderOptions::create(),
-                    ).map_err(opt::PassError::from_llvm)?;
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
                     anyhow::Ok(())
                 })?
                 .1,
@@ -1756,11 +1760,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                         }
                         reporter.insts_before += insts(&ctx.module);
                         *reporter.opt_time.get_or_insert(Duration::ZERO) += try_timeit(|| {
-                            ctx.module.run_passes(
-                                &pass_str,
-                                &target_machine,
-                                PassBuilderOptions::create(),
-                            ).map_err(opt::PassError::from_llvm)?;
+                            ctx.module
+                                .run_passes(
+                                    &pass_str,
+                                    &target_machine,
+                                    PassBuilderOptions::create(),
+                                )
+                                .map_err(opt::PassError::from_llvm)?;
                             anyhow::Ok(())
                         })?
                         .1;
@@ -2173,11 +2179,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                 reporter.insts_before = insts(&ctx.module);
                 *reporter.opt_time.get_or_insert(Duration::ZERO) += try_timeit(|| {
                     reporter.insts_before += insts(&ctx.module);
-                    ctx.module.run_passes(
-                        &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
-                        &target_machine,
-                        PassBuilderOptions::create(),
-                    ).map_err(opt::PassError::from_llvm)?;
+                    ctx.module
+                        .run_passes(
+                            &opt::expand_pass_string(profile.as_deref().unwrap_or("@default"))?,
+                            &target_machine,
+                            PassBuilderOptions::create(),
+                        )
+                        .map_err(opt::PassError::from_llvm)?;
                     anyhow::Ok(())
                 })?
                 .1;

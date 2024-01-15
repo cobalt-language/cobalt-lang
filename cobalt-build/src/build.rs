@@ -162,11 +162,13 @@ fn build_file_2(
             inkwell::targets::CodeModel::Small,
         )
         .expect("failed to create target machine");
-    ctx.module.run_passes(
-        &opt::expand_pass_string(&opts.profile)?,
-        &target_machine,
-        PassBuilderOptions::create(),
-    ).map_err(opt::PassError::from_llvm)?;
+    ctx.module
+        .run_passes(
+            &opt::expand_pass_string(&opts.profile)?,
+            &target_machine,
+            PassBuilderOptions::create(),
+        )
+        .map_err(opt::PassError::from_llvm)?;
     if !out_path.parent().unwrap().exists() {
         out_path.parent().unwrap().create_dir_all_anyhow()?
     }
