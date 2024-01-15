@@ -6,6 +6,7 @@ use cobalt_parser::parse_str;
 use cobalt_utils::CellExt as Cell;
 use either::Either;
 use indexmap::IndexMap;
+use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{FileType, Target as InkwellTarget, TargetTriple};
 use os_str_bytes::OsStrBytes;
 use path_calculate::*;
@@ -149,9 +150,6 @@ fn build_file_2(
         ctx.with_vars(|v| clear_mod(&mut v.symbols));
         return Ok(false);
     }
-    let pm = inkwell::passes::PassManager::create(());
-    opt::load_profile(&opts.profile, &pm);
-    pm.run_on(&ctx.module);
     let trip = TargetTriple::create(&opts.triple);
     let target_machine = InkwellTarget::from_triple(&trip)
         .unwrap()
@@ -164,6 +162,13 @@ fn build_file_2(
             inkwell::targets::CodeModel::Small,
         )
         .expect("failed to create target machine");
+    ctx.module
+        .run_passes(
+            &opt::expand_pass_string(&opts.profile)?,
+            &target_machine,
+            PassBuilderOptions::create(),
+        )
+        .map_err(opt::PassError::from_llvm)?;
     if !out_path.parent().unwrap().exists() {
         out_path.parent().unwrap().create_dir_all_anyhow()?
     }
