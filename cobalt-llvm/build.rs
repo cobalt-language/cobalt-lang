@@ -111,10 +111,10 @@ fn llvm_config_binary_names() -> &'static [&'static str] {
         };
     }
 
-    static BASE_NAMES: &[&str; 22] = &array_concat::concat_arrays!(
-        name_list!("", 16, 15),
+    static BASE_NAMES: &[&str; 42] = &array_concat::concat_arrays!(
+        name_list!("", 18, 17, 16, 15),
         ["llvm-config"],
-        name_list!(".exe", 16, 15),
+        name_list!(".exe", 18, 17, 16, 15),
         ["llvm-config.exe"]
     );
     if target_os_is("windows") {
