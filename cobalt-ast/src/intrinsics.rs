@@ -1,5 +1,6 @@
 use crate::*;
 use once_cell::sync::Lazy;
+
 #[derive(Debug, Clone, Copy)]
 pub struct ValueIntrinsic {
     pub name: &'static str,
@@ -11,6 +12,7 @@ impl ValueIntrinsic {
         Self { name, wraps, ret }
     }
 }
+
 #[derive(Debug, Clone, Copy)]
 pub struct FunctionIntrinsic {
     pub name: &'static str,
@@ -21,6 +23,7 @@ impl FunctionIntrinsic {
         Self { name, wraps }
     }
 }
+
 type ValueCallType = for<'src, 'ctx> fn(ctx: &CompCtx<'src, 'ctx>) -> Value<'src, 'ctx>;
 type FunctionCallType = for<'src, 'ctx> fn(
     loc: SourceSpan,
@@ -31,6 +34,7 @@ type FunctionCallType = for<'src, 'ctx> fn(
 
 inventory::collect!(ValueIntrinsic);
 inventory::collect!(FunctionIntrinsic);
+
 pub static VALUE_INTRINSICS: Lazy<flurry::HashMap<&'static str, ValueIntrinsic>> =
     Lazy::new(|| {
         inventory::iter::<ValueIntrinsic>()
@@ -43,6 +47,7 @@ pub static FUNCTION_INTRINSICS: Lazy<flurry::HashMap<&'static str, FunctionIntri
             .map(|&i| (i.name, i))
             .collect()
     });
+
 pub mod misc;
 pub mod types;
 pub mod version;

@@ -299,23 +299,29 @@ impl<'src> Parser<'src> {
             return Box::new(ErrorAST::new(self.cursor.src_len().into()));
         };
 
-        let name = match current.kind {
-            TokenKind::Ident(ident) => Cow::from(ident),
+        match current.kind {
+            TokenKind::Ident(ident) => {
+                self.next();
+                Box::new(DotAST::new(target, (ident.into(), span)))
+            }
+            TokenKind::Intrinsic(name) => {
+                let iloc = current.span;
+                self.next();
+                Box::new(CallAST::new(
+                    (iloc.offset() + iloc.len()).into(),
+                    Box::new(IntrinsicAST::new(iloc, name.into())),
+                    vec![target],
+                ))
+            }
             _ => {
                 errors.push(CobaltError::ExpectedFound {
                     ex: "identifier",
                     found: Some(current.kind.as_str().into()),
                     loc: current.span,
                 });
-                return Box::new(ErrorAST::new(self.cursor.src_len().into()));
+                Box::new(ErrorAST::new(self.cursor.src_len().into()))
             }
-        };
-
-        self.next();
-
-        // ---
-
-        Box::new(DotAST::new(target, (name, span)))
+        }
     }
 
     /// Going into this function, `current_token` is assumed to be a unary operator.

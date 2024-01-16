@@ -456,7 +456,13 @@ pub fn driver(cli: Cli) -> anyhow::Result<()> {
                     let mut ast = ast.unwrap_or_default();
                     ast.file = Some(file);
                     for err in errs {
-                        eprintln!("{:?}", Report::from(err).with_source_code(file));
+                        let err = err.with_file(file);
+                        if let Err(e2) =
+                            writeln!(std::io::stderr(), "{:?}", Report::from(err.clone()))
+                        {
+                            error!("\nan error occured printing to stdout: {e2}");
+                            eprintln!("original diagnostic: {err}");
+                        }
                     }
                     if locs {
                         print!("({} nodes)\n{ast:#}", ast.nodes())
