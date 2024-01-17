@@ -5,22 +5,18 @@ fn test_hello_world_aot() {
     let input_path_str = "src/tests/inputs/hello_world.co";
     let output_path_str = "src/tests/outputs/hello_world";
 
-    let input = clio::Input::new(input_path_str);
-    assert!(
-        input.is_ok(),
-        "(clio) failed to load input: {:?}",
-        &input.err()
-    );
-    let output = clio::OutputPath::new(output_path_str);
-    assert!(
-        output.is_ok(),
-        "(clio) failed to load output: {:?}",
-        &output.err()
-    );
+    let input = match clio::Input::new(input_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load input: {err}"),
+    };
+    let output = match clio::OutputPath::new(output_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load output: {err}"),
+    };
 
     let cli = Cli::Aot {
-        input: input.unwrap(),
-        output: Some(output.unwrap()),
+        input: input,
+        output: Some(output),
         linked: vec![],
         link_dirs: vec![],
         headers: vec![],
@@ -33,12 +29,9 @@ fn test_hello_world_aot() {
         timings: false,
     };
 
-    let result = driver(cli);
-    assert!(
-        result.is_ok(),
-        "failure while compiling file: {:?}",
-        &result.err()
-    );
+    if let Err(err) = driver(cli) {
+        panic!("failure while compiling file: {err}")
+    };
 
     let command_output = Command::new(output_path_str)
         .output()
@@ -60,23 +53,18 @@ fn test_hello_world_aot_linked() {
     ));
     // ---
 
-    let input_lib = clio::Input::new(input_lib_path_str);
-    assert!(
-        input_lib.is_ok(),
-        "(clio) failed to load input: {:?}",
-        &input_lib.unwrap_err()
-    );
-
-    let output_lib = clio::OutputPath::new(&output_lib_path_str);
-    assert!(
-        output_lib.is_ok(),
-        "(clio) failed to load output: {:?}",
-        &output_lib.unwrap_err()
-    );
+    let input_lib = match clio::Input::new(input_lib_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load input: {err}"),
+    };
+    let output_lib = match clio::OutputPath::new(&output_lib_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load output: {err}"),
+    };
 
     let cli_lib = Cli::Aot {
-        input: input_lib.unwrap(),
-        output: Some(output_lib.unwrap()),
+        input: input_lib,
+        output: Some(output_lib),
         linked: vec![],
         link_dirs: vec![],
         headers: vec![],
@@ -89,31 +77,24 @@ fn test_hello_world_aot_linked() {
         timings: false,
     };
 
-    let result_lib = driver(cli_lib);
-    assert!(
-        result_lib.is_ok(),
-        "failure while compiling library file: {:?}",
-        &result_lib.err()
-    );
+    if let Err(err) = driver(cli_lib) {
+        panic!("failure while compiling file: {err}")
+    };
 
     // ---
 
-    let input_main = clio::Input::new(input_main_path_str);
-    assert!(
-        input_main.is_ok(),
-        "(clio) failed to load input: {:?}",
-        &input_main.err()
-    );
-    let output_main = clio::OutputPath::new(output_main_path_str);
-    assert!(
-        output_main.is_ok(),
-        "(clio) failed to load output: {:?}",
-        &output_main.err()
-    );
+    let input_main = match clio::Input::new(input_main_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load input: {err}"),
+    };
+    let output_main = match clio::OutputPath::new(output_main_path_str) {
+        Ok(p) => p,
+        Err(err) => panic!("(clio) failed to load output: {err}"),
+    };
 
     let cli_main = Cli::Aot {
-        input: input_main.unwrap(),
-        output: Some(output_main.unwrap()),
+        input: input_main,
+        output: Some(output_main),
         linked: vec!["hello_world_linked".to_string()],
         link_dirs: vec!["src/tests/outputs".into()],
         headers: vec![],
@@ -126,12 +107,9 @@ fn test_hello_world_aot_linked() {
         timings: false,
     };
 
-    let result_main = driver(cli_main);
-    assert!(
-        result_main.is_ok(),
-        "failure while compiling main file: {:?}",
-        &result_main.err()
-    );
+    if let Err(err) = driver(cli_main) {
+        panic!("failure while compiling file: {err}")
+    };
 
     // ---
 
