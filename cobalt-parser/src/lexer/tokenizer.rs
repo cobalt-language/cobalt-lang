@@ -10,14 +10,14 @@ use super::{
 use cobalt_errors::{CobaltError, SourceSpan};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenizeErrorKind {
     EmptyInput,
     BadFirstChar,
     UnexpectedCharacter(char),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct TokenizeError {
     pub kind: TokenizeErrorKind,
     pub span: SourceSpan,
@@ -55,6 +55,7 @@ pub fn eat_until_ignored(input: &mut Peekable<Chars>) {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenStream<'src>(pub Rc<[Token<'src>]>, pub &'src str);
 impl<'src> TokenStream<'src> {
     pub fn src_len(&self) -> usize {
@@ -736,14 +737,16 @@ impl<'src> SourceReader<'src> {
 
                     // --- Optional param.
 
+                    let tok_idx = tokens.len();
+                    tokens.push(Token {
+                        kind: TokenKind::IntrinOrAnn((name, None, 0)),
+                        span: SourceSpan::from((
+                            span_start,
+                            ident_token.span.offset() + ident_token.span.len(),
+                        )),
+                    });
+
                     if self.peek() != Some('(') {
-                        tokens.push(Token {
-                            kind: TokenKind::IntrinOrAnn((name, None, 0)),
-                            span: SourceSpan::from((
-                                span_start,
-                                ident_token.span.offset() + ident_token.span.len(),
-                            )),
-                        });
                         continue;
                     }
 
@@ -779,10 +782,17 @@ impl<'src> SourceReader<'src> {
 
                     let len = self.eat_tokens(tokens, errors, idx1);
 
-                    tokens.push(Token {
-                        kind: TokenKind::IntrinOrAnn((name, Some(arg), len)),
-                        span: SourceSpan::from((span_start, arg_span_end)),
-                    });
+                    let Token {
+                        kind: TokenKind::IntrinOrAnn((_, arg_, len_)),
+                        span,
+                    } = &mut tokens[tok_idx]
+                    else {
+                        unreachable!()
+                    };
+
+                    *arg_ = Some(arg);
+                    *len_ = len;
+                    *span = SourceSpan::from((span_start, arg_span_end))
                 }
 
                 // --- String literal.
