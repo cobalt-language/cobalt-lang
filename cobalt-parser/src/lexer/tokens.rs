@@ -228,8 +228,7 @@ pub enum TokenKind<'src> {
     BinOp(BinOpToken),
     UnOrBinOp(UnOrBinOpToken),
     Literal(LiteralToken<'src>),
-    Intrinsic(&'src str),
-    Annotation((&'src str, Option<&'src str>)),
+    IntrinOrAnn((&'src str, Option<&'src str>, usize)),
     Dot,
 }
 
@@ -298,8 +297,7 @@ impl<'src> TokenKind<'src> {
             BinOp(op) => op.as_str(),
             UnOrBinOp(op) => op.as_str(),
             Literal(lit) => lit.as_str(),
-            Intrinsic(name) => name,
-            Annotation(..) => "annotation",
+            IntrinOrAnn(..) => "intrinsic/annotation",
             Dot => ".",
         }
     }

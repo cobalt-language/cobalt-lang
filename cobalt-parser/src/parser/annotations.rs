@@ -7,16 +7,16 @@ impl<'src> Parser<'src> {
         assert!(matches!(
             self.current_token,
             Some(Token {
-                kind: TokenKind::Annotation(..),
+                kind: TokenKind::IntrinOrAnn(..),
                 ..
             })
         ));
 
         let span = self.current_token.unwrap().span;
-        let TokenKind::Annotation((name_src, option_arg_src)) = self.current_token.unwrap().kind
-        else {
+        let TokenKind::IntrinOrAnn((name_src, option_arg_src, skip)) = self.current_token.unwrap().kind else {
             unreachable!()
         };
+        self.cursor.index += skip;
         self.next();
 
         let name = Cow::Borrowed(name_src);
@@ -32,7 +32,7 @@ impl<'src> Parser<'src> {
     /// the last annotation in the collection.
     pub fn eat_annotations(&mut self) {
         while let Some(Token {
-            kind: TokenKind::Annotation(..),
+            kind: TokenKind::IntrinOrAnn(..),
             ..
         }) = self.current_token
         {
@@ -53,7 +53,7 @@ impl<'src> Parser<'src> {
         while matches!(
             self.current_token,
             Some(Token {
-                kind: TokenKind::Annotation(..),
+                kind: TokenKind::IntrinOrAnn(..),
                 ..
             })
         ) {

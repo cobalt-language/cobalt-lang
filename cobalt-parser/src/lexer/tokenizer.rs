@@ -7,7 +7,6 @@ use super::{
     SourceReader,
 };
 
-use cobalt_ast::intrinsics::{FUNCTION_INTRINSICS, VALUE_INTRINSICS};
 use cobalt_errors::{CobaltError, SourceSpan};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -30,10 +29,6 @@ pub fn is_ignored_char(c: char) -> bool {
 
 pub fn is_ident_start(c: char) -> bool {
     is_xid_start(c) || c == '_'
-}
-
-pub fn is_intrinsic_name(name: &str) -> bool {
-    VALUE_INTRINSICS.pin().contains_key(name) || FUNCTION_INTRINSICS.pin().contains_key(name)
 }
 
 /// Consume ignored characters until we hit a non-ignored character. We
@@ -78,13 +73,13 @@ impl<'src> TokenStream<'src> {
         self.0.is_empty()
     }
 }
-
 impl<'src> SourceReader<'src> {
-    pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<CobaltError<'src>>) {
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
-
+    pub fn eat_tokens(&mut self, tokens: &mut Vec<Token<'src>>, errors: &mut Vec<CobaltError<'src>>, max_idx: usize) -> usize {
+        let starting_len = tokens.len();
         while let Some(c) = self.peek() {
+            if self.index >= max_idx {
+                break;
+            }
             match c {
                 ' ' | '\r' | '\n' | '\t' => {
                     self.next_char();
@@ -112,7 +107,7 @@ impl<'src> SourceReader<'src> {
                                 }
                             }
                             Some('"') => {
-                                let mut span = self.eat_string(&mut errors);
+                                let mut span = self.eat_string(errors);
                                 span.start -= 1;
                                 tokens.push(Token {
                                     kind: TokenKind::Literal(LiteralToken::Symbol(
@@ -734,34 +729,22 @@ impl<'src> SourceReader<'src> {
                     let name = &self.source[ident_token.span.offset()
                         ..ident_token.span.offset() + ident_token.span.len()];
 
-                    // --- If intrinsic, end here.
+                    // --- Optional param.
 
-                    if is_intrinsic_name(name) {
+                    if self.peek() != Some('(') {
                         tokens.push(Token {
-                            kind: TokenKind::Intrinsic(name),
-                            span: SourceSpan::from((span_start, self.index)),
+                            kind: TokenKind::IntrinOrAnn((name, None, 0)),
+                            span: SourceSpan::from((
+                                span_start,
+                                ident_token.span.offset() + ident_token.span.len(),
+                            )),
                         });
                         continue;
                     }
-
-                    // --- Optional param.
-
-                    match self.peek() {
-                        Some('(') => {}
-                        _ => {
-                            tokens.push(Token {
-                                kind: TokenKind::Annotation((name, None)),
-                                span: SourceSpan::from((
-                                    span_start,
-                                    ident_token.span.offset() + ident_token.span.len(),
-                                )),
-                            });
-                            continue;
-                        }
-                    }
+                    
+                    let idx0 = self.index;
 
                     // Eat the '('.
-                    assert_eq!(self.peek(), Some('('));
                     self.next_char();
 
                     let arg_span_start = self.index;
@@ -786,16 +769,20 @@ impl<'src> SourceReader<'src> {
                     self.next_char();
 
                     let arg = &self.source[arg_span_start..arg_span_end];
+                    
+                    let idx1 = std::mem::replace(&mut self.index, idx0);
+
+                    let len = self.eat_tokens(tokens, errors, idx1);
 
                     tokens.push(Token {
-                        kind: TokenKind::Annotation((name, Some(arg))),
+                        kind: TokenKind::IntrinOrAnn((name, Some(arg), len)),
                         span: SourceSpan::from((span_start, arg_span_end)),
                     });
                 }
 
                 // --- String literal.
                 '"' => {
-                    let Range { start, end } = self.eat_string(&mut errors);
+                    let Range { start, end } = self.eat_string(errors);
                     tokens.push(Token {
                         kind: TokenKind::Literal(LiteralToken::Str(&self.source[start..end])),
                         span: SourceSpan::from((start, end - start)),
@@ -857,6 +844,16 @@ impl<'src> SourceReader<'src> {
                 }
             }
         }
+        
+
+        tokens.len() - starting_len
+    }
+
+    pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<CobaltError<'src>>) {
+        let mut tokens = Vec::new();
+        let mut errors = Vec::new();
+
+        self.eat_tokens(&mut tokens, &mut errors, usize::MAX);
 
         (TokenStream(tokens.into(), self.source), errors)
     }
