@@ -1,5 +1,3 @@
-use std::str::CharIndices;
-
 use cobalt_errors::SourceSpan;
 
 pub mod tokenizer;
@@ -7,47 +5,25 @@ pub mod tokens;
 
 pub struct SourceReader<'src> {
     pub source: &'src str,
-    /// Calling `next()` will give us the index of the character returned, but
-    /// since we actually want the index of the *next* character, this should
-    /// be one character ahead. This also means we don't need the iterator itself
-    /// to be peekable.
-    iter: CharIndices<'src>,
-    next_char: Option<char>,
     /// The index of the next character to be returned.
     pub index: usize,
 }
 
 impl<'src> SourceReader<'src> {
     pub fn new(source: &'src str) -> SourceReader<'src> {
-        let mut iter = source.char_indices();
-        let next = iter.next();
-        let next_char = next.map(|next| next.1);
-
-        SourceReader {
-            source,
-            iter,
-            next_char,
-            index: 0,
-        }
+        SourceReader { source, index: 0 }
     }
 
     pub fn next_char(&mut self) -> Option<char> {
-        let to_return = self.next_char;
+        let to_ret = self.source[self.index..].chars().next();
 
-        let iter_next = self.iter.next();
-        if let Some(next) = iter_next {
-            self.index = next.0;
-            self.next_char = Some(next.1);
-        } else {
-            self.index = self.source.len();
-            self.next_char = None
-        }
+        self.index += to_ret.map_or(0, char::len_utf8);
 
-        to_return
+        to_ret
     }
 
-    pub fn peek(&mut self) -> Option<&char> {
-        self.next_char.as_ref()
+    pub fn peek(&mut self) -> Option<char> {
+        self.source[self.index..].chars().next()
     }
 
     /// Returns the slice `self.source[(index - offset)..index]`.

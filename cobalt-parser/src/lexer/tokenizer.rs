@@ -84,7 +84,7 @@ impl<'src> SourceReader<'src> {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
-        while let Some(&c) = self.peek() {
+        while let Some(c) = self.peek() {
             match c {
                 ' ' | '\r' | '\n' | '\t' => {
                     self.next_char();
@@ -133,11 +133,11 @@ impl<'src> SourceReader<'src> {
                                 }
                                 continue;
                             }
-                            Some(&c) => {
+                            Some(c) => {
                                 if is_ident_start(c) {
                                     loop {
                                         self.next_char();
-                                        let Some(&c) = self.peek() else { break };
+                                        let Some(c) = self.peek() else { break };
                                         if !is_xid_continue(c) {
                                             break;
                                         }
@@ -491,9 +491,9 @@ impl<'src> SourceReader<'src> {
 
                     self.next_char();
                     let (base, alt) = match self.peek() {
-                        Some(&'x') => (16, true),
-                        Some(&'o') => (8, true),
-                        Some(&'b') => (2, true),
+                        Some('x') => (16, true),
+                        Some('o') => (8, true),
+                        Some('b') => (2, true),
                         _ => (10, false),
                     };
                     if alt {
@@ -502,7 +502,7 @@ impl<'src> SourceReader<'src> {
 
                     // Now pointing to the first digit.
                     let mut end = self.index;
-                    while let Some(&ch) = self.peek() {
+                    while let Some(ch) = self.peek() {
                         if ch.is_digit(base as _) {
                             self.next_char();
                             end += 1;
@@ -513,7 +513,7 @@ impl<'src> SourceReader<'src> {
                                     base,
                                     loc: (self.index, 1).into(),
                                 });
-                                while self.peek().map_or(false, char::is_ascii_digit) {
+                                while self.peek().map_or(false, |c| c.is_ascii_digit()) {
                                     self.next_char();
                                 }
                             }
@@ -523,9 +523,27 @@ impl<'src> SourceReader<'src> {
 
                     // Now pointing to the last digit before the non-digit.
 
-                    if !alt && self.peek() == Some(&'.') {
-                        self.next_char();
-                        end += 1;
+                    if !alt && self.peek() == Some('.') {
+                        let idx = self.index;
+                        if loop {
+                            match self.next_char() {
+                                Some('_' | '@') => break true,
+                                Some(c) if is_xid_start(c) => break true,
+                                Some(c) if !c.is_whitespace() => break false,
+                                _ => {}
+                            }
+                        } {
+                            self.index = idx;
+                            tokens.push(Token {
+                                kind: TokenKind::Literal(LiteralToken::Int(
+                                    &self.source[start..end],
+                                )),
+                                span: (start..end).into(),
+                            });
+                            continue;
+                        } else {
+                            end += 1;
+                        }
                     } else {
                         // Not a float.
                         tokens.push(Token {
@@ -572,9 +590,34 @@ impl<'src> SourceReader<'src> {
 
                     // Now pointing to the last digit before the non-digit.
 
-                    if self.peek() == Some(&'.') {
+                    if self.peek() == Some('.') {
+                        let idx = self.index;
                         self.next_char();
-                        num_len += 1;
+                        let old_len = num_len;
+                        // num_len += 1;
+                        if loop {
+                            match {
+                                let ch = self.next_char();
+                                num_len += ch.map_or(0, |c| c.len_utf8());
+                                ch
+                            } {
+                                Some('_' | '@') => break true,
+                                Some(c) if is_xid_start(c) => break true,
+                                Some(c) if !c.is_whitespace() => break false,
+                                None => break false,
+                                _ => {}
+                            }
+                        } {
+                            self.index = idx;
+                            tokens.push(Token {
+                                kind: TokenKind::Literal(LiteralToken::Int(
+                                    self.slice_backward(old_len),
+                                )),
+                                span: self.source_span_backward(old_len),
+                            });
+                            continue;
+                        }
+                        self.index = idx + 1;
                     } else {
                         // Not a float.
                         tokens.push(Token {
@@ -618,14 +661,14 @@ impl<'src> SourceReader<'src> {
                     self.next_char();
 
                     match self.peek() {
-                        Some(&'?') => {
+                        Some('?') => {
                             self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::BinOp(BinOpToken::Colonq),
                                 span: self.source_span_backward(2),
                             });
                         }
-                        Some(&':') => {
+                        Some(':') => {
                             self.next_char();
                             tokens.push(Token {
                                 kind: TokenKind::ColonColon,
@@ -659,7 +702,7 @@ impl<'src> SourceReader<'src> {
                     let span_start = self.index;
                     self.next_char();
 
-                    if let Some(&c) = self.peek() {
+                    if let Some(c) = self.peek() {
                         if !is_ident_start(c) {
                             errors.push(CobaltError::ExpectedFound {
                                 ex: "start of identifier",
@@ -704,7 +747,7 @@ impl<'src> SourceReader<'src> {
                     // --- Optional param.
 
                     match self.peek() {
-                        Some(&'(') => {}
+                        Some('(') => {}
                         _ => {
                             tokens.push(Token {
                                 kind: TokenKind::Annotation((name, None)),
@@ -718,7 +761,7 @@ impl<'src> SourceReader<'src> {
                     }
 
                     // Eat the '('.
-                    assert_eq!(self.peek(), Some(&'('));
+                    assert_eq!(self.peek(), Some('('));
                     self.next_char();
 
                     let arg_span_start = self.index;
@@ -777,13 +820,13 @@ impl<'src> SourceReader<'src> {
                         }
                         let c = c.unwrap();
 
-                        if c == &'\\' {
+                        if c == '\\' {
                             last_was_escape = !last_was_escape;
                             self.next_char();
                             continue;
                         }
 
-                        if c == &'\'' && !last_was_escape {
+                        if c == '\'' && !last_was_escape {
                             break;
                         }
 
@@ -834,7 +877,7 @@ impl<'src> SourceReader<'src> {
     fn eat_ident(&mut self) -> Result<Token<'src>, CobaltError<'src>> {
         let start_idx = self.index;
 
-        if let Some(&c) = self.peek() {
+        if let Some(c) = self.peek() {
             if !(is_xid_start(c) || c == '_') {
                 self.next_char();
                 let err = CobaltError::ExpectedFound {
@@ -858,7 +901,7 @@ impl<'src> SourceReader<'src> {
         // The reader is now pointing at the first character of the identifier.
 
         while let Some(c) = self.peek() {
-            if !is_xid_continue(*c) {
+            if !is_xid_continue(c) {
                 break;
             }
 
@@ -940,13 +983,13 @@ impl<'src> SourceReader<'src> {
             }
             let c = c.unwrap();
 
-            if c == &'\\' {
+            if c == '\\' {
                 last_was_escape = !last_was_escape;
                 self.next_char();
                 continue;
             }
 
-            if c == &'"' && !last_was_escape {
+            if c == '"' && !last_was_escape {
                 break;
             }
 
