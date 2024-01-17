@@ -1,5 +1,5 @@
 @C(extern) fn puts(str: *u8);
 
-fn hello_world() = {
+@export fn hello_world() = {
     puts("Hello, world!"c);
 };
