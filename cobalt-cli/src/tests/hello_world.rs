@@ -53,7 +53,11 @@ fn test_hello_world_aot_linked() {
     let input_main_path_str = "src/tests/inputs/hello_world_linked_main.co";
     let input_lib_path_str = "src/tests/inputs/hello_world_linked_lib.co";
     let output_main_path_str = "src/tests/outputs/hello_world_linked";
-    let output_lib_path_str = Path::new("src/tests/outputs").join(cobalt_build::libs::format_lib("hello_world_linked", cobalt_build::HOST_TRIPLE, true));
+    let output_lib_path_str = Path::new("src/tests/outputs").join(cobalt_build::libs::format_lib(
+        "hello_world_linked",
+        cobalt_build::HOST_TRIPLE,
+        true,
+    ));
     // ---
 
     let input_lib = clio::Input::new(input_lib_path_str);
@@ -62,7 +66,6 @@ fn test_hello_world_aot_linked() {
         "(clio) failed to load input: {:?}",
         &input_lib.unwrap_err()
     );
-
 
     let output_lib = clio::OutputPath::new(&output_lib_path_str);
     assert!(
