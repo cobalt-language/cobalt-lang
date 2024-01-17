@@ -13,7 +13,9 @@ impl<'src> Parser<'src> {
         ));
 
         let span = self.current_token.unwrap().span;
-        let TokenKind::IntrinOrAnn((name_src, option_arg_src, skip)) = self.current_token.unwrap().kind else {
+        let TokenKind::IntrinOrAnn((name_src, option_arg_src, skip)) =
+            self.current_token.unwrap().kind
+        else {
             unreachable!()
         };
         self.cursor.index += skip;

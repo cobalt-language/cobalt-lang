@@ -74,7 +74,12 @@ impl<'src> TokenStream<'src> {
     }
 }
 impl<'src> SourceReader<'src> {
-    pub fn eat_tokens(&mut self, tokens: &mut Vec<Token<'src>>, errors: &mut Vec<CobaltError<'src>>, max_idx: usize) -> usize {
+    pub fn eat_tokens(
+        &mut self,
+        tokens: &mut Vec<Token<'src>>,
+        errors: &mut Vec<CobaltError<'src>>,
+        max_idx: usize,
+    ) -> usize {
         let starting_len = tokens.len();
         while let Some(c) = self.peek() {
             if self.index >= max_idx {
@@ -741,7 +746,7 @@ impl<'src> SourceReader<'src> {
                         });
                         continue;
                     }
-                    
+
                     let idx0 = self.index;
 
                     // Eat the '('.
@@ -769,7 +774,7 @@ impl<'src> SourceReader<'src> {
                     self.next_char();
 
                     let arg = &self.source[arg_span_start..arg_span_end];
-                    
+
                     let idx1 = std::mem::replace(&mut self.index, idx0);
 
                     let len = self.eat_tokens(tokens, errors, idx1);
@@ -844,7 +849,6 @@ impl<'src> SourceReader<'src> {
                 }
             }
         }
-        
 
         tokens.len() - starting_len
     }
