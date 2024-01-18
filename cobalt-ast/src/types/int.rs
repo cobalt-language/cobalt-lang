@@ -10,7 +10,9 @@ impl Int {
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
         eprintln!("new int: {bits}, {unsigned}");
         static INTERN: Interner<(u16, bool)> = Interner::new();
-        Self::from_ref(INTERN.intern((bits, unsigned)))
+        let ret = Self::from_ref(INTERN.intern((bits, unsigned)));
+        eprintln!("finished making int");
+        ret
     }
     pub fn signed(bits: u16) -> &'static Self {
         Self::new(bits, false)
