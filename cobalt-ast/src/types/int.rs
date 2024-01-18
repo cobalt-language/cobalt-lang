@@ -8,6 +8,7 @@ impl Int {
     #[ref_cast_custom]
     fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
+        eprintln!("new int: {bits}, {unsigned}");
         static INTERN: Interner<(u16, bool)> = Interner::new();
         Self::from_ref(INTERN.intern((bits, unsigned)))
     }

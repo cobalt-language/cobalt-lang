@@ -25,6 +25,7 @@ impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
         if let Some(k) = lock.get(hashed, |v| v.0 == &key).map(|x| x.1) {
             &self.vec[k]
         } else {
+            eprintln!("creating new element!");
             std::mem::drop(lock);
             let mut lock = self.map.write().unwrap();
             let idx = self.vec.push(key);
