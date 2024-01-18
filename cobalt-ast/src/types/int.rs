@@ -10,6 +10,7 @@ impl Int {
     fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
         eprintln!("new int: {bits}, {unsigned}");
+        eprintln!("INTERN: {INTERN:#?}");
         let ret = Self::from_ref(INTERN.intern((bits, unsigned)));
         eprintln!("finished making int");
         ret

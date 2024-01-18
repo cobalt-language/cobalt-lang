@@ -2,26 +2,21 @@ use hashbrown::HashTable;
 use once_cell::sync::Lazy;
 use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
-use std::fmt::{self, Debug, Formatter};
 #[inline]
 fn hash(val: &impl Hash) -> u64 {
     let mut state = std::collections::hash_map::DefaultHasher::default();
     val.hash(&mut state);
     state.finish()
 }
+#[derive(Debug)]
 pub struct Interner<'a, T: PartialEq + Eq + Hash> {
-    vec: Lazy<aovec::Aovec<T>>,
+    vec: Lazy<boxcar::Vec<T>>,
     map: RwLock<HashTable<(&'a T, usize)>>,
-}
-impl<T: Debug + PartialEq + Eq + Hash> Debug for Interner<'_, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Interner").field("map", &self.map.read().unwrap()).finish_non_exhaustive()
-    }
 }
 impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
     pub const fn new() -> Self {
         Self {
-            vec: Lazy::new(|| aovec::Aovec::new(16)),
+            vec: Lazy::new(boxcar::Vec::new),
             map: RwLock::new(HashTable::new()),
         }
     }
@@ -32,7 +27,7 @@ impl<'a, K: PartialEq + Eq + Hash> Interner<'a, K> {
             eprintln!("reusing old element @ {k}");
             &self.vec[k]
         } else {
-            eprintln!("creating new element @ {}", self.vec.len());
+            eprintln!("creating new element @ {}", self.vec.count());
             std::mem::drop(lock);
             let mut lock = self.map.write().unwrap();
             let idx = self.vec.push(key);
