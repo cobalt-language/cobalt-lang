@@ -690,9 +690,9 @@ impl Type for SizedArray {
         target: (TypeRef, Option<SourceSpan>),
         ctx: &CompCtx<'src, 'ctx>,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
-        if dbg!(target
+        if target
             .0
-            .is_and::<types::Pointer>(|r| r.base() == self.elem()))
+            .is_and::<types::Pointer>(|r| r.base() == self.elem())
         {
             Ok(Value {
                 data_type: target.0,
@@ -766,15 +766,7 @@ impl Type for SizedArray {
         }
     }
     fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
-        eprintln!("self: {self:?}, target: {target:?}");
-        eprintln!("target kind: {}, ptr kind: {}", target.kind(), types::Pointer::KIND);
-        let base = dbg!(target.downcast::<types::Pointer>().map(types::Pointer::base));
-        if let Some(base) = base {
-            eprintln!("base kind: {}, our int kind: {}, real int kind: {}", base.kind(), self.elem().kind(), types::Int::KIND);
-            dbg!(base == self.elem());
-            eprintln!("base: {base:p}, elem: {:p}", self.elem());
-        }
-        dbg!(target.is_and::<types::Pointer>(|r| r.base() == self.elem()))
+        target.is_and::<types::Pointer>(|r| r.base() == self.elem())
     }
     fn _can_refmut_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
         target.is_and::<types::Pointer>(|r| {
