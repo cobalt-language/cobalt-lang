@@ -773,6 +773,7 @@ impl Type for SizedArray {
             eprintln!("base kind: {}, our int kind: {}, real int kind: {}", base.kind(), self.elem().kind(), types::Int::KIND);
             dbg!(base == self.elem());
             eprintln!("base: {base:p}, elem: {:p}", self.elem());
+            eprintln!("{:?}", types::int::INTERN);
         }
         dbg!(target.is_and::<types::Pointer>(|r| r.base() == self.elem()))
     }
