@@ -772,6 +772,7 @@ impl Type for SizedArray {
         if let Some(base) = base {
             eprintln!("base kind: {}, our int kind: {}, real int kind: {}", base.kind(), self.elem().kind(), types::Int::KIND);
             dbg!(base == self.elem());
+            eprintln!("base: {base:p}, elem: {:p}", self.elem());
         }
         dbg!(target.is_and::<types::Pointer>(|r| r.base() == self.elem()))
     }
