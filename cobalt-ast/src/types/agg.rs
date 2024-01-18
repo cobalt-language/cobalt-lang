@@ -766,7 +766,8 @@ impl Type for SizedArray {
         }
     }
     fn _can_ref_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
-        eprintln!("self: {self}, target: {target}");
+        eprintln!("self: {self:?}, target: {target:?}");
+        eprintln!("target kind: {}, ptr kind: {}", target.kind(), types::Pointer::KIND);
         dbg!(target.is_and::<types::Pointer>(|r| r.base() == self.elem()))
     }
     fn _can_refmut_iconv(&'static self, target: TypeRef, ctx: &CompCtx) -> bool {
