@@ -64,7 +64,7 @@ impl<T: Eq + Hash + Send + Sync + 'static, S: Default> Interner<T, S> {
     }
 }
 impl<T: Eq + Hash + Send + Sync + 'static, S: BuildHasher> Interner<T, S> {
-    pub fn intern<Q: Eq + Hash + Into<T>>(&self, key: Q) -> & T
+    pub fn intern<Q: Eq + Hash + Into<T>>(&self, key: Q) -> &T
     where
         T: Borrow<Q>,
     {
