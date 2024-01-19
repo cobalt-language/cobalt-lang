@@ -15,7 +15,7 @@ fn test_hello_world_aot() {
     };
 
     let cli = Cli::Aot {
-        input: input,
+        input,
         output: Some(output),
         linked: vec![],
         link_dirs: vec![],
