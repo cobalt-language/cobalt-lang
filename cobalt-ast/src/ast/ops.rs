@@ -42,10 +42,10 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let f = bb.get_parent().unwrap();
                     let ab = ctx.context.append_basic_block(f, "active");
                     let mb = ctx.context.append_basic_block(f, "merge");
-                    ctx.builder.build_conditional_branch(val, ab, mb);
+                    ctx.builder.build_conditional_branch(val, ab, mb).unwrap();
                     ctx.builder.position_at_end(ab);
                     let mut rhs = self.rhs.codegen(ctx, errs);
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type.kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::unsigned(64);
@@ -119,10 +119,10 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                     let f = bb.get_parent().unwrap();
                     let ab = ctx.context.append_basic_block(f, "active");
                     let mb = ctx.context.append_basic_block(f, "merge");
-                    ctx.builder.build_conditional_branch(val, mb, ab);
+                    ctx.builder.build_conditional_branch(val, mb, ab).unwrap();
                     ctx.builder.position_at_end(ab);
                     let mut rhs = self.rhs.codegen(ctx, errs);
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(mb);
                     if rhs.data_type.kind() == types::IntLiteral::KIND {
                         rhs.data_type = types::Int::signed(64);

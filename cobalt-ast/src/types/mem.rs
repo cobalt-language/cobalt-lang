@@ -490,7 +490,7 @@ impl Type for Pointer {
                                     )
                                     .unwrap()
                             };
-                            ctx.builder.build_store(pv, v2);
+                            ctx.builder.build_store(pv, v2).unwrap();
                             val.comp_val
                         } else {
                             None
@@ -524,7 +524,7 @@ impl Type for Pointer {
                                     )
                                     .unwrap()
                             };
-                            ctx.builder.build_store(pv, v2);
+                            ctx.builder.build_store(pv, v2).unwrap();
                             val.comp_val
                         } else {
                             None
@@ -850,7 +850,7 @@ impl Type for Pointer {
                             .unwrap()
                             .into_pointer_value();
                         let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") }.unwrap();
-                        ctx.builder.build_store(lv, v2);
+                        ctx.builder.build_store(lv, v2).unwrap();
                     }
                     "-=" => {
                         let v1 = ctx
@@ -860,7 +860,7 @@ impl Type for Pointer {
                             .into_pointer_value();
                         let v2 = ctx.builder.build_int_neg(v1, "").unwrap();
                         let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") }.unwrap();
-                        ctx.builder.build_store(lv, v3);
+                        ctx.builder.build_store(lv, v3).unwrap();
                     }
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
@@ -892,7 +892,7 @@ impl Type for Pointer {
                             .unwrap()
                             .into_pointer_value();
                         let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") }.unwrap();
-                        ctx.builder.build_store(lv, v2);
+                        ctx.builder.build_store(lv, v2).unwrap();
                     }
                     "-=" => {
                         let v1 = ctx
@@ -902,7 +902,7 @@ impl Type for Pointer {
                             .into_pointer_value();
                         let v2 = ctx.builder.build_int_neg(v1, "").unwrap();
                         let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") }.unwrap();
-                        ctx.builder.build_store(lv, v3);
+                        ctx.builder.build_store(lv, v3).unwrap();
                     }
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }

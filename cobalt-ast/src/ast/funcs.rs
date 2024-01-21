@@ -1122,7 +1122,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                             .builder
                                             .build_alloca(param.get_type(), name)
                                             .unwrap();
-                                        ctx.builder.build_store(a, val.comp_val.unwrap());
+                                        ctx.builder.build_store(a, val.comp_val.unwrap()).unwrap();
                                         val.comp_val = Some(a.into());
                                         val.data_type = types::Mut::new(val.data_type);
                                     }
@@ -1210,14 +1210,16 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 }
                             }
                         }
-                        ctx.builder.build_return(Some(
-                            &body
-                                .impl_convert((ret, Some(self.ret.loc())), ctx)
-                                .map_err(|e| errs.push(e))
-                                .ok()
-                                .and_then(|v| v.value(ctx))
-                                .unwrap_or(llt.const_zero()),
-                        ));
+                        ctx.builder
+                            .build_return(Some(
+                                &body
+                                    .impl_convert((ret, Some(self.ret.loc())), ctx)
+                                    .map_err(|e| errs.push(e))
+                                    .ok()
+                                    .and_then(|v| v.value(ctx))
+                                    .unwrap_or(llt.const_zero()),
+                            ))
+                            .unwrap();
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());
@@ -1412,7 +1414,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                             .builder
                                             .build_alloca(param.get_type(), name)
                                             .unwrap();
-                                        ctx.builder.build_store(a, val.comp_val.unwrap());
+                                        ctx.builder.build_store(a, val.comp_val.unwrap()).unwrap();
                                         val.comp_val = Some(a.into());
                                         val.data_type = types::Mut::new(val.data_type);
                                     }
@@ -1500,7 +1502,7 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                 }
                             }
                         }
-                        ctx.builder.build_return(None);
+                        ctx.builder.build_return(None).unwrap();
                         hoist_allocas(&ctx.builder);
                         let mut b = ctx.moves.borrow_mut();
                         b.0.retain(|v| v.name.1 < ctx.lex_scope.get());

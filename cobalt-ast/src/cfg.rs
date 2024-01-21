@@ -1028,11 +1028,13 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         let db = ctx
                             .context
                             .append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
-                        ctx.builder.build_conditional_branch(c, next_block, db);
+                        ctx.builder
+                            .build_conditional_branch(c, next_block, db)
+                            .unwrap();
                         next.erase_from_basic_block();
                         ctx.builder.position_at_end(db);
                         ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
-                        ctx.builder.build_unconditional_branch(next_block);
+                        ctx.builder.build_unconditional_branch(next_block).unwrap();
                         ctx.builder.position_at_end(next_block);
                     }
                 }
@@ -1054,10 +1056,10 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                                 .context
                                 .append_basic_block(f, &format!("dtor.{n}.{scope}"));
                             let mb = ctx.context.append_basic_block(f, "merge");
-                            ctx.builder.build_conditional_branch(c, mb, db);
+                            ctx.builder.build_conditional_branch(c, mb, db).unwrap();
                             ctx.builder.position_at_end(db);
                             v.0.ins_dtor(ctx);
-                            ctx.builder.build_unconditional_branch(mb);
+                            ctx.builder.build_unconditional_branch(mb).unwrap();
                             ctx.builder.position_at_end(mb);
                         }
                     }

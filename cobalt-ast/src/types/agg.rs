@@ -611,7 +611,7 @@ impl Type for SizedArray {
         let at = self.llvm_type(ctx).unwrap();
         let bb = ctx.context.append_basic_block(f, "arr.dtor.loop");
         let ex = ctx.context.append_basic_block(f, "arr.dtor.exit");
-        ctx.builder.build_unconditional_branch(bb);
+        ctx.builder.build_unconditional_branch(bb).unwrap();
         ctx.builder.position_at_end(bb);
         let i64t = ctx.context.i64_type();
         let phi = ctx.builder.build_phi(i64t, "").unwrap();

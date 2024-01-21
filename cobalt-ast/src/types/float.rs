@@ -1244,7 +1244,7 @@ impl Type for Float {
                         .builder
                         .build_float_add(v1, ft.const_float(1.0), "")
                         .unwrap();
-                    ctx.builder.build_store(pv, v2);
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1264,7 +1264,7 @@ impl Type for Float {
                         .builder
                         .build_float_sub(v1, ft.const_float(1.0), "")
                         .unwrap();
-                    ctx.builder.build_store(pv, v2);
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1313,7 +1313,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
                                 let v1 = ctx
@@ -1322,7 +1322,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
                                 let v1 = ctx
@@ -1331,7 +1331,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
                                 let v1 = ctx
@@ -1340,7 +1340,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
@@ -1380,7 +1380,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
                                 let v1 = ctx
@@ -1389,7 +1389,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
                                 let v1 = ctx
@@ -1398,7 +1398,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
                                 let v1 = ctx
@@ -1407,7 +1407,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
@@ -1441,7 +1441,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
                                 let v1 = ctx
@@ -1450,7 +1450,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
                                 let v1 = ctx
@@ -1459,7 +1459,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
                                 let v1 = ctx
@@ -1468,7 +1468,7 @@ impl Type for Float {
                                     .unwrap()
                                     .into_float_value();
                                 let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
-                                ctx.builder.build_store(lv, v2);
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }

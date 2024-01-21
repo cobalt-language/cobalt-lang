@@ -1605,7 +1605,7 @@ impl Type for Int {
                         .builder
                         .build_int_add(v1, it.const_int(1, false), "")
                         .unwrap();
-                    ctx.builder.build_store(pv, v2);
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1621,7 +1621,7 @@ impl Type for Int {
                         .builder
                         .build_int_sub(v1, it.const_int(1, false), "")
                         .unwrap();
-                    ctx.builder.build_store(pv, v2);
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1667,7 +1667,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_add(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "-=" => {
                             let v1 = ctx
@@ -1676,7 +1676,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_sub(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "*=" => {
                             let v1 = ctx
@@ -1685,7 +1685,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_mul(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "/=" => {
                             let v1 = ctx
@@ -1699,7 +1699,7 @@ impl Type for Int {
                                 ctx.builder.build_int_unsigned_div(v1, rv, "")
                             }
                             .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "%=" => {
                             let v1 = ctx
@@ -1713,7 +1713,7 @@ impl Type for Int {
                                 ctx.builder.build_int_unsigned_rem(v1, rv, "")
                             }
                             .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "&=" => {
                             let v1 = ctx
@@ -1722,7 +1722,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_and(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "|=" => {
                             let v1 = ctx
@@ -1731,7 +1731,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_or(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "^=" => {
                             let v1 = ctx
@@ -1740,7 +1740,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_xor(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "<<=" => {
                             let v1 = ctx
@@ -1749,7 +1749,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_left_shift(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         ">>=" => {
                             let v1 = ctx
@@ -1761,7 +1761,7 @@ impl Type for Int {
                                 .builder
                                 .build_right_shift(v1, rv, self.is_signed(), "")
                                 .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
@@ -1813,7 +1813,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_add(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "-=" => {
                             let v1 = ctx
@@ -1822,7 +1822,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_sub(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "*=" => {
                             let v1 = ctx
@@ -1831,7 +1831,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_int_mul(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "/=" => {
                             let v1 = ctx
@@ -1845,7 +1845,7 @@ impl Type for Int {
                                 ctx.builder.build_int_unsigned_div(v1, rv, "")
                             }
                             .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "%=" => {
                             let v1 = ctx
@@ -1859,7 +1859,7 @@ impl Type for Int {
                                 ctx.builder.build_int_unsigned_rem(v1, rv, "")
                             }
                             .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "&=" => {
                             let v1 = ctx
@@ -1868,7 +1868,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_and(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "|=" => {
                             let v1 = ctx
@@ -1877,7 +1877,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_or(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "^=" => {
                             let v1 = ctx
@@ -1886,7 +1886,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_xor(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "<<=" => {
                             let v1 = ctx
@@ -1895,7 +1895,7 @@ impl Type for Int {
                                 .unwrap()
                                 .into_int_value();
                             let v2 = ctx.builder.build_left_shift(v1, rv, "").unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         ">>=" => {
                             let v1 = ctx
@@ -1907,7 +1907,7 @@ impl Type for Int {
                                 .builder
                                 .build_right_shift(v1, rv, self.is_signed(), "")
                                 .unwrap();
-                            ctx.builder.build_store(lv, v2);
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
