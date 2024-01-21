@@ -15,53 +15,49 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install LLVM
-      uses: KyleMayes/install-llvm-action@v1
-      with:
-        version: "16.0"
-    - name: Cache Build Outputs
-      uses: actions/cache@v3
-      with:
-        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
-        restore-keys: |
-          test-${{ github.ref_name }}-
-          test-
-        path: |
-          Cargo.lock
-          target/
-    - name: Run Clippy
-      run: cargo clippy
-      env:
-        RUSTFLAGS: "-Dwarnings"
-  
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cache Build Outputs
+        uses: actions/cache@v3
+        with:
+          key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+          restore-keys: |
+            test-${{ github.ref_name }}-
+            test-
+          path: |
+            Cargo.lock
+            target/
+      - name: Run Clippy
+        run: cargo clippy
+        env:
+          RUSTFLAGS: "-Dwarnings"
+
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install LLVM
-      uses: KyleMayes/install-llvm-action@v1
-      with:
-        version: "16.0"
-    - name: Cache Build Outputs
-      uses: actions/cache@v3
-      with:
-        key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
-        restore-keys: |
-          test-${{ github.ref_name }}-
-          test-
-        path: |
-          Cargo.lock
-          target/
-    - name: Run Cargo Test
-      run: cargo test
-  
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "17.0"
+      - name: Cache Build Outputs
+        uses: actions/cache@v3
+        with:
+          key: test-${{ github.ref_name }}-${{ hashFiles('**/src') }}
+          restore-keys: |
+            test-${{ github.ref_name }}-
+            test-
+          path: |
+            Cargo.lock
+            target/
+      - name: Run Cargo Test
+        run: cargo test
+
   fmt:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Run Cargo Formatter
-      run: cargo fmt --check
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run Cargo Formatter
+        run: cargo fmt --check
