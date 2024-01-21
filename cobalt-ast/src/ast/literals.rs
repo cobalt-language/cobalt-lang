@@ -424,6 +424,7 @@ impl<'src> AST<'src> for ArrayLiteralAST<'src> {
                         ctx.builder
                             .build_insert_value(val, v.comp_val?, n as _, "")
                             .map(|v| v.into_array_value())
+                            .ok()
                     })
                     .map(Into::into)
             } else {
@@ -506,6 +507,7 @@ impl<'src> AST<'src> for TupleLiteralAST<'src> {
                         .build_insert_value(sv, v, n as u32, "")
                         .map(|x| x.into_struct_value())
                 })
+                .ok()
                 .map(From::from);
         };
         if inters.iter().all(Option::is_some) {

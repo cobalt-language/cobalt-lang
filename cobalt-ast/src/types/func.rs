@@ -208,7 +208,10 @@ impl Type for Function {
         use inkwell::values::BasicValue;
         Ok(Value::new(
             val.and_then(|v| {
-                let call = ctx.builder.build_indirect_call(fty?, v, &args_v, "");
+                let call = ctx
+                    .builder
+                    .build_indirect_call(fty?, v, &args_v, "")
+                    .unwrap();
                 let inst = call
                     .try_as_basic_value()
                     .right_or_else(|v| v.as_instruction_value().unwrap());
@@ -316,7 +319,7 @@ impl Type for BoundMethod {
     fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
         if let Some(BasicValueEnum::StructValue(sv)) = val.comp_val {
             Value::new(
-                ctx.builder.build_extract_value(sv, 0, ""),
+                ctx.builder.build_extract_value(sv, 0, "").ok(),
                 None,
                 self.self_ty(),
             )
@@ -335,8 +338,8 @@ impl Type for BoundMethod {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         let (comp_val, fv) = match val.comp_val {
             Some(BasicValueEnum::StructValue(sv)) => (
-                ctx.builder.build_extract_value(sv, 0, ""),
-                ctx.builder.build_extract_value(sv, 1, ""),
+                ctx.builder.build_extract_value(sv, 0, "").ok(),
+                ctx.builder.build_extract_value(sv, 1, "").ok(),
             ),
             Some(BasicValueEnum::PointerValue(pv)) => (None, Some(pv.into())),
             _ => (None, None),

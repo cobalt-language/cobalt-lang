@@ -338,7 +338,7 @@ impl Type for Struct {
         if let Some(&idx) = self.fields().get(&*attr.0) {
             Ok(Value::new(
                 if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
-                    ctx.builder.build_extract_value(v, idx as _, "")
+                    ctx.builder.build_extract_value(v, idx as _, "").ok()
                 } else {
                     None
                 },
@@ -500,7 +500,7 @@ impl Type for UnsizedArray {
         match &*attr.0 {
             "ptr" => Ok(Value::new(
                 if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
-                    ctx.builder.build_extract_value(v, 0, "")
+                    ctx.builder.build_extract_value(v, 0, "").ok()
                 } else {
                     None
                 },
@@ -509,7 +509,7 @@ impl Type for UnsizedArray {
             )),
             "len" => Ok(Value::new(
                 if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
-                    ctx.builder.build_extract_value(v, 1, "")
+                    ctx.builder.build_extract_value(v, 1, "").ok()
                 } else {
                     None
                 },
@@ -533,7 +533,7 @@ impl Type for UnsizedArray {
         match &*attr.0 {
             "ptr" => Ok(Value::new(
                 if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
-                    ctx.builder.build_extract_value(v, 0, "")
+                    ctx.builder.build_extract_value(v, 0, "").ok()
                 } else {
                     None
                 },
@@ -542,7 +542,7 @@ impl Type for UnsizedArray {
             )),
             "len" => Ok(Value::new(
                 if let Some(BasicValueEnum::StructValue(v)) = val.value(ctx) {
-                    ctx.builder.build_extract_value(v, 1, "")
+                    ctx.builder.build_extract_value(v, 1, "").ok()
                 } else {
                     None
                 },
@@ -614,14 +614,15 @@ impl Type for SizedArray {
         ctx.builder.build_unconditional_branch(bb);
         ctx.builder.position_at_end(bb);
         let i64t = ctx.context.i64_type();
-        let phi = ctx.builder.build_phi(i64t, "");
+        let phi = ctx.builder.build_phi(i64t, "").unwrap();
         let phiv = phi.as_basic_value().into_int_value();
         let pv = unsafe {
             ctx.builder
                 .build_in_bounds_gep(at, pv, &[i64t.const_zero(), phiv], "")
-        };
+        }
+        .unwrap();
         Value::with_addr(
-            Some(ctx.builder.build_load(at, pv, "")),
+            ctx.builder.build_load(at, pv, "").ok(),
             None,
             self.elem(),
             pv,
@@ -630,7 +631,8 @@ impl Type for SizedArray {
         phi.add_incoming(&[(&i64t.const_zero(), ib)]);
         let next = ctx
             .builder
-            .build_int_add(phiv, i64t.const_int(1, false), "");
+            .build_int_add(phiv, i64t.const_int(1, false), "")
+            .unwrap();
         phi.add_incoming(&[(&next, bb)]);
     }
     fn is_linear(&'static self, ctx: &CompCtx) -> bool {
@@ -840,7 +842,9 @@ impl Type for SizedArray {
                             if let (Some(llt), Some(BasicValueEnum::IntValue(iv))) =
                                 (self.elem().llvm_type(ctx), idx.value(ctx))
                             {
-                                Some(unsafe { ctx.builder.build_gep(llt, pv, &[iv], "").into() })
+                                unsafe { ctx.builder.build_gep(llt, pv, &[iv], "") }
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             }
@@ -861,16 +865,16 @@ impl Type for SizedArray {
                             if let (Some(llt), Some(InterData::Int(iv))) =
                                 (self.elem().llvm_type(ctx), &idx.inter_val)
                             {
-                                Some(unsafe {
-                                    ctx.builder
-                                        .build_gep(
-                                            llt,
-                                            pv,
-                                            &[ctx.context.i64_type().const_int(*iv as _, true)],
-                                            "",
-                                        )
-                                        .into()
-                                })
+                                unsafe {
+                                    ctx.builder.build_gep(
+                                        llt,
+                                        pv,
+                                        &[ctx.context.i64_type().const_int(*iv as _, true)],
+                                        "",
+                                    )
+                                }
+                                .ok()
+                                .map(From::from)
                             } else {
                                 None
                             }
@@ -904,7 +908,9 @@ impl Type for SizedArray {
                             if let (Some(llt), Some(BasicValueEnum::IntValue(iv))) =
                                 (self.elem().llvm_type(ctx), idx.value(ctx))
                             {
-                                Some(unsafe { ctx.builder.build_gep(llt, pv, &[iv], "").into() })
+                                unsafe { ctx.builder.build_gep(llt, pv, &[iv], "") }
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             }
@@ -927,16 +933,16 @@ impl Type for SizedArray {
                             Some(InterData::Int(iv)),
                         ) = (self.elem().llvm_type(ctx), val.value(ctx), &idx.inter_val)
                         {
-                            Some(unsafe {
-                                ctx.builder
-                                    .build_gep(
-                                        llt,
-                                        pv,
-                                        &[ctx.context.i64_type().const_int(*iv as _, true)],
-                                        "",
-                                    )
-                                    .into()
-                            })
+                            unsafe {
+                                ctx.builder.build_gep(
+                                    llt,
+                                    pv,
+                                    &[ctx.context.i64_type().const_int(*iv as _, true)],
+                                    "",
+                                )
+                            }
+                            .ok()
+                            .map(From::from)
                         } else {
                             None
                         },

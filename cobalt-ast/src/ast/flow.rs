@@ -76,7 +76,7 @@ impl<'src> AST<'src> for IfAST<'src> {
                     ctx.builder.position_at_end(mb);
                     Value::new(
                         if let Some(llt) = ty.llvm_type(ctx) {
-                            let phi = ctx.builder.build_phi(llt, "");
+                            let phi = ctx.builder.build_phi(llt, "").unwrap();
                             if let Some(v) = if_true.value(ctx) {
                                 phi.add_incoming(&[(&v, itb)]);
                             }

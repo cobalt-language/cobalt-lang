@@ -839,7 +839,8 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx
                         .builder
-                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| &**x));
+                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| &**x))
+                        .unwrap();
                     ctx.builder.build_store(a, v);
                     a
                 });

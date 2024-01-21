@@ -58,7 +58,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                         (
                             if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                                 let llt = val.get_type();
-                                let phi = ctx.builder.build_phi(llt, "");
+                                let phi = ctx.builder.build_phi(llt, "").unwrap();
                                 phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
                                 Some(phi.as_basic_value())
                             } else {
@@ -79,7 +79,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             Ok(rhv) => (
                                 if let Some(val) = rhv.value(ctx) {
                                     let llt = ctx.context.bool_type();
-                                    let phi = ctx.builder.build_phi(llt, "");
+                                    let phi = ctx.builder.build_phi(llt, "").unwrap();
                                     phi.add_incoming(&[(&val, ab), (&llt.const_zero(), bb)]);
                                     Some(phi.as_basic_value())
                                 } else {
@@ -135,7 +135,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                         (
                             if let (Some(val), Some(ifv)) = (rhs.value(ctx), rhv.value(ctx)) {
                                 let llt = val.get_type();
-                                let phi = ctx.builder.build_phi(llt, "");
+                                let phi = ctx.builder.build_phi(llt, "").unwrap();
                                 phi.add_incoming(&[(&val, ab), (&ifv, bb)]);
                                 Some(phi.as_basic_value())
                             } else {
@@ -156,7 +156,7 @@ impl<'src> AST<'src> for BinOpAST<'src> {
                             Ok(rhv) => (
                                 if let Some(val) = rhv.value(ctx) {
                                     let llt = ctx.context.bool_type();
-                                    let phi = ctx.builder.build_phi(llt, "");
+                                    let phi = ctx.builder.build_phi(llt, "").unwrap();
                                     phi.add_incoming(&[(&val, ab), (&llt.const_int(1, false), bb)]);
                                     Some(phi.as_basic_value())
                                 } else {

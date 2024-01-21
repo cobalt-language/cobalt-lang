@@ -1118,7 +1118,10 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     param.set_name(name);
                                     let mut val = Value::compiled(param, ty);
                                     if pt == ParamType::Mutable {
-                                        let a = ctx.builder.build_alloca(param.get_type(), name);
+                                        let a = ctx
+                                            .builder
+                                            .build_alloca(param.get_type(), name)
+                                            .unwrap();
                                         ctx.builder.build_store(a, val.comp_val.unwrap());
                                         val.comp_val = Some(a.into());
                                         val.data_type = types::Mut::new(val.data_type);
@@ -1405,7 +1408,10 @@ impl<'src> AST<'src> for FnDefAST<'src> {
                                     param.set_name(name);
                                     let mut val = Value::compiled(param, ty);
                                     if pt == ParamType::Mutable {
-                                        let a = ctx.builder.build_alloca(param.get_type(), name);
+                                        let a = ctx
+                                            .builder
+                                            .build_alloca(param.get_type(), name)
+                                            .unwrap();
                                         ctx.builder.build_store(a, val.comp_val.unwrap());
                                         val.comp_val = Some(a.into());
                                         val.data_type = types::Mut::new(val.data_type);

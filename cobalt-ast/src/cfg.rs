@@ -575,17 +575,16 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                             let mut val = match blocks[prev].reached.get_zero_extended_constant() {
                                 Some(0) => false_,
                                 Some(1) => c.into_int_value(),
-                                _ => ctx.builder.build_and(
-                                    blocks[prev].reached,
-                                    c.into_int_value(),
-                                    "",
-                                ),
+                                _ => ctx
+                                    .builder
+                                    .build_and(blocks[prev].reached, c.into_int_value(), "")
+                                    .unwrap(),
                             };
                             if !pos {
                                 val = match val.get_zero_extended_constant() {
                                     Some(0) => true_,
                                     Some(1) => false_,
-                                    _ => ctx.builder.build_not(val, ""),
+                                    _ => ctx.builder.build_not(val, "").unwrap(),
                                 };
                             }
                             val
@@ -972,7 +971,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                                     (Some(0), _) => block.reached,
                                     (_, Some(0)) => out,
                                     (Some(1), _) | (_, Some(1)) => true_,
-                                    _ => ctx.builder.build_or(out, block.reached, ""),
+                                    _ => ctx.builder.build_or(out, block.reached, "").unwrap(),
                                 }
                             }
                             Some(true) => {}

@@ -207,7 +207,7 @@ impl<'src, 'ctx> Value<'src, 'ctx> {
         } else {
             self.address.get().or_else(|| {
                 let ctv = self.value(ctx)?;
-                let alloca = ctx.builder.build_alloca(ctv.get_type(), "");
+                let alloca = ctx.builder.build_alloca(ctv.get_type(), "").ok()?;
                 ctx.builder.build_store(alloca, ctv);
                 self.address.set(Some(alloca));
                 Some(alloca)

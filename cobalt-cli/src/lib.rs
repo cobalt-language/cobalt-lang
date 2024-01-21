@@ -5,6 +5,7 @@ use clio::{ClioPath, Input, OutputPath};
 use cobalt_ast::{CompCtx, Flags, AST};
 use cobalt_build::*;
 use cobalt_errors::*;
+use cobalt_llvm::inkwell;
 use cobalt_parser::parse_str;
 use const_format::{formatcp, str_index};
 use human_repr::*;
