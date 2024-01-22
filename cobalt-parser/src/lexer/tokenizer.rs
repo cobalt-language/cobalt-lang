@@ -75,6 +75,12 @@ impl<'src> TokenStream<'src> {
     }
 }
 impl<'src> SourceReader<'src> {
+    /// Advance self by reading tokens, stopping at the source index of `max_idx`
+    /// Tokens and errors are stored in the given lists, and the number of tokens consumed is
+    /// returned.
+    ///
+    /// You generally shouldn't have to call this in a public API, but it might be useful if you
+    /// already have token and error vectors and want to be efficient with allocations.
     pub fn eat_tokens(
         &mut self,
         tokens: &mut Vec<Token<'src>>,
@@ -863,6 +869,8 @@ impl<'src> SourceReader<'src> {
         tokens.len() - starting_len
     }
 
+    /// Tokenize the input, returning a token stream and the given input.
+    /// This is most commonly the entry point for the lexer.
     pub fn tokenize(&mut self) -> (TokenStream<'src>, Vec<CobaltError<'src>>) {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
