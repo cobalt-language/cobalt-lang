@@ -126,7 +126,7 @@ impl<'src> Parser<'src> {
 
                 parsed_something = true;
             }
-            TokenKind::Intrinsic(..) => {
+            TokenKind::IntrinOrAnn(..) => {
                 working_ast = self.parse_intrinsic();
 
                 parsed_something = true;
@@ -304,7 +304,7 @@ impl<'src> Parser<'src> {
                 self.next();
                 Box::new(DotAST::new(target, (ident.into(), span)))
             }
-            TokenKind::Intrinsic(name) => {
+            TokenKind::IntrinOrAnn((name, _, _)) => {
                 let iloc = current.span;
                 self.next();
                 Box::new(CallAST::new(
@@ -943,7 +943,7 @@ impl<'src> Parser<'src> {
     /// ```
     pub(crate) fn parse_intrinsic(&mut self) -> BoxedAST<'src> {
         let Some(Token {
-            kind: TokenKind::Intrinsic(name_src),
+            kind: TokenKind::IntrinOrAnn((name_src, _, _)),
             span,
         }) = self.current_token
         else {

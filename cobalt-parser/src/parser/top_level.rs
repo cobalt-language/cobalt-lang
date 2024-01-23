@@ -39,7 +39,7 @@ impl<'src> Parser<'src> {
                     break;
                 }
                 Some(Token {
-                    kind: TokenKind::Annotation(..),
+                    kind: TokenKind::IntrinOrAnn(..),
                     ..
                 }) => {
                     let _ = self.parse_annotation();
