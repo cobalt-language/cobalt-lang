@@ -15,7 +15,7 @@ cobalt-build = { path = "../cobalt-build", default-features = false }
 cobalt-errors = { path = "../cobalt-errors" }
 cobalt-utils = { path = "../cobalt-utils" }
 cobalt-llvm = { path = "../cobalt-llvm", default-features = false  }
-inkwell = "0.2.0"
+inkwell = "0.4.0"
 toml = "0.8.4"
 temp-file = "0.1.7"
 anyhow = "1.0.75"
