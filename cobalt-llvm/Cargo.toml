@@ -9,7 +9,7 @@ description.workspace = true
 documentation.workspace = true
 
 [dependencies]
-inkwell = { version = "0.3.0", features = ["llvm17-0"] }
+inkwell = { version = "0.4.0", features = ["llvm17-0"] }
 llvm-sys = { version = "170", features = ["no-llvm-linking", "disable-alltargets-init"] }
 
 [build-dependencies]
