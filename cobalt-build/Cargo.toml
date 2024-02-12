@@ -33,7 +33,7 @@ anyhow-std = "0.1.4"
 thiserror = "1.0.50"
 lasso = { version = "0.7.2", features = ["multi-threaded"] }
 indexmap = "2.0.2"
-os_str_bytes = { version = "6.6.1", features = ["conversions"] }
+os_str_bytes = { version = "7.0.0", features = ["conversions"] }
 toml = { version = "0.8.4", optional = true }
 bstr = "1.7.0"
 hashbrown = { version = "0.14.2", features = ["serde"] }
