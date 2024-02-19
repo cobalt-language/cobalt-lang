@@ -1,0 +1,6 @@
+@C(extern) fn puts(str: *u8);
+
+fn main(): i32 = {
+    puts("Hello, world!"c);
+    0
+};

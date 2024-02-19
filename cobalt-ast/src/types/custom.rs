@@ -226,7 +226,7 @@ impl<'de> Deserialize<'de> for CustomHeader {
             where
                 A: MapAccess<'de>,
             {
-                while let Some(k) = map.next_key()? {
+                while let Some(k) = map.next_key::<Box<str>>()? {
                     let v = map.next_value_seed(CIProxySeed(self.0))?;
                     assert!(
                         CUSTOM_DATA

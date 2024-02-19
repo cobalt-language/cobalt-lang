@@ -1,5 +1,6 @@
 use super::*;
 use inkwell::IntPredicate::*;
+pub(crate) static INTERN: Interner<(u16, bool)> = Interner::new();
 #[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
@@ -8,7 +9,6 @@ impl Int {
     #[ref_cast_custom]
     fn from_ref(val: &(u16, bool)) -> &Self;
     pub fn new(bits: u16, unsigned: bool) -> &'static Self {
-        static INTERN: Interner<(u16, bool)> = Interner::new();
         Self::from_ref(INTERN.intern((bits, unsigned)))
     }
     pub fn signed(bits: u16) -> &'static Self {

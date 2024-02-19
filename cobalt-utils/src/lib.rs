@@ -5,3 +5,6 @@ pub mod misc;
 pub use cell::*;
 pub use intern::*;
 pub use misc::*;
+
+#[cfg(test)]
+mod tests;

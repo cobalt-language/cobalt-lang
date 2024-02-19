@@ -19,6 +19,8 @@ use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
+#[cfg(test)]
+mod tests;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputType {

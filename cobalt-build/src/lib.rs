@@ -18,6 +18,8 @@ use std::io::{self, prelude::*, ErrorKind};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+pub const HOST_TRIPLE: &str = env!("HOST");
+
 #[derive(Debug, Clone, Copy, Error)]
 #[error("build failed because of {0} compiler error{}", if *.0 == 1 {""} else {"s"})]
 pub struct CompileErrors(pub usize);
