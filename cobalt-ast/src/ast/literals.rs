@@ -18,7 +18,7 @@ impl<'src> AST<'src> for IntLiteralAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn is_const(&self) -> bool {
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
         true
     }
     fn codegen_impl<'ctx>(
@@ -117,7 +117,7 @@ impl<'src> AST<'src> for FloatLiteralAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn is_const(&self) -> bool {
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
         true
     }
     fn codegen_impl<'ctx>(
@@ -185,7 +185,7 @@ impl<'src> AST<'src> for CharLiteralAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn is_const(&self) -> bool {
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
         true
     }
     fn codegen_impl<'ctx>(
@@ -293,7 +293,7 @@ impl<'src> AST<'src> for StringLiteralAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
     }
-    fn is_const(&self) -> bool {
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
         true
     }
     fn codegen_impl<'ctx>(

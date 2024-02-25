@@ -304,8 +304,8 @@ impl<'src> AST<'src> for ParenAST<'src> {
     fn nodes(&self) -> usize {
         self.base.nodes() + 1
     }
-    fn is_const(&self) -> bool {
-        self.base.is_const()
+    fn is_const(&self, ctx: &CompCtx<'src, '_>) -> bool {
+        self.base.is_const(ctx)
     }
     fn codegen_impl<'ctx>(
         &self,

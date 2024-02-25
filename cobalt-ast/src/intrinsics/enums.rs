@@ -82,10 +82,10 @@ impl Type for EnumAggregator {
 }
 
 inventory::submit! {
-    ValueIntrinsic::new("enum", |_| Value::metaval(InterData::Array(vec![]), &ENUM_AGG), || &ENUM_AGG)
+    ValueIntrinsic::new("enum", |_| Value::metaval(InterData::Array(vec![]), &ENUM_AGG), || &ENUM_AGG, true)
 }
 inventory::submit! {
-    ValueIntrinsic::new("union", |_| Value::metaval(InterData::Array(vec![]), &UNION_AGG), || &UNION_AGG)
+    ValueIntrinsic::new("union", |_| Value::metaval(InterData::Array(vec![]), &UNION_AGG), || &UNION_AGG, true)
 }
 
 submit_types!(EnumAggregator);

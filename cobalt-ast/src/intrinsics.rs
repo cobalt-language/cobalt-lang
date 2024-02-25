@@ -6,10 +6,21 @@ pub struct ValueIntrinsic {
     pub name: &'static str,
     pub wraps: ValueCallType,
     pub ret: fn() -> TypeRef,
+    pub is_const: bool,
 }
 impl ValueIntrinsic {
-    pub const fn new(name: &'static str, wraps: ValueCallType, ret: fn() -> TypeRef) -> Self {
-        Self { name, wraps, ret }
+    pub const fn new(
+        name: &'static str,
+        wraps: ValueCallType,
+        ret: fn() -> TypeRef,
+        is_const: bool,
+    ) -> Self {
+        Self {
+            name,
+            wraps,
+            ret,
+            is_const,
+        }
     }
 }
 
@@ -17,10 +28,15 @@ impl ValueIntrinsic {
 pub struct FunctionIntrinsic {
     pub name: &'static str,
     pub wraps: FunctionCallType,
+    pub is_const: bool,
 }
 impl FunctionIntrinsic {
-    pub const fn new(name: &'static str, wraps: FunctionCallType) -> Self {
-        Self { name, wraps }
+    pub const fn new(name: &'static str, wraps: FunctionCallType, is_const: bool) -> Self {
+        Self {
+            name,
+            wraps,
+            is_const,
+        }
     }
 }
 

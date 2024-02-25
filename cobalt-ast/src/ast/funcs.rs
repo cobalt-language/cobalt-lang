@@ -1730,6 +1730,9 @@ impl<'src> AST<'src> for CallAST<'src> {
     fn nodes(&self) -> usize {
         self.target.nodes() + self.args.iter().map(|x| x.nodes()).sum::<usize>() + 1
     }
+    fn is_const(&self, ctx: &CompCtx<'src, '_>) -> bool {
+        self.target.has_const_call(ctx) && self.args.iter().all(|a| a.is_const(ctx))
+    }
     fn codegen_impl<'ctx>(
         &self,
         ctx: &CompCtx<'src, 'ctx>,
@@ -1775,6 +1778,22 @@ impl<'src> IntrinsicAST<'src> {
 impl<'src> AST<'src> for IntrinsicAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
+    }
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
+        intrinsics::VALUE_INTRINSICS
+            .pin()
+            .get(&*self.name)
+            .map_or(false, |i| i.is_const)
+            || intrinsics::FUNCTION_INTRINSICS
+                .pin()
+                .get(&*self.name)
+                .map_or(false, |i| i.is_const)
+    }
+    fn has_const_call(&self, _ctx: &CompCtx<'src, '_>) -> bool {
+        intrinsics::FUNCTION_INTRINSICS
+            .pin()
+            .get(&*self.name)
+            .map_or(false, |i| i.is_const)
     }
     fn codegen_impl<'ctx>(
         &self,

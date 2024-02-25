@@ -50,7 +50,7 @@ impl Type for Int {
         SizeType::Static(((self.0 .0 + 7) / 8) as _)
     }
     fn align(&self) -> u16 {
-        1 << std::cmp::min(16 - self.0 .0.leading_zeros(), 6)
+        1 << (15 - std::cmp::min(self.0 .0.leading_zeros(), 15)).clamp(3, 6) - 3
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(ctx.context.custom_width_int_type(self.bits() as _).into())
