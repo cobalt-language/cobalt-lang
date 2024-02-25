@@ -1,5 +1,5 @@
-use crate::types::{self, *};
 use super::*;
+use crate::types::{self, *};
 
 static ENUM_AGG: EnumAggregator = EnumAggregator(false);
 static UNION_AGG: EnumAggregator = EnumAggregator(true);
@@ -12,8 +12,12 @@ impl TypeSerde for EnumAggregator {
     impl_type_proxy!(bool, this => this.0, s => if s {&UNION_AGG} else {&ENUM_AGG});
 }
 impl Type for EnumAggregator {
-    fn size(&self) -> SizeType {SizeType::Meta}
-    fn align(&self) -> u16 {0}
+    fn size(&self) -> SizeType {
+        SizeType::Meta
+    }
+    fn align(&self) -> u16 {
+        0
+    }
     fn decay(&self) -> TypeRef {
         types::TypeData::new()
     }
@@ -28,7 +32,16 @@ impl Type for EnumAggregator {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if target.0 == types::TypeData::new() {
             if let Some(InterData::Array(vec)) = val.inter_val {
-                let res = vec.into_iter().map(|t| if let InterData::Type(t) = t {t} else {unreachable!()}).collect::<Vec<_>>();
+                let res = vec
+                    .into_iter()
+                    .map(|t| {
+                        if let InterData::Type(t) = t {
+                            t
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 Ok(Value::make_type(EnumOrUnion::new(res, self.0)))
             } else {
                 unreachable!()
@@ -37,7 +50,14 @@ impl Type for EnumAggregator {
             Err(cant_iconv(&val, target.0, target.1))
         }
     }
-    fn _has_bin_lhs(&self, other: TypeRef, op: &str, ctx: &CompCtx, _move_left: bool, _move_right: bool) -> bool {
+    fn _has_bin_lhs(
+        &self,
+        other: TypeRef,
+        op: &str,
+        ctx: &CompCtx,
+        _move_left: bool,
+        _move_right: bool,
+    ) -> bool {
         op == "|" && other.impl_convertible(types::TypeData::new(), ctx)
     }
     fn _bin_lhs<'src, 'ctx>(

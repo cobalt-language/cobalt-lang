@@ -2,7 +2,6 @@ use super::*;
 use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
 
-
 #[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, RefCastCustom)]
 #[repr(transparent)]
 pub struct EnumOrUnion((Box<[TypeRef]>, bool));
@@ -24,17 +23,17 @@ impl EnumOrUnion {
     }
 
     pub fn variants(&self) -> &[TypeRef] {
-        &self.0.0
+        &self.0 .0
     }
 
     pub fn is_sorted(&self) -> bool {
-        self.0.1
+        self.0 .1
     }
 }
 impl Display for EnumOrUnion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(if self.0.1 {"@union"} else {"@enum"})?;
-        for item in self.0.0.iter() {
+        f.write_str(if self.0 .1 { "@union" } else { "@enum" })?;
+        for item in self.0 .0.iter() {
             f.write_str(" | ")?;
             Display::fmt(&item, f)?;
         }
