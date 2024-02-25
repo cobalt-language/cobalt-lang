@@ -603,11 +603,9 @@ impl<'src> SourceReader<'src> {
                         let old_len = num_len;
                         // num_len += 1;
                         if loop {
-                            match {
-                                let ch = self.next_char();
-                                num_len += ch.map_or(0, |c| c.len_utf8());
-                                ch
-                            } {
+                            let ch = self.next_char();
+                            num_len += ch.map_or(0, |c| c.len_utf8());
+                            match ch {
                                 Some('_' | '@') => break true,
                                 Some(c) if is_xid_start(c) => break true,
                                 Some(c) if !c.is_whitespace() => break false,

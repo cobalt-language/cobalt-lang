@@ -161,7 +161,7 @@ impl Struct {
     }
     pub fn field_iterator(
         &self,
-    ) -> impl Iterator<Item = (&str, TypeRef)> + DoubleEndedIterator + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = (&str, TypeRef)> + ExactSizeIterator {
         self.fields().iter().map(|(k, n)| (&**k, self.types()[*n]))
     }
     pub fn sort_fields((ln, lt): (&str, TypeRef), (rn, rt): (&str, TypeRef)) -> std::cmp::Ordering {
