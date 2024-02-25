@@ -138,7 +138,7 @@ pub fn read_file<R: Read, P: AsRef<str>>(input: &mut R, name: P) -> anyhow::Resu
         #[label]
         loc: SourceSpan,
         #[source_code]
-        name: NamedSource,
+        name: NamedSource<Vec<u8>>,
     }
 
     let mut buf = vec![];
