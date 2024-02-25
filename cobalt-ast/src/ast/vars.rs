@@ -492,7 +492,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 } else {
                     val.data_type.decay()
                 };
-                match if let Some(v) = val.value(ctx) {
+                let res = if let Some(v) = val.value(ctx) {
                     val.inter_val = None;
                     if ctx.is_const.get() {
                         ctx.with_vars(|v| {
@@ -546,7 +546,8 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                             Symbol(val, VariableData::with_vis(self.loc, false)),
                         )
                     })
-                } {
+                };
+                match res {
                     Ok(_) => Value::null(),
                     Err(RedefVariable::NotAModule(x, _)) => {
                         errs.push(CobaltError::NotAModule {
@@ -822,7 +823,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 .first()
                 .map(|x| (x.0.clone(), ctx.lex_scope.get()));
             val.frozen = (!self.is_mut).then_some(self.loc);
-            match if ctx.is_const.get() || !self.is_mut {
+            let res = if ctx.is_const.get() || !self.is_mut {
                 ctx.with_vars(|v| {
                     v.insert(
                         &self.name,
@@ -878,7 +879,8 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         ),
                     )
                 })
-            } {
+            };
+            match res {
                 Ok(_) => Value::null(),
                 Err(RedefVariable::NotAModule(x, _)) => {
                     errs.push(CobaltError::NotAModule {
