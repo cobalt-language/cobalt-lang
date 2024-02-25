@@ -222,7 +222,7 @@ fn alloca<'src, 'ctx>(
         if let Some(ty) = ty {
             if let Some(llt) = ty.llvm_type(ctx) {
                 Ok(Value::compiled(
-                    ctx.builder.build_alloca(llt, "").into(),
+                    ctx.builder.build_alloca(llt, "").unwrap().into(),
                     types::Pointer::new(types::Mut::new(ty)),
                 ))
             } else {
@@ -241,11 +241,10 @@ fn alloca<'src, 'ctx>(
             let arg = arg.decay(ctx);
             if arg.data_type.is::<types::Int>() {
                 if let Some(out) = &mut out {
-                    *out = ctx.builder.build_int_mul(
-                        *out,
-                        arg.value(ctx).unwrap().into_int_value(),
-                        "",
-                    );
+                    *out = ctx
+                        .builder
+                        .build_int_mul(*out, arg.value(ctx).unwrap().into_int_value(), "")
+                        .unwrap();
                 } else {
                     out = Some(arg.value(ctx).unwrap().into_int_value());
                 }
@@ -271,6 +270,7 @@ fn alloca<'src, 'ctx>(
                 } else {
                     ctx.builder.build_alloca(llt, "")
                 }
+                .unwrap()
                 .into(),
                 types::Pointer::new(types::Mut::new(ty)),
             ))

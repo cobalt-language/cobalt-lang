@@ -283,7 +283,7 @@ impl Type for Custom {
         let info = &borrow[keys.3];
         if let Some(pv) = val.addr(ctx) {
             if let Some(fv) = info.dtor {
-                ctx.builder.build_call(fv, &[pv.into()], "");
+                ctx.builder.build_call(fv, &[pv.into()], "").unwrap();
             } else if !info.no_auto_drop {
                 Value {
                     data_type: self.base(),

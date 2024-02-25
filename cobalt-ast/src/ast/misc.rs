@@ -141,9 +141,11 @@ impl<'src> AST<'src> for BitCastAST<'src> {
                 || cty.is_array_type()
                 || cty.is_struct_type()
             {
-                ctx.builder.build_load(llt, val.addr(ctx).unwrap(), "")
+                ctx.builder
+                    .build_load(llt, val.addr(ctx).unwrap(), "")
+                    .unwrap()
             } else {
-                ctx.builder.build_bitcast(ctval, llt, "")
+                ctx.builder.build_bitcast(ctval, llt, "").unwrap()
             };
             cfg::mark_move(
                 &val,

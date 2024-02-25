@@ -44,11 +44,13 @@ impl Type for Reference {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
             val.comp_val = val.comp_val.and_then(|v| {
-                Some(ctx.builder.build_load(
-                    self.base().llvm_type(ctx)?,
-                    v.is_pointer_value().then(|| v.into_pointer_value())?,
-                    "",
-                ))
+                ctx.builder
+                    .build_load(
+                        self.base().llvm_type(ctx)?,
+                        v.is_pointer_value().then(|| v.into_pointer_value())?,
+                        "",
+                    )
+                    .ok()
             });
         }
         self.base()
@@ -104,7 +106,7 @@ impl Type for Reference {
             if let (Some(BasicValueEnum::PointerValue(pv)), Some(val)) =
                 (lhs.comp_val, rhs.comp_val)
             {
-                let inst = ctx.builder.build_store(pv, val);
+                let inst = ctx.builder.build_store(pv, val).unwrap();
                 cfg::mark_move(&rhs, cfg::Location::Inst(inst, 0), ctx, rhs.loc);
             }
             return Ok(lhs);
@@ -116,7 +118,7 @@ impl Type for Reference {
                 lhs.value(ctx),
             ) {
                 lhs.address = Rc::new(Cell::new(Some(pv)));
-                Some(ctx.builder.build_load(llt, pv, ""))
+                ctx.builder.build_load(llt, pv, "").ok()
             } else {
                 None
             };
@@ -146,7 +148,7 @@ impl Type for Reference {
                 rhs.value(ctx),
             ) {
                 rhs.address = Rc::new(Cell::new(Some(pv)));
-                Some(ctx.builder.build_load(llt, pv, ""))
+                ctx.builder.build_load(llt, pv, "").ok()
             } else {
                 None
             };
@@ -218,7 +220,7 @@ impl Type for Reference {
                             base.base().llvm_type(ctx),
                             val.value(ctx),
                         ) {
-                            Some(ctx.builder.build_load(llt, pv, ""))
+                            ctx.builder.build_load(llt, pv, "").ok()
                         } else {
                             None
                         };
@@ -248,7 +250,7 @@ impl Type for Reference {
                     val.value(ctx),
                 ) {
                     val.address = Rc::new(Cell::new(Some(pv)));
-                    Some(ctx.builder.build_load(llt, pv, ""))
+                    ctx.builder.build_load(llt, pv, "").ok()
                 } else {
                     None
                 };
@@ -266,11 +268,13 @@ impl Type for Reference {
         } else if self.base().copyable(ctx) {
             if !(ctx.is_const.get() || self.base().is::<types::Mut>()) {
                 val.comp_val = val.comp_val.and_then(|v| {
-                    Some(ctx.builder.build_load(
-                        self.base().llvm_type(ctx)?,
-                        v.is_pointer_value().then(|| v.into_pointer_value())?,
-                        "",
-                    ))
+                    ctx.builder
+                        .build_load(
+                            self.base().llvm_type(ctx)?,
+                            v.is_pointer_value().then(|| v.into_pointer_value())?,
+                            "",
+                        )
+                        .ok()
                 })
             }
             val.data_type = self.base();
@@ -303,7 +307,7 @@ impl Type for Reference {
                     val.value(ctx),
                 ) {
                     val.address = Rc::new(Cell::new(Some(pv)));
-                    Some(ctx.builder.build_load(llt, pv, ""))
+                    ctx.builder.build_load(llt, pv, "").ok()
                 } else {
                     None
                 };
@@ -370,7 +374,7 @@ impl Type for Reference {
                     val.value(ctx),
                 ) {
                     val.address = Rc::new(Cell::new(Some(pv)));
-                    Some(ctx.builder.build_load(llt, pv, ""))
+                    ctx.builder.build_load(llt, pv, "").ok()
                 } else {
                     None
                 };
@@ -391,7 +395,7 @@ impl Type for Reference {
                 val.value(ctx),
             ) {
                 val.address = Rc::new(Cell::new(Some(pv)));
-                Some(ctx.builder.build_load(llt, pv, ""))
+                ctx.builder.build_load(llt, pv, "").ok()
             } else {
                 None
             };
@@ -472,18 +476,21 @@ impl Type for Pointer {
                             .ptr_type(ctx)
                             .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
-                            let v1 =
-                                ctx.builder
-                                    .build_load(llt.ptr_type(Default::default()), pv, "");
+                            let v1 = ctx
+                                .builder
+                                .build_load(llt.ptr_type(Default::default()), pv, "")
+                                .unwrap();
                             let v2 = unsafe {
-                                ctx.builder.build_gep(
-                                    llt,
-                                    v1.into_pointer_value(),
-                                    &[ctx.context.i64_type().const_int(1, false)],
-                                    "",
-                                )
+                                ctx.builder
+                                    .build_gep(
+                                        llt,
+                                        v1.into_pointer_value(),
+                                        &[ctx.context.i64_type().const_int(1, false)],
+                                        "",
+                                    )
+                                    .unwrap()
                             };
-                            ctx.builder.build_store(pv, v2);
+                            ctx.builder.build_store(pv, v2).unwrap();
                             val.comp_val
                         } else {
                             None
@@ -503,18 +510,21 @@ impl Type for Pointer {
                             .ptr_type(ctx)
                             .map_or(false, BasicTypeEnum::is_pointer_type)
                         {
-                            let v1 =
-                                ctx.builder
-                                    .build_load(llt.ptr_type(Default::default()), pv, "");
+                            let v1 = ctx
+                                .builder
+                                .build_load(llt.ptr_type(Default::default()), pv, "")
+                                .unwrap();
                             let v2 = unsafe {
-                                ctx.builder.build_gep(
-                                    llt,
-                                    v1.into_pointer_value(),
-                                    &[ctx.context.i64_type().const_all_ones()],
-                                    "",
-                                )
+                                ctx.builder
+                                    .build_gep(
+                                        llt,
+                                        v1.into_pointer_value(),
+                                        &[ctx.context.i64_type().const_all_ones()],
+                                        "",
+                                    )
+                                    .unwrap()
                             };
-                            ctx.builder.build_store(pv, v2);
+                            ctx.builder.build_store(pv, v2).unwrap();
                             val.comp_val
                         } else {
                             None
@@ -584,8 +594,11 @@ impl Type for Pointer {
                                 ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
                             } else {
                                 ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
-                            };
-                            Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                            }
+                            .unwrap();
+                            unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }
+                                .ok()
+                                .map(From::from)
                         } else {
                             None
                         },
@@ -608,9 +621,12 @@ impl Type for Pointer {
                                 ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
                             } else {
                                 ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
-                            };
-                            v = ctx.builder.build_int_neg(v, "");
-                            Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                            }
+                            .unwrap();
+                            v = ctx.builder.build_int_neg(v, "").unwrap();
+                            unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }
+                                .ok()
+                                .map(From::from)
                         } else {
                             None
                         },
@@ -628,7 +644,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_ptr_diff(llt, l, r, "").into())
+                        ctx.builder
+                            .build_ptr_diff(llt, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -642,7 +661,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(ULT, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(ULT, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -656,7 +678,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(UGT, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(UGT, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -670,7 +695,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(ULE, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(ULE, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -684,7 +712,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(UGE, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(UGE, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -698,7 +729,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(EQ, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(EQ, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -712,7 +746,10 @@ impl Type for Pointer {
                         Some(BasicValueEnum::PointerValue(r)),
                     ) = (self.base().llvm_type(ctx), lhs.comp_val, rhs.comp_val)
                     {
-                        Some(ctx.builder.build_int_compare(NE, l, r, "").into())
+                        ctx.builder
+                            .build_int_compare(NE, l, r, "")
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -754,8 +791,11 @@ impl Type for Pointer {
                         ctx.builder.build_int_s_extend_or_bit_cast(v, i64ty, "")
                     } else {
                         ctx.builder.build_int_z_extend_or_bit_cast(v, i64ty, "")
-                    };
-                    Some(unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }.into())
+                    }
+                    .unwrap();
+                    unsafe { ctx.builder.build_gep(llt, pv, &[v], "") }
+                        .ok()
+                        .map(From::from)
                 } else {
                     None
                 },
@@ -804,15 +844,23 @@ impl Type for Pointer {
                 let rv = lty.const_int(*rv as _, true);
                 match op.0 {
                     "+=" => {
-                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
-                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") };
-                        ctx.builder.build_store(lv, v2);
+                        let v1 = ctx
+                            .builder
+                            .build_load(pt, lv, "")
+                            .unwrap()
+                            .into_pointer_value();
+                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") }.unwrap();
+                        ctx.builder.build_store(lv, v2).unwrap();
                     }
                     "-=" => {
-                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
-                        let v2 = ctx.builder.build_int_neg(v1, "");
-                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") };
-                        ctx.builder.build_store(lv, v3);
+                        let v1 = ctx
+                            .builder
+                            .build_load(pt, lv, "")
+                            .unwrap()
+                            .into_pointer_value();
+                        let v2 = ctx.builder.build_int_neg(v1, "").unwrap();
+                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") }.unwrap();
+                        ctx.builder.build_store(lv, v3).unwrap();
                     }
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
@@ -833,19 +881,28 @@ impl Type for Pointer {
                         ctx.builder.build_int_s_extend(rv, lty, "")
                     } else {
                         ctx.builder.build_int_z_extend(rv, lty, "")
-                    };
+                    }
+                    .unwrap();
                 }
                 match op.0 {
                     "+=" => {
-                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
-                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") };
-                        ctx.builder.build_store(lv, v2);
+                        let v1 = ctx
+                            .builder
+                            .build_load(pt, lv, "")
+                            .unwrap()
+                            .into_pointer_value();
+                        let v2 = unsafe { ctx.builder.build_gep(llt, v1, &[rv], "") }.unwrap();
+                        ctx.builder.build_store(lv, v2).unwrap();
                     }
                     "-=" => {
-                        let v1 = ctx.builder.build_load(pt, lv, "").into_pointer_value();
-                        let v2 = ctx.builder.build_int_neg(v1, "");
-                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") };
-                        ctx.builder.build_store(lv, v3);
+                        let v1 = ctx
+                            .builder
+                            .build_load(pt, lv, "")
+                            .unwrap()
+                            .into_pointer_value();
+                        let v2 = ctx.builder.build_int_neg(v1, "").unwrap();
+                        let v3 = unsafe { ctx.builder.build_gep(llt, v2, &[rv], "") }.unwrap();
+                        ctx.builder.build_store(lv, v3).unwrap();
                     }
                     _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                 }
@@ -946,11 +1003,13 @@ impl Type for Mut {
         } else {
             if !ctx.is_const.get() {
                 val.comp_val = val.comp_val.and_then(|v| {
-                    Some(ctx.builder.build_load(
-                        self.base().llvm_type(ctx)?,
-                        v.is_pointer_value().then(|| v.into_pointer_value())?,
-                        "",
-                    ))
+                    ctx.builder
+                        .build_load(
+                            self.base().llvm_type(ctx)?,
+                            v.is_pointer_value().then(|| v.into_pointer_value())?,
+                            "",
+                        )
+                        .ok()
                 })
             }
             self.base().pre_op(val, op, oloc, ctx, can_move)
@@ -997,7 +1056,7 @@ impl Type for Mut {
             if let (Some(BasicValueEnum::PointerValue(pv)), Some(val)) =
                 (lhs.comp_val, rhs.comp_val)
             {
-                let inst = ctx.builder.build_store(pv, val);
+                let inst = ctx.builder.build_store(pv, val).unwrap();
                 cfg::mark_move(&rhs, cfg::Location::Inst(inst, 0), ctx, rhs.loc);
                 cfg::mark_store(&lhs, cfg::Location::Inst(inst, 1), ctx);
             }
@@ -1013,11 +1072,13 @@ impl Type for Mut {
         } else {
             if !ctx.is_const.get() {
                 lhs.comp_val = lhs.comp_val.and_then(|v| {
-                    Some(ctx.builder.build_load(
-                        self.base().llvm_type(ctx)?,
-                        v.is_pointer_value().then(|| v.into_pointer_value())?,
-                        "",
-                    ))
+                    ctx.builder
+                        .build_load(
+                            self.base().llvm_type(ctx)?,
+                            v.is_pointer_value().then(|| v.into_pointer_value())?,
+                            "",
+                        )
+                        .ok()
                 })
             }
             self.base()
@@ -1035,11 +1096,13 @@ impl Type for Mut {
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if !ctx.is_const.get() {
             rhs.comp_val = rhs.comp_val.and_then(|v| {
-                Some(ctx.builder.build_load(
-                    self.base().llvm_type(ctx)?,
-                    v.is_pointer_value().then(|| v.into_pointer_value())?,
-                    "",
-                ))
+                ctx.builder
+                    .build_load(
+                        self.base().llvm_type(ctx)?,
+                        v.is_pointer_value().then(|| v.into_pointer_value())?,
+                        "",
+                    )
+                    .ok()
             })
         }
         self.base()
@@ -1061,7 +1124,7 @@ impl Type for Mut {
             if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
                 (self.base().llvm_type(ctx), val.value(ctx))
             {
-                val.comp_val = Some(ctx.builder.build_load(llt, pv, ""));
+                val.comp_val = ctx.builder.build_load(llt, pv, "").ok();
             }
         }
         self.base()._iconv_to(val, target, ctx)
@@ -1076,7 +1139,7 @@ impl Type for Mut {
             if let (Some(llt), Some(BasicValueEnum::PointerValue(pv))) =
                 (self.base().llvm_type(ctx), val.value(ctx))
             {
-                val.comp_val = Some(ctx.builder.build_load(llt, pv, ""));
+                val.comp_val = ctx.builder.build_load(llt, pv, "").ok();
             }
         }
         self.base()._econv_to(val, target, ctx)
@@ -1105,7 +1168,7 @@ impl Type for Mut {
                     val.value(ctx),
                 ) {
                     val.address = Rc::new(Cell::new(Some(pv)));
-                    Some(ctx.builder.build_load(llt, pv, ""))
+                    ctx.builder.build_load(llt, pv, "").ok()
                 } else {
                     None
                 };

@@ -95,15 +95,14 @@ impl Type for Float {
                         if self.kind() == ty.kind() {
                             Some(v.into())
                         } else {
-                            Some(
-                                ctx.builder
-                                    .build_float_ext(
-                                        v,
-                                        ty.llvm_type(ctx).unwrap().into_float_type(),
-                                        "",
-                                    )
-                                    .into(),
-                            )
+                            ctx.builder
+                                .build_float_ext(
+                                    v,
+                                    ty.llvm_type(ctx).unwrap().into_float_type(),
+                                    "",
+                                )
+                                .ok()
+                                .map(From::from)
                         }
                     } else {
                         None
@@ -127,8 +126,14 @@ impl Type for Float {
                     let ft = ty.llvm_type(ctx).unwrap().into_float_type();
                     use std::cmp::Ordering;
                     match ty.kind().cmp(&self.kind()) {
-                        Ordering::Greater => Some(ctx.builder.build_float_ext(v, ft, "").into()),
-                        Ordering::Less => Some(ctx.builder.build_float_trunc(v, ft, "").into()),
+                        Ordering::Greater => {
+                            ctx.builder.build_float_ext(v, ft, "").ok().map(From::from)
+                        }
+                        Ordering::Less => ctx
+                            .builder
+                            .build_float_trunc(v, ft, "")
+                            .ok()
+                            .map(From::from),
                         Ordering::Equal => Some(v.into()),
                     }
                 } else {
@@ -142,9 +147,15 @@ impl Type for Float {
                 if let Some(BasicValueEnum::FloatValue(v)) = val.comp_val {
                     let it = ty.llvm_type(ctx).unwrap().into_int_type();
                     if ty.is_signed() {
-                        Some(ctx.builder.build_float_to_signed_int(v, it, "").into())
+                        ctx.builder
+                            .build_float_to_signed_int(v, it, "")
+                            .ok()
+                            .map(From::from)
                     } else {
-                        Some(ctx.builder.build_float_to_unsigned_int(v, it, "").into())
+                        ctx.builder
+                            .build_float_to_unsigned_int(v, it, "")
+                            .ok()
+                            .map(From::from)
                     }
                 } else {
                     None
@@ -172,7 +183,7 @@ impl Type for Float {
             "+" => Ok(val),
             "-" => Ok(Value {
                 comp_val: if let Some(BasicValueEnum::FloatValue(v)) = val.value(ctx) {
-                    Some(ctx.builder.build_float_neg(v, "").into())
+                    ctx.builder.build_float_neg(v, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -236,7 +247,8 @@ impl Type for Float {
                                     ctx.builder.build_signed_int_to_float(v, ft, "")
                                 } else {
                                     ctx.builder.build_unsigned_int_to_float(v, ft, "")
-                                },
+                                }
+                                .unwrap(),
                             )
                         } else {
                             None
@@ -246,7 +258,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                    ctx.builder.build_float_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -263,7 +275,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                    ctx.builder.build_float_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -280,7 +292,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                    ctx.builder.build_float_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -297,7 +309,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                    ctx.builder.build_float_div(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -314,7 +326,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -331,7 +346,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -348,7 +366,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -365,7 +386,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -382,7 +406,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OEQ, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -399,7 +426,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(ONE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -433,7 +463,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                    ctx.builder.build_float_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -450,7 +480,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                    ctx.builder.build_float_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -467,7 +497,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                    ctx.builder.build_float_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -484,7 +514,7 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                    ctx.builder.build_float_div(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -501,7 +531,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -518,7 +551,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -535,7 +571,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -552,7 +591,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -569,7 +611,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OEQ, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -586,7 +631,10 @@ impl Type for Float {
                                 if let (Some(BasicValueEnum::FloatValue(l)), Some(r)) =
                                     (lhs.value(ctx), v)
                                 {
-                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(ONE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -612,15 +660,14 @@ impl Type for Float {
                             Ordering::Less => {
                                 rhs.comp_val =
                                     if let Some(BasicValueEnum::FloatValue(v)) = rhs.comp_val {
-                                        Some(
-                                            ctx.builder
-                                                .build_float_cast(
-                                                    v,
-                                                    self.llvm_type(ctx).unwrap().into_float_type(),
-                                                    "",
-                                                )
-                                                .into(),
-                                        )
+                                        ctx.builder
+                                            .build_float_cast(
+                                                v,
+                                                self.llvm_type(ctx).unwrap().into_float_type(),
+                                                "",
+                                            )
+                                            .ok()
+                                            .map(From::from)
                                     } else {
                                         None
                                     };
@@ -628,15 +675,14 @@ impl Type for Float {
                             Ordering::Greater => {
                                 lhs.comp_val =
                                     if let Some(BasicValueEnum::FloatValue(v)) = lhs.comp_val {
-                                        Some(
-                                            ctx.builder
-                                                .build_float_cast(
-                                                    v,
-                                                    ty.llvm_type(ctx).unwrap().into_float_type(),
-                                                    "",
-                                                )
-                                                .into(),
-                                        )
+                                        ctx.builder
+                                            .build_float_cast(
+                                                v,
+                                                ty.llvm_type(ctx).unwrap().into_float_type(),
+                                                "",
+                                            )
+                                            .ok()
+                                            .map(From::from)
                                     } else {
                                         None
                                     };
@@ -650,7 +696,7 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                    ctx.builder.build_float_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -669,7 +715,7 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                    ctx.builder.build_float_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -688,7 +734,7 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                    ctx.builder.build_float_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -707,7 +753,7 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                    ctx.builder.build_float_div(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -726,7 +772,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -745,7 +794,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -764,7 +816,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -783,7 +838,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -802,7 +860,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OEQ, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -821,7 +882,10 @@ impl Type for Float {
                                     Some(BasicValueEnum::FloatValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(ONE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -865,13 +929,12 @@ impl Type for Float {
                     return {
                         let v = if let Some(BasicValueEnum::IntValue(v)) = lhs.value(ctx) {
                             let ft = self.llvm_type(ctx).unwrap().into_float_type();
-                            Some(
-                                if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
-                                    ctx.builder.build_signed_int_to_float(v, ft, "")
-                                } else {
-                                    ctx.builder.build_unsigned_int_to_float(v, ft, "")
-                                },
-                            )
+                            if rhs.data_type.downcast::<types::Int>().unwrap().is_signed() {
+                                ctx.builder.build_signed_int_to_float(v, ft, "")
+                            } else {
+                                ctx.builder.build_unsigned_int_to_float(v, ft, "")
+                            }
+                            .ok()
                         } else {
                             None
                         };
@@ -880,7 +943,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                    ctx.builder.build_float_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -897,7 +960,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                    ctx.builder.build_float_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -914,7 +977,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                    ctx.builder.build_float_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -931,7 +994,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                    ctx.builder.build_float_div(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -948,7 +1011,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OLT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -965,7 +1031,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OGT, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGT, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -982,7 +1051,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OLE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OLE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -999,7 +1071,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OGE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OGE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -1016,7 +1091,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(OEQ, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(OEQ, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -1033,7 +1111,10 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_compare(ONE, l, r, "").into())
+                                    ctx.builder
+                                        .build_float_compare(ONE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -1067,7 +1148,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_add(l, r, "").into())
+                                    ctx.builder.build_float_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -1084,7 +1165,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_sub(l, r, "").into())
+                                    ctx.builder.build_float_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -1101,7 +1182,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_mul(l, r, "").into())
+                                    ctx.builder.build_float_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -1118,7 +1199,7 @@ impl Type for Float {
                                 if let (Some(l), Some(BasicValueEnum::FloatValue(r))) =
                                     (v, lhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_float_div(l, r, "").into())
+                                    ctx.builder.build_float_div(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -1154,9 +1235,16 @@ impl Type for Float {
             "++" => Ok(Value::new(
                 if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
                     let ft = self.llvm_type(ctx).unwrap().into_float_type();
-                    let v1 = ctx.builder.build_load(ft, pv, "").into_float_value();
-                    let v2 = ctx.builder.build_float_add(v1, ft.const_float(1.0), "");
-                    ctx.builder.build_store(pv, v2);
+                    let v1 = ctx
+                        .builder
+                        .build_load(ft, pv, "")
+                        .unwrap()
+                        .into_float_value();
+                    let v2 = ctx
+                        .builder
+                        .build_float_add(v1, ft.const_float(1.0), "")
+                        .unwrap();
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1167,9 +1255,16 @@ impl Type for Float {
             "--" => Ok(Value::new(
                 if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
                     let ft = self.llvm_type(ctx).unwrap().into_float_type();
-                    let v1 = ctx.builder.build_load(ft, pv, "").into_float_value();
-                    let v2 = ctx.builder.build_float_sub(v1, ft.const_float(1.0), "");
-                    ctx.builder.build_store(pv, v2);
+                    let v1 = ctx
+                        .builder
+                        .build_load(ft, pv, "")
+                        .unwrap()
+                        .into_float_value();
+                    let v2 = ctx
+                        .builder
+                        .build_float_sub(v1, ft.const_float(1.0), "")
+                        .unwrap();
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1212,24 +1307,40 @@ impl Type for Float {
                         let rv = lty.const_float(*rv as _);
                         match op.0 {
                             "+=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_add(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_div(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
@@ -1259,27 +1370,44 @@ impl Type for Float {
                             ctx.builder.build_signed_int_to_float(rv, lty, "")
                         } else {
                             ctx.builder.build_unsigned_int_to_float(rv, lty, "")
-                        };
+                        }
+                        .unwrap();
                         match op.0 {
                             "+=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_add(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_div(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }
@@ -1304,27 +1432,43 @@ impl Type for Float {
                         Some(BasicValueEnum::FloatValue(rv)),
                     ) = (lhs.value(ctx), rhs.value(ctx))
                     {
-                        let rv = ctx.builder.build_float_cast(rv, lty, "");
+                        let rv = ctx.builder.build_float_cast(rv, lty, "").unwrap();
                         match op.0 {
                             "+=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_add(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_add(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "-=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_sub(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_sub(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "*=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_mul(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_mul(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             "/=" => {
-                                let v1 = ctx.builder.build_load(lty, lv, "").into_float_value();
-                                let v2 = ctx.builder.build_float_div(v1, rv, "");
-                                ctx.builder.build_store(lv, v2);
+                                let v1 = ctx
+                                    .builder
+                                    .build_load(lty, lv, "")
+                                    .unwrap()
+                                    .into_float_value();
+                                let v2 = ctx.builder.build_float_div(v1, rv, "").unwrap();
+                                ctx.builder.build_store(lv, v2).unwrap();
                             }
                             _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                         }

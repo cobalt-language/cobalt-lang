@@ -575,17 +575,16 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                             let mut val = match blocks[prev].reached.get_zero_extended_constant() {
                                 Some(0) => false_,
                                 Some(1) => c.into_int_value(),
-                                _ => ctx.builder.build_and(
-                                    blocks[prev].reached,
-                                    c.into_int_value(),
-                                    "",
-                                ),
+                                _ => ctx
+                                    .builder
+                                    .build_and(blocks[prev].reached, c.into_int_value(), "")
+                                    .unwrap(),
                             };
                             if !pos {
                                 val = match val.get_zero_extended_constant() {
                                     Some(0) => true_,
                                     Some(1) => false_,
-                                    _ => ctx.builder.build_not(val, ""),
+                                    _ => ctx.builder.build_not(val, "").unwrap(),
                                 };
                             }
                             val
@@ -972,7 +971,7 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                                     (Some(0), _) => block.reached,
                                     (_, Some(0)) => out,
                                     (Some(1), _) | (_, Some(1)) => true_,
-                                    _ => ctx.builder.build_or(out, block.reached, ""),
+                                    _ => ctx.builder.build_or(out, block.reached, "").unwrap(),
                                 }
                             }
                             Some(true) => {}
@@ -1029,11 +1028,13 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                         let db = ctx
                             .context
                             .append_basic_block(f, &format!("dtor.{}.{}", m.name.0, m.name.1));
-                        ctx.builder.build_conditional_branch(c, next_block, db);
+                        ctx.builder
+                            .build_conditional_branch(c, next_block, db)
+                            .unwrap();
                         next.erase_from_basic_block();
                         ctx.builder.position_at_end(db);
                         ctx.lookup(&m.name.0, false).unwrap().0.ins_dtor(ctx);
-                        ctx.builder.build_unconditional_branch(next_block);
+                        ctx.builder.build_unconditional_branch(next_block).unwrap();
                         ctx.builder.position_at_end(next_block);
                     }
                 }
@@ -1055,10 +1056,10 @@ impl<'a, 'src, 'ctx> Cfg<'a, 'src, 'ctx> {
                                 .context
                                 .append_basic_block(f, &format!("dtor.{n}.{scope}"));
                             let mb = ctx.context.append_basic_block(f, "merge");
-                            ctx.builder.build_conditional_branch(c, mb, db);
+                            ctx.builder.build_conditional_branch(c, mb, db).unwrap();
                             ctx.builder.position_at_end(db);
                             v.0.ins_dtor(ctx);
-                            ctx.builder.build_unconditional_branch(mb);
+                            ctx.builder.build_unconditional_branch(mb).unwrap();
                             ctx.builder.position_at_end(mb);
                         }
                     }

@@ -317,6 +317,7 @@ impl Type for InlineAsm {
             Ok(Value::new(
                 ctx.builder
                     .build_indirect_call(fty, asm, &comp_args, "")
+                    .unwrap()
                     .try_as_basic_value()
                     .left(),
                 None,
@@ -330,6 +331,7 @@ impl Type for InlineAsm {
             Ok(Value::new(
                 ctx.builder
                     .build_indirect_call(fty, asm, &comp_args, "")
+                    .unwrap()
                     .try_as_basic_value()
                     .left(),
                 None,

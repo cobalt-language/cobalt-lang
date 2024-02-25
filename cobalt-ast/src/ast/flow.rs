@@ -55,7 +55,7 @@ impl<'src> AST<'src> for IfAST<'src> {
                 let itb = ctx.context.append_basic_block(f, "if_true");
                 let ifb = ctx.context.append_basic_block(f, "if_false");
                 let mb = ctx.context.append_basic_block(f, "merge");
-                ctx.builder.build_conditional_branch(v, itb, ifb);
+                ctx.builder.build_conditional_branch(v, itb, ifb).unwrap();
                 ctx.builder.position_at_end(itb);
                 let if_true = self.if_true.codegen(ctx, errs);
                 ctx.builder.position_at_end(ifb);
@@ -66,17 +66,17 @@ impl<'src> AST<'src> for IfAST<'src> {
                         errs.push(e);
                         Value::error().with_loc(self.if_true.loc())
                     });
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(ifb);
                     let if_false = if_false.impl_convert((ty, None), ctx).unwrap_or_else(|e| {
                         errs.push(e);
                         Value::error().with_loc(self.if_false.loc())
                     });
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(mb);
                     Value::new(
                         if let Some(llt) = ty.llvm_type(ctx) {
-                            let phi = ctx.builder.build_phi(llt, "");
+                            let phi = ctx.builder.build_phi(llt, "").unwrap();
                             if let Some(v) = if_true.value(ctx) {
                                 phi.add_incoming(&[(&v, itb)]);
                             }
@@ -100,9 +100,9 @@ impl<'src> AST<'src> for IfAST<'src> {
                     )
                 } else {
                     ctx.builder.position_at_end(itb);
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(ifb);
-                    ctx.builder.build_unconditional_branch(mb);
+                    ctx.builder.build_unconditional_branch(mb).unwrap();
                     ctx.builder.position_at_end(mb);
                     Value::null()
                 }
@@ -159,7 +159,7 @@ impl<'src> AST<'src> for WhileAST<'src> {
             let cond = ctx.context.append_basic_block(f, "cond");
             let body = ctx.context.append_basic_block(f, "body");
             let exit = ctx.context.append_basic_block(f, "exit");
-            ctx.builder.build_unconditional_branch(cond);
+            ctx.builder.build_unconditional_branch(cond).unwrap();
             ctx.builder.position_at_end(cond);
             let c = self.cond.codegen(ctx, errs);
             let val = c
@@ -174,10 +174,11 @@ impl<'src> AST<'src> for WhileAST<'src> {
                 .value(ctx)
                 .unwrap_or(ctx.context.bool_type().const_int(0, false).into());
             ctx.builder
-                .build_conditional_branch(val.into_int_value(), body, exit);
+                .build_conditional_branch(val.into_int_value(), body, exit)
+                .unwrap();
             ctx.builder.position_at_end(body);
             self.body.codegen(ctx, errs);
-            ctx.builder.build_unconditional_branch(cond);
+            ctx.builder.build_unconditional_branch(cond).unwrap();
             ctx.builder.position_at_end(exit);
             Value::null()
         } else {

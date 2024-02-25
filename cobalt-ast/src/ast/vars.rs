@@ -641,8 +641,8 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         ctx.restore_scope(old_scope);
                         if let Some(v) = val.value(ctx) {
                             val.inter_val = None;
-                            ctx.builder.build_store(gv.as_pointer_value(), v);
-                            ctx.builder.build_return(None);
+                            ctx.builder.build_store(gv.as_pointer_value(), v).unwrap();
+                            ctx.builder.build_return(None).unwrap();
                             hoist_allocas(&ctx.builder);
                             if let Some(bb) = old_ip {
                                 ctx.builder.position_at_end(bb);
@@ -840,8 +840,9 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                 let a = val.addr(ctx).unwrap_or_else(|| {
                     let a = ctx
                         .builder
-                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| &**x));
-                    ctx.builder.build_store(a, v);
+                        .build_alloca(t, self.name.ids.last().map_or("", |(x, _)| &**x))
+                        .unwrap();
+                    ctx.builder.build_store(a, v).unwrap();
                     a
                 });
                 let mut val = Value::new(

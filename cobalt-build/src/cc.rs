@@ -248,9 +248,7 @@ impl CompileCommand {
                             }
                         }
                         if load {
-                            if let Some(path) = path.to_str() {
-                                inkwell::support::load_library_permanently(path);
-                            }
+                            inkwell::support::load_library_permanently(&path).unwrap();
                         }
                         self.libs.push(lib.as_ref().into());
                         None
@@ -297,9 +295,7 @@ impl CompileCommand {
                             }
                         }
                         if load {
-                            if let Some(path) = path.to_str() {
-                                inkwell::support::load_library_permanently(path);
-                            }
+                            inkwell::support::load_library_permanently(&path).unwrap();
                         }
                         self.libs.push(lib.as_ref().into());
                         None
@@ -354,9 +350,7 @@ impl CompileCommand {
                             }
                         }
                         if load {
-                            if let Some(path) = path.to_str() {
-                                inkwell::support::load_library_permanently(path);
-                            }
+                            inkwell::support::load_library_permanently(&path).unwrap();
                         }
                         self.libs.push(lib.as_ref().into());
                         None

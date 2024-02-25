@@ -66,7 +66,7 @@ impl Type for Int {
             "+" => Ok(val),
             "-" => Ok(Value {
                 comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
-                    Some(ctx.builder.build_int_neg(v, "").into())
+                    ctx.builder.build_int_neg(v, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -79,7 +79,7 @@ impl Type for Int {
             }),
             "~" => Ok(Value {
                 comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
-                    Some(ctx.builder.build_not(v, "").into())
+                    ctx.builder.build_not(v, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -92,11 +92,10 @@ impl Type for Int {
             }),
             "!" => Ok(Value::new(
                 if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
-                    Some(
-                        ctx.builder
-                            .build_int_compare(EQ, v, v.get_type().const_zero(), "")
-                            .into(),
-                    )
+                    ctx.builder
+                        .build_int_compare(EQ, v, v.get_type().const_zero(), "")
+                        .ok()
+                        .map(From::from)
                 } else {
                     None
                 },
@@ -137,9 +136,15 @@ impl Type for Int {
                     } else if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
                         let ty = target.0.llvm_type(ctx).unwrap().into_int_type();
                         if self.is_signed() {
-                            Some(ctx.builder.build_int_s_extend(v, ty, "").into())
+                            ctx.builder
+                                .build_int_s_extend(v, ty, "")
+                                .ok()
+                                .map(From::from)
                         } else {
-                            Some(ctx.builder.build_int_z_extend(v, ty, "").into())
+                            ctx.builder
+                                .build_int_z_extend(v, ty, "")
+                                .ok()
+                                .map(From::from)
                         }
                     } else {
                         None
@@ -164,9 +169,15 @@ impl Type for Int {
                 if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
                     let ty = target.0.llvm_type(ctx).unwrap().into_float_type();
                     if self.is_signed() {
-                        Some(ctx.builder.build_signed_int_to_float(v, ty, "").into())
+                        ctx.builder
+                            .build_signed_int_to_float(v, ty, "")
+                            .ok()
+                            .map(From::from)
                     } else {
-                        Some(ctx.builder.build_unsigned_int_to_float(v, ty, "").into())
+                        ctx.builder
+                            .build_unsigned_int_to_float(v, ty, "")
+                            .ok()
+                            .map(From::from)
                     }
                 } else {
                     None
@@ -196,12 +207,22 @@ impl Type for Int {
                     match ty.bits().cmp(&self.bits()) {
                         Ordering::Greater => {
                             if self.is_signed() {
-                                Some(ctx.builder.build_int_s_extend(v, it, "").into())
+                                ctx.builder
+                                    .build_int_s_extend(v, it, "")
+                                    .ok()
+                                    .map(From::from)
                             } else {
-                                Some(ctx.builder.build_int_z_extend(v, it, "").into())
+                                ctx.builder
+                                    .build_int_z_extend(v, it, "")
+                                    .ok()
+                                    .map(From::from)
                             }
                         }
-                        Ordering::Less => Some(ctx.builder.build_int_truncate(v, it, "").into()),
+                        Ordering::Less => ctx
+                            .builder
+                            .build_int_truncate(v, it, "")
+                            .ok()
+                            .map(From::from),
                         Ordering::Equal => Some(v.into()),
                     }
                 } else {
@@ -218,7 +239,7 @@ impl Type for Int {
             Ok(Value::new(
                 if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
                     let ty = target.0.llvm_type(ctx).unwrap().into_pointer_type();
-                    Some(ctx.builder.build_int_to_ptr(v, ty, "").into())
+                    ctx.builder.build_int_to_ptr(v, ty, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -284,10 +305,8 @@ impl Type for Int {
                         let ty = rhs.data_type.downcast::<types::Int>().unwrap();
                         let res = match self.bits().cmp(&ty.bits()) {
                             Ordering::Less => {
-                                lhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) =
-                                    lhs.comp_val
-                                {
-                                    Some(
+                                lhs.comp_val =
+                                    if let Some(BasicValueEnum::IntValue(v)) = lhs.comp_val {
                                         if self.is_signed() {
                                             ctx.builder.build_int_s_extend(
                                                 v,
@@ -301,29 +320,27 @@ impl Type for Int {
                                                 "",
                                             )
                                         }
-                                        .into(),
-                                    )
-                                } else {
-                                    None
-                                };
+                                        .ok()
+                                        .map(From::from)
+                                    } else {
+                                        None
+                                    };
                                 ty
                             }
                             Ordering::Greater => {
-                                rhs.comp_val = if let Some(BasicValueEnum::IntValue(v)) =
-                                    rhs.comp_val
-                                {
-                                    Some(
+                                rhs.comp_val =
+                                    if let Some(BasicValueEnum::IntValue(v)) = rhs.comp_val {
                                         ctx.builder
                                             .build_int_z_extend(
                                                 v,
                                                 ctx.context.custom_width_int_type(self.bits() as _),
                                                 "",
                                             )
-                                            .into(),
-                                    )
-                                } else {
-                                    None
-                                };
+                                            .ok()
+                                            .map(From::from)
+                                    } else {
+                                        None
+                                    };
                                 self
                             }
                             Ordering::Equal => {
@@ -337,7 +354,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_int_add(l, r, "").into())
+                                    ctx.builder.build_int_add(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -356,7 +373,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_int_sub(l, r, "").into())
+                                    ctx.builder.build_int_sub(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -375,7 +392,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_int_mul(l, r, "").into())
+                                    ctx.builder.build_int_mul(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -394,14 +411,13 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        if self.is_signed() || ty.is_signed() {
-                                            ctx.builder.build_int_signed_div(l, r, "")
-                                        } else {
-                                            ctx.builder.build_int_unsigned_div(l, r, "")
-                                        }
-                                        .into(),
-                                    )
+                                    if self.is_signed() || ty.is_signed() {
+                                        ctx.builder.build_int_signed_div(l, r, "")
+                                    } else {
+                                        ctx.builder.build_int_unsigned_div(l, r, "")
+                                    }
+                                    .ok()
+                                    .map(From::from)
                                 } else {
                                     None
                                 },
@@ -420,14 +436,13 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        if self.is_signed() || ty.is_signed() {
-                                            ctx.builder.build_int_signed_div(l, r, "")
-                                        } else {
-                                            ctx.builder.build_int_unsigned_div(l, r, "")
-                                        }
-                                        .into(),
-                                    )
+                                    if self.is_signed() || ty.is_signed() {
+                                        ctx.builder.build_int_signed_div(l, r, "")
+                                    } else {
+                                        ctx.builder.build_int_unsigned_div(l, r, "")
+                                    }
+                                    .ok()
+                                    .map(From::from)
                                 } else {
                                     None
                                 },
@@ -446,7 +461,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_and(l, r, "").into())
+                                    ctx.builder.build_and(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -465,7 +480,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_or(l, r, "").into())
+                                    ctx.builder.build_or(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -484,7 +499,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_xor(l, r, "").into())
+                                    ctx.builder.build_xor(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -503,7 +518,7 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_left_shift(l, r, "").into())
+                                    ctx.builder.build_left_shift(l, r, "").ok().map(From::from)
                                 } else {
                                     None
                                 },
@@ -522,11 +537,10 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        ctx.builder
-                                            .build_right_shift(l, r, res.is_signed(), "")
-                                            .into(),
-                                    )
+                                    ctx.builder
+                                        .build_right_shift(l, r, res.is_signed(), "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -545,16 +559,15 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        ctx.builder
-                                            .build_int_compare(
-                                                if res.is_signed() { SLT } else { ULT },
-                                                l,
-                                                r,
-                                                "",
-                                            )
-                                            .into(),
-                                    )
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if res.is_signed() { SLT } else { ULT },
+                                            l,
+                                            r,
+                                            "",
+                                        )
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -573,16 +586,15 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        ctx.builder
-                                            .build_int_compare(
-                                                if res.is_signed() { SGT } else { UGT },
-                                                l,
-                                                r,
-                                                "",
-                                            )
-                                            .into(),
-                                    )
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if res.is_signed() { SGT } else { UGT },
+                                            l,
+                                            r,
+                                            "",
+                                        )
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -601,16 +613,15 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        ctx.builder
-                                            .build_int_compare(
-                                                if res.is_signed() { SLE } else { ULE },
-                                                l,
-                                                r,
-                                                "",
-                                            )
-                                            .into(),
-                                    )
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if res.is_signed() { SLE } else { ULE },
+                                            l,
+                                            r,
+                                            "",
+                                        )
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -629,16 +640,15 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(
-                                        ctx.builder
-                                            .build_int_compare(
-                                                if res.is_signed() { SGE } else { UGE },
-                                                l,
-                                                r,
-                                                "",
-                                            )
-                                            .into(),
-                                    )
+                                    ctx.builder
+                                        .build_int_compare(
+                                            if res.is_signed() { SGE } else { UGE },
+                                            l,
+                                            r,
+                                            "",
+                                        )
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -657,7 +667,10 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_int_compare(EQ, l, r, "").into())
+                                    ctx.builder
+                                        .build_int_compare(EQ, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -676,7 +689,10 @@ impl Type for Int {
                                     Some(BasicValueEnum::IntValue(r)),
                                 ) = (lhs.value(ctx), rhs.value(ctx))
                                 {
-                                    Some(ctx.builder.build_int_compare(NE, l, r, "").into())
+                                    ctx.builder
+                                        .build_int_compare(NE, l, r, "")
+                                        .ok()
+                                        .map(From::from)
                                 } else {
                                     None
                                 },
@@ -699,17 +715,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_add(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_add(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -726,17 +741,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_sub(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_sub(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -753,17 +767,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_mul(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_mul(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -784,14 +797,13 @@ impl Type for Int {
                                     .context
                                     .custom_width_int_type(self.bits() as _)
                                     .const_int(*r as _, self.is_signed());
-                                Some(
-                                    if self.is_signed() {
-                                        ctx.builder.build_int_signed_div(l, r, "")
-                                    } else {
-                                        ctx.builder.build_int_unsigned_div(l, r, "")
-                                    }
-                                    .into(),
-                                )
+                                if self.is_signed() {
+                                    ctx.builder.build_int_signed_div(l, r, "")
+                                } else {
+                                    ctx.builder.build_int_unsigned_div(l, r, "")
+                                }
+                                .ok()
+                                .map(From::from)
                             } else {
                                 None
                             },
@@ -812,14 +824,13 @@ impl Type for Int {
                                     .context
                                     .custom_width_int_type(self.bits() as _)
                                     .const_int(*r as _, self.is_signed());
-                                Some(
-                                    if self.is_signed() {
-                                        ctx.builder.build_int_signed_rem(l, r, "")
-                                    } else {
-                                        ctx.builder.build_int_unsigned_rem(l, r, "")
-                                    }
-                                    .into(),
-                                )
+                                if self.is_signed() {
+                                    ctx.builder.build_int_signed_rem(l, r, "")
+                                } else {
+                                    ctx.builder.build_int_unsigned_rem(l, r, "")
+                                }
+                                .ok()
+                                .map(From::from)
                             } else {
                                 None
                             },
@@ -836,17 +847,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_and(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_and(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -863,17 +873,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_or(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_or(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -890,17 +899,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_xor(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_xor(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -917,17 +925,16 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_left_shift(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_left_shift(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -944,18 +951,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_right_shift(
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            self.is_signed(),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_right_shift(
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        self.is_signed(),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -972,18 +978,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            if self.is_signed() { SLT } else { ULT },
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        if self.is_signed() { SLT } else { ULT },
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1000,18 +1005,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            if self.is_signed() { SGT } else { UGT },
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        if self.is_signed() { SGT } else { UGT },
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1028,18 +1032,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            if self.is_signed() { SLE } else { ULE },
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        if self.is_signed() { SLE } else { ULE },
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1056,18 +1059,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            if self.is_signed() { SGE } else { UGE },
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        if self.is_signed() { SGE } else { UGE },
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1084,18 +1086,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            EQ,
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        EQ,
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1112,18 +1113,17 @@ impl Type for Int {
                             if let (Some(BasicValueEnum::IntValue(l)), Some(InterData::Int(r))) =
                                 (lhs.value(ctx), &rhs.inter_val)
                             {
-                                Some(
-                                    ctx.builder
-                                        .build_int_compare(
-                                            NE,
-                                            l,
-                                            ctx.context
-                                                .custom_width_int_type(self.bits() as _)
-                                                .const_int(*r as _, self.is_signed()),
-                                            "",
-                                        )
-                                        .into(),
-                                )
+                                ctx.builder
+                                    .build_int_compare(
+                                        NE,
+                                        l,
+                                        ctx.context
+                                            .custom_width_int_type(self.bits() as _)
+                                            .const_int(*r as _, self.is_signed()),
+                                        "",
+                                    )
+                                    .ok()
+                                    .map(From::from)
                             } else {
                                 None
                             },
@@ -1158,17 +1158,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_add(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_add(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1185,17 +1184,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_sub(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_sub(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1212,17 +1210,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_mul(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_mul(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1243,14 +1240,13 @@ impl Type for Int {
                             .context
                             .custom_width_int_type(self.bits() as _)
                             .const_int(*l as _, self.is_signed());
-                        Some(
-                            if self.is_signed() {
-                                ctx.builder.build_int_signed_div(l, r, "")
-                            } else {
-                                ctx.builder.build_int_unsigned_div(l, r, "")
-                            }
-                            .into(),
-                        )
+                        if self.is_signed() {
+                            ctx.builder.build_int_signed_div(l, r, "")
+                        } else {
+                            ctx.builder.build_int_unsigned_div(l, r, "")
+                        }
+                        .ok()
+                        .map(From::from)
                     } else {
                         None
                     },
@@ -1271,14 +1267,13 @@ impl Type for Int {
                             .context
                             .custom_width_int_type(self.bits() as _)
                             .const_int(*l as _, self.is_signed());
-                        Some(
-                            if self.is_signed() {
-                                ctx.builder.build_int_signed_rem(l, r, "")
-                            } else {
-                                ctx.builder.build_int_unsigned_rem(l, r, "")
-                            }
-                            .into(),
-                        )
+                        if self.is_signed() {
+                            ctx.builder.build_int_signed_rem(l, r, "")
+                        } else {
+                            ctx.builder.build_int_unsigned_rem(l, r, "")
+                        }
+                        .ok()
+                        .map(From::from)
                     } else {
                         None
                     },
@@ -1295,17 +1290,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_and(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_and(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1322,17 +1316,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_or(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_or(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1349,17 +1342,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_xor(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_xor(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1376,17 +1368,16 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_left_shift(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_left_shift(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1403,18 +1394,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_right_shift(
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    self.is_signed(),
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_right_shift(
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                self.is_signed(),
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1431,18 +1421,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SLT } else { ULT },
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                if self.is_signed() { SLT } else { ULT },
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1459,18 +1448,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SGT } else { UGT },
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                if self.is_signed() { SGT } else { UGT },
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1487,18 +1475,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SLE } else { ULE },
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                if self.is_signed() { SLE } else { ULE },
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1515,18 +1502,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    if self.is_signed() { SGE } else { UGE },
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                if self.is_signed() { SGE } else { UGE },
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1543,18 +1529,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    EQ,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                EQ,
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1571,18 +1556,17 @@ impl Type for Int {
                     if let (Some(InterData::Int(l)), Some(BasicValueEnum::IntValue(r))) =
                         (&lhs.inter_val, rhs.value(ctx))
                     {
-                        Some(
-                            ctx.builder
-                                .build_int_compare(
-                                    NE,
-                                    ctx.context
-                                        .custom_width_int_type(self.bits() as _)
-                                        .const_int(*l as _, self.is_signed()),
-                                    r,
-                                    "",
-                                )
-                                .into(),
-                        )
+                        ctx.builder
+                            .build_int_compare(
+                                NE,
+                                ctx.context
+                                    .custom_width_int_type(self.bits() as _)
+                                    .const_int(*l as _, self.is_signed()),
+                                r,
+                                "",
+                            )
+                            .ok()
+                            .map(From::from)
                     } else {
                         None
                     },
@@ -1616,9 +1600,12 @@ impl Type for Int {
             "++" => Ok(Value::new(
                 if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
                     let it = self.llvm_type(ctx).unwrap().into_int_type();
-                    let v1 = ctx.builder.build_load(it, pv, "").into_int_value();
-                    let v2 = ctx.builder.build_int_add(v1, it.const_int(1, false), "");
-                    ctx.builder.build_store(pv, v2);
+                    let v1 = ctx.builder.build_load(it, pv, "").unwrap().into_int_value();
+                    let v2 = ctx
+                        .builder
+                        .build_int_add(v1, it.const_int(1, false), "")
+                        .unwrap();
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1629,9 +1616,12 @@ impl Type for Int {
             "--" => Ok(Value::new(
                 if let Some(BasicValueEnum::PointerValue(pv)) = val.comp_val {
                     let it = self.llvm_type(ctx).unwrap().into_int_type();
-                    let v1 = ctx.builder.build_load(it, pv, "").into_int_value();
-                    let v2 = ctx.builder.build_int_sub(v1, it.const_int(1, false), "");
-                    ctx.builder.build_store(pv, v2);
+                    let v1 = ctx.builder.build_load(it, pv, "").unwrap().into_int_value();
+                    let v2 = ctx
+                        .builder
+                        .build_int_sub(v1, it.const_int(1, false), "")
+                        .unwrap();
+                    ctx.builder.build_store(pv, v2).unwrap();
                     val.comp_val
                 } else {
                     None
@@ -1671,62 +1661,107 @@ impl Type for Int {
                     let rv = lty.const_int(*v as _, self.is_signed());
                     match op.0 {
                         "+=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_add(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_add(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "-=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_sub(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_sub(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "*=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_mul(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_mul(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "/=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
                             let v2 = if self.is_signed() {
                                 ctx.builder.build_int_signed_div(v1, rv, "")
                             } else {
                                 ctx.builder.build_int_unsigned_div(v1, rv, "")
-                            };
-                            ctx.builder.build_store(lv, v2);
+                            }
+                            .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "%=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
                             let v2 = if self.is_signed() {
                                 ctx.builder.build_int_signed_rem(v1, rv, "")
                             } else {
                                 ctx.builder.build_int_unsigned_rem(v1, rv, "")
-                            };
-                            ctx.builder.build_store(lv, v2);
+                            }
+                            .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "&=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_and(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_and(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "|=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_or(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_or(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "^=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_xor(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_xor(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "<<=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_left_shift(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_left_shift(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         ">>=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_right_shift(v1, rv, self.is_signed(), "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx
+                                .builder
+                                .build_right_shift(v1, rv, self.is_signed(), "")
+                                .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
@@ -1766,67 +1801,113 @@ impl Type for Int {
                             } else {
                                 ctx.builder.build_int_z_extend(rv, lty, "")
                             }
+                            .unwrap()
                         }
                         Ordering::Equal => {}
                     }
                     match op.0 {
                         "+=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_add(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_add(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "-=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_sub(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_sub(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "*=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_int_mul(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_int_mul(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "/=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
                             let v2 = if self.is_signed() {
                                 ctx.builder.build_int_signed_div(v1, rv, "")
                             } else {
                                 ctx.builder.build_int_unsigned_div(v1, rv, "")
-                            };
-                            ctx.builder.build_store(lv, v2);
+                            }
+                            .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "%=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
                             let v2 = if self.is_signed() {
                                 ctx.builder.build_int_signed_rem(v1, rv, "")
                             } else {
                                 ctx.builder.build_int_unsigned_rem(v1, rv, "")
-                            };
-                            ctx.builder.build_store(lv, v2);
+                            }
+                            .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "&=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_and(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_and(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "|=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_or(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_or(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "^=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_xor(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_xor(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         "<<=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_left_shift(v1, rv, "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx.builder.build_left_shift(v1, rv, "").unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         ">>=" => {
-                            let v1 = ctx.builder.build_load(lty, lv, "").into_int_value();
-                            let v2 = ctx.builder.build_right_shift(v1, rv, self.is_signed(), "");
-                            ctx.builder.build_store(lv, v2);
+                            let v1 = ctx
+                                .builder
+                                .build_load(lty, lv, "")
+                                .unwrap()
+                                .into_int_value();
+                            let v2 = ctx
+                                .builder
+                                .build_right_shift(v1, rv, self.is_signed(), "")
+                                .unwrap();
+                            ctx.builder.build_store(lv, v2).unwrap();
                         }
                         _ => return Err(invalid_binop(&lhs, &rhs, op.0, op.1)),
                     }
@@ -1895,7 +1976,7 @@ impl Type for IntLiteral {
             "+" => Ok(val),
             "-" => Ok(Value {
                 comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.comp_val {
-                    Some(ctx.builder.build_int_neg(v, "").into())
+                    ctx.builder.build_int_neg(v, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -1908,7 +1989,7 @@ impl Type for IntLiteral {
             }),
             "~" => Ok(Value {
                 comp_val: if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
-                    Some(ctx.builder.build_not(v, "").into())
+                    ctx.builder.build_not(v, "").ok().map(From::from)
                 } else {
                     None
                 },
@@ -1921,11 +2002,10 @@ impl Type for IntLiteral {
             }),
             "!" => Ok(Value::new(
                 if let Some(BasicValueEnum::IntValue(v)) = val.value(ctx) {
-                    Some(
-                        ctx.builder
-                            .build_int_compare(EQ, v, v.get_type().const_zero(), "")
-                            .into(),
-                    )
+                    ctx.builder
+                        .build_int_compare(EQ, v, v.get_type().const_zero(), "")
+                        .ok()
+                        .map(From::from)
                 } else {
                     None
                 },
