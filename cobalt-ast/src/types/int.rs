@@ -1,5 +1,6 @@
 use super::*;
 use inkwell::IntPredicate::*;
+
 #[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
@@ -1944,6 +1945,7 @@ impl Type for Int {
         }
     }
 }
+
 #[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
@@ -2281,4 +2283,5 @@ impl Type for IntLiteral {
         }
     }
 }
+
 submit_types!(Int, IntLiteral);

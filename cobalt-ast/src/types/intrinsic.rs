@@ -1,5 +1,7 @@
 use super::*;
+
 static INTRINSIC_INTERN: Interner<Box<str>> = Interner::new();
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "@{_0}")]
@@ -238,7 +240,9 @@ impl Type for Intrinsic {
             })
     }
 }
+
 static ASM_INTERN: Interner<TypeRef> = Interner::new();
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 #[display(fmt = "@asm({_0})")]
@@ -343,4 +347,5 @@ impl Type for InlineAsm {
         }
     }
 }
+
 submit_types!(Intrinsic, InlineAsm);

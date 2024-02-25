@@ -1,25 +1,33 @@
 use super::*;
 use std::collections::BTreeMap;
 
-fn tuple_size(types: &[TypeRef]) -> SizeType {
+pub(super) fn tuple_size(types: &[TypeRef]) -> SizeType {
     let mut out = 0;
     let mut overall_align = 1;
-    for ty in types {
-        let size = ty.size();
-        if let SizeType::Static(size) = size {
-            let align = ty.align() as u32;
-            out += align - 1;
-            out /= align;
-            out += size;
-            if align > overall_align {
-                overall_align = align
+    for (n, ty) in types.iter().enumerate() {
+        match ty.size() {
+            SizeType::Static(size) => {
+                let align = ty.align() as u32;
+                out += align - 1;
+                out /= align;
+                out += size;
+                if align > overall_align {
+                    overall_align = align
+                }
             }
-        } else {
-            return size;
+            SizeType::Dynamic => {
+                return if types[n..].iter().any(|i| i.size() == SizeType::Meta) {
+                    SizeType::Meta
+                } else {
+                    SizeType::Dynamic
+                }
+            }
+            SizeType::Meta => return SizeType::Meta,
         }
     }
     out += overall_align - 1;
     out /= overall_align;
+    out *= overall_align;
     SizeType::Static(out)
 }
 
@@ -57,7 +65,13 @@ impl TypeSerde for Tuple {
 }
 impl Type for Tuple {
     fn align(&self) -> u16 {
-        self.0.iter().map(|v| v.align()).max().unwrap_or(1)
+        self.0.iter().map(|v| v.align()).fold(1, |old, new| {
+            if old == 0 || new == 0 {
+                0
+            } else {
+                std::cmp::max(old, new)
+            }
+        })
     }
     fn size(&self) -> SizeType {
         tuple_size(&self.0)

@@ -48,6 +48,7 @@ pub static FUNCTION_INTRINSICS: Lazy<flurry::HashMap<&'static str, FunctionIntri
             .collect()
     });
 
+pub mod enums;
 pub mod misc;
 pub mod types;
 pub mod version;

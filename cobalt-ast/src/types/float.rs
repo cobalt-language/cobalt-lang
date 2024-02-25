@@ -1,5 +1,6 @@
 use super::*;
 use inkwell::FloatPredicate::*;
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Serialize, Deserialize,
 )]
@@ -13,10 +14,12 @@ pub enum FPType {
     #[display(fmt = "f128")]
     F128,
 }
+
 static F16: Float = Float(FPType::F16);
 static F32: Float = Float(FPType::F32);
 static F64: Float = Float(FPType::F64);
 static F128: Float = Float(FPType::F128);
+
 #[derive(Debug, ConstIdentify, Display)]
 pub struct Float(FPType);
 impl Float {
@@ -1489,4 +1492,5 @@ impl Type for Float {
         }
     }
 }
+
 submit_types!(Float);
