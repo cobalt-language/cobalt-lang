@@ -91,7 +91,10 @@ pub fn union_type<'ctx>(
             )
             .into()
     };
-    if let Some(llt) = tag.and_then(|tag| tag.llvm_type(ctx)) {
+    if let Some(llt) = tag
+        .and_then(|tag| tag.size().is_c().then(|| tag.llvm_type(ctx)))
+        .flatten()
+    {
         Some(ctx.context.struct_type(&[llt, body], false).into())
     } else {
         Some(body)
@@ -126,8 +129,14 @@ impl EnumOrUnion {
         self.0 .1
     }
 
-    pub fn tag_type(&self) -> &'static types::Int {
-        types::Int::unsigned((usize::BITS - self.variants().len().leading_zeros() as u32) as u16)
+    pub fn tag_type(&self) -> TypeRef {
+        if self.variants().is_empty() {
+            types::Null::new() // TODO: switch this to a never type
+        } else {
+            types::Int::unsigned(
+                (usize::BITS - self.variants().len().leading_zeros() as u32 - 1) as u16,
+            )
+        }
     }
 }
 impl Display for EnumOrUnion {
@@ -155,23 +164,27 @@ impl TypeSerde for EnumOrUnion {
 impl Type for EnumOrUnion {
     fn size(&'static self) -> SizeType {
         let tag = self.tag_type();
-        if self.variants().is_empty() {
-            tag.size()
-        } else {
-            let align = union_align(Some(tag), self.variants()) as u32;
-            let (mut raw_size, mut tag_size) =
-                match (union_size(self.variants(), align as _), tag.size()) {
-                    (SizeType::Static(l), SizeType::Static(r)) => (l, r),
-                    (SizeType::Meta, _) | (_, SizeType::Meta) => return SizeType::Meta,
-                    (SizeType::Dynamic, _) | (_, SizeType::Dynamic) => return SizeType::Dynamic,
-                };
-            raw_size *= align;
-            raw_size += align - 1;
-            raw_size /= align;
-            tag_size *= align;
-            tag_size += align - 1;
-            tag_size -= align;
-            SizeType::Static(raw_size + tag_size)
+        match self.variants() {
+            [] => SizeType::Meta,
+            [v] => v.size(),
+            _ => {
+                let align = union_align(Some(tag), self.variants()) as u32;
+                let (mut raw_size, mut tag_size) =
+                    match (union_size(self.variants(), align as _), tag.size()) {
+                        (SizeType::Static(l), SizeType::Static(r)) => (l, r),
+                        (SizeType::Meta, _) | (_, SizeType::Meta) => return SizeType::Meta,
+                        (SizeType::Dynamic, _) | (_, SizeType::Dynamic) => {
+                            return SizeType::Dynamic
+                        }
+                    };
+                raw_size *= align;
+                raw_size += align - 1;
+                raw_size /= align;
+                tag_size *= align;
+                tag_size += align - 1;
+                tag_size -= align;
+                SizeType::Static(raw_size + tag_size)
+            }
         }
     }
     fn align(&'static self) -> u16 {
@@ -179,6 +192,103 @@ impl Type for EnumOrUnion {
     }
     fn llvm_type<'ctx>(&'static self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         union_type(Some(self.tag_type()), self.variants(), ctx)
+    }
+    fn has_dtor(&self, ctx: &CompCtx) -> bool {
+        self.variants().iter().any(|v| v.has_dtor(ctx))
+    }
+    fn ins_dtor<'src, 'ctx>(&'static self, val: &Value<'src, 'ctx>, ctx: &CompCtx<'src, 'ctx>) {
+        if ctx.is_const.get() {
+            return;
+        }
+        let mut dtors_iter = self
+            .variants()
+            .iter()
+            .enumerate()
+            .filter(|v| v.1.has_dtor(ctx));
+        let Some((fi, &ft)) = dtors_iter.by_ref().next() else {
+            return;
+        };
+        if self.variants().len() == 1 {
+            ft.ins_dtor(val, ctx);
+            return;
+        }
+        let llt = self.llvm_type(ctx).unwrap();
+        let Some(eptr) = val.addr(ctx) else { return };
+        let ptr = ctx
+            .builder
+            .build_struct_gep(llt, eptr, 1, "enum.body")
+            .unwrap();
+        if let Some(InterData::Array(arr)) = &val.inter_val {
+            if let [InterData::Int(dsc), iv] = &arr[..] {
+                let ty = self.variants()[*dsc as usize];
+                let Some(llt) = ty.llvm_type(ctx) else { return };
+                let val = ctx.builder.build_load(llt, ptr, "").unwrap();
+                Value::with_addr(Some(val), Some(iv.clone()), ty, ptr).ins_dtor(ctx);
+                return;
+            }
+        }
+        let Some(start) = ctx.builder.get_insert_block() else {
+            return;
+        };
+        let Some(f) = start.get_parent() else {
+            return;
+        };
+        let dsc = ctx
+            .builder
+            .build_extract_value(val.value(ctx).unwrap().into_struct_value(), 0, "enum.disc")
+            .unwrap()
+            .into_int_value();
+        let it = dsc.get_type();
+        if dtors_iter.next().is_none() {
+            let then = ctx.context.append_basic_block(f, "enum.single.dtor");
+            let merge = ctx.context.append_basic_block(f, "enum.dtor.merge");
+            let check = ctx
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    dsc,
+                    it.const_int(fi as _, false),
+                    "",
+                )
+                .unwrap();
+            ctx.builder
+                .build_conditional_branch(check, then, merge)
+                .unwrap();
+            ctx.builder.position_at_end(then);
+            let val = ctx
+                .builder
+                .build_load(ft.llvm_type(ctx).unwrap(), ptr, "")
+                .unwrap();
+            Value::with_addr(Some(val), None, ft, ptr).ins_dtor(ctx);
+            ctx.builder.build_unconditional_branch(merge).unwrap();
+            ctx.builder.position_at_end(merge);
+            return;
+        }
+        let merge = ctx.context.append_basic_block(f, "enum.dtor.merge");
+        let cases = self
+            .variants()
+            .iter()
+            .enumerate()
+            .filter_map(|(n, &t)| {
+                t.has_dtor(ctx)
+                    .then(|| t.llvm_type(ctx))
+                    .flatten()
+                    .map(|llt| (n, t, llt))
+            })
+            .map(|(n, t, llt)| {
+                let blk = ctx
+                    .context
+                    .prepend_basic_block(merge, &format!("enum.dtor.{n}"));
+                ctx.builder.position_at_end(blk);
+                let val = ctx.builder.build_load(llt, ptr, "").unwrap();
+                Value::with_addr(Some(val), None, t, ptr).ins_dtor(ctx);
+                ctx.builder.build_unconditional_branch(merge).unwrap();
+                (it.const_int(n as _, false), blk)
+            })
+            .collect::<Vec<_>>();
+        ctx.builder.position_at_end(start);
+        ctx.builder.build_switch(dsc, merge, &cases).unwrap();
+        ctx.builder.position_at_end(merge);
     }
 }
 

@@ -22,7 +22,7 @@ impl Int {
         Self::new(ctx.flags.word_size, false)
     }
     pub fn usize(ctx: &CompCtx) -> &'static Self {
-        Self::new(ctx.flags.word_size, false)
+        Self::new(ctx.flags.word_size, true)
     }
     pub fn bool() -> &'static Self {
         Self::new(1, true)

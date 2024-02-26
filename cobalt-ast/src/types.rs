@@ -37,6 +37,9 @@ impl SizeType {
             self
         }
     }
+    pub fn is_c(self) -> bool {
+        !matches!(self, Static(0) | Dynamic | Meta)
+    }
 }
 impl Display for SizeType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
