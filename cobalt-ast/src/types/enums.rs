@@ -108,15 +108,15 @@ impl EnumOrUnion {
     #[ref_cast_custom]
     fn from_ref(variants: &(Box<[TypeRef]>, bool)) -> &Self;
 
-    pub fn sort_types(lhs: &TypeRef, rhs: &TypeRef) -> Ordering {
-        todo!()
-    }
-
     pub fn new<V: Into<Box<[TypeRef]>>>(variants: V, sorted: bool) -> &'static Self {
         static INTERN: Interner<(Box<[TypeRef]>, bool)> = Interner::new();
         let mut vars = variants.into();
         if sorted {
-            vars.sort_by(Self::sort_types);
+            let mut names = vars.iter().map(|t| (t.to_string(), t)).collect::<Vec>();
+            names.sort_by_key(|t| &t.0);
+            // clear then extend avoids a re-allocation
+            vars.clear();
+            vars.extend(names.into_iter().map(|t| t.1));
         }
         Self::from_ref(INTERN.intern((vars, sorted)))
     }
