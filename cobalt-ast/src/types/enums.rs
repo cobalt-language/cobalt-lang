@@ -128,9 +128,7 @@ impl EnumOrUnion {
         if self.variants().is_empty() {
             types::Null::new() // TODO: switch this to a never type
         } else {
-            types::Int::unsigned(
-                (usize::BITS - self.variants().len().leading_zeros() - 1) as u16,
-            )
+            types::Int::unsigned((usize::BITS - self.variants().len().leading_zeros() - 1) as u16)
         }
     }
 }
