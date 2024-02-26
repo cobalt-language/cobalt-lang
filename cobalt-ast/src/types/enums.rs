@@ -1,5 +1,4 @@
 use super::*;
-use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
 
 #[inline(always)]
@@ -112,11 +111,7 @@ impl EnumOrUnion {
         static INTERN: Interner<(Box<[TypeRef]>, bool)> = Interner::new();
         let mut vars = variants.into();
         if sorted {
-            let mut names = vars.iter().map(|t| (t.to_string(), t)).collect::<Vec>();
-            names.sort_by_key(|t| &t.0);
-            // clear then extend avoids a re-allocation
-            vars.clear();
-            vars.extend(names.into_iter().map(|t| t.1));
+            vars.sort_by_cached_key(ToString::to_string);
         }
         Self::from_ref(INTERN.intern((vars, sorted)))
     }
