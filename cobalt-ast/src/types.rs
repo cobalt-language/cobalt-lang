@@ -673,6 +673,14 @@ pub trait Type:
             self.as_type_ref()
         })
     }
+
+    fn add_ptr(&'static self, is_mut: bool) -> TypeRef {
+        types::Pointer::new(if is_mut {
+            types::Mut::new(self.as_type_ref())
+        } else {
+            self.as_type_ref()
+        })
+    }
 }
 impl dyn Type {
     pub fn is<T: ConcreteType>(&self) -> bool {

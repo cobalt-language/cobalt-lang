@@ -125,10 +125,9 @@ impl EnumOrUnion {
     }
 
     pub fn tag_type(&self) -> TypeRef {
-        if self.variants().is_empty() {
-            types::Null::new() // TODO: switch this to a never type
-        } else {
-            types::Int::unsigned((usize::BITS - self.variants().len().leading_zeros() - 1) as u16)
+        match self.variants().len() {
+            0 | 1 => types::Null::new(),
+            c => types::Int::unsigned((usize::BITS - c.leading_zeros() - 1) as _),
         }
     }
 }
@@ -282,6 +281,271 @@ impl Type for EnumOrUnion {
         ctx.builder.position_at_end(start);
         ctx.builder.build_switch(dsc, merge, &cases).unwrap();
         ctx.builder.position_at_end(merge);
+    }
+    fn _has_ref_attr(&self, attr: &str, _ctx: &CompCtx) -> bool {
+        matches!(attr, "__disc" | "__ptr")
+    }
+    fn _has_mut_attr(&self, attr: &str, _ctx: &CompCtx) -> bool {
+        matches!(attr, "__disc" | "__ptr")
+    }
+    fn _has_refmut_attr(&self, attr: &str, _ctx: &CompCtx) -> bool {
+        matches!(attr, "__disc" | "__ptr")
+    }
+    fn attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "__disc" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    let value = Value::new(
+                        if let (Some(BasicValueEnum::StructValue(sv)), false) =
+                            (val.value(ctx), ctx.is_const.get())
+                        {
+                            ctx.builder.build_extract_value(sv, 0, "").ok()
+                        } else {
+                            None
+                        },
+                        if let Some(InterData::Array(arr)) = &val.inter_val {
+                            if let [InterData::Int(ix), _] = &arr[..] {
+                                Some(InterData::Int(*ix))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        },
+                        tag,
+                    );
+                    val.address.set(self.llvm_type(ctx).and_then(|llt| {
+                        val.addr(ctx)
+                            .and_then(|a| ctx.builder.build_struct_gep(llt, a, 0, "").ok())
+                    }));
+                    val
+                } else {
+                    Value {
+                        data_type: tag,
+                        ..Value::null()
+                    }
+                };
+                Ok(res)
+            }
+            "__ptr" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    if !ctx.is_const.get() {
+                        if let (Some(pv), Some(llt)) = (val.addr(ctx), self.llvm_type(ctx)) {
+                            ctx.builder
+                                .build_struct_gep(llt, pv, 0, "")
+                                .ok()
+                                .map(From::from)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    val.addr(ctx).map(From::from)
+                };
+                Ok(Value::new(res, None, types::Null::new().add_ptr(false)))
+            }
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn _mut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "__disc" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    Value::new(
+                        self.llvm_type(ctx)
+                            .and_then(|llt| {
+                                val.addr(ctx)
+                                    .and_then(|a| ctx.builder.build_struct_gep(llt, a, 0, "").ok())
+                            })
+                            .map(From::from),
+                        if let Some(InterData::Array(arr)) = &val.inter_val {
+                            if let [InterData::Int(ix), _] = &arr[..] {
+                                Some(InterData::Int(*ix))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        },
+                        types::Mut::new(tag),
+                    )
+                } else {
+                    Value {
+                        data_type: tag,
+                        ..Value::null()
+                    }
+                };
+                Ok(res)
+            }
+            "__ptr" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    if let (Some(BasicValueEnum::PointerValue(pv)), Some(llt), false) =
+                        (val.comp_val, self.llvm_type(ctx), ctx.is_const.get())
+                    {
+                        ctx.builder
+                            .build_struct_gep(llt, pv, 0, "")
+                            .ok()
+                            .map(From::from)
+                    } else {
+                        None
+                    }
+                } else {
+                    val.addr(ctx).map(From::from)
+                };
+                Ok(Value::new(res, None, types::Null::new().add_ptr(true)))
+            }
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn _ref_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "__disc" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    Value::new(
+                        self.llvm_type(ctx)
+                            .and_then(|llt| {
+                                val.addr(ctx)
+                                    .and_then(|a| ctx.builder.build_struct_gep(llt, a, 0, "").ok())
+                            })
+                            .map(From::from),
+                        if let Some(InterData::Array(arr)) = &val.inter_val {
+                            if let [InterData::Int(ix), _] = &arr[..] {
+                                Some(InterData::Int(*ix))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        },
+                        tag.add_ref(false),
+                    )
+                } else {
+                    Value {
+                        data_type: tag,
+                        ..Value::null()
+                    }
+                };
+                Ok(res)
+            }
+            "__ptr" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    if let (Some(BasicValueEnum::PointerValue(pv)), Some(llt), false) =
+                        (val.comp_val, self.llvm_type(ctx), ctx.is_const.get())
+                    {
+                        ctx.builder
+                            .build_struct_gep(llt, pv, 0, "")
+                            .ok()
+                            .map(From::from)
+                    } else {
+                        None
+                    }
+                } else {
+                    val.addr(ctx).map(From::from)
+                };
+                Ok(Value::new(res, None, types::Null::new().add_ptr(false)))
+            }
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
+    }
+    fn _refmut_attr<'src, 'ctx>(
+        &'static self,
+        val: Value<'src, 'ctx>,
+        attr: (Cow<'src, str>, SourceSpan),
+        ctx: &CompCtx<'src, 'ctx>,
+    ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
+        match &*attr.0 {
+            "__disc" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    Value::new(
+                        self.llvm_type(ctx)
+                            .and_then(|llt| {
+                                val.addr(ctx)
+                                    .and_then(|a| ctx.builder.build_struct_gep(llt, a, 0, "").ok())
+                            })
+                            .map(From::from),
+                        if let Some(InterData::Array(arr)) = &val.inter_val {
+                            if let [InterData::Int(ix), _] = &arr[..] {
+                                Some(InterData::Int(*ix))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        },
+                        tag.add_ref(true),
+                    )
+                } else {
+                    Value {
+                        data_type: tag,
+                        ..Value::null()
+                    }
+                };
+                Ok(res)
+            }
+            "__ptr" => {
+                let tag = self.tag_type();
+                let res = if tag.kind() == types::Int::KIND {
+                    if let (Some(BasicValueEnum::PointerValue(pv)), Some(llt), false) =
+                        (val.comp_val, self.llvm_type(ctx), ctx.is_const.get())
+                    {
+                        ctx.builder
+                            .build_struct_gep(llt, pv, 0, "")
+                            .ok()
+                            .map(From::from)
+                    } else {
+                        None
+                    }
+                } else {
+                    val.addr(ctx).map(From::from)
+                };
+                Ok(Value::new(res, None, types::Null::new().add_ptr(true)))
+            }
+            _ => Err(CobaltError::AttrNotDefined {
+                val: self.to_string(),
+                attr: attr.0,
+                vloc: val.loc,
+                aloc: attr.1,
+            }),
+        }
     }
 }
 
