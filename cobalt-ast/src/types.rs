@@ -37,6 +37,9 @@ impl SizeType {
             self
         }
     }
+    pub fn is_c(self) -> bool {
+        !matches!(self, Static(0) | Dynamic | Meta)
+    }
 }
 impl Display for SizeType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -155,6 +158,8 @@ impl<T: NullType> TypeSerde for T {
         Self::create_self()
     }
 }
+
+#[macro_export]
 macro_rules! no_type_header {
     () => {
         type Header = ();
@@ -162,9 +167,11 @@ macro_rules! no_type_header {
             false
         }
         fn get_header() -> Self::Header {}
-        fn set_header(header: Self::Header) {}
+        fn set_header(_header: Self::Header) {}
     };
 }
+
+#[macro_export]
 macro_rules! impl_null_type_with_new {
     ($ty:ty) => {
         impl NullType for $ty {
@@ -174,6 +181,8 @@ macro_rules! impl_null_type_with_new {
         }
     };
 }
+
+#[macro_export]
 macro_rules! impl_type_proxy {
     ($proxy:ty, $gp:pat => $ge:expr, $sp:pat => $se:expr) => {
         type Proxy = $proxy;
@@ -664,6 +673,14 @@ pub trait Type:
             self.as_type_ref()
         })
     }
+
+    fn add_ptr(&'static self, is_mut: bool) -> TypeRef {
+        types::Pointer::new(if is_mut {
+            types::Mut::new(self.as_type_ref())
+        } else {
+            self.as_type_ref()
+        })
+    }
 }
 impl dyn Type {
     pub fn is<T: ConcreteType>(&self) -> bool {
@@ -753,6 +770,7 @@ pub struct TypeLoader {
     pub load_header: fn(&mut dyn erased_serde::Deserializer) -> Result<(), erased_serde::Error>,
     pub load: fn(&mut dyn erased_serde::Deserializer) -> Result<TypeRef, erased_serde::Error>,
 }
+
 #[macro_export]
 macro_rules! type_loader {
     ($T:ty) => {
@@ -769,6 +787,8 @@ macro_rules! type_loader {
         }
     };
 }
+
+#[macro_export]
 macro_rules! submit_types {
     ($T:ty) => (
         inventory::submit! {type_loader!($T)}
@@ -815,6 +835,7 @@ pub static TYPE_SERIAL_REGISTRY: Lazy<flurry::HashMap<u64, LoadInfo>> =
 
 pub mod agg;
 pub mod custom;
+pub mod enums;
 pub mod float;
 pub mod func;
 pub mod int;
@@ -824,6 +845,7 @@ pub mod meta;
 
 pub use agg::*;
 pub use custom::*;
+pub use enums::*;
 pub use float::*;
 pub use func::*;
 pub use int::*;

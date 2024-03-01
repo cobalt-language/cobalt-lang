@@ -2,7 +2,7 @@ use super::*;
 inventory::submit! {
     FunctionIntrinsic::new("type", |v, c, a, _| {
         extract_single("@type", v, c, a).map(|v| Value::make_type(v.data_type))
-    })
+    }, true)
 }
 inventory::submit! {
     FunctionIntrinsic::new("size", |v, c, a, ctx| {
@@ -14,7 +14,7 @@ inventory::submit! {
                 )
             })
         })
-    })
+    }, true)
 }
 inventory::submit! {
     FunctionIntrinsic::new("sized", |v, c, a, ctx| {
@@ -30,7 +30,7 @@ inventory::submit! {
                 )
             })
         })
-    })
+    }, true)
 }
 inventory::submit! {
     FunctionIntrinsic::new("align", |v, c, a, ctx| {
@@ -42,7 +42,7 @@ inventory::submit! {
                 )
             })
         })
-    })
+    }, true)
 }
 inventory::submit! {
     FunctionIntrinsic::new("typename", |v, c, a, ctx| {
@@ -50,7 +50,7 @@ inventory::submit! {
             v.into_type(ctx)
                 .map(|t| Value::make_str(t.to_string(), ctx))
         })
-    })
+    }, true)
 }
 fn extract_single<'src, 'ctx>(
     name: &'static str,

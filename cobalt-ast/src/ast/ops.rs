@@ -277,7 +277,9 @@ impl<'src> AST<'src> for PrefixAST<'src> {
             return Value::error();
         }
         if self.op == "&" {
-            if let Some(ty) = v.data_type.downcast::<types::Reference>() {
+            if let Ok(val) = v.data_type.pre_op(v.clone(), "&", self.loc, ctx, true) {
+                val
+            } else if let Some(ty) = v.data_type.downcast::<types::Reference>() {
                 Value {
                     data_type: types::Pointer::new(ty.base()),
                     ..v

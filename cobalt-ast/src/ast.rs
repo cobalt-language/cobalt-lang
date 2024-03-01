@@ -37,7 +37,10 @@ pub trait AST<'src>: ASTClone<'src> + std::fmt::Debug {
         1
     }
     // AST properties
-    fn is_const(&self) -> bool {
+    fn is_const(&self, _ctx: &CompCtx<'src, '_>) -> bool {
+        false
+    }
+    fn has_const_call(&self, _ctx: &CompCtx<'src, '_>) -> bool {
         false
     }
     // pretty printing

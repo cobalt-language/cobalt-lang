@@ -1,4 +1,5 @@
 use super::*;
+
 #[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct Function((TypeRef, Box<[(TypeRef, bool)]>));
@@ -225,6 +226,7 @@ impl Type for Function {
         ))
     }
 }
+
 #[derive(Debug, ConstIdentify, RefCastCustom)]
 #[repr(transparent)]
 pub struct BoundMethod((TypeRef, Box<[(TypeRef, bool)]>));
@@ -399,4 +401,5 @@ impl TypeSerde for BoundMethod {
         FnProxy { ret, params } => Self::new(ret, unsafe {std::mem::transmute::<_, &[(TypeRef, bool)]>(&*params)})
     );
 }
+
 submit_types!(Function, BoundMethod);

@@ -42,6 +42,7 @@ pub enum InterData<'src, 'ctx> {
     Function(#[serde(deserialize_state)] FnData<'src, 'ctx>),
     InlineAsm(String, String),
     Type(TypeRef),
+    Spanned(SourceSpan, #[serde(deserialize_state)] Box<Self>),
     Module(
         #[serde(deserialize_state)] HashMap<Cow<'src, str>, Symbol<'src, 'ctx>>,
         Vec<(CompoundDottedName<'src>, bool)>,

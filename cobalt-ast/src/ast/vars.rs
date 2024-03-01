@@ -477,7 +477,7 @@ impl<'src> AST<'src> for VarDefAST<'src> {
                         Value::error()
                     }
                 }
-            } else if self.val.is_const() && self.type_.is_none() {
+            } else if self.val.is_const(ctx) && self.type_.is_none() {
                 let mut val = self.val.codegen(ctx, errs);
                 let dt = if let Some(t) = self.type_.as_ref().map(|t| {
                     let oic = ctx.is_const.replace(true);
@@ -1851,6 +1851,10 @@ impl<'src> VarGetAST<'src> {
 impl<'src> AST<'src> for VarGetAST<'src> {
     fn loc(&self) -> SourceSpan {
         self.loc
+    }
+    fn is_const<'ctx>(&self, ctx: &CompCtx<'src, '_>) -> bool {
+        ctx.lookup(&self.name, self.global)
+            .map_or(true, |v| v.0.inter_val.is_some())
     }
     fn codegen_impl<'ctx>(
         &self,

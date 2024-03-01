@@ -2,6 +2,7 @@ use super::*;
 use inkwell::IntPredicate::*;
 use std::cell::Cell;
 use std::rc::Rc;
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "&{}", _0)]
 #[repr(transparent)]
@@ -404,6 +405,7 @@ impl Type for Reference {
         self.base().subscript(val, idx, ctx)
     }
 }
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "*{}", _0)]
 #[repr(transparent)]
@@ -946,6 +948,7 @@ impl Type for Pointer {
         self.base().ptr_type(ctx)
     }
 }
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[display(fmt = "mut {}", _0)]
 #[repr(transparent)]
@@ -1204,4 +1207,5 @@ impl Type for Mut {
         self.base()._has_refmut_attr(attr, ctx)
     }
 }
+
 submit_types!(Reference, Pointer, Mut);

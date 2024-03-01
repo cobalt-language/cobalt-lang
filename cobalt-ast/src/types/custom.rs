@@ -3,11 +3,14 @@ use once_cell::sync::Lazy;
 use serde::de::DeserializeSeed;
 use std::marker::PhantomData;
 use std::{cell::Ref, collections::HashMap};
+
 static CUSTOM_INTERN: Interner<Box<str>> = Interner::new();
 static CUSTOM_DATA: Lazy<
     flurry::HashMap<&'static str, (TypeRef, bool, flurry::HashMap<Box<str>, usize>, usize)>,
 > = Lazy::new(flurry::HashMap::new);
+
 pub type ValueRef<'a, 'src, 'ctx> = Ref<'a, Value<'src, 'ctx>>;
+
 #[derive(Debug, ConstIdentify, Display, RefCastCustom)]
 #[repr(transparent)]
 pub struct Custom(Box<str>);
@@ -129,6 +132,7 @@ impl Custom {
             });
     }
 }
+
 #[derive(DeserializeState)]
 #[serde(de_parameters = "'a")]
 #[serde(deserialize_state = "&'a CompCtx<'src, 'ctx>")]

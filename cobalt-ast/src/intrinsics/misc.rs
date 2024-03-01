@@ -288,8 +288,8 @@ fn alloca<'src, 'ctx>(
     }
 }
 inventory::submit! {
-    FunctionIntrinsic::new("asm", asm)
+    FunctionIntrinsic::new("asm", asm, true)
 }
 inventory::submit! {
-    FunctionIntrinsic::new("alloca", alloca)
+    FunctionIntrinsic::new("alloca", alloca, false)
 }

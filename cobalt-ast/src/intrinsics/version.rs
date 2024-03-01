@@ -11,7 +11,8 @@ inventory::submit! {
             InterData::Int(*VERSION_MAJOR as _),
             types::IntLiteral::new(),
         ),
-        || types::IntLiteral::new()
+        || types::IntLiteral::new(),
+        true
     )
 }
 inventory::submit! {
@@ -21,7 +22,8 @@ inventory::submit! {
             InterData::Int(*VERSION_MINOR as _),
             types::IntLiteral::new(),
         ),
-        || types::IntLiteral::new()
+        || types::IntLiteral::new(),
+        true
     )
 }
 inventory::submit! {
@@ -31,14 +33,16 @@ inventory::submit! {
             InterData::Int(*VERSION_PATCH as _),
             types::IntLiteral::new(),
         ),
-        || types::IntLiteral::new()
+        || types::IntLiteral::new(),
+        true
     )
 }
 inventory::submit! {
     ValueIntrinsic::new(
         "version_string",
         |ctx| Value::make_str(env!("CARGO_PKG_VERSION"), ctx),
-        || types::SizedArray::new(types::Int::unsigned(8), env!("CARGO_PKG_VERSION").len() as _)
+        || types::SizedArray::new(types::Int::unsigned(8), env!("CARGO_PKG_VERSION").len() as _),
+        true
     )
 }
 inventory::submit! {
@@ -56,7 +60,8 @@ inventory::submit! {
                 .into_iter()
                 .collect(),
             )
-        }
+        },
+        true
     )
 }
 fn make_version<'src, 'ctx>(ctx: &CompCtx<'src, 'ctx>) -> Value<'src, 'ctx> {

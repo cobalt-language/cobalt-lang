@@ -1,5 +1,6 @@
 use super::*;
 use inkwell::IntPredicate::*;
+
 #[derive(Debug, ConstIdentify, PartialEq, Eq, Hash, Display, RefCastCustom)]
 #[display(fmt = "{}{}", r#"if _0.1 {"u"} else {"i"}"#, "_0.0")]
 #[repr(transparent)]
@@ -21,7 +22,7 @@ impl Int {
         Self::new(ctx.flags.word_size, false)
     }
     pub fn usize(ctx: &CompCtx) -> &'static Self {
-        Self::new(ctx.flags.word_size, false)
+        Self::new(ctx.flags.word_size, true)
     }
     pub fn bool() -> &'static Self {
         Self::new(1, true)
@@ -49,7 +50,7 @@ impl Type for Int {
         SizeType::Static(((self.0 .0 + 7) / 8) as _)
     }
     fn align(&self) -> u16 {
-        1 << std::cmp::min(16 - self.0 .0.leading_zeros(), 6)
+        1 << ((15 - std::cmp::min(self.0 .0.leading_zeros(), 15)).clamp(3, 6) - 3)
     }
     fn llvm_type<'ctx>(&self, ctx: &CompCtx<'_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         Some(ctx.context.custom_width_int_type(self.bits() as _).into())
@@ -1944,6 +1945,7 @@ impl Type for Int {
         }
     }
 }
+
 #[derive(Debug, ConstIdentify, Display)]
 #[display(fmt = "<int literal>")]
 pub struct IntLiteral(());
@@ -2281,4 +2283,5 @@ impl Type for IntLiteral {
         }
     }
 }
+
 submit_types!(Int, IntLiteral);
