@@ -127,7 +127,7 @@ impl EnumOrUnion {
     pub fn tag_type(&self) -> TypeRef {
         match self.variants().len() {
             0 | 1 => types::Null::new(),
-            c => types::Int::unsigned((usize::BITS - c.leading_zeros() - 1) as _),
+            c => types::Int::unsigned((usize::BITS - (c - 1).leading_zeros()) as _),
         }
     }
 }
