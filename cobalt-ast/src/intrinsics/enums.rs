@@ -35,11 +35,13 @@ impl Type for EnumAggregator {
                 let res = vec
                     .into_iter()
                     .map(|t| {
-                        if let InterData::Type(t) = t {
-                            t
-                        } else {
+                        let InterData::Spanned(_, i) = t else {
                             unreachable!()
-                        }
+                        };
+                        let InterData::Type(t) = *i else {
+                            unreachable!()
+                        };
+                        t
                     })
                     .collect::<Vec<_>>();
                 Ok(Value::make_type(EnumOrUnion::new(res, self.0)))
@@ -70,11 +72,29 @@ impl Type for EnumAggregator {
         _move_right: bool,
     ) -> Result<Value<'src, 'ctx>, CobaltError<'src>> {
         if op.0 == "|" && rhs.data_type.impl_convertible(types::TypeData::new(), ctx) {
+            let curr = rhs.loc;
+            let rt = rhs.into_type(ctx)?;
             let Some(InterData::Array(vec)) = &mut lhs.inter_val else {
                 unreachable!()
             };
-            vec.push(InterData::Type(rhs.into_type(ctx)?));
-            Ok(lhs)
+            if let Some(prev) = vec.iter().filter_map(|i| {
+                let InterData::Spanned(s, t) = i else {
+                    unreachable!()
+                };
+                let InterData::Type(t) = &**t else {
+                    unreachable!()
+                };
+                (rt == *t).then_some(*s)
+            }).next() {
+                Err(CobaltError::DuplicateEnumVariant {
+                    is_union: self.0,
+                    prev, curr,
+                    ty: rt.to_string(),
+                })
+            } else {
+                vec.push(InterData::Spanned(curr, Box::new(InterData::Type(rt))));
+                Ok(lhs)
+            }
         } else {
             Err(invalid_binop(&lhs, &rhs, op.0, op.1))
         }

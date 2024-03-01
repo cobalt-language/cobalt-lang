@@ -187,6 +187,15 @@ pub enum CobaltError<'src> {
         #[label("error at byte {pos} of glob: {msg}")]
         loc: SourceSpan,
     },
+    #[error("Duplicate {} variants", if *.is_union {"union"} else {"enum"})]
+    DuplicateEnumVariant {
+        is_union: bool,
+        #[label("previously defined here")]
+        prev: SourceSpan,
+        #[label("redefinition of variant {ty}")]
+        curr: SourceSpan,
+        ty: String,
+    },
     #[error("value cannot be determined at compile-time")]
     NotCompileTime {
         #[label]
