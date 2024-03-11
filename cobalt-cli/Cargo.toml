@@ -24,7 +24,7 @@ miette = { version = "7.1.0", features = ["fancy"] }
 clap = { version = "4.4.7", features = ["derive"] }
 const_format = "0.2.32"
 human-repr = "1.1.0"
-object = { version = "0.32.1", features = ["write"] }
+object = { version = "0.34.0", features = ["write"] }
 ar = "0.9.0"
 os_str_bytes = { version = "7.0.0", features = ["conversions"] }
 clio = { version = "0.3.4", features = ["clap-parse"] }
