@@ -27,7 +27,7 @@ ureq = "2.8.0"
 path-calculate = "0.1.3"
 termcolor = "1.3.0"
 owned_chars = "0.3.2"
-object = { version = "0.32.1", features = ["write"] }
+object = { version = "0.34.0", features = ["write"] }
 anyhow = "1.0.75"
 anyhow-std = "0.1.4"
 thiserror = "1.0.50"
